@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "lib": ["ES2022", "DOM"],
+    "types": ["@figma/plugin-typings", "node"],
+    "paths": {
+      "@uxfactory/spec": ["../uxfactory-spec/src/index.ts"],
+      "@uxfactory/gate": ["../uxfactory-gate/src/index.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}

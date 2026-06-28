@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: Inter, system-ui, sans-serif;
+        margin: 0;
+        padding: 12px;
+        font-size: 12px;
+      }
+      #panel[data-state="CONNECTED_MIN"] #actions {
+        display: none;
+      }
+      #panel:not([data-state="CONNECTED_MIN"]) #expand {
+        display: none;
+      }
+      #errors {
+        color: #c62828;
+        white-space: pre-wrap;
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="panel" data-state="COMPACT">
+      <div id="status">Disconnected</div>
+      <div id="actions">
+        <details id="details">
+          <summary>Manual spec</summary>
+          <textarea id="spec" rows="10"></textarea>
+          <button id="render-manual">Render</button>
+        </details>
+        <button id="undo">Undo (0)</button>
+        <div id="errors"></div>
+      </div>
+      <button id="expand">Expand</button>
+    </div>
+    <script>
+      /*__UI_BUNDLE__*/
+    </script>
+  </body>
+</html>
