@@ -22,3 +22,6 @@ export { resolveSource, getByPath, parseRef, extractBraceBody } from "./drift/so
 export type { ResolvedSource } from "./drift/sources.js";
 export { computeDrift, syncMapFromReport, findSpecNode } from "./drift/drift-core.js";
 export type { DriftFinding, DriftReport, DriftInput, DriftKind } from "./drift/drift-core.js";
+export { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
+export { discoverComponents, readSpecNodes } from "./commands/discover.js";
+export type { DiscoveredComponent, SpecNodes } from "./commands/discover.js";

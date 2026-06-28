@@ -11,6 +11,7 @@ import { publishCmd } from "./commands/publish.js";
 import { selectionCmd } from "./commands/selection.js";
 import { scanCmd } from "./commands/scan.js";
 import { stubCmd } from "./commands/stub.js";
+import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 // bridgeCmd is lazy-loaded inside the action (Fix 2 — avoid pulling in fastify on every call)
 
 /** Module-scoped state reset by every run() call. */
@@ -158,8 +159,23 @@ export function buildProgram(): Command {
       );
     });
 
+  const map = program.command("map").description("Maintain the component map (scaffold/check)");
+  map
+    .command("scaffold")
+    .description("Propose component↔node links by name match into uxfactory.map.json")
+    .option("--json", "machine-readable output")
+    .action(async (opts: { json?: boolean }) => {
+      lastCode = await mapScaffoldCmd({ json: opts.json }, consoleIO);
+    });
+  map
+    .command("check")
+    .description("Verify every map entry resolves on both sides; exit 1 on a dangling entry")
+    .option("--json", "machine-readable output")
+    .action(async (opts: { json?: boolean }) => {
+      lastCode = await mapCheckCmd({ json: opts.json }, consoleIO);
+    });
+
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["map", "4", "Maintain the component map (scaffold/check)"],
     ["drift", "4", "Detect spec-vs-reality drift"],
     ["render", "5", "Render a spec to an image offline"],
     ["batch", "6", "Offline batch mode"],
