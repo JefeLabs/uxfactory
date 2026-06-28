@@ -189,9 +189,9 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   app.post<{ Params: { id: string }; Body: { approvedItemIds?: string[] } }>(
     "/batch/:id/approve",
     async (req, reply) => {
-      const existing = await store.getBatch(req.params.id);
-      if (existing === null) return reply.code(404).send({ error: "unknown batch" });
-      return store.approveBatch(req.params.id, req.body?.approvedItemIds ?? []);
+      const updated = await store.approveBatch(req.params.id, req.body?.approvedItemIds ?? []);
+      if (updated === null) return reply.code(404).send({ error: "unknown batch" });
+      return updated;
     },
   );
 

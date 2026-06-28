@@ -84,6 +84,36 @@ describe("POST /batch/:id/approve", () => {
     expect(after).toBe(before + 1);
   });
 
+  it("re-approving an already-approved batch is idempotent (no double-enqueue)", async () => {
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/batch",
+        payload: { items: [{ spec: specA }, { spec: specB }] },
+      })
+    ).json();
+    const firstItemId = created.items[0].itemId;
+
+    // First approval — enqueues 1 spec.
+    await app.inject({
+      method: "POST",
+      url: `/batch/${created.batchId}/approve`,
+      payload: { approvedItemIds: [firstItemId] },
+    });
+    const pendingAfterFirst = (await app.inject({ method: "GET", url: "/health" })).json().pending;
+
+    // Second approval of the same batch — must not re-enqueue.
+    const res = await app.inject({
+      method: "POST",
+      url: `/batch/${created.batchId}/approve`,
+      payload: { approvedItemIds: [firstItemId] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe("approved");
+    const pendingAfterSecond = (await app.inject({ method: "GET", url: "/health" })).json().pending;
+    expect(pendingAfterSecond).toBe(pendingAfterFirst);
+  });
+
   it("404 on approving an unknown batch", async () => {
     const res = await app.inject({
       method: "POST",

@@ -32,6 +32,7 @@ export class BridgeStore {
   readonly dataDir: string;
   private readonly queueDir: string;
   private readonly processedDir: string;
+  private readonly failedDir: string;
   private readonly rendersDir: string;
   private readonly verifyDir: string;
   private readonly batchDir: string;
@@ -44,6 +45,7 @@ export class BridgeStore {
     this.dataDir = dataDir;
     this.queueDir = path.join(dataDir, "queue");
     this.processedDir = path.join(this.queueDir, "processed");
+    this.failedDir = path.join(this.queueDir, "failed");
     this.rendersDir = path.join(dataDir, "renders");
     this.verifyDir = path.join(this.rendersDir, "verify");
     this.batchDir = path.join(dataDir, "batch");
@@ -53,6 +55,7 @@ export class BridgeStore {
   /** Create every subdirectory (idempotent — recursive mkdir makes parents too). */
   async init(): Promise<void> {
     await mkdir(this.processedDir, { recursive: true });
+    await mkdir(this.failedDir, { recursive: true });
     await mkdir(this.verifyDir, { recursive: true });
     await mkdir(this.batchDir, { recursive: true });
   }
@@ -109,7 +112,12 @@ export class BridgeStore {
     return entries.filter((e) => e.isFile() && e.name.endsWith(".json")).length;
   }
 
-  /** Pick the oldest queue file (mtime, tiebreak name), parse it, move it to processed/. */
+  /**
+   * Pick the oldest queue file (mtime, tiebreak name), parse it, move it to processed/.
+   * Assumes a single sequential consumer (the polling plugin) — concurrent callers could race,
+   * which is out of scope for the localhost single-plugin model.
+   * Malformed files are quarantined to failed/ and skipped so they never block the queue.
+   */
   async dequeueNext(): Promise<{ jobId: string; spec: unknown } | null> {
     const entries = await readdir(this.queueDir, { withFileTypes: true });
     const names = entries.filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => e.name);
@@ -121,15 +129,22 @@ export class BridgeStore {
       })),
     );
     ranked.sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
-    const chosen = ranked[0]!.name;
-    const jobId = chosen.replace(/\.json$/, "");
-    const raw = await readFile(path.join(this.queueDir, chosen), "utf8");
-    const spec = JSON.parse(raw) as unknown;
-    await rename(
-      path.join(this.queueDir, chosen),
-      path.join(this.processedDir, `${jobId}-${this.stamp()}.json`),
-    );
-    return { jobId, spec };
+    for (const { name } of ranked) {
+      const jobId = name.replace(/\.json$/, "");
+      const src = path.join(this.queueDir, name);
+      let spec: unknown;
+      try {
+        const raw = await readFile(src, "utf8");
+        spec = JSON.parse(raw) as unknown;
+      } catch {
+        // Malformed or unreadable — quarantine so it never blocks the queue.
+        await rename(src, path.join(this.failedDir, `${jobId}-${this.stamp()}.json`));
+        continue;
+      }
+      await rename(src, path.join(this.processedDir, `${jobId}-${this.stamp()}.json`));
+      return { jobId, spec };
+    }
+    return null;
   }
 
   // --- render reports ---
@@ -287,6 +302,8 @@ export class BridgeStore {
     if (!isSafeId(batchId)) return null;
     const batch = await this.getBatch(batchId);
     if (batch === null) return null;
+    // Idempotent: if already approved, return the persisted batch without re-enqueuing.
+    if (batch.status === "approved") return batch;
     const approved = new Set(approvedItemIds);
     for (const item of batch.items) {
       item.status = approved.has(item.itemId) ? "approved" : "rejected";

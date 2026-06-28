@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, readdir, utimes } from "node:fs/promises";
+import { mkdtemp, rm, readdir, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { BridgeStore } from "../src/store.js";
@@ -72,6 +72,30 @@ describe("queue", () => {
     expect(await store.pending()).toBe(1);
     const processed = await readdir(path.join(dataDir, "queue", "processed"));
     expect(processed.some((n) => n.startsWith("job_a-"))).toBe(true);
+  });
+
+  it("quarantines a malformed queue file to failed/ and still returns the valid job", async () => {
+    // Write a malformed (non-JSON) file directly, then a valid spec file.
+    const queueDir = path.join(dataDir, "queue");
+    await writeFile(path.join(queueDir, "job_bad.json"), "{ not json", "utf8");
+    await store.enqueue({ k: "good" }, "job_good");
+    // Ensure bad file sorts first (older mtime).
+    await utimes(path.join(queueDir, "job_bad.json"), new Date(1000), new Date(1000));
+    await utimes(path.join(queueDir, "job_good.json"), new Date(2000), new Date(2000));
+
+    const result = await store.dequeueNext();
+    expect(result?.jobId).toBe("job_good");
+    expect(result?.spec).toEqual({ k: "good" });
+
+    // Second call returns null — nothing left.
+    expect(await store.dequeueNext()).toBeNull();
+
+    // The malformed file is now in failed/, not in the queue dir.
+    const failedFiles = await readdir(path.join(queueDir, "failed"));
+    expect(failedFiles.some((n) => n.startsWith("job_bad-"))).toBe(true);
+    const queueFiles = await readdir(queueDir, { withFileTypes: true });
+    const remaining = queueFiles.filter((e) => e.isFile() && e.name.endsWith(".json"));
+    expect(remaining).toHaveLength(0);
   });
 
   it("survives a restart (queue is files on disk)", async () => {
