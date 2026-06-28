@@ -158,5 +158,41 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     return report;
   });
 
+  // --- batch ---
+
+  app.post("/batch", async (req, reply) => {
+    const body = req.body as { items?: { spec?: unknown; preview?: string }[] };
+    const items = body.items ?? [];
+    for (const item of items) {
+      const result = validate(item.spec);
+      if (!result.valid) {
+        return reply.code(400).send({ error: "invalid spec", details: result.errors });
+      }
+    }
+    const batchId = await store.saveBatch({
+      items: items.map((it) => ({
+        spec: it.spec,
+        ...(it.preview !== undefined ? { preview: it.preview } : {}),
+      })),
+    });
+    const batch = await store.getBatch(batchId);
+    return { batchId, items: batch ? batch.items : [] };
+  });
+
+  app.get("/batch", async (_req, reply) => {
+    const batch = await store.getBatch();
+    if (batch === null) return reply.code(404).send({ error: "no batch yet" });
+    return batch;
+  });
+
+  app.post<{ Params: { id: string }; Body: { approvedItemIds?: string[] } }>(
+    "/batch/:id/approve",
+    async (req, reply) => {
+      const existing = await store.getBatch(req.params.id);
+      if (existing === null) return reply.code(404).send({ error: "unknown batch" });
+      return store.approveBatch(req.params.id, req.body?.approvedItemIds ?? []);
+    },
+  );
+
   return app;
 }
