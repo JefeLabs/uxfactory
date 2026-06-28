@@ -18,6 +18,7 @@ export interface BridgeOptions {
 
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
 const DEFAULT_TOLERANCE_PX = 0.5;
+const DEFAULT_PORT = 3779;
 
 /** A POST /edits caller awaiting the render keyed by the enqueued jobId. */
 interface EditWaiter {
@@ -195,4 +196,21 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   );
 
   return app;
+}
+
+/** Build and start a bridge listening on 127.0.0.1. */
+export async function startBridge(
+  options: BridgeOptions & { port?: number } = {},
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const app = await createBridge(options);
+  const port =
+    options.port ??
+    (process.env.UXFACTORY_PORT !== undefined ? Number(process.env.UXFACTORY_PORT) : DEFAULT_PORT);
+  await app.listen({ host: "127.0.0.1", port });
+  const address = app.server.address();
+  const actualPort = typeof address === "object" && address !== null ? address.port : port;
+  return {
+    url: `http://127.0.0.1:${actualPort}`,
+    close: () => app.close(),
+  };
 }
