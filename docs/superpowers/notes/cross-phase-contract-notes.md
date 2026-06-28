@@ -11,7 +11,7 @@ Living notes for obligations that span phases — surfaced by reviews while buil
 - **HTTP status vs body.** Gate outcomes (PASS/FAIL) are HTTP `200` with the verdict in the body. HTTP status is reserved for transport problems: `409` no render report yet, `404` unknown `renderId`, `503` plugin never connected (PRD §10.1).
 - **Validate before gating.** The gate assumes a structurally valid spec. The bridge should run `@uxfactory/spec`'s `validate()` on the incoming spec before calling `gate()`.
 
-## For Phase 1d — `uxfactory-cli` (writes the queue directly)
+## For Phase 1d — `uxfactory-cli` (writes the queue directly) ✅ IMPLEMENTED (all honored)
 
 The bridge does NOT expose a `publish`/enqueue HTTP endpoint. Per PRD §10.3, `uxfactory publish` writes the spec **directly** into the shared `.uxfactory/queue/` directory on the same machine; the bridge's `GET /next` serves it. So the CLI must match the bridge's queue-file contract exactly:
 
@@ -22,6 +22,12 @@ The bridge does NOT expose a `publish`/enqueue HTTP endpoint. Per PRD §10.3, `u
 - **dataDir agreement:** CLI and bridge both default to `<cwd>/.uxfactory`; run them from the same project dir (or share `--dataDir`/`UXFACTORY_PORT`).
 - **`POST /batch/:id/approve` is idempotent** — safe for the CLI to retry on a dropped response (re-approve enqueues nothing).
 - **`POST /edits` is the synchronous channel** with a 504 on timeout; transport errors are exit 2, gate FAIL is exit 1.
+
+### Surfaced while building the CLI — for the later phases that replace the stubs
+
+- **`publish --wait`/`--verify` correlates renders by baseline-diff, NOT by `jobId`.** The CLI records the latest `renderId` before enqueue, then polls `GET /rendered` (the GLOBALLY newest report) until it changes. The bridge only echoes `jobId` to resolve `POST /edits` waiters — the CLI doesn't use that channel. Correct for single-user/single-job v1, but **concurrent publishes or a plugin open on another file can verify the WRONG render**. When the **batch (Phase 6)** or any concurrent-publish path lands, the CLI must correlate by `jobId` — which needs a bridge affordance (e.g. `GET /rendered?jobId=` or a per-job render lookup). Record before building batch.
+- **Stub commands currently return exit 2 ("not yet implemented").** When **drift (Phase 4)**, **render (Phase 5)**, **batch (Phase 6)**, **review (Phase 7)** replace their stubs, each must adopt the §5.3 split — and `drift`/`review` specifically need `1` = conformance/drift-FAIL vs `2` = transport, mirroring `verify`.
+- **Commander wiring: `program.exitOverride()` must be called BEFORE `.command()` calls** so subcommands inherit the exit callback (`copyInheritedSettings`); otherwise subcommand usage errors bypass it and `process.exit(1)`. `run(argv)` returns the exit code (or `"foreground"` for `bridge`); the bin maps it to `process.exit`. Any new CLI command must route through this so usage errors stay exit 2.
 
 ## For Phase 2 — `uxfactory-plugin` (the render report producer)
 
