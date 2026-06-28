@@ -3,3 +3,4 @@ coverage
 pnpm-lock.yaml
 .uxfactory
 .superpowers
+packages/uxfactory-agent

@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { shouldSync, buildSyncCommand, main as syncMain } from "../scripts/sync-on-edit.mjs";
-import { buildDriftCommand, formatDriftContext, main as driftMain } from "../scripts/drift-notify.mjs";
+import {
+  buildDriftCommand,
+  formatDriftContext,
+  main as driftMain,
+} from "../scripts/drift-notify.mjs";
 
 const pkgRoot = fileURLToPath(new URL("..", import.meta.url));
 

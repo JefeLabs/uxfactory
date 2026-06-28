@@ -132,7 +132,11 @@ describe("writeMap / serializeMap", () => {
         {
           // intentionally out of canonical order
           node: "api-gateway",
-          source: { ref: "infra/main.tf#aws_apigatewayv2_api.main", kind: "terraform", compare: { name: "name" } },
+          source: {
+            ref: "infra/main.tf#aws_apigatewayv2_api.main",
+            kind: "terraform",
+            compare: { name: "name" },
+          },
           spec: "deployment.uxfactory.json",
           component: "api-gateway",
         } as unknown as ComponentMap["components"][number],
@@ -165,7 +169,8 @@ describe("setAutoFilled", () => {
     expect(b.spec).toBe(a.spec);
     expect(b.node).toBe(a.node);
     // and serialize byte-identically for the maintained subset
-    const maintained = (e: typeof a) => JSON.stringify({ component: e.component, spec: e.spec, node: e.node, source: e.source });
+    const maintained = (e: typeof a) =>
+      JSON.stringify({ component: e.component, spec: e.spec, node: e.node, source: e.source });
     expect(maintained(b)).toBe(maintained(a));
   });
 
@@ -174,7 +179,12 @@ describe("setAutoFilled", () => {
       version: 1,
       components: [
         sampleMap.components[0]!,
-        { component: "db", spec: "deployment.uxfactory.json", node: "db", source: { kind: "compose", ref: "compose.yaml#db" } },
+        {
+          component: "db",
+          spec: "deployment.uxfactory.json",
+          node: "db",
+          source: { kind: "compose", ref: "compose.yaml#db" },
+        },
       ],
     };
     const next = setAutoFilled(two, "api-gateway", { figmaId: "9:9" });

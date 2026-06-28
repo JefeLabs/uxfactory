@@ -207,7 +207,11 @@ describe("writeMap / serializeMap", () => {
         {
           // intentionally out of canonical order
           node: "api-gateway",
-          source: { ref: "infra/main.tf#aws_apigatewayv2_api.main", kind: "terraform", compare: { name: "name" } },
+          source: {
+            ref: "infra/main.tf#aws_apigatewayv2_api.main",
+            kind: "terraform",
+            compare: { name: "name" },
+          },
           spec: "deployment.uxfactory.json",
           component: "api-gateway",
         } as unknown as ComponentMap["components"][number],
@@ -240,7 +244,8 @@ describe("setAutoFilled", () => {
     expect(b.spec).toBe(a.spec);
     expect(b.node).toBe(a.node);
     // and serialize byte-identically for the maintained subset
-    const maintained = (e: typeof a) => JSON.stringify({ component: e.component, spec: e.spec, node: e.node, source: e.source });
+    const maintained = (e: typeof a) =>
+      JSON.stringify({ component: e.component, spec: e.spec, node: e.node, source: e.source });
     expect(maintained(b)).toBe(maintained(a));
   });
 
@@ -249,7 +254,12 @@ describe("setAutoFilled", () => {
       version: 1,
       components: [
         sampleMap.components[0]!,
-        { component: "db", spec: "deployment.uxfactory.json", node: "db", source: { kind: "compose", ref: "compose.yaml#db" } },
+        {
+          component: "db",
+          spec: "deployment.uxfactory.json",
+          node: "db",
+          source: { kind: "compose", ref: "compose.yaml#db" },
+        },
       ],
     };
     const next = setAutoFilled(two, "api-gateway", { figmaId: "9:9" });
@@ -604,7 +614,9 @@ describe("resolveSource — terraform", () => {
 
 describe("resolveSource — k8s", () => {
   it("matches a document by kind/name and reads a dotted path", () => {
-    const r = resolveSource("k8s", k8s, "Service/api-gateway", { port: "spec.ports[0].targetPort" });
+    const r = resolveSource("k8s", k8s, "Service/api-gateway", {
+      port: "spec.ports[0].targetPort",
+    });
     expect(r.resolved).toBe(true);
     expect(r.values).toEqual({ "spec.ports[0].targetPort": "8080" });
   });
@@ -869,7 +881,15 @@ const spec: Spec = {
       width: 400,
       height: 400,
       children: [
-        { type: "shape", name: "api-gateway", x: 0, y: 0, width: 100, height: 40, characters: "8080" },
+        {
+          type: "shape",
+          name: "api-gateway",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 40,
+          characters: "8080",
+        },
       ],
     },
   ],
@@ -926,7 +946,12 @@ describe("computeDrift", () => {
     );
     expect(r.clean).toBe(false);
     const field = r.findings.find((f) => f.kind === "field");
-    expect(field).toMatchObject({ component: "api-gateway", property: "characters", expected: "9090", actual: "8080" });
+    expect(field).toMatchObject({
+      component: "api-gateway",
+      property: "characters",
+      expected: "9090",
+      actual: "8080",
+    });
   });
 
   it("emits a deleted-orphan when the source ref does not resolve", () => {
@@ -948,7 +973,12 @@ describe("computeDrift", () => {
     const compareLess: ComponentMap = {
       version: 1,
       components: [
-        { component: "db", spec: "deployment.uxfactory.json", node: "db", source: { kind: "compose", ref: "compose.yaml#db" } },
+        {
+          component: "db",
+          spec: "deployment.uxfactory.json",
+          node: "db",
+          source: { kind: "compose", ref: "compose.yaml#db" },
+        },
       ],
     };
     const r = computeDrift({
@@ -966,7 +996,14 @@ describe("computeDrift", () => {
     const specNoChars: Spec = {
       editor: "figma",
       frames: [
-        { name: "deployment", x: 0, y: 0, width: 400, height: 400, children: [{ type: "shape", name: "api-gateway", x: 0, y: 0, width: 100, height: 40 }] },
+        {
+          name: "deployment",
+          x: 0,
+          y: 0,
+          width: 400,
+          height: 400,
+          children: [{ type: "shape", name: "api-gateway", x: 0, y: 0, width: 100, height: 40 }],
+        },
       ],
     } as Spec;
     const report: RenderReport = {
@@ -977,9 +1014,22 @@ describe("computeDrift", () => {
       fileName: "F",
       fileKey: "k",
       counts: { frames: 1, sections: 0, objects: 1, connectors: 0 },
-      nodes: [{ id: "1:2", name: "api-gateway", type: "shape", x: 0, y: 0, w: 100, h: 40, characters: "8080" }],
+      nodes: [
+        {
+          id: "1:2",
+          name: "api-gateway",
+          type: "shape",
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 40,
+          characters: "8080",
+        },
+      ],
     };
-    const r = computeDrift(baseInput({ specs: { "deployment.uxfactory.json": specNoChars }, report }));
+    const r = computeDrift(
+      baseInput({ specs: { "deployment.uxfactory.json": specNoChars }, report }),
+    );
     expect(r.clean).toBe(true); // render node's characters "8080" matches source "8080"
   });
 });
@@ -1020,7 +1070,12 @@ describe("syncMapFromReport", () => {
       version: 1,
       components: [
         map.components[0]!,
-        { component: "db", spec: "deployment.uxfactory.json", node: "db", source: { kind: "compose", ref: "compose.yaml#db" } },
+        {
+          component: "db",
+          spec: "deployment.uxfactory.json",
+          node: "db",
+          source: { kind: "compose", ref: "compose.yaml#db" },
+        },
       ],
     };
     const next = syncMapFromReport(two, report, "abc123");
@@ -1136,7 +1191,11 @@ function fieldDiffs(
     if (expected === undefined) continue; // attribute not present in source → nothing to diff
     const fromSpec = specNode !== null ? getByPath(specNode, logical) : undefined;
     const actualRaw =
-      fromSpec !== undefined ? fromSpec : reportNode !== null ? getByPath(reportNode, logical) : undefined;
+      fromSpec !== undefined
+        ? fromSpec
+        : reportNode !== null
+          ? getByPath(reportNode, logical)
+          : undefined;
     const actual = actualRaw === undefined || actualRaw === null ? undefined : String(actualRaw);
     if (actual !== expected) {
       out.push({
@@ -1269,7 +1328,15 @@ const spec = {
       width: 400,
       height: 400,
       children: [
-        { type: "shape", name: "api-gateway", x: 0, y: 0, width: 100, height: 40, characters: "8080" },
+        {
+          type: "shape",
+          name: "api-gateway",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 40,
+          characters: "8080",
+        },
       ],
     },
   ],
@@ -1299,7 +1366,11 @@ const validMap = {
       component: "api-gateway",
       spec: "deployment.uxfactory.json",
       node: "api-gateway",
-      source: { kind: "terraform", ref: "main.tf#aws_apigatewayv2_api.main", compare: { name: "name" } },
+      source: {
+        kind: "terraform",
+        ref: "main.tf#aws_apigatewayv2_api.main",
+        compare: { name: "name" },
+      },
     },
   ],
 };
@@ -1323,7 +1394,16 @@ describe("map scaffold", () => {
     const existing = {
       version: 1,
       components: [
-        { component: "api-gateway", spec: "deployment.uxfactory.json", node: "api-gateway", source: { kind: "terraform", ref: "main.tf#aws_apigatewayv2_api.main", compare: { name: "name" } } },
+        {
+          component: "api-gateway",
+          spec: "deployment.uxfactory.json",
+          node: "api-gateway",
+          source: {
+            kind: "terraform",
+            ref: "main.tf#aws_apigatewayv2_api.main",
+            compare: { name: "name" },
+          },
+        },
       ],
     };
     await writeFile(path.join(cwd, "uxfactory.map.json"), JSON.stringify(existing), "utf8");
@@ -1349,7 +1429,19 @@ describe("map check", () => {
   });
 
   it("returns 1 on a dangling source ref", async () => {
-    const bad = { version: 1, components: [{ ...validMap.components[0], source: { kind: "terraform", ref: "main.tf#aws_apigatewayv2_api.gone", compare: { name: "name" } } }] };
+    const bad = {
+      version: 1,
+      components: [
+        {
+          ...validMap.components[0],
+          source: {
+            kind: "terraform",
+            ref: "main.tf#aws_apigatewayv2_api.gone",
+            compare: { name: "name" },
+          },
+        },
+      ],
+    };
     await writeFile(path.join(cwd, "uxfactory.map.json"), JSON.stringify(bad), "utf8");
     const io = makeIO();
     expect(await mapCheckCmd({ cwd }, io)).toBe(EXIT.GATE_FAIL);
@@ -1380,7 +1472,11 @@ describe("map check", () => {
   });
 
   it("returns 2 when the map is invalid", async () => {
-    await writeFile(path.join(cwd, "uxfactory.map.json"), JSON.stringify({ version: 9, components: [] }), "utf8");
+    await writeFile(
+      path.join(cwd, "uxfactory.map.json"),
+      JSON.stringify({ version: 9, components: [] }),
+      "utf8",
+    );
     const io = makeIO();
     expect(await mapCheckCmd({ cwd }, io)).toBe(EXIT.TRANSPORT);
   });
@@ -1590,7 +1686,12 @@ export async function mapScaffoldCmd(
   await writeMap(mapPath, merged);
 
   if (flags.json) {
-    io.out(JSON.stringify({ proposed: proposals.map((p) => p.component), total: merged.components.length }));
+    io.out(
+      JSON.stringify({
+        proposed: proposals.map((p) => p.component),
+        total: merged.components.length,
+      }),
+    );
   } else if (proposals.length === 0) {
     io.out("scaffold: no new component↔node links to propose");
   } else {
@@ -1623,16 +1724,24 @@ export async function mapCheckCmd(
   const dangling: Array<{ component: string; reason: string }> = [];
   for (const entry of map.components) {
     if (!(await sourceResolves(cwd, entry))) {
-      dangling.push({ component: entry.component, reason: `source ${entry.source.ref} does not resolve` });
+      dangling.push({
+        component: entry.component,
+        reason: `source ${entry.source.ref} does not resolve`,
+      });
     } else if (!(await specNodeExists(cwd, entry))) {
-      dangling.push({ component: entry.component, reason: `spec node ${entry.spec}#${entry.node} not found` });
+      dangling.push({
+        component: entry.component,
+        reason: `spec node ${entry.spec}#${entry.node} not found`,
+      });
     }
   }
 
   if (flags.json) {
     io.out(JSON.stringify({ ok: dangling.length === 0, dangling }));
   } else if (dangling.length === 0) {
-    io.out(`map check: ${map.components.length} entr${map.components.length === 1 ? "y" : "ies"} OK`);
+    io.out(
+      `map check: ${map.components.length} entr${map.components.length === 1 ? "y" : "ies"} OK`,
+    );
   } else {
     io.err(`map check: ${dangling.length} dangling entr${dangling.length === 1 ? "y" : "ies"}:`);
     for (const d of dangling) io.err(`  ${d.component}: ${d.reason}`);
@@ -1673,13 +1782,13 @@ import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 Remove the `["map", "4", …]` row from the `stubs` table so it reads:
 
 ```ts
-  const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["drift", "4", "Detect spec-vs-reality drift"],
-    ["render", "5", "Render a spec to an image offline"],
-    ["batch", "6", "Offline batch mode"],
-    ["review", "7", "Conformance review"],
-    ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
-  ];
+const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
+  ["drift", "4", "Detect spec-vs-reality drift"],
+  ["render", "5", "Render a spec to an image offline"],
+  ["batch", "6", "Offline batch mode"],
+  ["review", "7", "Conformance review"],
+  ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
+];
 ```
 
 > The `drift` row stays a stub for now — Task 5 removes it. Keeping it stubbed between tasks means `cli.ts` compiles and the bin behaves predictably after this commit.
@@ -1687,23 +1796,21 @@ Remove the `["map", "4", …]` row from the `stubs` table so it reads:
 Add the `map` command with its two subcommands immediately before the `for (const [name, phase, desc] of stubs)` loop:
 
 ```ts
-  const map = program
-    .command("map")
-    .description("Maintain the component map (scaffold/check)");
-  map
-    .command("scaffold")
-    .description("Propose component↔node links by name match into uxfactory.map.json")
-    .option("--json", "machine-readable output")
-    .action(async (opts: { json?: boolean }) => {
-      lastCode = await mapScaffoldCmd({ json: opts.json }, consoleIO);
-    });
-  map
-    .command("check")
-    .description("Verify every map entry resolves on both sides; exit 1 on a dangling entry")
-    .option("--json", "machine-readable output")
-    .action(async (opts: { json?: boolean }) => {
-      lastCode = await mapCheckCmd({ json: opts.json }, consoleIO);
-    });
+const map = program.command("map").description("Maintain the component map (scaffold/check)");
+map
+  .command("scaffold")
+  .description("Propose component↔node links by name match into uxfactory.map.json")
+  .option("--json", "machine-readable output")
+  .action(async (opts: { json?: boolean }) => {
+    lastCode = await mapScaffoldCmd({ json: opts.json }, consoleIO);
+  });
+map
+  .command("check")
+  .description("Verify every map entry resolves on both sides; exit 1 on a dangling entry")
+  .option("--json", "machine-readable output")
+  .action(async (opts: { json?: boolean }) => {
+    lastCode = await mapCheckCmd({ json: opts.json }, consoleIO);
+  });
 ```
 
 - [ ] **Step 6: Re-export from `src/index.ts`**
@@ -1784,7 +1891,15 @@ const spec = {
       width: 400,
       height: 400,
       children: [
-        { type: "shape", name: "api-gateway", x: 0, y: 0, width: 100, height: 40, characters: "8080" },
+        {
+          type: "shape",
+          name: "api-gateway",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 40,
+          characters: "8080",
+        },
       ],
     },
   ],
@@ -1804,7 +1919,11 @@ const map = {
       component: "api-gateway",
       spec: "deployment.uxfactory.json",
       node: "api-gateway",
-      source: { kind: "terraform", ref: "main.tf#aws_apigatewayv2_api.main", compare: { name: "name", characters: "target_port" } },
+      source: {
+        kind: "terraform",
+        ref: "main.tf#aws_apigatewayv2_api.main",
+        compare: { name: "name", characters: "target_port" },
+      },
     },
   ],
 };
@@ -1860,7 +1979,13 @@ describe("drift", () => {
     const compareLess = {
       version: 1,
       components: [
-        { component: "api-gateway", spec: "deployment.uxfactory.json", node: "api-gateway", source: { kind: "terraform", ref: "main.tf#aws_apigatewayv2_api.main" }, lastSynced: { render: "r_old", commit: "old111" } },
+        {
+          component: "api-gateway",
+          spec: "deployment.uxfactory.json",
+          node: "api-gateway",
+          source: { kind: "terraform", ref: "main.tf#aws_apigatewayv2_api.main" },
+          lastSynced: { render: "r_old", commit: "old111" },
+        },
       ],
     };
     await writeFile(path.join(cwd, "uxfactory.map.json"), JSON.stringify(compareLess), "utf8");
@@ -1900,43 +2025,57 @@ describe("drift", () => {
 Append to `packages/uxfactory-cli/test/publish.test.ts` (inside the existing `describe("publish", …)` block, reusing its `root`/`dataDir`/`handle`/`client`/`delay` fixtures):
 
 ```ts
-  it("auto-fills figmaId/lastSynced after a successful render without touching maintained fields", async () => {
-    // a node-name-matching map committed at the publish cwd (the temp root)
-    const map = {
-      version: 1,
-      components: [
-        {
-          component: "box",
-          spec: "spec.json",
-          node: "box",
-          source: { kind: "terraform", ref: "main.tf#aws_x.box", compare: { name: "name" } },
-        },
-      ],
-    };
-    const mapPath = path.join(root, "uxfactory.map.json");
-    await writeFile(mapPath, JSON.stringify(map), "utf8");
-    const maintainedBefore = JSON.stringify(map.components[0]);
+it("auto-fills figmaId/lastSynced after a successful render without touching maintained fields", async () => {
+  // a node-name-matching map committed at the publish cwd (the temp root)
+  const map = {
+    version: 1,
+    components: [
+      {
+        component: "box",
+        spec: "spec.json",
+        node: "box",
+        source: { kind: "terraform", ref: "main.tf#aws_x.box", compare: { name: "name" } },
+      },
+    ],
+  };
+  const mapPath = path.join(root, "uxfactory.map.json");
+  await writeFile(mapPath, JSON.stringify(map), "utf8");
+  const maintainedBefore = JSON.stringify(map.components[0]);
 
-    const io = makeIO();
-    const p = publishCmd(
-      specFile,
-      { wait: true, dataDir, cwd: root, gitHead: () => "deadbeef", timeoutMs: 3000, pollMs: 30 },
-      io,
-      client,
-    );
-    await delay(150);
-    await postReport(handle.url, makeReport()); // makeReport()'s node is named "box"
-    expect(await p).toBe(EXIT.OK);
+  const io = makeIO();
+  const p = publishCmd(
+    specFile,
+    { wait: true, dataDir, cwd: root, gitHead: () => "deadbeef", timeoutMs: 3000, pollMs: 30 },
+    io,
+    client,
+  );
+  await delay(150);
+  await postReport(handle.url, makeReport()); // makeReport()'s node is named "box"
+  expect(await p).toBe(EXIT.OK);
 
-    const updated = JSON.parse(await readFile(mapPath, "utf8")) as {
-      components: Array<{ component: string; spec: string; node: string; source: unknown; figmaId?: string; lastSynced?: { render: string; commit: string } }>;
-    };
-    const entry = updated.components[0]!;
-    expect(entry.figmaId).toBe("1:2"); // makeReport()'s node id
-    expect(entry.lastSynced).toEqual({ render: expect.any(String), commit: "deadbeef" });
-    // maintained fields unchanged
-    expect(JSON.stringify({ component: entry.component, spec: entry.spec, node: entry.node, source: entry.source })).toBe(maintainedBefore);
-  });
+  const updated = JSON.parse(await readFile(mapPath, "utf8")) as {
+    components: Array<{
+      component: string;
+      spec: string;
+      node: string;
+      source: unknown;
+      figmaId?: string;
+      lastSynced?: { render: string; commit: string };
+    }>;
+  };
+  const entry = updated.components[0]!;
+  expect(entry.figmaId).toBe("1:2"); // makeReport()'s node id
+  expect(entry.lastSynced).toEqual({ render: expect.any(String), commit: "deadbeef" });
+  // maintained fields unchanged
+  expect(
+    JSON.stringify({
+      component: entry.component,
+      spec: entry.spec,
+      node: entry.node,
+      source: entry.source,
+    }),
+  ).toBe(maintainedBefore);
+});
 ```
 
 Add `readFile` to the `node:fs/promises` import at the top of `publish.test.ts`:
@@ -2116,9 +2255,9 @@ export interface PublishFlags {
 In `publishCmd`, immediately after the `if (report === null) { … return EXIT.TRANSPORT; }` block (so a render has definitively landed), insert the auto-fill before the `--verify`/`--wait` branches:
 
 ```ts
-  // Auto-fill the committed map (if any) with the render's figmaId/lastSynced.
-  const cwd = flags.cwd ?? process.cwd();
-  await autoSyncMap(cwd, report, flags.gitHead ?? defaultGitHead(cwd), io);
+// Auto-fill the committed map (if any) with the render's figmaId/lastSynced.
+const cwd = flags.cwd ?? process.cwd();
+await autoSyncMap(cwd, report, flags.gitHead ?? defaultGitHead(cwd), io);
 ```
 
 Add these helpers at the bottom of the file:
@@ -2179,26 +2318,26 @@ import { driftCmd } from "./commands/drift.js";
 Remove the `["drift", "4", …]` row from the `stubs` table so it reads:
 
 ```ts
-  const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["render", "5", "Render a spec to an image offline"],
-    ["batch", "6", "Offline batch mode"],
-    ["review", "7", "Conformance review"],
-    ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
-  ];
+const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
+  ["render", "5", "Render a spec to an image offline"],
+  ["batch", "6", "Offline batch mode"],
+  ["review", "7", "Conformance review"],
+  ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
+];
 ```
 
 Add the `drift` command immediately after the `map` command wiring (before the stubs loop):
 
 ```ts
-  program
-    .command("drift")
-    .description("Detect spec-vs-reality drift via the component map")
-    .option("--json", "machine-readable output")
-    .option("--bridge <url>", "bridge base URL")
-    .action(async (opts: { json?: boolean; bridge?: string }) => {
-      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
-      lastCode = await driftCmd({ json: opts.json }, consoleIO, client);
-    });
+program
+  .command("drift")
+  .description("Detect spec-vs-reality drift via the component map")
+  .option("--json", "machine-readable output")
+  .option("--bridge <url>", "bridge base URL")
+  .action(async (opts: { json?: boolean; bridge?: string }) => {
+    const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+    lastCode = await driftCmd({ json: opts.json }, consoleIO, client);
+  });
 ```
 
 - [ ] **Step 6: Re-export from `src/index.ts`**
