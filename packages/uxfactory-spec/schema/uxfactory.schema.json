@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://uxfactory.dev/schema/uxfactory.schema.json",
+  "title": "UXFactory Spec",
+  "oneOf": [
+    { "$ref": "#/definitions/designSpec" },
+    { "$ref": "#/definitions/figjamSpec" },
+    { "$ref": "#/definitions/editOnlySpec" }
+  ],
+  "definitions": {
+    "hexColor": {
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$"
+    },
+    "shapeNode": {
+      "type": "object",
+      "required": ["type", "name", "x", "y", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "shape" },
+        "name": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "fill": { "$ref": "#/definitions/hexColor" },
+        "stroke": { "$ref": "#/definitions/hexColor" },
+        "strokeWidth": { "type": "number", "minimum": 0 },
+        "cornerRadius": { "type": "number", "minimum": 0 },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "characters": { "type": "string" }
+      }
+    },
+    "textNode": {
+      "type": "object",
+      "required": ["type", "name", "x", "y", "width", "height", "characters"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "text" },
+        "name": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "characters": { "type": "string" },
+        "fill": { "$ref": "#/definitions/hexColor" },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "instanceNode": {
+      "type": "object",
+      "required": ["type", "name", "asset", "x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "instance" },
+        "name": { "type": "string" },
+        "asset": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "stickyNode": {
+      "type": "object",
+      "required": ["type", "name", "x", "y", "characters"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "sticky" },
+        "name": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "characters": { "type": "string" },
+        "fill": { "$ref": "#/definitions/hexColor" }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "required": ["name", "x", "y", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "children": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/shapeNode" },
+              { "$ref": "#/definitions/textNode" },
+              { "$ref": "#/definitions/instanceNode" }
+            ]
+          }
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "required": ["name", "x", "y", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "children": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/shapeNode" },
+              { "$ref": "#/definitions/stickyNode" },
+              { "$ref": "#/definitions/instanceNode" }
+            ]
+          }
+        }
+      }
+    },
+    "connector": {
+      "type": "object",
+      "required": ["from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "editSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "name": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "visible": { "type": "boolean" },
+        "cornerRadius": { "type": "number", "minimum": 0 },
+        "fill": { "$ref": "#/definitions/hexColor" },
+        "stroke": { "$ref": "#/definitions/hexColor" },
+        "strokeWidth": { "type": "number", "minimum": 0 },
+        "characters": { "type": "string" }
+      }
+    },
+    "edit": {
+      "type": "object",
+      "required": ["set"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "set": { "$ref": "#/definitions/editSet" }
+      },
+      "anyOf": [{ "required": ["id"] }, { "required": ["name"] }]
+    },
+    "designSpec": {
+      "type": "object",
+      "required": ["frames"],
+      "additionalProperties": false,
+      "properties": {
+        "editor": { "const": "figma" },
+        "page": { "type": "string" },
+        "frames": { "type": "array", "items": { "$ref": "#/definitions/frame" } },
+        "connectors": { "type": "array", "items": { "$ref": "#/definitions/connector" } },
+        "edits": { "type": "array", "items": { "$ref": "#/definitions/edit" } }
+      }
+    },
+    "figjamSpec": {
+      "type": "object",
+      "required": ["editor", "sections"],
+      "additionalProperties": false,
+      "properties": {
+        "editor": { "const": "figjam" },
+        "page": { "type": "string" },
+        "sections": { "type": "array", "items": { "$ref": "#/definitions/section" } },
+        "connectors": { "type": "array", "items": { "$ref": "#/definitions/connector" } },
+        "edits": { "type": "array", "items": { "$ref": "#/definitions/edit" } }
+      }
+    },
+    "editOnlySpec": {
+      "type": "object",
+      "required": ["edits"],
+      "additionalProperties": false,
+      "properties": {
+        "editor": { "enum": ["figma", "figjam"] },
+        "edits": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/edit" } }
+      }
+    }
+  }
+}
