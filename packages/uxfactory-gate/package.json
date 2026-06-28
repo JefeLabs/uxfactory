@@ -1,0 +1,21 @@
+{
+  "name": "@uxfactory/gate",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20.10" },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json"
+  },
+  "dependencies": {
+    "@uxfactory/spec": "workspace:*"
+  }
+}

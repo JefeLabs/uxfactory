@@ -30,6 +30,12 @@ importers:
         specifier: 4.1.9
         version: 4.1.9(@types/node@26.0.1)(@vitest/coverage-v8@4.1.9)(jsdom@29.1.1)(vite@8.1.0(@types/node@26.0.1))
 
+  packages/uxfactory-gate:
+    dependencies:
+      '@uxfactory/spec':
+        specifier: workspace:*
+        version: link:../uxfactory-spec
+
   packages/uxfactory-spec:
     dependencies:
       ajv:
