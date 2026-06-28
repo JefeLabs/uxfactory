@@ -28,6 +28,10 @@ export async function publishCmd(
   io: IO,
   client: BridgeClient,
 ): Promise<number> {
+  if (flags.tolerance !== undefined && Number.isNaN(Number(flags.tolerance))) {
+    io.err(`invalid --tolerance: ${flags.tolerance}`);
+    return EXIT.TRANSPORT;
+  }
   const loaded = await loadSpec(file);
   if (!loaded.ok) return printSpecProblem(io, loaded, flags.json);
 

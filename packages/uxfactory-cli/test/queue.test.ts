@@ -39,6 +39,12 @@ describe("writeQueueFile", () => {
     expect(await readdir(path.join(dataDir, "queue"))).toContain("pub_custom_1.json");
   });
 
+  it("rejects a jobId with path-traversal characters", async () => {
+    await expect(writeQueueFile(dataDir, { edits: [] }, "../../evil")).rejects.toThrow(
+      /unsafe jobId/,
+    );
+  });
+
   it("produces a file the bridge's GET /next serves (queue contract)", async () => {
     const handle = await startBridge({ dataDir, port: 0 });
     try {

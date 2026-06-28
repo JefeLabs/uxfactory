@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { consoleIO } from "./io.js";
 import { EXIT } from "./exit.js";
@@ -9,8 +10,12 @@ import { verifyCmd } from "./commands/verify.js";
 import { publishCmd } from "./commands/publish.js";
 import { selectionCmd } from "./commands/selection.js";
 import { scanCmd } from "./commands/scan.js";
-import { bridgeCmd } from "./commands/bridge.js";
 import { stubCmd } from "./commands/stub.js";
+// bridgeCmd is lazy-loaded inside the action (Fix 2 — avoid pulling in fastify on every call)
+
+/** Module-scoped state reset by every run() call. */
+let lastCode: number = EXIT.OK;
+let foreground: boolean = false;
 
 /** Resolve the bridge base URL: --bridge, else UXFACTORY_PORT, else the 127.0.0.1 default. */
 function resolveBridgeUrl(opt?: string): string {
@@ -29,6 +34,11 @@ function resolveDataDir(opt?: string): string {
 /** Build the commander program wiring every command to its action function. */
 export function buildProgram(): Command {
   const program = new Command();
+  // exitOverride() must be set BEFORE .command() calls so subcommands inherit
+  // _exitCallback via copyInheritedSettings(). This maps all commander usage
+  // errors (unknown cmd, missing arg, unknown option) to throws instead of
+  // process.exit(1), allowing run() to remap them to EXIT.TRANSPORT (2).
+  program.exitOverride();
   program
     .name("uxfactory")
     .description("Render and verify structured Figma/FigJam diagrams from JSON specs")
@@ -40,6 +50,7 @@ export function buildProgram(): Command {
     .option("--port <port>", "port to listen on (default 3779 or UXFACTORY_PORT)")
     .option("--data-dir <path>", "data directory (default <cwd>/.uxfactory)")
     .action(async (opts: { port?: string; dataDir?: string }) => {
+      const { bridgeCmd } = await import("./commands/bridge.js");
       const { code } = await bridgeCmd(
         {
           ...(opts.port !== undefined ? { port: Number(opts.port) } : {}),
@@ -47,8 +58,12 @@ export function buildProgram(): Command {
         },
         consoleIO,
       );
-      // Do NOT close — foreground the relay (the open server keeps the process alive).
-      if (code !== EXIT.OK) process.exit(code);
+      if (code !== EXIT.OK) {
+        lastCode = code;
+      } else {
+        // Foreground relay: do NOT close — the open server keeps the event loop alive.
+        foreground = true;
+      }
     });
 
   program
@@ -56,7 +71,7 @@ export function buildProgram(): Command {
     .description("Validate a spec against the schema; renders nothing")
     .option("--json", "machine-readable output")
     .action(async (spec: string, opts: { json?: boolean }) => {
-      process.exit(await lintCmd(spec, { json: opts.json }, consoleIO));
+      lastCode = await lintCmd(spec, { json: opts.json }, consoleIO);
     });
 
   program
@@ -83,20 +98,18 @@ export function buildProgram(): Command {
         },
       ) => {
         const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
-        process.exit(
-          await publishCmd(
-            spec,
-            {
-              wait: opts.wait,
-              verify: opts.verify,
-              tolerance: opts.tolerance,
-              dryRun: opts.dryRun,
-              json: opts.json,
-              dataDir: resolveDataDir(opts.dataDir),
-            },
-            consoleIO,
-            client,
-          ),
+        lastCode = await publishCmd(
+          spec,
+          {
+            wait: opts.wait,
+            verify: opts.verify,
+            tolerance: opts.tolerance,
+            dryRun: opts.dryRun,
+            json: opts.json,
+            dataDir: resolveDataDir(opts.dataDir),
+          },
+          consoleIO,
+          client,
         );
       },
     );
@@ -114,13 +127,11 @@ export function buildProgram(): Command {
         opts: { tolerance?: string; render?: string; json?: boolean; bridge?: string },
       ) => {
         const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
-        process.exit(
-          await verifyCmd(
-            spec,
-            { tolerance: opts.tolerance, render: opts.render, json: opts.json },
-            consoleIO,
-            client,
-          ),
+        lastCode = await verifyCmd(
+          spec,
+          { tolerance: opts.tolerance, render: opts.render, json: opts.json },
+          consoleIO,
+          client,
         );
       },
     );
@@ -132,7 +143,7 @@ export function buildProgram(): Command {
     .option("--bridge <url>", "bridge base URL")
     .action(async (opts: { json?: boolean; bridge?: string }) => {
       const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
-      process.exit(await selectionCmd({ json: opts.json }, consoleIO, client));
+      lastCode = await selectionCmd({ json: opts.json }, consoleIO, client);
     });
 
   program
@@ -141,8 +152,9 @@ export function buildProgram(): Command {
     .option("--json", "machine-readable output")
     .option("--data-dir <path>", "data directory")
     .action(async (opts: { json?: boolean; dataDir?: string }) => {
-      process.exit(
-        await scanCmd({ dataDir: resolveDataDir(opts.dataDir), json: opts.json }, consoleIO),
+      lastCode = await scanCmd(
+        { dataDir: resolveDataDir(opts.dataDir), json: opts.json },
+        consoleIO,
       );
     });
 
@@ -161,19 +173,39 @@ export function buildProgram(): Command {
       .argument("[args...]", "ignored until implemented")
       .allowUnknownOption(true)
       .action(() => {
-        process.exit(stubCmd(name, phase, consoleIO));
+        lastCode = stubCmd(name, phase, consoleIO);
       });
   }
 
   return program;
 }
 
-/** Parse argv and run the matched command (commander expects node + script in argv). */
-export async function run(argv: string[]): Promise<void> {
-  await buildProgram().parseAsync(argv);
+/**
+ * Parse argv and run the matched command.
+ * Returns the exit code, or "foreground" when the bridge server is running
+ * (caller must NOT call process.exit so the event loop stays alive).
+ *
+ * Commander usage errors (unknown command, missing arg, unknown option) are
+ * mapped to EXIT.TRANSPORT (2) via exitOverride(), keeping them distinct from
+ * EXIT.GATE_FAIL (1) per PRD §5.3.
+ */
+export async function run(argv: string[]): Promise<number | "foreground"> {
+  lastCode = EXIT.OK;
+  foreground = false;
+  const program = buildProgram(); // exitOverride already applied inside buildProgram
+  try {
+    await program.parseAsync(argv);
+  } catch (err) {
+    const e = err as { exitCode?: number };
+    // exitCode 0 = --help / --version (successful output, then "exit"); otherwise transport error
+    return e.exitCode === 0 ? EXIT.OK : EXIT.TRANSPORT;
+  }
+  return foreground ? "foreground" : lastCode;
 }
 
-run(process.argv).catch((err: unknown) => {
-  consoleIO.err(err instanceof Error ? err.message : String(err));
-  process.exit(EXIT.TRANSPORT);
-});
+// Guard: only auto-run when this file is the entry-point, not when imported in tests.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void run(process.argv).then((r) => {
+    if (r !== "foreground") process.exit(r);
+  });
+}

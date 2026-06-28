@@ -90,6 +90,12 @@ describe("verify", () => {
     expect((JSON.parse(io.outText()) as { status: string }).status).toBe("PASS");
   });
 
+  it("--tolerance abc → 2 (non-numeric tolerance rejected)", async () => {
+    const io = makeIO();
+    expect(await verifyCmd(specFile, { tolerance: "abc" }, io, client)).toBe(EXIT.TRANSPORT);
+    expect(io.errText()).toMatch(/invalid --tolerance/);
+  });
+
   it("returns 2 when the spec file is invalid", async () => {
     const bad = path.join(root, "bad.json");
     await writeFile(bad, JSON.stringify({ frames: [{ name: "f" }] }), "utf8");

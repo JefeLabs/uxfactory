@@ -21,6 +21,7 @@ export async function writeQueueFile(
   jobId?: string,
 ): Promise<string> {
   const id = jobId ?? newJobId();
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`unsafe jobId: ${id}`);
   const queueDir = path.join(dataDir, "queue");
   await mkdir(queueDir, { recursive: true });
   const finalPath = path.join(queueDir, `${id}.json`);
