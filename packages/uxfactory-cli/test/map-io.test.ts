@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { validateMap, MAINTAINED_FIELDS } from "../src/drift/map-schema.js";
@@ -111,6 +111,53 @@ describe("readMap", () => {
 });
 
 describe("writeMap / serializeMap", () => {
+  it("preserves unknown top-level entry keys on writeMap round-trip (Fix 3)", async () => {
+    // Simulate a hand-edited map with an extra `note` field not in the TypeScript schema
+    const rawWithNote = {
+      version: 1 as const,
+      components: [
+        {
+          component: "api-gateway",
+          spec: "deployment.uxfactory.json",
+          node: "api-gateway",
+          source: {
+            kind: "terraform" as const,
+            ref: "infra/main.tf#aws_x.main",
+          },
+          note: "custom maintainer annotation",
+        },
+      ],
+    };
+    await writeMap(mapPath, rawWithNote as unknown as ComponentMap);
+    const text = await readFile(mapPath, "utf8");
+    const parsed = JSON.parse(text) as { components: Array<Record<string, unknown>> };
+    expect(parsed.components[0]?.note).toBe("custom maintainer annotation");
+  });
+
+  it("preserves unknown source-level keys on writeMap round-trip (Fix 3)", async () => {
+    const rawWithSourceExtra = {
+      version: 1 as const,
+      components: [
+        {
+          component: "api-gateway",
+          spec: "deployment.uxfactory.json",
+          node: "api-gateway",
+          source: {
+            kind: "terraform" as const,
+            ref: "infra/main.tf#aws_x.main",
+            annotation: "future-field",
+          },
+        },
+      ],
+    };
+    await writeMap(mapPath, rawWithSourceExtra as unknown as ComponentMap);
+    const text = await readFile(mapPath, "utf8");
+    const parsed = JSON.parse(text) as {
+      components: Array<{ source: Record<string, unknown> }>;
+    };
+    expect(parsed.components[0]?.source.annotation).toBe("future-field");
+  });
+
   it("emits a stable key order, 2-space indent, and a trailing newline", () => {
     const text = serializeMap(sampleMap);
     expect(text.endsWith("}\n")).toBe(true);

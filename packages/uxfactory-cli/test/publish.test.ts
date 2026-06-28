@@ -120,6 +120,40 @@ describe("publish", () => {
     expect(io.outText()).toContain("FAIL");
   });
 
+  it("omits commit from lastSynced when gitHead returns null (Fix 4)", async () => {
+    const map = {
+      version: 1,
+      components: [
+        {
+          component: "box",
+          spec: "spec.json",
+          node: "box",
+          source: { kind: "terraform", ref: "main.tf#aws_x.box", compare: { name: "name" } },
+        },
+      ],
+    };
+    const mapPath = path.join(root, "uxfactory.map.json");
+    await writeFile(mapPath, JSON.stringify(map), "utf8");
+
+    const io = makeIO();
+    const p = publishCmd(
+      specFile,
+      { wait: true, dataDir, cwd: root, gitHead: () => null, timeoutMs: 3000, pollMs: 30 },
+      io,
+      client,
+    );
+    await delay(150);
+    await postReport(handle.url, makeReport());
+    expect(await p).toBe(EXIT.OK);
+
+    const updated = JSON.parse(await readFile(mapPath, "utf8")) as {
+      components: Array<{ lastSynced?: { render: string; commit?: string } }>;
+    };
+    // commit must be absent — never an empty string
+    expect(updated.components[0]?.lastSynced?.render).toBeDefined();
+    expect(updated.components[0]?.lastSynced?.commit).toBeUndefined();
+  });
+
   it("auto-fills figmaId/lastSynced after a successful render without touching maintained fields", async () => {
     // a node-name-matching map committed at the publish cwd (the temp root)
     const map = {
@@ -170,5 +204,7 @@ describe("publish", () => {
         source: entry.source,
       }),
     ).toBe(maintainedBefore);
+    // Fix 5: count message reflects matched entries, not total (1 matched of 1 total)
+    expect(io.outText()).toContain("1 component(s)");
   });
 });

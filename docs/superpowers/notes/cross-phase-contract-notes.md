@@ -47,6 +47,15 @@ The bridge does NOT expose a `publish`/enqueue HTTP endpoint. Per PRD §10.3, `u
 - **`engines.node`: `>=20.10`** everywhere (import-attributes `with { type: "json" }` floor).
 - **Built artifacts must load in real Node** — add a CI step (and a task verify step) that imports the compiled package and exercises it, since Vitest/esbuild transforms can mask real-Node ESM issues.
 
+## Drift `compare` contract (Phase 4 — §11.1)
+
+The `source.compare` map on a `ComponentMap` entry is the bridge between infra attributes and spec-node properties for the precise field diff.
+
+- **Keys** are **spec-node property names** — they must be real properties that exist on a node object: `name`, `characters`, `fill`, `stroke`, `width`, `height`, `opacity`, etc. Using a key that is not a node property (e.g. `label`, `port`) will produce a permanent mismatch because `getByPath(node, "label")` returns `undefined` → the actual side is always `undefined`.
+- **Values** are **source attribute names** — the attribute key to read from the resolved source (`ResolvedSource.values`). For example, `{ characters: "target_port" }` reads `values["target_port"]` from the terraform/k8s/compose source and compares it to `specNode.characters`.
+- The PRD §11.1 example `{ label: "name", port: "container_port" }` uses fictional node properties. Real usage should use node property names from the `@uxfactory/spec` `ReportNode` shape (`name`, `characters`, `fill`, `stroke`, `cornerRadius`, `opacity`, `visible`, `x`, `y`, `w`, `h`).
+- Both sides are coerced to `String(value)` before comparison, so a YAML-parsed number `8080` matches the spec string `"8080"`.
+
 ## Known accepted limitations
 
 - **`findNode` first-match-by-name:** duplicate-named nodes collapse to the first match in `presence`/`geometry`; the `counts` check catches the cardinality mismatch. This is per PRD ("by `id`, else first-match `name`").

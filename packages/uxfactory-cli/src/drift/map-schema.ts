@@ -10,14 +10,25 @@ export interface MapSource {
   kind: "terraform" | "k8s" | "compose";
   /** `file#identifier`, e.g. `infra/main.tf#aws_apigatewayv2_api.main`. */
   ref: string;
-  /** Optional logical-field → source-attribute bindings enabling the precise field diff. */
+  /**
+   * Optional logical-field → source-attribute bindings enabling the precise field diff.
+   *
+   * Maps a **spec-node property name** (key) to the **source attribute name** (value).
+   * The key must be a real node property such as `name`, `characters`, or `fill` — it is
+   * used to look up the current value on the Figma/render node for comparison.
+   *
+   * Example: `{ characters: "target_port" }` reads `target_port` from the infra source and
+   * compares it against the spec node's `characters` property.  A key like `label` or `port`
+   * that does not exist on a node will always produce a mismatch.
+   */
   compare?: Record<string, string>;
 }
 
 /** What UXFactory auto-fills on every render. */
 export interface MapLastSynced {
   render: string;
-  commit: string;
+  /** Omitted when git is unavailable at publish time — never persisted as an empty string. */
+  commit?: string;
 }
 
 /** One row of the map: implemented component ↔ spec node ↔ Figma node. */

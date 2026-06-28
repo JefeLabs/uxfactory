@@ -222,7 +222,14 @@ async function autoSyncMap(
     return; // a malformed map should not break a good publish
   }
   if (map === null) return;
-  const updated = syncMapFromReport(map, report, gitHead() ?? "");
+  // Omit commit entirely when git is unavailable — never write an empty-string sentinel.
+  const headHash = gitHead();
+  const commit = headHash !== null && headHash.length > 0 ? headHash : undefined;
+  const updated = syncMapFromReport(map, report, commit);
+  // Count entries actually matched by node name (not total component count).
+  const matchedCount = map.components.filter((e) =>
+    report.nodes.some((n) => n.name === e.node),
+  ).length;
   await writeMap(mapPath, updated);
-  io.out(`map: synced figmaId/lastSynced for ${updated.components.length} component(s)`);
+  io.out(`map: synced figmaId/lastSynced for ${matchedCount} component(s)`);
 }

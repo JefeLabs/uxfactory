@@ -102,7 +102,10 @@ export async function driftCmd(flags: DriftFlags, io: IO, client: BridgeClient):
     staleness[entry.component] = head !== null && head !== entry.lastSynced?.commit;
   }
 
-  const discovered = (await discoverComponents(cwd)).map((d) => d.component);
+  const discovered = (await discoverComponents(cwd)).map((d) => ({
+    component: d.component,
+    ref: d.source.ref,
+  }));
 
   const drift = computeDrift({
     map,

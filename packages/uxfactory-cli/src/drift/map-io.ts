@@ -46,16 +46,21 @@ export function serializeMap(map: ComponentMap): string {
 }
 
 function orderEntry(e: MapEntry): Record<string, unknown> {
-  const source: Record<string, unknown> = { kind: e.source.kind, ref: e.source.ref };
-  if (e.source.compare !== undefined) source.compare = e.source.compare;
-  const out: Record<string, unknown> = {
-    component: e.component,
-    spec: e.spec,
-    node: e.node,
-    source,
-  };
-  if (e.figmaId !== undefined) out.figmaId = e.figmaId;
-  if (e.lastSynced !== undefined) out.lastSynced = e.lastSynced;
+  // Extract known fields so any unknown extras (e.g. a maintainer's `note`) are captured in `rest`.
+  const { component, spec, node, source, figmaId, lastSynced, ...entryRest } =
+    e as unknown as Record<string, unknown>;
+  const { kind, ref, compare, ...sourceRest } = (source ?? {}) as Record<string, unknown>;
+
+  // Known source keys first (kind → ref → compare), then any unknown source keys.
+  const orderedSource: Record<string, unknown> = { kind, ref };
+  if (compare !== undefined) orderedSource.compare = compare;
+  Object.assign(orderedSource, sourceRest);
+
+  // Known entry keys first (component → spec → node → source → figmaId → lastSynced), then unknowns.
+  const out: Record<string, unknown> = { component, spec, node, source: orderedSource };
+  if (figmaId !== undefined) out.figmaId = figmaId;
+  if (lastSynced !== undefined) out.lastSynced = lastSynced;
+  Object.assign(out, entryRest);
   return out;
 }
 
@@ -68,14 +73,19 @@ export interface AutoFill {
 /**
  * Return a NEW map with only `figmaId`/`lastSynced` changed on the named component;
  * every maintained field (`component`/`spec`/`node`/`source`) keeps its original
- * reference, so it is provably untouched. Pure — does not mutate `map`.
+ * reference, so it is provably untouched. Unknown extra fields on the entry are
+ * preserved (spread first so known auto-filled keys take precedence). Pure — does not mutate `map`.
  */
 export function setAutoFilled(map: ComponentMap, component: string, patch: AutoFill): ComponentMap {
   return {
     version: map.version,
     components: map.components.map((e) => {
       if (e.component !== component) return e;
+      // Spread e to carry through any unknown keys a maintainer may have added,
+      // then re-assert the maintained fields by original reference (never rebuilt),
+      // then apply auto-filled overrides.
       const next: MapEntry = {
+        ...e,
         // maintained fields: original references, never rebuilt
         component: e.component,
         spec: e.spec,

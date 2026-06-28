@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeDrift, syncMapFromReport, findSpecNode } from "../src/drift/drift-core.js";
-import type { DriftInput } from "../src/drift/drift-core.js";
+import type { DriftInput, DiscoveredRef } from "../src/drift/drift-core.js";
 import type { ComponentMap } from "../src/drift/map-schema.js";
 import type { Spec } from "@uxfactory/spec";
 import type { RenderReport } from "@uxfactory/bridge";
@@ -45,6 +45,12 @@ const map: ComponentMap = {
   ],
 };
 
+/** The ref synthesized by discovery for the map's single source entry. */
+const apiGatewayRef: DiscoveredRef = {
+  component: "api-gateway",
+  ref: "main.tf#aws_apigatewayv2_api.main",
+};
+
 const baseInput = (over: Partial<DriftInput> = {}): DriftInput => ({
   map,
   specs: { "deployment.uxfactory.json": spec },
@@ -55,7 +61,7 @@ const baseInput = (over: Partial<DriftInput> = {}): DriftInput => ({
       values: { name: "api-gateway", target_port: "8080" },
     },
   },
-  discoveredComponents: ["api-gateway"],
+  discoveredComponents: [apiGatewayRef],
   staleness: {},
   ...over,
 });
@@ -98,9 +104,64 @@ describe("computeDrift", () => {
   });
 
   it("emits an undiagrammed-orphan for a discovered component with no map entry", () => {
-    const r = computeDrift(baseInput({ discoveredComponents: ["api-gateway", "worker"] }));
+    const r = computeDrift(
+      baseInput({
+        discoveredComponents: [
+          apiGatewayRef,
+          { component: "worker", ref: "main.tf#aws_lambda_function.worker" },
+        ],
+      }),
+    );
     const orphan = r.findings.find((f) => f.kind === "undiagrammed-orphan");
     expect(orphan).toMatchObject({ component: "worker" });
+    expect(orphan?.detail).toContain("main.tf#aws_lambda_function.worker");
+  });
+
+  it("does NOT flag undiagrammed-orphan when source.ref matches even if component id differs (Fix 1 regression)", () => {
+    // Map uses the alias "gateway" but the source.ref is the same as what discovery produces.
+    const aliasMap: ComponentMap = {
+      version: 1,
+      components: [
+        {
+          component: "gateway", // different from the discovered name "api-gateway"
+          spec: "deployment.uxfactory.json",
+          node: "gateway",
+          source: {
+            kind: "terraform",
+            ref: "main.tf#aws_apigatewayv2_api.main", // matches the discovered ref
+            compare: { name: "name" },
+          },
+        },
+      ],
+    };
+    const r = computeDrift({
+      map: aliasMap,
+      specs: { "deployment.uxfactory.json": spec },
+      report: null,
+      sources: {
+        "main.tf#aws_apigatewayv2_api.main": { resolved: true, values: { name: "gateway" } },
+      },
+      // discovered ref matches the map's source.ref, even though names differ
+      discoveredComponents: [
+        { component: "api-gateway", ref: "main.tf#aws_apigatewayv2_api.main" },
+      ],
+      staleness: {},
+    });
+    expect(r.findings.filter((f) => f.kind === "undiagrammed-orphan")).toHaveLength(0);
+  });
+
+  it("still flags undiagrammed-orphan for a genuinely missing source ref", () => {
+    const r = computeDrift(
+      baseInput({
+        discoveredComponents: [
+          apiGatewayRef,
+          { component: "worker", ref: "main.tf#aws_lambda_function.worker" },
+        ],
+      }),
+    );
+    const orphans = r.findings.filter((f) => f.kind === "undiagrammed-orphan");
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]).toMatchObject({ component: "worker" });
   });
 
   it("emits a stale finding for a compare-less entry flagged by git-staleness", () => {
@@ -120,7 +181,7 @@ describe("computeDrift", () => {
       specs: { "deployment.uxfactory.json": spec },
       report: null,
       sources: { "compose.yaml#db": { resolved: true, values: {} } },
-      discoveredComponents: ["db"],
+      discoveredComponents: [{ component: "db", ref: "compose.yaml#db" }],
       staleness: { db: true },
     });
     expect(r.findings.map((f) => f.kind)).toContain("stale");
@@ -166,7 +227,7 @@ describe("computeDrift", () => {
       specs: numericSpecs,
       report: null,
       sources: numericSources,
-      discoveredComponents: ["svc"],
+      discoveredComponents: [{ component: "svc", ref: "k8s.yaml#svc" }],
       staleness: {},
     });
     expect(result.clean).toBe(true);
@@ -213,7 +274,7 @@ describe("computeDrift", () => {
       specs: numericSpecs,
       report: null,
       sources: numericSources,
-      discoveredComponents: ["svc"],
+      discoveredComponents: [{ component: "svc", ref: "k8s.yaml#svc" }],
       staleness: {},
     });
     expect(result.clean).toBe(false);
@@ -314,5 +375,16 @@ describe("syncMapFromReport", () => {
     };
     const next = syncMapFromReport(two, report, "abc123");
     expect(next.components[1]).toBe(two.components[1]);
+  });
+
+  it("omits commit from lastSynced when no commit is provided (Fix 4)", () => {
+    const next = syncMapFromReport(map, report); // no commit argument
+    expect(next.components[0]?.lastSynced?.render).toBe("r_42");
+    expect(next.components[0]?.lastSynced?.commit).toBeUndefined();
+  });
+
+  it("omits commit from lastSynced when an empty string commit is provided (Fix 4)", () => {
+    const next = syncMapFromReport(map, report, "");
+    expect(next.components[0]?.lastSynced?.commit).toBeUndefined();
   });
 });

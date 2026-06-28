@@ -24,6 +24,13 @@ export interface DriftReport {
   clean: boolean;
 }
 
+/** A component found in a source file, with its source ref for orphan detection. */
+export interface DiscoveredRef {
+  component: string;
+  /** The synthesized `source.ref` for this resource, e.g. `infra/main.tf#aws_x.main`. */
+  ref: string;
+}
+
 /** Fully pre-resolved input — the command layer does all I/O so this core stays pure. */
 export interface DriftInput {
   map: ComponentMap;
@@ -33,8 +40,13 @@ export interface DriftInput {
   report: RenderReport | null;
   /** `source.ref` → its resolution. */
   sources: Record<string, ResolvedSource>;
-  /** Component ids discovered in the source files. */
-  discoveredComponents: string[];
+  /**
+   * Components discovered in the source files, with their synthesized `source.ref` values.
+   * The undiagrammed-orphan check joins on `ref` (NOT on `component`), so a map entry
+   * whose `component` id differs from the resource name will not produce a false positive
+   * as long as `entry.source.ref === disc.ref`.
+   */
+  discoveredComponents: DiscoveredRef[];
   /** component → "git says the source changed since last render" (for compare-less entries). */
   staleness: Record<string, boolean>;
 }
@@ -42,7 +54,10 @@ export interface DriftInput {
 /** Pure comparator: map/spec/source/report in, structured drift report out. Deterministic. */
 export function computeDrift(input: DriftInput): DriftReport {
   const findings: DriftFinding[] = [];
-  const mapped = new Set(input.map.components.map((e) => e.component));
+  // Join key for orphan detection is source.ref, NOT the component display name.
+  // A map entry whose component id differs from the discovered resource name must NOT
+  // produce a false positive as long as entry.source.ref matches the discovered ref.
+  const mappedRefs = new Set(input.map.components.map((e) => e.source.ref));
 
   for (const entry of input.map.components) {
     const src = input.sources[entry.source.ref];
@@ -67,13 +82,15 @@ export function computeDrift(input: DriftInput): DriftReport {
     }
   }
 
-  // implemented-but-undiagrammed: a discovered component with no map entry
-  for (const name of input.discoveredComponents) {
-    if (!mapped.has(name)) {
+  // implemented-but-undiagrammed: a discovered source ref with no map entry.
+  // We compare by source.ref so that a map entry with a different component id
+  // (e.g. a human-assigned alias) does not generate a spurious orphan finding.
+  for (const disc of input.discoveredComponents) {
+    if (!mappedRefs.has(disc.ref)) {
       findings.push({
         kind: "undiagrammed-orphan",
-        component: name,
-        detail: `component "${name}" exists in source but has no map entry (implemented but undiagrammed)`,
+        component: disc.component,
+        detail: `component "${disc.component}" (ref: ${disc.ref}) exists in source but has no map entry (implemented but undiagrammed)`,
       });
     }
   }
@@ -140,20 +157,24 @@ export function findSpecNode(spec: Spec | undefined, name: string): Record<strin
 /**
  * Auto-fill `figmaId` + `lastSynced` for every entry whose `node` matches a render-report
  * node by name. Pure — returns a new map; maintained fields are never touched (via setAutoFilled).
+ *
+ * `commit` is optional: when git is unavailable, pass `undefined` (or omit it) and the
+ * `lastSynced.commit` field will be omitted entirely — never written as an empty string.
  */
 export function syncMapFromReport(
   map: ComponentMap,
   report: RenderReport,
-  commit: string,
+  commit?: string,
 ): ComponentMap {
   let next = map;
   for (const entry of map.components) {
     const node = report.nodes.find((n) => n.name === entry.node);
     if (node === undefined) continue;
-    next = setAutoFilled(next, entry.component, {
-      figmaId: node.id,
-      lastSynced: { render: report.renderId, commit },
-    });
+    const lastSynced =
+      commit !== undefined && commit.length > 0
+        ? { render: report.renderId, commit }
+        : { render: report.renderId };
+    next = setAutoFilled(next, entry.component, { figmaId: node.id, lastSynced });
   }
   return next;
 }

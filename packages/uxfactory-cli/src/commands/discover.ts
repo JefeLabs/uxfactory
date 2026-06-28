@@ -16,37 +16,132 @@ export interface SpecNodes {
   nodes: string[];
 }
 
-/** Classify a top-level file name into a source kind, or null if it is not one we read. */
-function classify(file: string): MapSource["kind"] | null {
-  if (file.endsWith(".tf")) return "terraform";
-  if (file.endsWith(".k8s.yaml") || file.endsWith(".k8s.yml")) return "k8s";
-  if (["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"].includes(file)) {
+/** Directory names to skip entirely during recursive walk. */
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".uxfactory"]);
+
+/** Maximum depth to recurse from cwd (depth 0 = cwd entries, 1 = first level subdirs, …). */
+const MAX_DEPTH = 4;
+
+/**
+ * Recursively collect all files under `dir`, up to MAX_DEPTH levels deep from `cwd`.
+ * Returns objects with the file's absolute path and its path relative to `cwd`.
+ * Skips SKIP_DIRS directory names at any level.
+ */
+async function walkFiles(
+  cwd: string,
+  dir: string,
+  depth: number,
+): Promise<Array<{ relPath: string; absPath: string }>> {
+  if (depth > MAX_DEPTH) return [];
+  const results: Array<{ relPath: string; absPath: string }> = [];
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const entry of entries) {
+    const absPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      results.push(...(await walkFiles(cwd, absPath, depth + 1)));
+    } else if (entry.isFile()) {
+      results.push({ relPath: path.relative(cwd, absPath), absPath });
+    }
+  }
+  return results;
+}
+
+/**
+ * Classify a file by name/extension alone.
+ * - "terraform"   : *.tf
+ * - "compose"     : explicit compose filenames (docker-compose.yml, compose.yaml, …)
+ * - "k8s"         : *.k8s.yaml / *.k8s.yml (explicit k8s marker)
+ * - "yaml-content": *.yaml / *.yml — must inspect content to distinguish compose vs k8s
+ * - null          : not a candidate source file
+ */
+function classifyByName(relPath: string): MapSource["kind"] | "yaml-content" | null {
+  if (relPath.endsWith(".tf")) return "terraform";
+  const base = path.basename(relPath);
+  if (
+    base === "compose.yaml" ||
+    base === "compose.yml" ||
+    base === "docker-compose.yaml" ||
+    base === "docker-compose.yml"
+  ) {
     return "compose";
+  }
+  if (relPath.endsWith(".k8s.yaml") || relPath.endsWith(".k8s.yml")) return "k8s";
+  if (relPath.endsWith(".yaml") || relPath.endsWith(".yml")) return "yaml-content";
+  return null;
+}
+
+/**
+ * Disambiguate a YAML file by content:
+ * - "compose" : first document has a top-level `services:` object
+ * - "k8s"     : any document has both `apiVersion` and `kind` string fields
+ * - null      : neither → skip
+ */
+function classifyYamlContent(content: string): "k8s" | "compose" | null {
+  let docs: unknown[];
+  try {
+    docs = parseAllDocuments(content).map((d) => d.toJS() as unknown);
+  } catch {
+    return null;
+  }
+  if (docs.length === 0) return null;
+
+  // Compose: top-level `services:` object in the first document
+  const first = docs[0];
+  if (typeof first === "object" && first !== null) {
+    const f = first as Record<string, unknown>;
+    if (typeof f.services === "object" && f.services !== null) return "compose";
+  }
+
+  // k8s: any document declares apiVersion + kind
+  for (const d of docs) {
+    const o = d as { apiVersion?: unknown; kind?: unknown };
+    if (typeof o.apiVersion === "string" && typeof o.kind === "string") return "k8s";
   }
   return null;
 }
 
-/** Walk known source files at the top level of `cwd`; return one entry per discovered component. */
+/**
+ * Walk source files recursively under `cwd` (bounded to MAX_DEPTH, skipping SKIP_DIRS);
+ * return one entry per discovered component.
+ * Supports: *.tf (terraform), explicit compose filenames, *.k8s.yaml/yml, and generic
+ * *.yaml/yml that parse as either a Compose file (has `services:`) or a k8s manifest
+ * (has `apiVersion` + `kind`).
+ */
 export async function discoverComponents(cwd: string): Promise<DiscoveredComponent[]> {
-  let names: string[];
-  try {
-    names = await readdir(cwd);
-  } catch {
-    return [];
-  }
+  const allFiles = await walkFiles(cwd, cwd, 0);
+  // Sort for deterministic, alphabetical output
+  allFiles.sort((a, b) => a.relPath.localeCompare(b.relPath));
+
   const out: DiscoveredComponent[] = [];
-  for (const file of names.sort()) {
-    const kind = classify(file);
-    if (kind === null) continue;
+  for (const { relPath, absPath } of allFiles) {
+    const byName = classifyByName(relPath);
+    if (byName === null) continue;
+
     let content: string;
     try {
-      content = await readFile(path.join(cwd, file), "utf8");
+      content = await readFile(absPath, "utf8");
     } catch {
       continue;
     }
-    if (kind === "terraform") out.push(...discoverTerraform(file, content));
-    else if (kind === "k8s") out.push(...discoverK8s(file, content));
-    else out.push(...discoverCompose(file, content));
+
+    let kind: MapSource["kind"];
+    if (byName === "yaml-content") {
+      const detected = classifyYamlContent(content);
+      if (detected === null) continue;
+      kind = detected;
+    } else {
+      kind = byName;
+    }
+
+    if (kind === "terraform") out.push(...discoverTerraform(relPath, content));
+    else if (kind === "k8s") out.push(...discoverK8s(relPath, content));
+    else out.push(...discoverCompose(relPath, content));
   }
   return out;
 }
