@@ -126,6 +126,106 @@ describe("computeDrift", () => {
     expect(r.findings.map((f) => f.kind)).toContain("stale");
   });
 
+  it("does not flag a field when a numeric source value matches a string spec value", () => {
+    // source value is a NUMBER (as a YAML resolver would return), spec node has the string form
+    const numericMap: ComponentMap = {
+      version: 1,
+      components: [
+        {
+          component: "svc",
+          spec: "s.json",
+          node: "svc",
+          source: { kind: "k8s", ref: "k8s.yaml#svc", compare: { characters: "port" } },
+        },
+      ],
+    };
+    const numericSpecs = {
+      "s.json": {
+        frames: [
+          {
+            name: "f",
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            children: [
+              { type: "shape", name: "svc", x: 0, y: 0, width: 1, height: 1, characters: "8080" },
+            ],
+          },
+        ],
+      } as Spec,
+    };
+    const numericSources = {
+      "k8s.yaml#svc": {
+        resolved: true,
+        values: { port: 8080 } as unknown as Record<string, string>, // NUMBER, not "8080"
+      },
+    };
+    const result = computeDrift({
+      map: numericMap,
+      specs: numericSpecs,
+      report: null,
+      sources: numericSources,
+      discoveredComponents: ["svc"],
+      staleness: {},
+    });
+    expect(result.clean).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("flags a field when a numeric source value does NOT match the string spec value", () => {
+    // source value is a NUMBER 9090, spec node has string "8080" — should still produce a finding
+    const numericMap: ComponentMap = {
+      version: 1,
+      components: [
+        {
+          component: "svc",
+          spec: "s.json",
+          node: "svc",
+          source: { kind: "k8s", ref: "k8s.yaml#svc", compare: { characters: "port" } },
+        },
+      ],
+    };
+    const numericSpecs = {
+      "s.json": {
+        frames: [
+          {
+            name: "f",
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            children: [
+              { type: "shape", name: "svc", x: 0, y: 0, width: 1, height: 1, characters: "8080" },
+            ],
+          },
+        ],
+      } as Spec,
+    };
+    const numericSources = {
+      "k8s.yaml#svc": {
+        resolved: true,
+        values: { port: 9090 } as unknown as Record<string, string>, // NUMBER 9090 ≠ "8080"
+      },
+    };
+    const result = computeDrift({
+      map: numericMap,
+      specs: numericSpecs,
+      report: null,
+      sources: numericSources,
+      discoveredComponents: ["svc"],
+      staleness: {},
+    });
+    expect(result.clean).toBe(false);
+    const field = result.findings.find((f) => f.kind === "field");
+    expect(field).toMatchObject({
+      component: "svc",
+      property: "characters",
+      expected: "9090",
+      actual: "8080",
+    });
+  });
+
   it("falls back to the render node when the spec node lacks the property", () => {
     const specNoChars: Spec = {
       editor: "figma",

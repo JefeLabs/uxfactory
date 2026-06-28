@@ -91,8 +91,9 @@ function fieldDiffs(
   const specNode = findSpecNode(specs[entry.spec], entry.node);
   const reportNode = report?.nodes.find((n) => n.name === entry.node) ?? null;
   for (const [logical, attr] of Object.entries(entry.source.compare ?? {})) {
-    const expected = src.values[attr]; // reality (code/infra)
-    if (expected === undefined) continue; // attribute not present in source → nothing to diff
+    const expectedRaw = src.values[attr] as unknown; // reality (code/infra); YAML may produce number/boolean
+    if (expectedRaw === undefined || expectedRaw === null) continue; // attribute not present → nothing to diff
+    const expected = String(expectedRaw); // coerce so numeric "8080" === string "8080"
     const fromSpec = specNode !== null ? getByPath(specNode, logical) : undefined;
     const actualRaw =
       fromSpec !== undefined
