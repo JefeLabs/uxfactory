@@ -1,5 +1,13 @@
 packages:
   - "packages/*"
   - "clients/*"
+# Dependency build scripts are blocked by pnpm 11 unless allowlisted here.
+# esbuild has a postinstall (node install.js) that sets up its platform binary;
+# the Figma plugin build (scripts/build-plugin.mjs) needs it. Must be committed
+# so CI's fresh `pnpm install` approves it too.
+allowBuilds:
+  esbuild: true
+# pnpm's minimum-release-age policy: exempt the recent pinned versions we use.
 minimumReleaseAgeExclude:
   - prettier@3.9.1
+  - fastify@5.9.0
