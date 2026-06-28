@@ -37,7 +37,13 @@ export function collectChildren(spec: Spec): SpecChild[] {
       : [];
   for (const container of containers) {
     for (const child of container.children ?? []) {
-      children.push({ name: child.name, x: child.x, y: child.y, width: child.width, height: child.height });
+      children.push({
+        name: child.name,
+        x: child.x,
+        y: child.y,
+        width: child.width,
+        height: child.height,
+      });
     }
   }
   return children;
@@ -56,7 +62,10 @@ export function expectedCounts(spec: Spec): ReportCounts {
 }
 
 /** Find a report node by id (preferred) or first-match name. */
-export function findNode(report: RenderReport, target: { id?: string; name?: string }): ReportNode | undefined {
+export function findNode(
+  report: RenderReport,
+  target: { id?: string; name?: string },
+): ReportNode | undefined {
   if (target.id !== undefined) {
     const byId = report.nodes.find((n) => n.id === target.id);
     if (byId) return byId;

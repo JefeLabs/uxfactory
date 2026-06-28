@@ -4,7 +4,16 @@ import type { GateResult, GateOptions, CheckId } from "../src/result.js";
 
 describe("gate types", () => {
   it("models a render report", () => {
-    const node: ReportNode = { id: "1:2", name: "api-gateway", type: "shape", x: 80, y: 80, w: 160, h: 64, fill: "#1e88e5" };
+    const node: ReportNode = {
+      id: "1:2",
+      name: "api-gateway",
+      type: "shape",
+      x: 80,
+      y: 80,
+      w: 160,
+      h: 64,
+      fill: "#1e88e5",
+    };
     const report: RenderReport = {
       renderId: "r_1",
       editor: "figma",
