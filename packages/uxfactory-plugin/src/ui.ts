@@ -135,6 +135,7 @@ export function createUi(options: UiOptions = {}): UiController {
 
   function stop(): void {
     if (timer) clearInterval(timer);
+    if (typeof window !== "undefined") window.onmessage = null;
   }
 
   return {

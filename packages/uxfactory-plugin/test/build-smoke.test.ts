@@ -13,5 +13,6 @@ describe("built bundles", () => {
     expect(code).toContain("showUI"); // main thread bundled
     expect(html).toContain("http://localhost:3779"); // ui.ts bundle (BRIDGE const) inlined
     expect(html).toContain("<script>");
+    expect(html).not.toContain("<script src="); // inlining guarantee: no external script src
   });
 });

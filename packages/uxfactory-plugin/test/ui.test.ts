@@ -120,4 +120,55 @@ describe("ui health-driven panel", () => {
     await down.checkHealth(); // starts disconnected, ok=false → stays COMPACT
     expect(down.panel).toBe("COMPACT");
   });
+
+  it("single controller: COMPACT → CONNECTED_MIN on healthy, then CONNECTED_MIN → COMPACT on failing", async () => {
+    const postToMain = vi.fn();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      } as unknown as Response);
+
+    const ui = createUi({ postToMain, fetchImpl });
+
+    // First check: healthy → connect
+    await ui.checkHealth();
+    expect(ui.panel).toBe("CONNECTED_MIN");
+    expect(postToMain).toHaveBeenCalledWith({ type: "resize", width: 156, height: 72 });
+    expect(document.getElementById("status")!.textContent).toBe("Connected");
+
+    // Second check: failing → disconnect
+    await ui.checkHealth();
+    expect(ui.panel).toBe("COMPACT");
+    expect(postToMain).toHaveBeenCalledWith({ type: "resize", width: 540, height: 220 });
+    expect(document.getElementById("status")!.textContent).toBe("Disconnected");
+
+    // Both transitions posted a resize
+    const resizeCalls = postToMain.mock.calls.filter((c) => c[0].type === "resize");
+    expect(resizeCalls).toHaveLength(2);
+  });
+});
+
+describe("ui selection main-message", () => {
+  it("POSTs the selection payload to /selection", async () => {
+    const fetchImpl = okFetch({});
+    const ui = createUi({ fetchImpl, postToMain: vi.fn() });
+    const selection = {
+      page: "Page 1",
+      fileName: "MyFile",
+      fileKey: "abc123",
+      nodes: [{ id: "1:2", name: "Rect", type: "RECTANGLE", x: 0, y: 0, w: 100, h: 50 }],
+    };
+    await ui.onMainMessage({ type: "selection", selection });
+    const [url, init] = fetchImpl.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:3779/selection");
+    expect(JSON.parse(init.body as string)).toEqual(selection);
+  });
 });
