@@ -1,0 +1,10 @@
+{
+  "name": "uxfactory",
+  "version": "0.1.0",
+  "description": "Design-as-code for Figma: render and verify structured diagrams (architecture, deployment, retro boards, release flows) from JSON specs by driving the uxfactory CLI.",
+  "author": { "name": "JefeLabs", "url": "https://github.com/uxfactory" },
+  "homepage": "https://uxfactory.dev",
+  "repository": "https://github.com/uxfactory/uxfactory",
+  "license": "MIT",
+  "keywords": ["figma", "design-as-code", "diagrams", "architecture", "verification"]
+}

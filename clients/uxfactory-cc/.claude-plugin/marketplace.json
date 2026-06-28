@@ -1,0 +1,13 @@
+{
+  "name": "uxfactory",
+  "owner": { "name": "JefeLabs", "url": "https://github.com/uxfactory" },
+  "description": "UXFactory — design-as-code rendering and verification for Figma, driven from Claude Code.",
+  "plugins": [
+    {
+      "name": "uxfactory",
+      "source": "./",
+      "description": "Render and verify structured Figma diagrams from JSON specs via the uxfactory CLI; bundles the skill, slash commands, and sync/drift hooks.",
+      "version": "0.1.0"
+    }
+  ]
+}
