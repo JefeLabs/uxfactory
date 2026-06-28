@@ -155,9 +155,9 @@ describe("batch", () => {
     const firstItemId = batch!.items[0]!.itemId;
     expect(await store.pending()).toBe(0);
     const updated = await store.approveBatch(batchId, [firstItemId]);
-    expect(updated.status).toBe("approved");
-    expect(updated.items[0]?.status).toBe("approved");
-    expect(updated.items[1]?.status).toBe("rejected");
+    expect(updated?.status).toBe("approved");
+    expect(updated?.items[0]?.status).toBe("approved");
+    expect(updated?.items[1]?.status).toBe("rejected");
     expect(await store.pending()).toBe(1);
   });
 
@@ -166,6 +166,35 @@ describe("batch", () => {
     await store.saveBatch({ items: [{ spec: { edits: [{ id: "1", set: { x: 1 } }] } }] });
     expect((await store.getBatch())?.status).toBe("pending");
     expect(await store.getBatch("missing")).toBeNull();
+  });
+});
+
+describe("path-traversal hardening", () => {
+  it("rejects path-traversal ids on lookups (returns null, no escape)", async () => {
+    expect(await store.getReport("../../etc/passwd")).toBeNull();
+    expect(await store.getVerify("../x")).toBeNull();
+    expect(await store.getBatch("../x")).toBeNull();
+    expect(await store.approveBatch("../x", [])).toBeNull();
+  });
+
+  it("saveReport ignores an unsafe renderId and assigns a safe one", async () => {
+    const stored = await store.saveReport({
+      renderId: "r/../../evil",
+      editor: "figma",
+      page: "p",
+      pageKey: "0:1",
+      fileName: "f",
+      fileKey: "k",
+      counts: { frames: 0, sections: 0, objects: 0, connectors: 0 },
+      nodes: [],
+    });
+    expect(/^[A-Za-z0-9_-]+$/.test(stored.renderId)).toBe(true);
+    const back = await store.getReport(stored.renderId);
+    expect(back?.renderId).toBe(stored.renderId);
+  });
+
+  it("enqueue throws on an explicit unsafe jobId", async () => {
+    await expect(store.enqueue({ edits: [] }, "../../evil")).rejects.toThrow();
   });
 });
 

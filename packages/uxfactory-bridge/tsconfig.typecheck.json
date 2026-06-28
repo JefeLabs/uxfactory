@@ -3,7 +3,6 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": "..",
-    "typeRoots": ["../../node_modules/@types"],
     "types": ["node"],
     "paths": {
       "@uxfactory/spec": ["../uxfactory-spec/src/index.ts"],

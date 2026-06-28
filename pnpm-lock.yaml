@@ -44,6 +44,10 @@ importers:
       fastify:
         specifier: 5.9.0
         version: 5.9.0
+    devDependencies:
+      '@types/node':
+        specifier: 26.0.1
+        version: 26.0.1
 
   packages/uxfactory-gate:
     dependencies:

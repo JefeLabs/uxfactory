@@ -2,6 +2,11 @@ import { mkdir, readFile, writeFile, readdir, rename, stat, unlink } from "node:
 import path from "node:path";
 import type { RenderReport, GateResult } from "@uxfactory/gate";
 
+/** Reject ids that could escape dataDir via path traversal. Only safe chars allowed. */
+function isSafeId(id: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(id);
+}
+
 /** One item inside a staged batch (PRD §7.7). */
 export interface BatchItem {
   itemId: string;
@@ -90,6 +95,9 @@ export class BridgeStore {
 
   /** Write the raw spec to `queue/<jobId>.json`; generate a jobId if none given. */
   async enqueue(spec: unknown, jobId?: string): Promise<string> {
+    if (jobId !== undefined && !isSafeId(jobId)) {
+      throw new Error(`unsafe jobId: ${jobId}`);
+    }
     const id = jobId ?? this.newJobId();
     await writeFile(path.join(this.queueDir, `${id}.json`), JSON.stringify(spec, null, 2), "utf8");
     return id;
@@ -126,10 +134,12 @@ export class BridgeStore {
 
   // --- render reports ---
 
-  /** Persist a report; assign a renderId if missing/empty. Tracks the latest in memory. */
+  /** Persist a report; assign a renderId if missing/empty/unsafe. Tracks the latest in memory. */
   async saveReport(report: RenderReport): Promise<RenderReport> {
     const renderId =
-      report.renderId && report.renderId.length > 0 ? report.renderId : this.newRenderId();
+      report.renderId && report.renderId.length > 0 && isSafeId(report.renderId)
+        ? report.renderId
+        : this.newRenderId();
     const stored: RenderReport = { ...report, renderId };
     await writeFile(
       path.join(this.rendersDir, `${renderId}.json`),
@@ -142,6 +152,7 @@ export class BridgeStore {
 
   /** Read a report by id, or the latest (in-memory, else newest file by mtime). null if none. */
   async getReport(renderId?: string): Promise<RenderReport | null> {
+    if (renderId !== undefined && !isSafeId(renderId)) return null;
     const id = renderId ?? this.latestRenderId ?? (await this.newestReportId());
     if (id === null) return null;
     try {
@@ -190,6 +201,7 @@ export class BridgeStore {
   // --- verify results (keep newest 50) ---
 
   async saveVerify(result: GateResult & { verifyId: string }): Promise<void> {
+    if (!isSafeId(result.verifyId)) throw new Error(`unsafe verifyId`);
     await writeFile(
       path.join(this.verifyDir, `${result.verifyId}.json`),
       JSON.stringify(result, null, 2),
@@ -199,6 +211,7 @@ export class BridgeStore {
   }
 
   async getVerify(verifyId: string): Promise<(GateResult & { verifyId: string }) | null> {
+    if (!isSafeId(verifyId)) return null;
     try {
       const raw = await readFile(path.join(this.verifyDir, `${verifyId}.json`), "utf8");
       return JSON.parse(raw) as GateResult & { verifyId: string };
@@ -243,6 +256,7 @@ export class BridgeStore {
   }
 
   async getBatch(batchId?: string): Promise<Batch | null> {
+    if (batchId !== undefined && !isSafeId(batchId)) return null;
     if (batchId !== undefined) {
       try {
         const raw = await readFile(path.join(this.batchDir, `${batchId}.json`), "utf8");
@@ -269,9 +283,10 @@ export class BridgeStore {
     return null;
   }
 
-  async approveBatch(batchId: string, approvedItemIds: string[]): Promise<Batch> {
+  async approveBatch(batchId: string, approvedItemIds: string[]): Promise<Batch | null> {
+    if (!isSafeId(batchId)) return null;
     const batch = await this.getBatch(batchId);
-    if (batch === null) throw new Error(`unknown batch: ${batchId}`);
+    if (batch === null) return null;
     const approved = new Set(approvedItemIds);
     for (const item of batch.items) {
       item.status = approved.has(item.itemId) ? "approved" : "rejected";
