@@ -50,3 +50,14 @@ The bridge does NOT expose a `publish`/enqueue HTTP endpoint. Per PRD §10.3, `u
 ## Known accepted limitations
 
 - **`findNode` first-match-by-name:** duplicate-named nodes collapse to the first match in `presence`/`geometry`; the `counts` check catches the cardinality mismatch. This is per PRD ("by `id`, else first-match `name`").
+
+## Phase 2 live-integration notes (plugin runs against REAL Figma + bridge)
+
+The plugin was built BUILD-TO-SPEC (no live Figma); the opus phase review surfaced live-correctness items. FIXED + tested via an extended mock: font loading (`loadFontAsync` before any text write — the mock throws otherwise), sticky/connector text via the `text.characters` TextSublayer, a render error boundary (failures post `render-error` instead of hanging), find-or-create target page, Cmd/Ctrl+Z undo, and graceful per-instance import failure. STILL OPEN — address before/at the first real-Figma run (the mock structurally cannot verify these):
+
+- **Instance asset → component key resolution is NOT implemented.** `importComponentByKeyAsync` needs a real published component key; the spec carries a friendly `asset` name (e.g. `aws:lambda`). The catalog (`.uxfactory/catalog.json` from `uxfactory scan`) maps friendly→key, but nothing wires it into the plugin. Until then, instance children are skipped (graceful, with a diff). Wiring options: the bridge serves the catalog to the UI, or specs are pre-resolved before publish. **Required before instances render live.**
+- **Undo does not re-post a report to the bridge.** After an undo, the bridge's stored render report is stale, so a subsequent `uxfactory verify` gates against the pre-undo state. Consider routing undo through the render/report pipeline or posting a fresh report on undo.
+- **No render idempotency.** Re-rendering the same spec APPENDS nodes rather than producing identical canvas state (§7.1). Live re-publish accumulates canvas content. Decide on clear-by-name / namespacing / a render manifest before relying on re-publish.
+- **PNG exports (§7.4) are not produced.** Deliberate (the gate ignores pixels, §12), but if the headless-preview/batch phases want page PNGs from the plugin, `exportAsync` must be wired into the report's `pagePng`.
+- **Document access is legacy-sync.** The manifest sets no `documentAccess: "dynamic-page"`; `getNodeById`/`currentPage` are sync. If adopting dynamic-page later, switch `findTarget`/selection reads to the async `getNodeByIdAsync` variants.
+- **§7.3 undo bound is 50 + Cmd+Z (done); native Figma Cmd+Z remains the cross-session truth.**
