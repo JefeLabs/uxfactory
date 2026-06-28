@@ -12,6 +12,7 @@ import { selectionCmd } from "./commands/selection.js";
 import { scanCmd } from "./commands/scan.js";
 import { stubCmd } from "./commands/stub.js";
 import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
+import { driftCmd } from "./commands/drift.js";
 // bridgeCmd is lazy-loaded inside the action (Fix 2 — avoid pulling in fastify on every call)
 
 /** Module-scoped state reset by every run() call. */
@@ -175,8 +176,17 @@ export function buildProgram(): Command {
       lastCode = await mapCheckCmd({ json: opts.json }, consoleIO);
     });
 
+  program
+    .command("drift")
+    .description("Detect spec-vs-reality drift via the component map")
+    .option("--json", "machine-readable output")
+    .option("--bridge <url>", "bridge base URL")
+    .action(async (opts: { json?: boolean; bridge?: string }) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await driftCmd({ json: opts.json }, consoleIO, client);
+    });
+
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["drift", "4", "Detect spec-vs-reality drift"],
     ["render", "5", "Render a spec to an image offline"],
     ["batch", "6", "Offline batch mode"],
     ["review", "7", "Conformance review"],

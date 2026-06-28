@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, readdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { startBridge } from "@uxfactory/bridge";
@@ -118,5 +118,57 @@ describe("publish", () => {
     await postReport(handle.url, makeReport({ nodes: [offNode] }));
     expect(await p).toBe(EXIT.GATE_FAIL);
     expect(io.outText()).toContain("FAIL");
+  });
+
+  it("auto-fills figmaId/lastSynced after a successful render without touching maintained fields", async () => {
+    // a node-name-matching map committed at the publish cwd (the temp root)
+    const map = {
+      version: 1,
+      components: [
+        {
+          component: "box",
+          spec: "spec.json",
+          node: "box",
+          source: { kind: "terraform", ref: "main.tf#aws_x.box", compare: { name: "name" } },
+        },
+      ],
+    };
+    const mapPath = path.join(root, "uxfactory.map.json");
+    await writeFile(mapPath, JSON.stringify(map), "utf8");
+    const maintainedBefore = JSON.stringify(map.components[0]);
+
+    const io = makeIO();
+    const p = publishCmd(
+      specFile,
+      { wait: true, dataDir, cwd: root, gitHead: () => "deadbeef", timeoutMs: 3000, pollMs: 30 },
+      io,
+      client,
+    );
+    await delay(150);
+    await postReport(handle.url, makeReport()); // makeReport()'s node is named "box"
+    expect(await p).toBe(EXIT.OK);
+
+    const updated = JSON.parse(await readFile(mapPath, "utf8")) as {
+      components: Array<{
+        component: string;
+        spec: string;
+        node: string;
+        source: unknown;
+        figmaId?: string;
+        lastSynced?: { render: string; commit: string };
+      }>;
+    };
+    const entry = updated.components[0]!;
+    expect(entry.figmaId).toBe("1:2"); // makeReport()'s node id
+    expect(entry.lastSynced).toEqual({ render: expect.any(String), commit: "deadbeef" });
+    // maintained fields unchanged
+    expect(
+      JSON.stringify({
+        component: entry.component,
+        spec: entry.spec,
+        node: entry.node,
+        source: entry.source,
+      }),
+    ).toBe(maintainedBefore);
   });
 });

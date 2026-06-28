@@ -25,3 +25,5 @@ export type { DriftFinding, DriftReport, DriftInput, DriftKind } from "./drift/d
 export { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 export { discoverComponents, readSpecNodes } from "./commands/discover.js";
 export type { DiscoveredComponent, SpecNodes } from "./commands/discover.js";
+export { driftCmd, defaultGitLastCommit } from "./commands/drift.js";
+export type { DriftFlags, GitLastCommit } from "./commands/drift.js";

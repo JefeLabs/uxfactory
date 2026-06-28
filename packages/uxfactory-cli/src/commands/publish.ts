@@ -1,7 +1,12 @@
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { EXIT, TransportError } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
 import { writeQueueFile, newJobId } from "../queue.js";
 import { reportVerify } from "./verify.js";
+import { readMap, writeMap } from "../drift/map-io.js";
+import { syncMapFromReport } from "../drift/drift-core.js";
+import type { ComponentMap } from "../drift/map-schema.js";
 import type { IO } from "../io.js";
 import type { BridgeClient } from "../client.js";
 import type { RenderReport } from "@uxfactory/bridge";
@@ -17,6 +22,10 @@ export interface PublishFlags {
   dryRun?: boolean;
   json?: boolean;
   dataDir: string;
+  /** Where uxfactory.map.json lives for auto-fill (default process.cwd()). */
+  cwd?: string;
+  /** Injectable HEAD-commit lookup for lastSynced.commit (default `git rev-parse HEAD`). */
+  gitHead?: () => string | null;
   timeoutMs?: number;
   pollMs?: number;
 }
@@ -96,6 +105,10 @@ export async function publishCmd(
     return EXIT.TRANSPORT;
   }
 
+  // Auto-fill the committed map (if any) with the render's figmaId/lastSynced.
+  const cwd = flags.cwd ?? process.cwd();
+  await autoSyncMap(cwd, report, flags.gitHead ?? defaultGitHead(cwd), io);
+
   if (flags.verify === true) {
     try {
       const { status, body } = await client.verify({
@@ -171,4 +184,45 @@ function summarize(spec: unknown): {
     connectors: Array.isArray(s.connectors) ? s.connectors.length : 0,
     edits: Array.isArray(s.edits) ? s.edits.length : 0,
   };
+}
+
+/** The default HEAD lookup: `git rev-parse HEAD` in `cwd`; null when git fails. */
+function defaultGitHead(cwd: string): () => string | null {
+  return () => {
+    try {
+      const out = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const h = out.trim();
+      return h.length > 0 ? h : null;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * After a successful render, auto-fill figmaId/lastSynced in uxfactory.map.json if it exists.
+ * Uses the pure syncMapFromReport, so the maintained fields are never edited. A broken/absent
+ * map must never fail an otherwise-successful publish.
+ */
+async function autoSyncMap(
+  cwd: string,
+  report: RenderReport,
+  gitHead: () => string | null,
+  io: IO,
+): Promise<void> {
+  const mapPath = path.join(cwd, "uxfactory.map.json");
+  let map: ComponentMap | null;
+  try {
+    map = await readMap(mapPath);
+  } catch {
+    return; // a malformed map should not break a good publish
+  }
+  if (map === null) return;
+  const updated = syncMapFromReport(map, report, gitHead() ?? "");
+  await writeMap(mapPath, updated);
+  io.out(`map: synced figmaId/lastSynced for ${updated.components.length} component(s)`);
 }
