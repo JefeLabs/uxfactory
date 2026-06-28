@@ -940,48 +940,48 @@ interface EditWaiter {
 Inside `createBridge`, add the waiter map immediately after `await app.register(cors, { origin: true });`:
 
 ```ts
-  const waiters = new Map<string, EditWaiter>();
+const waiters = new Map<string, EditWaiter>();
 ```
 
 Insert these handlers inside `createBridge`, immediately before `void editTimeoutMs;`:
 
 ```ts
-  // --- render reports ---
+// --- render reports ---
 
-  app.post("/rendered", async (req) => {
-    store.markPluginSeen();
-    const body = req.body as RenderReport & { jobId?: string };
-    const stored = await store.saveReport(body);
-    if (typeof body.jobId === "string") {
-      const waiter = waiters.get(body.jobId);
-      if (waiter !== undefined) {
-        clearTimeout(waiter.timer);
-        waiters.delete(body.jobId);
-        waiter.resolve(stored);
-      }
+app.post("/rendered", async (req) => {
+  store.markPluginSeen();
+  const body = req.body as RenderReport & { jobId?: string };
+  const stored = await store.saveReport(body);
+  if (typeof body.jobId === "string") {
+    const waiter = waiters.get(body.jobId);
+    if (waiter !== undefined) {
+      clearTimeout(waiter.timer);
+      waiters.delete(body.jobId);
+      waiter.resolve(stored);
     }
-    return { renderId: stored.renderId };
-  });
+  }
+  return { renderId: stored.renderId };
+});
 
-  app.get("/rendered", async (_req, reply) => {
-    const report = await store.getReport();
-    if (report === null) return reply.code(404).send({ error: "no render report yet" });
-    return report;
-  });
+app.get("/rendered", async (_req, reply) => {
+  const report = await store.getReport();
+  if (report === null) return reply.code(404).send({ error: "no render report yet" });
+  return report;
+});
 
-  // --- selection ---
+// --- selection ---
 
-  app.post("/selection", async (req) => {
-    store.markPluginSeen();
-    await store.saveSelection(req.body);
-    return { ok: true };
-  });
+app.post("/selection", async (req) => {
+  store.markPluginSeen();
+  await store.saveSelection(req.body);
+  return { ok: true };
+});
 
-  app.get("/selection", async (_req, reply) => {
-    const sel = await store.getSelection();
-    if (sel === null) return reply.code(404).send({ error: "no selection yet" });
-    return sel;
-  });
+app.get("/selection", async (_req, reply) => {
+  const sel = await store.getSelection();
+  if (sel === null) return reply.code(404).send({ error: "no selection yet" });
+  return sel;
+});
 ```
 
 > The `waiters` map is referenced by `/rendered` now (a harmless no-op until a waiter is registered) and populated by `POST /edits` in Task 5.
@@ -1073,7 +1073,11 @@ afterEach(async () => {
 
 describe("POST /verify transport codes", () => {
   it("400 on an invalid spec", async () => {
-    const res = await app.inject({ method: "POST", url: "/verify", payload: { spec: { bogus: 1 } } });
+    const res = await app.inject({
+      method: "POST",
+      url: "/verify",
+      payload: { spec: { bogus: 1 } },
+    });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("invalid spec");
     expect(Array.isArray(res.json().details)).toBe(true);
@@ -1090,14 +1094,22 @@ describe("POST /verify transport codes", () => {
   });
 
   it("503 when no report exists and the plugin has never connected", async () => {
-    const res = await app.inject({ method: "POST", url: "/verify", payload: { spec: matchingSpec } });
+    const res = await app.inject({
+      method: "POST",
+      url: "/verify",
+      payload: { spec: matchingSpec },
+    });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: "plugin has never connected" });
   });
 
   it("409 when the plugin has connected but no report exists yet", async () => {
     await app.inject({ method: "GET", url: "/next" }); // marks pluginSeen (204)
-    const res = await app.inject({ method: "POST", url: "/verify", payload: { spec: matchingSpec } });
+    const res = await app.inject({
+      method: "POST",
+      url: "/verify",
+      payload: { spec: matchingSpec },
+    });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: "no render report yet" });
   });
@@ -1106,7 +1118,11 @@ describe("POST /verify transport codes", () => {
 describe("POST /verify gate outcomes (always HTTP 200)", () => {
   it("PASS for a matching spec, including verifyId and summary.skipped", async () => {
     await app.inject({ method: "POST", url: "/rendered", payload: makeReport() });
-    const res = await app.inject({ method: "POST", url: "/verify", payload: { spec: matchingSpec } });
+    const res = await app.inject({
+      method: "POST",
+      url: "/verify",
+      payload: { spec: matchingSpec },
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.status).toBe("PASS");
@@ -1120,10 +1136,16 @@ describe("POST /verify gate outcomes (always HTTP 200)", () => {
       method: "POST",
       url: "/rendered",
       payload: makeReport({
-        nodes: [{ id: "1:2", name: "box", type: "shape", x: 13, y: 20, w: 30, h: 40, fill: "#1e88e5" }],
+        nodes: [
+          { id: "1:2", name: "box", type: "shape", x: 13, y: 20, w: 30, h: 40, fill: "#1e88e5" },
+        ],
       }),
     });
-    const strict = await app.inject({ method: "POST", url: "/verify", payload: { spec: matchingSpec } });
+    const strict = await app.inject({
+      method: "POST",
+      url: "/verify",
+      payload: { spec: matchingSpec },
+    });
     expect(strict.statusCode).toBe(200);
     expect(strict.json().status).toBe("FAIL");
 
@@ -1189,59 +1211,59 @@ const DEFAULT_TOLERANCE_PX = 0.5;
 Inside `createBridge`, add the verifyId generator immediately after the `waiters` map (the bridge generates verifyId here — the gate never invents ids):
 
 ```ts
-  let verifyCounter = 0;
-  const nextVerifyId = (): string => {
-    verifyCounter += 1;
-    return `v_${Date.now()}_${verifyCounter}`;
-  };
+let verifyCounter = 0;
+const nextVerifyId = (): string => {
+  verifyCounter += 1;
+  return `v_${Date.now()}_${verifyCounter}`;
+};
 ```
 
 Insert these handlers inside `createBridge`, immediately before `void editTimeoutMs;`:
 
 ```ts
-  // --- verify ---
+// --- verify ---
 
-  app.post("/verify", async (req, reply) => {
-    const body = req.body as {
-      spec?: unknown;
-      renderId?: string;
-      tolerance?: { geometryPx?: number };
-      checks?: CheckId[];
-    };
+app.post("/verify", async (req, reply) => {
+  const body = req.body as {
+    spec?: unknown;
+    renderId?: string;
+    tolerance?: { geometryPx?: number };
+    checks?: CheckId[];
+  };
 
-    const result = validate(body.spec);
-    if (!result.valid) {
-      return reply.code(400).send({ error: "invalid spec", details: result.errors });
-    }
+  const result = validate(body.spec);
+  if (!result.valid) {
+    return reply.code(400).send({ error: "invalid spec", details: result.errors });
+  }
 
-    let report: RenderReport | null;
-    if (body.renderId !== undefined) {
-      report = await store.getReport(body.renderId);
-      if (report === null) return reply.code(404).send({ error: "unknown renderId" });
-    } else {
-      report = await store.getReport();
-    }
-    if (report === null) {
-      if (!store.pluginSeen) return reply.code(503).send({ error: "plugin has never connected" });
-      return reply.code(409).send({ error: "no render report yet" });
-    }
+  let report: RenderReport | null;
+  if (body.renderId !== undefined) {
+    report = await store.getReport(body.renderId);
+    if (report === null) return reply.code(404).send({ error: "unknown renderId" });
+  } else {
+    report = await store.getReport();
+  }
+  if (report === null) {
+    if (!store.pluginSeen) return reply.code(503).send({ error: "plugin has never connected" });
+    return reply.code(409).send({ error: "no render report yet" });
+  }
 
-    const verifyId = nextVerifyId();
-    const gateResult: GateResult = gate(body.spec as Spec, report, {
-      tolerancePx: body.tolerance?.geometryPx ?? DEFAULT_TOLERANCE_PX,
-      ...(body.checks !== undefined ? { checks: body.checks } : {}),
-      verifyId,
-    });
-    const stored: GateResult & { verifyId: string } = { ...gateResult, verifyId };
-    await store.saveVerify(stored);
-    return stored;
+  const verifyId = nextVerifyId();
+  const gateResult: GateResult = gate(body.spec as Spec, report, {
+    tolerancePx: body.tolerance?.geometryPx ?? DEFAULT_TOLERANCE_PX,
+    ...(body.checks !== undefined ? { checks: body.checks } : {}),
+    verifyId,
   });
+  const stored: GateResult & { verifyId: string } = { ...gateResult, verifyId };
+  await store.saveVerify(stored);
+  return stored;
+});
 
-  app.get<{ Params: { id: string } }>("/verify/:id", async (req, reply) => {
-    const found = await store.getVerify(req.params.id);
-    if (found === null) return reply.code(404).send({ error: "unknown verifyId" });
-    return found;
-  });
+app.get<{ Params: { id: string } }>("/verify/:id", async (req, reply) => {
+  const found = await store.getVerify(req.params.id);
+  if (found === null) return reply.code(404).send({ error: "unknown verifyId" });
+  return found;
+});
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1378,24 +1400,24 @@ Expected: FAIL — `/edits` route not registered.
 In `packages/uxfactory-bridge/src/server.ts`, delete the line `  void editTimeoutMs;` and insert this handler in its place (before `return app;`):
 
 ```ts
-  // --- synchronous edit channel ---
+// --- synchronous edit channel ---
 
-  app.post("/edits", async (req, reply) => {
-    const result = validate(req.body);
-    if (!result.valid) {
-      return reply.code(400).send({ error: "invalid spec", details: result.errors });
-    }
-    const jobId = await store.enqueue(req.body);
-    const report = await new Promise<RenderReport | null>((resolve) => {
-      const timer = setTimeout(() => {
-        waiters.delete(jobId);
-        resolve(null);
-      }, editTimeoutMs);
-      waiters.set(jobId, { resolve, timer });
-    });
-    if (report === null) return reply.code(504).send({ error: "render timed out" });
-    return report;
+app.post("/edits", async (req, reply) => {
+  const result = validate(req.body);
+  if (!result.valid) {
+    return reply.code(400).send({ error: "invalid spec", details: result.errors });
+  }
+  const jobId = await store.enqueue(req.body);
+  const report = await new Promise<RenderReport | null>((resolve) => {
+    const timer = setTimeout(() => {
+      waiters.delete(jobId);
+      resolve(null);
+    }, editTimeoutMs);
+    waiters.set(jobId, { resolve, timer });
   });
+  if (report === null) return reply.code(504).send({ error: "render timed out" });
+  return report;
+});
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1542,41 +1564,41 @@ Expected: FAIL — `/batch` routes not registered.
 Insert these handlers inside `createBridge` in `packages/uxfactory-bridge/src/server.ts`, immediately before `return app;`:
 
 ```ts
-  // --- batch ---
+// --- batch ---
 
-  app.post("/batch", async (req, reply) => {
-    const body = req.body as { items?: { spec?: unknown; preview?: string }[] };
-    const items = body.items ?? [];
-    for (const item of items) {
-      const result = validate(item.spec);
-      if (!result.valid) {
-        return reply.code(400).send({ error: "invalid spec", details: result.errors });
-      }
+app.post("/batch", async (req, reply) => {
+  const body = req.body as { items?: { spec?: unknown; preview?: string }[] };
+  const items = body.items ?? [];
+  for (const item of items) {
+    const result = validate(item.spec);
+    if (!result.valid) {
+      return reply.code(400).send({ error: "invalid spec", details: result.errors });
     }
-    const batchId = await store.saveBatch({
-      items: items.map((it) => ({
-        spec: it.spec,
-        ...(it.preview !== undefined ? { preview: it.preview } : {}),
-      })),
-    });
-    const batch = await store.getBatch(batchId);
-    return { batchId, items: batch ? batch.items : [] };
+  }
+  const batchId = await store.saveBatch({
+    items: items.map((it) => ({
+      spec: it.spec,
+      ...(it.preview !== undefined ? { preview: it.preview } : {}),
+    })),
   });
+  const batch = await store.getBatch(batchId);
+  return { batchId, items: batch ? batch.items : [] };
+});
 
-  app.get("/batch", async (_req, reply) => {
-    const batch = await store.getBatch();
-    if (batch === null) return reply.code(404).send({ error: "no batch yet" });
-    return batch;
-  });
+app.get("/batch", async (_req, reply) => {
+  const batch = await store.getBatch();
+  if (batch === null) return reply.code(404).send({ error: "no batch yet" });
+  return batch;
+});
 
-  app.post<{ Params: { id: string }; Body: { approvedItemIds?: string[] } }>(
-    "/batch/:id/approve",
-    async (req, reply) => {
-      const existing = await store.getBatch(req.params.id);
-      if (existing === null) return reply.code(404).send({ error: "unknown batch" });
-      return store.approveBatch(req.params.id, req.body?.approvedItemIds ?? []);
-    },
-  );
+app.post<{ Params: { id: string }; Body: { approvedItemIds?: string[] } }>(
+  "/batch/:id/approve",
+  async (req, reply) => {
+    const existing = await store.getBatch(req.params.id);
+    if (existing === null) return reply.code(404).send({ error: "unknown batch" });
+    return store.approveBatch(req.params.id, req.body?.approvedItemIds ?? []);
+  },
+);
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1729,7 +1751,11 @@ describe("REST surface round-trip", () => {
       ids: ["1:2"],
     });
 
-    const verify = await app.inject({ method: "POST", url: "/verify", payload: { spec: matchingSpec } });
+    const verify = await app.inject({
+      method: "POST",
+      url: "/verify",
+      payload: { spec: matchingSpec },
+    });
     expect(verify.statusCode).toBe(200);
     expect(verify.json().status).toBe("PASS");
     const verifyId = verify.json().verifyId as string;
@@ -1742,7 +1768,9 @@ describe("REST surface round-trip", () => {
         payload: { items: [{ spec: { edits: [{ id: "1:2", set: { x: 1 } }] } }] },
       })
     ).json();
-    expect((await app.inject({ method: "GET", url: "/batch" })).json().batchId).toBe(created.batchId);
+    expect((await app.inject({ method: "GET", url: "/batch" })).json().batchId).toBe(
+      created.batchId,
+    );
     const approved = await app.inject({
       method: "POST",
       url: `/batch/${created.batchId}/approve`,

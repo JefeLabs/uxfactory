@@ -31,6 +31,7 @@
 ## Task 1: Package scaffold, `RenderReport` & `GateResult` types
 
 **Files:**
+
 - Create: `packages/uxfactory-gate/package.json`
 - Create: `packages/uxfactory-gate/tsconfig.json`
 - Create: `packages/uxfactory-gate/tsconfig.typecheck.json`
@@ -40,6 +41,7 @@
 - Test: `packages/uxfactory-gate/test/types.test.ts`
 
 **Interfaces:**
+
 - Consumes: `@uxfactory/spec` types (`Editor`) — type-only.
 - Produces:
   - `report.ts`: `ReportCounts`, `ReportNode`, `ReportEditDiff`, `RenderReport`.
@@ -48,6 +50,7 @@
 - [ ] **Step 1: Write the failing test**
 
 `packages/uxfactory-gate/test/types.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 import type { RenderReport, ReportNode } from "../src/report.js";
@@ -55,7 +58,16 @@ import type { GateResult, GateOptions, CheckId } from "../src/result.js";
 
 describe("gate types", () => {
   it("models a render report", () => {
-    const node: ReportNode = { id: "1:2", name: "api-gateway", type: "shape", x: 80, y: 80, w: 160, h: 64, fill: "#1e88e5" };
+    const node: ReportNode = {
+      id: "1:2",
+      name: "api-gateway",
+      type: "shape",
+      x: 80,
+      y: 80,
+      w: 160,
+      h: 64,
+      fill: "#1e88e5",
+    };
     const report: RenderReport = {
       renderId: "r_1",
       editor: "figma",
@@ -96,6 +108,7 @@ Expected: FAIL — cannot find module `../src/report.js`.
 - [ ] **Step 3: Create the package files**
 
 `packages/uxfactory-gate/package.json`:
+
 ```json
 {
   "name": "@uxfactory/gate",
@@ -121,6 +134,7 @@ Expected: FAIL — cannot find module `../src/report.js`.
 ```
 
 `packages/uxfactory-gate/tsconfig.json`:
+
 ```json
 {
   "extends": "../../tsconfig.base.json",
@@ -136,6 +150,7 @@ Expected: FAIL — cannot find module `../src/report.js`.
 ```
 
 `packages/uxfactory-gate/tsconfig.typecheck.json`:
+
 ```json
 {
   "extends": "./tsconfig.json",
@@ -147,6 +162,7 @@ Expected: FAIL — cannot find module `../src/report.js`.
 ```
 
 `packages/uxfactory-gate/src/report.ts`:
+
 ```ts
 import type { Editor } from "@uxfactory/spec";
 
@@ -207,6 +223,7 @@ export interface RenderReport {
 ```
 
 `packages/uxfactory-gate/src/result.ts`:
+
 ```ts
 import type { Editor } from "@uxfactory/spec";
 
@@ -269,9 +286,18 @@ export interface GateOptions {
 ```
 
 `packages/uxfactory-gate/src/index.ts`:
+
 ```ts
 export type { ReportCounts, ReportNode, ReportEditDiff, RenderReport } from "./report.js";
-export type { CheckId, CheckStatus, GateCheck, GateFailure, GateSummary, GateResult, GateOptions } from "./result.js";
+export type {
+  CheckId,
+  CheckStatus,
+  GateCheck,
+  GateFailure,
+  GateSummary,
+  GateResult,
+  GateOptions,
+} from "./result.js";
 ```
 
 - [ ] **Step 4: Install and run the test**
@@ -301,10 +327,12 @@ git commit -m "feat(gate): scaffold @uxfactory/gate with report and result types
 ## Task 2: Pure comparison helpers (`internal.ts`)
 
 **Files:**
+
 - Create: `packages/uxfactory-gate/src/internal.ts`
 - Test: `packages/uxfactory-gate/test/internal.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Spec`, `Edit` (type-only) from `@uxfactory/spec`; `ReportNode`, `ReportCounts`, `RenderReport` from `./report.js`.
 - Produces (all pure functions):
   - `hasFrames(spec: Spec): boolean`
@@ -321,6 +349,7 @@ git commit -m "feat(gate): scaffold @uxfactory/gate with report and result types
 - [ ] **Step 1: Write the failing test**
 
 `packages/uxfactory-gate/test/internal.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 import {
@@ -356,10 +385,24 @@ const designSpec = {
 
 const figjamSpec = {
   editor: "figjam" as const,
-  sections: [{ name: "s", x: 0, y: 0, width: 1, height: 1, children: [{ type: "sticky" as const, name: "note", x: 1, y: 2, characters: "hi" }] }],
+  sections: [
+    {
+      name: "s",
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      children: [{ type: "sticky" as const, name: "note", x: 1, y: 2, characters: "hi" }],
+    },
+  ],
 };
 
-const editOnlySpec = { edits: [{ id: "1:2", set: { x: 5 } }, { name: "redis", set: { characters: "Redis" } }] };
+const editOnlySpec = {
+  edits: [
+    { id: "1:2", set: { x: 5 } },
+    { name: "redis", set: { characters: "Redis" } },
+  ],
+};
 
 const report: RenderReport = {
   renderId: "r",
@@ -387,16 +430,30 @@ describe("spec-shape guards", () => {
 describe("expectedEditor", () => {
   it("is figma for design specs", () => expect(expectedEditor(designSpec)).toBe("figma"));
   it("is figjam for figjam specs", () => expect(expectedEditor(figjamSpec)).toBe("figjam"));
-  it("is undefined for an editor-less edit-only spec", () => expect(expectedEditor(editOnlySpec)).toBeUndefined());
-  it("reads the explicit editor on an edit-only spec", () => expect(expectedEditor({ editor: "figjam", edits: [{ id: "1", set: { x: 1 } }] })).toBe("figjam"));
+  it("is undefined for an editor-less edit-only spec", () =>
+    expect(expectedEditor(editOnlySpec)).toBeUndefined());
+  it("reads the explicit editor on an edit-only spec", () =>
+    expect(expectedEditor({ editor: "figjam", edits: [{ id: "1", set: { x: 1 } }] })).toBe(
+      "figjam",
+    ));
 });
 
 describe("expectedCounts", () => {
   it("counts frames, objects, connectors for a design spec", () => {
-    expect(expectedCounts(designSpec)).toEqual({ frames: 1, sections: 0, objects: 2, connectors: 1 });
+    expect(expectedCounts(designSpec)).toEqual({
+      frames: 1,
+      sections: 0,
+      objects: 2,
+      connectors: 1,
+    });
   });
   it("counts sections and objects for a figjam spec", () => {
-    expect(expectedCounts(figjamSpec)).toEqual({ frames: 0, sections: 1, objects: 1, connectors: 0 });
+    expect(expectedCounts(figjamSpec)).toEqual({
+      frames: 0,
+      sections: 1,
+      objects: 1,
+      connectors: 0,
+    });
   });
 });
 
@@ -414,14 +471,19 @@ describe("collectChildren", () => {
 
 describe("findNode", () => {
   it("finds by id first", () => expect(findNode(report, { id: "3:4" })?.name).toBe("lambda"));
-  it("falls back to first-match name", () => expect(findNode(report, { name: "box" })?.id).toBe("1:2"));
-  it("returns undefined when absent", () => expect(findNode(report, { name: "ghost" })).toBeUndefined());
-  it("prefers id over name when both given", () => expect(findNode(report, { id: "1:2", name: "lambda" })?.name).toBe("box"));
+  it("falls back to first-match name", () =>
+    expect(findNode(report, { name: "box" })?.id).toBe("1:2"));
+  it("returns undefined when absent", () =>
+    expect(findNode(report, { name: "ghost" })).toBeUndefined());
+  it("prefers id over name when both given", () =>
+    expect(findNode(report, { id: "1:2", name: "lambda" })?.name).toBe("box"));
 });
 
 describe("withinTolerance", () => {
-  it("accepts a difference at the boundary", () => expect(withinTolerance(120, 120.5, 0.5)).toBe(true));
-  it("rejects a difference just past the boundary", () => expect(withinTolerance(120, 120.6, 0.5)).toBe(false));
+  it("accepts a difference at the boundary", () =>
+    expect(withinTolerance(120, 120.5, 0.5)).toBe(true));
+  it("rejects a difference just past the boundary", () =>
+    expect(withinTolerance(120, 120.6, 0.5)).toBe(false));
   it("accepts an exact match", () => expect(withinTolerance(10, 10, 0.5)).toBe(true));
 });
 
@@ -443,6 +505,7 @@ Expected: FAIL — cannot find module `../src/internal.js`.
 - [ ] **Step 3: Implement the helpers**
 
 `packages/uxfactory-gate/src/internal.ts`:
+
 ```ts
 import type { Spec, Editor } from "@uxfactory/spec";
 import type { RenderReport, ReportNode, ReportCounts } from "./report.js";
@@ -483,7 +546,13 @@ export function collectChildren(spec: Spec): SpecChild[] {
       : [];
   for (const container of containers) {
     for (const child of container.children ?? []) {
-      children.push({ name: child.name, x: child.x, y: child.y, width: child.width, height: child.height });
+      children.push({
+        name: child.name,
+        x: child.x,
+        y: child.y,
+        width: child.width,
+        height: child.height,
+      });
     }
   }
   return children;
@@ -502,7 +571,10 @@ export function expectedCounts(spec: Spec): ReportCounts {
 }
 
 /** Find a report node by id (preferred) or first-match name. */
-export function findNode(report: RenderReport, target: { id?: string; name?: string }): ReportNode | undefined {
+export function findNode(
+  report: RenderReport,
+  target: { id?: string; name?: string },
+): ReportNode | undefined {
   if (target.id !== undefined) {
     const byId = report.nodes.find((n) => n.id === target.id);
     if (byId) return byId;
@@ -551,10 +623,12 @@ git commit -m "feat(gate): add pure comparison helpers"
 ## Task 3: The five check functions (`checks.ts`)
 
 **Files:**
+
 - Create: `packages/uxfactory-gate/src/checks.ts`
 - Test: `packages/uxfactory-gate/test/checks.test.ts`
 
 **Interfaces:**
+
 - Consumes: helpers from `./internal.js`; `Spec`, `Edit`, `EditSet` (type-only) from `@uxfactory/spec`; `RenderReport`, `ReportNode` from `./report.js`; `GateCheck`, `GateFailure`, `CheckId` from `./result.js`.
 - Produces:
   - `interface CheckOutput { check: GateCheck; failures: GateFailure[] }`
@@ -567,9 +641,16 @@ git commit -m "feat(gate): add pure comparison helpers"
 - [ ] **Step 1: Write the failing test**
 
 `packages/uxfactory-gate/test/checks.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
-import { checkEditorType, checkCounts, checkPresence, checkGeometry, checkEdits } from "../src/checks.js";
+import {
+  checkEditorType,
+  checkCounts,
+  checkPresence,
+  checkGeometry,
+  checkEdits,
+} from "../src/checks.js";
 import type { RenderReport } from "../src/report.js";
 
 const baseReport = (over: Partial<RenderReport> = {}): RenderReport => ({
@@ -586,7 +667,26 @@ const baseReport = (over: Partial<RenderReport> = {}): RenderReport => ({
 
 const oneBoxDesign = {
   editor: "figma" as const,
-  frames: [{ name: "f", x: 0, y: 0, width: 100, height: 100, children: [{ type: "shape" as const, name: "box", x: 10, y: 20, width: 30, height: 40, fill: "#1E88E5" }] }],
+  frames: [
+    {
+      name: "f",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      children: [
+        {
+          type: "shape" as const,
+          name: "box",
+          x: 10,
+          y: 20,
+          width: 30,
+          height: 40,
+          fill: "#1E88E5",
+        },
+      ],
+    },
+  ],
 };
 
 describe("checkEditorType", () => {
@@ -596,10 +696,17 @@ describe("checkEditorType", () => {
   it("fails when editors differ", () => {
     const out = checkEditorType(oneBoxDesign, baseReport({ editor: "figjam" }));
     expect(out.check.status).toBe("FAIL");
-    expect(out.failures[0]).toMatchObject({ check: "editorType", property: "editor", expected: "figma", actual: "figjam" });
+    expect(out.failures[0]).toMatchObject({
+      check: "editorType",
+      property: "editor",
+      expected: "figma",
+      actual: "figjam",
+    });
   });
   it("skips for an editor-less edit-only spec", () => {
-    expect(checkEditorType({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport()).check.status).toBe("SKIP");
+    expect(
+      checkEditorType({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport()).check.status,
+    ).toBe("SKIP");
   });
 });
 
@@ -608,12 +715,22 @@ describe("checkCounts", () => {
     expect(checkCounts(oneBoxDesign, baseReport()).check.status).toBe("PASS");
   });
   it("fails and lists the mismatched count", () => {
-    const out = checkCounts(oneBoxDesign, baseReport({ counts: { frames: 2, sections: 0, objects: 1, connectors: 0 } }));
+    const out = checkCounts(
+      oneBoxDesign,
+      baseReport({ counts: { frames: 2, sections: 0, objects: 1, connectors: 0 } }),
+    );
     expect(out.check.status).toBe("FAIL");
-    expect(out.failures).toContainEqual({ check: "counts", property: "frames", expected: 1, actual: 2 });
+    expect(out.failures).toContainEqual({
+      check: "counts",
+      property: "frames",
+      expected: 1,
+      actual: 2,
+    });
   });
   it("skips for an edit-only spec", () => {
-    expect(checkCounts({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport()).check.status).toBe("SKIP");
+    expect(checkCounts({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport()).check.status).toBe(
+      "SKIP",
+    );
   });
 });
 
@@ -624,7 +741,12 @@ describe("checkPresence", () => {
   it("fails for a missing child", () => {
     const out = checkPresence(oneBoxDesign, baseReport({ nodes: [] }));
     expect(out.check.status).toBe("FAIL");
-    expect(out.failures[0]).toMatchObject({ check: "presence", name: "box", expected: "present", actual: "missing" });
+    expect(out.failures[0]).toMatchObject({
+      check: "presence",
+      name: "box",
+      expected: "present",
+      actual: "missing",
+    });
   });
   it("checks edit targets for an edit-only spec", () => {
     const out = checkPresence({ edits: [{ id: "9:9", set: { x: 1 } }] }, baseReport());
@@ -635,34 +757,83 @@ describe("checkPresence", () => {
 
 describe("checkGeometry", () => {
   it("passes within tolerance", () => {
-    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 10.4, y: 20, w: 30, h: 40 }] });
+    const report = baseReport({
+      nodes: [{ id: "1:2", name: "box", type: "shape", x: 10.4, y: 20, w: 30, h: 40 }],
+    });
     expect(checkGeometry(oneBoxDesign, report, 0.5).check.status).toBe("PASS");
   });
   it("fails just past tolerance and names the property", () => {
-    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 10.6, y: 20, w: 30, h: 40 }] });
+    const report = baseReport({
+      nodes: [{ id: "1:2", name: "box", type: "shape", x: 10.6, y: 20, w: 30, h: 40 }],
+    });
     const out = checkGeometry(oneBoxDesign, report, 0.5);
     expect(out.check.status).toBe("FAIL");
-    expect(out.failures[0]).toMatchObject({ check: "geometry", name: "box", property: "x", expected: 10, actual: 10.6, tolerancePx: 0.5 });
+    expect(out.failures[0]).toMatchObject({
+      check: "geometry",
+      name: "box",
+      property: "x",
+      expected: 10,
+      actual: 10.6,
+      tolerancePx: 0.5,
+    });
   });
   it("skips missing nodes (presence handles those)", () => {
     expect(checkGeometry(oneBoxDesign, baseReport({ nodes: [] }), 0.5).check.status).toBe("PASS");
   });
   it("skips for an edit-only spec", () => {
-    expect(checkGeometry({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport(), 0.5).check.status).toBe("SKIP");
+    expect(
+      checkGeometry({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport(), 0.5).check.status,
+    ).toBe("SKIP");
   });
 });
 
 describe("checkEdits", () => {
-  const editSpec = { edits: [{ id: "1:2", set: { x: 120, fill: "#43A047", characters: "Redis" } }] };
+  const editSpec = {
+    edits: [{ id: "1:2", set: { x: 120, fill: "#43A047", characters: "Redis" } }],
+  };
   it("passes when set properties are reflected", () => {
-    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 120, y: 20, w: 30, h: 40, fill: "#43a047", characters: "Redis" }] });
+    const report = baseReport({
+      nodes: [
+        {
+          id: "1:2",
+          name: "box",
+          type: "shape",
+          x: 120,
+          y: 20,
+          w: 30,
+          h: 40,
+          fill: "#43a047",
+          characters: "Redis",
+        },
+      ],
+    });
     expect(checkEdits(editSpec, report, 0.5).check.status).toBe("PASS");
   });
   it("fails when a property is not reflected", () => {
-    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 999, y: 20, w: 30, h: 40, fill: "#43a047", characters: "Redis" }] });
+    const report = baseReport({
+      nodes: [
+        {
+          id: "1:2",
+          name: "box",
+          type: "shape",
+          x: 999,
+          y: 20,
+          w: 30,
+          h: 40,
+          fill: "#43a047",
+          characters: "Redis",
+        },
+      ],
+    });
     const out = checkEdits(editSpec, report, 0.5);
     expect(out.check.status).toBe("FAIL");
-    expect(out.failures[0]).toMatchObject({ check: "edits", nodeId: "1:2", property: "x", expected: 120, actual: 999 });
+    expect(out.failures[0]).toMatchObject({
+      check: "edits",
+      nodeId: "1:2",
+      property: "x",
+      expected: 120,
+      actual: 999,
+    });
   });
   it("fails when the edit target is missing", () => {
     const out = checkEdits({ edits: [{ id: "9:9", set: { x: 1 } }] }, baseReport(), 0.5);
@@ -670,7 +841,21 @@ describe("checkEdits", () => {
     expect(out.failures[0]).toMatchObject({ check: "edits", nodeId: "9:9", actual: "missing" });
   });
   it("compares colors case-insensitively", () => {
-    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 120, y: 20, w: 30, h: 40, fill: "#43A047", characters: "Redis" }] });
+    const report = baseReport({
+      nodes: [
+        {
+          id: "1:2",
+          name: "box",
+          type: "shape",
+          x: 120,
+          y: 20,
+          w: 30,
+          h: 40,
+          fill: "#43A047",
+          characters: "Redis",
+        },
+      ],
+    });
     expect(checkEdits(editSpec, report, 0.5).check.status).toBe("PASS");
   });
   it("skips a spec with no edits", () => {
@@ -687,6 +872,7 @@ Expected: FAIL — cannot find module `../src/checks.js`.
 - [ ] **Step 3: Implement the checks**
 
 `packages/uxfactory-gate/src/checks.ts`:
+
 ```ts
 import type { Spec, Edit, EditSet } from "@uxfactory/spec";
 import type { RenderReport, ReportNode } from "./report.js";
@@ -709,9 +895,19 @@ export interface CheckOutput {
   failures: GateFailure[];
 }
 
-const pass = (id: GateCheck["id"], extra: Partial<GateCheck> = {}): CheckOutput => ({ check: { id, status: "PASS", ...extra }, failures: [] });
-const skip = (id: GateCheck["id"]): CheckOutput => ({ check: { id, status: "SKIP" }, failures: [] });
-const fail = (id: GateCheck["id"], failures: GateFailure[], extra: Partial<GateCheck> = {}): CheckOutput => ({ check: { id, status: "FAIL", ...extra }, failures });
+const pass = (id: GateCheck["id"], extra: Partial<GateCheck> = {}): CheckOutput => ({
+  check: { id, status: "PASS", ...extra },
+  failures: [],
+});
+const skip = (id: GateCheck["id"]): CheckOutput => ({
+  check: { id, status: "SKIP" },
+  failures: [],
+});
+const fail = (
+  id: GateCheck["id"],
+  failures: GateFailure[],
+  extra: Partial<GateCheck> = {},
+): CheckOutput => ({ check: { id, status: "FAIL", ...extra }, failures });
 
 /** True when the spec is edit-only (no frames, no sections). */
 function isEditOnly(spec: Spec): boolean {
@@ -720,14 +916,20 @@ function isEditOnly(spec: Spec): boolean {
 
 /** Edits carried by any spec shape. */
 function editsOf(spec: Spec): Edit[] {
-  return "edits" in spec && Array.isArray((spec as { edits?: Edit[] }).edits) ? (spec as { edits: Edit[] }).edits : [];
+  return "edits" in spec && Array.isArray((spec as { edits?: Edit[] }).edits)
+    ? (spec as { edits: Edit[] }).edits
+    : [];
 }
 
 export function checkEditorType(spec: Spec, report: RenderReport): CheckOutput {
   const expected = expectedEditor(spec);
   if (expected === undefined) return skip("editorType");
   if (report.editor === expected) return pass("editorType", { expected, actual: report.editor });
-  return fail("editorType", [{ check: "editorType", property: "editor", expected, actual: report.editor }], { expected, actual: report.editor });
+  return fail(
+    "editorType",
+    [{ check: "editorType", property: "editor", expected, actual: report.editor }],
+    { expected, actual: report.editor },
+  );
 }
 
 export function checkCounts(spec: Spec, report: RenderReport): CheckOutput {
@@ -737,10 +939,17 @@ export function checkCounts(spec: Spec, report: RenderReport): CheckOutput {
   const failures: GateFailure[] = [];
   for (const key of ["frames", "sections", "objects", "connectors"] as const) {
     if (expected[key] !== actual[key]) {
-      failures.push({ check: "counts", property: key, expected: expected[key], actual: actual[key] });
+      failures.push({
+        check: "counts",
+        property: key,
+        expected: expected[key],
+        actual: actual[key],
+      });
     }
   }
-  return failures.length === 0 ? pass("counts", { expected, actual }) : fail("counts", failures, { expected, actual });
+  return failures.length === 0
+    ? pass("counts", { expected, actual })
+    : fail("counts", failures, { expected, actual });
 }
 
 export function checkPresence(spec: Spec, report: RenderReport): CheckOutput {
@@ -748,13 +957,24 @@ export function checkPresence(spec: Spec, report: RenderReport): CheckOutput {
   if (isEditOnly(spec)) {
     for (const edit of editsOf(spec)) {
       if (!findNode(report, { id: edit.id, name: edit.name })) {
-        failures.push({ check: "presence", nodeId: edit.id, name: edit.name, expected: "present", actual: "missing" });
+        failures.push({
+          check: "presence",
+          nodeId: edit.id,
+          name: edit.name,
+          expected: "present",
+          actual: "missing",
+        });
       }
     }
   } else {
     for (const child of collectChildren(spec)) {
       if (!findNode(report, { name: child.name })) {
-        failures.push({ check: "presence", name: child.name, expected: "present", actual: "missing" });
+        failures.push({
+          check: "presence",
+          name: child.name,
+          expected: "present",
+          actual: "missing",
+        });
       }
     }
   }
@@ -769,15 +989,34 @@ export function checkGeometry(spec: Spec, report: RenderReport, tolerancePx: num
     if (!node) continue; // presence handles missing nodes
     compareGeo(failures, node, "x", child.x, node.x, tolerancePx);
     compareGeo(failures, node, "y", child.y, node.y, tolerancePx);
-    if (child.width !== undefined) compareGeo(failures, node, "width", child.width, node.w, tolerancePx);
-    if (child.height !== undefined) compareGeo(failures, node, "height", child.height, node.h, tolerancePx);
+    if (child.width !== undefined)
+      compareGeo(failures, node, "width", child.width, node.w, tolerancePx);
+    if (child.height !== undefined)
+      compareGeo(failures, node, "height", child.height, node.h, tolerancePx);
   }
-  return failures.length === 0 ? pass("geometry", { tolerancePx }) : fail("geometry", failures, { tolerancePx });
+  return failures.length === 0
+    ? pass("geometry", { tolerancePx })
+    : fail("geometry", failures, { tolerancePx });
 }
 
-function compareGeo(out: GateFailure[], node: ReportNode, property: string, expected: number, actual: number, tolerancePx: number): void {
+function compareGeo(
+  out: GateFailure[],
+  node: ReportNode,
+  property: string,
+  expected: number,
+  actual: number,
+  tolerancePx: number,
+): void {
   if (!withinTolerance(expected, actual, tolerancePx)) {
-    out.push({ check: "geometry", nodeId: node.id, name: node.name, property, expected, actual, tolerancePx });
+    out.push({
+      check: "geometry",
+      nodeId: node.id,
+      name: node.name,
+      property,
+      expected,
+      actual,
+      tolerancePx,
+    });
   }
 }
 
@@ -788,7 +1027,13 @@ export function checkEdits(spec: Spec, report: RenderReport, tolerancePx: number
   for (const edit of edits) {
     const node = findNode(report, { id: edit.id, name: edit.name });
     if (!node) {
-      failures.push({ check: "edits", nodeId: edit.id, name: edit.name, expected: "present", actual: "missing" });
+      failures.push({
+        check: "edits",
+        nodeId: edit.id,
+        name: edit.name,
+        expected: "present",
+        actual: "missing",
+      });
       continue;
     }
     for (const [property, value] of Object.entries(edit.set) as [keyof EditSet, unknown][]) {
@@ -801,18 +1046,32 @@ export function checkEdits(spec: Spec, report: RenderReport, tolerancePx: number
 const GEOMETRY_PROPS = new Set<keyof EditSet>(["x", "y", "width", "height"]);
 const COLOR_PROPS = new Set<keyof EditSet>(["fill", "stroke"]);
 
-function compareEditProp(out: GateFailure[], node: ReportNode, property: keyof EditSet, value: unknown, tolerancePx: number): void {
+function compareEditProp(
+  out: GateFailure[],
+  node: ReportNode,
+  property: keyof EditSet,
+  value: unknown,
+  tolerancePx: number,
+): void {
   const actual = reportValueFor(node, property);
   const base = { check: "edits" as const, nodeId: node.id, name: node.name, property };
 
   if (GEOMETRY_PROPS.has(property)) {
-    if (typeof value !== "number" || typeof actual !== "number" || !withinTolerance(value, actual, tolerancePx)) {
+    if (
+      typeof value !== "number" ||
+      typeof actual !== "number" ||
+      !withinTolerance(value, actual, tolerancePx)
+    ) {
       out.push({ ...base, expected: value, actual, tolerancePx });
     }
     return;
   }
   if (COLOR_PROPS.has(property)) {
-    if (typeof value !== "string" || typeof actual !== "string" || normalizeColor(value) !== normalizeColor(actual)) {
+    if (
+      typeof value !== "string" ||
+      typeof actual !== "string" ||
+      normalizeColor(value) !== normalizeColor(actual)
+    ) {
       out.push({ ...base, expected: value, actual });
     }
     return;
@@ -854,17 +1113,20 @@ git commit -m "feat(gate): implement the five gate checks"
 ## Task 4: `gate()` orchestrator, public exports & determinism
 
 **Files:**
+
 - Create: `packages/uxfactory-gate/src/gate.ts`
 - Modify: `packages/uxfactory-gate/src/index.ts`
 - Test: `packages/uxfactory-gate/test/gate.test.ts`
 
 **Interfaces:**
+
 - Consumes: the five check functions from `./checks.js`; `Spec` (type-only); `RenderReport`; `GateResult`, `GateCheck`, `GateFailure`, `GateOptions`, `CheckId`.
 - Produces: `function gate(spec: Spec, report: RenderReport, options?: GateOptions): GateResult`, re-exported from the package root alongside the types.
 
 - [ ] **Step 1: Write the failing test**
 
 `packages/uxfactory-gate/test/gate.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 import { gate } from "../src/gate.js";
@@ -878,12 +1140,33 @@ const report: RenderReport = {
   fileName: "Infra",
   fileKey: "k",
   counts: { frames: 1, sections: 0, objects: 1, connectors: 1 },
-  nodes: [{ id: "1:2", name: "api-gateway", type: "shape", x: 80, y: 80, w: 160, h: 64, fill: "#1e88e5" }],
+  nodes: [
+    { id: "1:2", name: "api-gateway", type: "shape", x: 80, y: 80, w: 160, h: 64, fill: "#1e88e5" },
+  ],
 };
 
 const matchingSpec = {
   editor: "figma" as const,
-  frames: [{ name: "vpc", x: 0, y: 0, width: 1200, height: 800, children: [{ type: "shape" as const, name: "api-gateway", x: 80, y: 80, width: 160, height: 64, fill: "#1E88E5" }] }],
+  frames: [
+    {
+      name: "vpc",
+      x: 0,
+      y: 0,
+      width: 1200,
+      height: 800,
+      children: [
+        {
+          type: "shape" as const,
+          name: "api-gateway",
+          x: 80,
+          y: 80,
+          width: 160,
+          height: 64,
+          fill: "#1E88E5",
+        },
+      ],
+    },
+  ],
   connectors: [{ from: "api-gateway", to: "api-gateway" }],
 };
 
@@ -892,7 +1175,13 @@ describe("gate", () => {
     const result = gate(matchingSpec, report);
     expect(result.status).toBe("PASS");
     expect(result.summary).toEqual({ checks: 5, passed: 4, failed: 0, skipped: 1 }); // edits skipped (no edits)
-    expect(result.checks.map((c) => c.id)).toEqual(["editorType", "counts", "presence", "geometry", "edits"]);
+    expect(result.checks.map((c) => c.id)).toEqual([
+      "editorType",
+      "counts",
+      "presence",
+      "geometry",
+      "edits",
+    ]);
     expect(result.failures).toEqual([]);
     expect(result.renderId).toBe("r_1");
     expect(result.editor).toBe("figma");
@@ -904,7 +1193,15 @@ describe("gate", () => {
     const moved: RenderReport = { ...report, nodes: [{ ...report.nodes[0]!, x: 180 }] };
     const result = gate(matchingSpec, moved);
     expect(result.status).toBe("FAIL");
-    expect(result.failures).toContainEqual({ check: "geometry", nodeId: "1:2", name: "api-gateway", property: "x", expected: 80, actual: 180, tolerancePx: 0.5 });
+    expect(result.failures).toContainEqual({
+      check: "geometry",
+      nodeId: "1:2",
+      name: "api-gateway",
+      property: "x",
+      expected: 80,
+      actual: 180,
+      tolerancePx: 0.5,
+    });
   });
 
   it("honors a checks subset", () => {
@@ -941,11 +1238,19 @@ Expected: FAIL — cannot find module `../src/gate.js`.
 - [ ] **Step 3: Implement the orchestrator**
 
 `packages/uxfactory-gate/src/gate.ts`:
+
 ```ts
 import type { Spec } from "@uxfactory/spec";
 import type { RenderReport } from "./report.js";
 import type { CheckId, GateCheck, GateFailure, GateOptions, GateResult } from "./result.js";
-import { checkCounts, checkEdits, checkEditorType, checkGeometry, checkPresence, type CheckOutput } from "./checks.js";
+import {
+  checkCounts,
+  checkEdits,
+  checkEditorType,
+  checkGeometry,
+  checkPresence,
+  type CheckOutput,
+} from "./checks.js";
 
 /** Canonical order the checks run and appear in the result. */
 const ALL_CHECKS: CheckId[] = ["editorType", "counts", "presence", "geometry", "edits"];
@@ -1011,10 +1316,19 @@ Expected: PASS — all gate orchestration tests pass.
 - [ ] **Step 5: Extend the public exports**
 
 Replace `packages/uxfactory-gate/src/index.ts` with:
+
 ```ts
 export { gate } from "./gate.js";
 export type { ReportCounts, ReportNode, ReportEditDiff, RenderReport } from "./report.js";
-export type { CheckId, CheckStatus, GateCheck, GateFailure, GateSummary, GateResult, GateOptions } from "./result.js";
+export type {
+  CheckId,
+  CheckStatus,
+  GateCheck,
+  GateFailure,
+  GateSummary,
+  GateResult,
+  GateOptions,
+} from "./result.js";
 ```
 
 - [ ] **Step 6: Run the full gate suite + typecheck**
@@ -1025,10 +1339,12 @@ Expected: PASS — all suites green; typecheck exit 0.
 - [ ] **Step 7: Verify the built artifact runs standalone in real Node**
 
 Run:
+
 ```bash
 pnpm --filter @uxfactory/gate build
 node --input-type=module -e "import('./packages/uxfactory-gate/dist/src/index.js').then(m => { const r = m.gate({ editor: 'figma', frames: [{ name: 'f', x: 0, y: 0, width: 100, height: 100, children: [{ type: 'shape', name: 'box', x: 10, y: 20, width: 30, height: 40 }] }] }, { renderId: 'r', editor: 'figma', page: 'p', pageKey: '0:1', fileName: 'f', fileKey: 'k', counts: { frames: 1, sections: 0, objects: 1, connectors: 0 }, nodes: [{ id: '1:2', name: 'box', type: 'shape', x: 10, y: 20, w: 30, h: 40 }] }); console.log('gate artifact ok:', r.status === 'PASS'); })"
 ```
+
 Expected: prints `gate artifact ok: true` — proving the compiled gate runs in real Node ESM with no runtime dependency on `@uxfactory/spec` (types erased).
 
 - [ ] **Step 8: Whole-monorepo green check**
@@ -1048,6 +1364,7 @@ git commit -m "feat(gate): add gate() orchestrator with options and determinism"
 ## Self-Review
 
 **1. Spec coverage** (against PRD §10.1, §10.2, §7.4, §19 and the design doc Phase 1b):
+
 - Pure `gate(spec, report) → GateResult`, no I/O → Task 4 (`gate.ts`, determinism test). ✅
 - The five checks `editorType / counts / presence / geometry / edits` → Task 3. ✅
 - `tolerancePx` default 0.5 + custom → Tasks 3 (boundary tests) + 4 (custom tolerance test). ✅

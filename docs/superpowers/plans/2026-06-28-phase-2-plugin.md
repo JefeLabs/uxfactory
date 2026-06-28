@@ -4,7 +4,7 @@
 
 **Goal:** Build `@uxfactory/plugin` — the Figma/FigJam plugin that polls the bridge, renders specs deterministically to the canvas, applies reversible surgical edits, forwards selection, drives the 3-state panel UX, and emits a `RenderReport` that exactly matches `@uxfactory/gate`'s contract.
 
-**Architecture:** A Figma plugin runs in two message-passing contexts: a **main thread** (`code.ts`, has `figma.*`, no DOM/fetch) and an **iframe UI** (`ui.ts`/`ui.html`, has DOM + fetch, no `figma.*`). All rendering logic is factored into **pure modules** (planner / edits / undo-stack / report / selection / panel) that import nothing from `figma` or DOM and carry full Vitest coverage; `code.ts` is a thin orchestrator delegating to them. Because there is **no live Figma session in this environment (BUILD-TO-SPEC PHASE)**, `code.ts` is exercised through a focused hand-written `figma` mock, `ui.ts` through jsdom + a mocked `fetch`, and the manifest + esbuild bundles are verified structurally. Determinism is proven at the *plan* level (`planRender` is pure and deterministic; the canvas follows mechanically from the plan).
+**Architecture:** A Figma plugin runs in two message-passing contexts: a **main thread** (`code.ts`, has `figma.*`, no DOM/fetch) and an **iframe UI** (`ui.ts`/`ui.html`, has DOM + fetch, no `figma.*`). All rendering logic is factored into **pure modules** (planner / edits / undo-stack / report / selection / panel) that import nothing from `figma` or DOM and carry full Vitest coverage; `code.ts` is a thin orchestrator delegating to them. Because there is **no live Figma session in this environment (BUILD-TO-SPEC PHASE)**, `code.ts` is exercised through a focused hand-written `figma` mock, `ui.ts` through jsdom + a mocked `fetch`, and the manifest + esbuild bundles are verified structurally. Determinism is proven at the _plan_ level (`planRender` is pure and deterministic; the canvas follows mechanically from the plan).
 
 **Tech Stack:** TypeScript 6.0.3 (ESM, NodeNext, `verbatimModuleSyntax`), esbuild 0.28.1 (two bundles: `code.ts`→`dist/code.js` IIFE, `ui.ts`→inlined into `dist/ui.html`), `@figma/plugin-typings` 1.130.0 (typecheck-only global `figma`/`__html__`), Vitest 4.1.9 (node env for pure modules + the figma mock; jsdom env for `ui.ts`), value-importing `@uxfactory/spec` (`validate`) and `@uxfactory/gate` (`RenderReport` type) which esbuild bundles into the plugin.
 
@@ -275,10 +275,18 @@ export async function buildPlugin() {
   await mkdir(dist, { recursive: true });
 
   // 1. main thread → dist/code.js
-  await build({ ...common, entryPoints: [path.join(root, "src/code.ts")], outfile: path.join(dist, "code.js") });
+  await build({
+    ...common,
+    entryPoints: [path.join(root, "src/code.ts")],
+    outfile: path.join(dist, "code.js"),
+  });
 
   // 2. iframe UI → bundled JS string, inlined into ui.html
-  const uiResult = await build({ ...common, entryPoints: [path.join(root, "src/ui.ts")], write: false });
+  const uiResult = await build({
+    ...common,
+    entryPoints: [path.join(root, "src/ui.ts")],
+    write: false,
+  });
   const uiJs = uiResult.outputFiles[0].text;
   const template = await readFile(path.join(root, "src/ui.html"), "utf8");
   // Function replacement avoids `$`-pattern expansion in the bundled JS.
@@ -351,7 +359,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 ```ts
 declare const __html__: string;
-const api = figma as unknown as { showUI(html: string, opts: { width: number; height: number }): void };
+const api = figma as unknown as {
+  showUI(html: string, opts: { width: number; height: number }): void;
+};
 api.showUI(__html__, { width: 540, height: 220 });
 ```
 
@@ -407,7 +417,16 @@ const design: DesignSpec = {
       width: 1200,
       height: 800,
       children: [
-        { type: "shape", name: "api", x: 80, y: 80, width: 160, height: 64, fill: "#1E88E5", characters: "API" },
+        {
+          type: "shape",
+          name: "api",
+          x: 80,
+          y: 80,
+          width: 160,
+          height: 64,
+          fill: "#1E88E5",
+          characters: "API",
+        },
         { type: "instance", name: "lambda", asset: "aws:lambda", x: 320, y: 80 },
       ],
     },
@@ -426,7 +445,11 @@ describe("planRender", () => {
     expect(plan.page).toBe("Architecture");
     expect(plan.frames).toHaveLength(1);
     expect(plan.frames[0].children.map((c) => c.name)).toEqual(["api", "lambda"]);
-    expect(plan.frames[0].children[0]).toMatchObject({ kind: "shape", fill: "#1E88E5", characters: "API" });
+    expect(plan.frames[0].children[0]).toMatchObject({
+      kind: "shape",
+      fill: "#1E88E5",
+      characters: "API",
+    });
     expect(plan.frames[0].children[1]).toMatchObject({ kind: "instance", asset: "aws:lambda" });
     expect(plan.sections).toEqual([]);
     expect(plan.connectors).toEqual([{ from: "api", to: "lambda", label: "invokes" }]);
@@ -547,8 +570,10 @@ function mapChild(child: FrameChild | SectionChild): PlannedChild {
   if ("height" in child && child.height !== undefined) out.height = child.height;
   if ("fill" in child && child.fill !== undefined) out.fill = child.fill;
   if ("stroke" in child && child.stroke !== undefined) out.stroke = child.stroke;
-  if ("strokeWidth" in child && child.strokeWidth !== undefined) out.strokeWidth = child.strokeWidth;
-  if ("cornerRadius" in child && child.cornerRadius !== undefined) out.cornerRadius = child.cornerRadius;
+  if ("strokeWidth" in child && child.strokeWidth !== undefined)
+    out.strokeWidth = child.strokeWidth;
+  if ("cornerRadius" in child && child.cornerRadius !== undefined)
+    out.cornerRadius = child.cornerRadius;
   if ("rotation" in child && child.rotation !== undefined) out.rotation = child.rotation;
   if ("opacity" in child && child.opacity !== undefined) out.opacity = child.opacity;
   if ("characters" in child && child.characters !== undefined) out.characters = child.characters;
@@ -807,7 +832,19 @@ describe("assembleReport", () => {
       renderId: "r_1",
       jobId: "job_42",
       counts: { frames: 1, sections: 0, objects: 1, connectors: 1 },
-      nodes: [{ id: "1:2", name: "api", type: "shape", x: 80, y: 80, w: 160, h: 64, fill: "#1E88E5", stroke: "#ABC" }],
+      nodes: [
+        {
+          id: "1:2",
+          name: "api",
+          type: "shape",
+          x: 80,
+          y: 80,
+          w: 160,
+          h: 64,
+          fill: "#1E88E5",
+          stroke: "#ABC",
+        },
+      ],
     });
     expect(report).toMatchObject({
       editor: "figma",
@@ -833,7 +870,9 @@ describe("assembleReport", () => {
           y: 0,
           width: 100,
           height: 100,
-          children: [{ type: "shape", name: "box", x: 10, y: 10, width: 20, height: 20, fill: "#1E88E5" }],
+          children: [
+            { type: "shape", name: "box", x: 10, y: 10, width: 20, height: 20, fill: "#1E88E5" },
+          ],
         },
       ],
     };
@@ -845,7 +884,9 @@ describe("assembleReport", () => {
       fileKey: "k",
       renderId: "r_2",
       counts: { frames: 1, sections: 0, objects: 1, connectors: 0 },
-      nodes: [{ id: "1:2", name: "box", type: "shape", x: 10, y: 10, w: 20, h: 20, fill: "#1E88E5" }],
+      nodes: [
+        { id: "1:2", name: "box", type: "shape", x: 10, y: 10, w: 20, h: 20, fill: "#1E88E5" },
+      ],
     });
     const result = gate(spec, report);
     expect(result.status).toBe("PASS");
@@ -863,20 +904,61 @@ import { mapSelection } from "../src/selection.js";
 describe("mapSelection", () => {
   it("maps §7.5 node fields and carries page/file meta", () => {
     const payload = mapSelection(
-      [{ id: "1:2", name: "api", type: "shape", x: 1, y: 2, w: 3, h: 4, opacity: 0.5, rotation: 90, visible: true, cornerRadius: 8, characters: "hi" }],
+      [
+        {
+          id: "1:2",
+          name: "api",
+          type: "shape",
+          x: 1,
+          y: 2,
+          w: 3,
+          h: 4,
+          opacity: 0.5,
+          rotation: 90,
+          visible: true,
+          cornerRadius: 8,
+          characters: "hi",
+        },
+      ],
       { page: "P", fileName: "F", fileKey: "k" },
     );
     expect(payload).toEqual({
       page: "P",
       fileName: "F",
       fileKey: "k",
-      nodes: [{ id: "1:2", name: "api", type: "shape", x: 1, y: 2, w: 3, h: 4, opacity: 0.5, rotation: 90, visible: true, cornerRadius: 8, characters: "hi" }],
+      nodes: [
+        {
+          id: "1:2",
+          name: "api",
+          type: "shape",
+          x: 1,
+          y: 2,
+          w: 3,
+          h: 4,
+          opacity: 0.5,
+          rotation: 90,
+          visible: true,
+          cornerRadius: 8,
+          characters: "hi",
+        },
+      ],
     });
   });
 
   it("omits absent optional fields", () => {
-    const payload = mapSelection([{ id: "1:3", name: "n", type: "frame", x: 0, y: 0, w: 10, h: 10 }], { page: "P", fileName: "F", fileKey: "k" });
-    expect(payload.nodes[0]).toEqual({ id: "1:3", name: "n", type: "frame", x: 0, y: 0, w: 10, h: 10 });
+    const payload = mapSelection(
+      [{ id: "1:3", name: "n", type: "frame", x: 0, y: 0, w: 10, h: 10 }],
+      { page: "P", fileName: "F", fileKey: "k" },
+    );
+    expect(payload.nodes[0]).toEqual({
+      id: "1:3",
+      name: "n",
+      type: "frame",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    });
   });
 });
 ```
@@ -1011,7 +1093,15 @@ export function mapSelection(
     fileName: meta.fileName,
     fileKey: meta.fileKey,
     nodes: nodes.map((n) => {
-      const out: SelectionNode = { id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, w: n.w, h: n.h };
+      const out: SelectionNode = {
+        id: n.id,
+        name: n.name,
+        type: n.type,
+        x: n.x,
+        y: n.y,
+        w: n.w,
+        h: n.h,
+      };
       if (n.opacity !== undefined) out.opacity = n.opacity;
       if (n.rotation !== undefined) out.rotation = n.rotation;
       if (n.visible !== undefined) out.visible = n.visible;
@@ -1058,22 +1148,50 @@ import { nextPanel } from "../src/panel.js";
 
 describe("nextPanel", () => {
   it("toggles COMPACT ↔ EXPANDED on toggle-details with correct dimensions", () => {
-    expect(nextPanel("COMPACT", "toggle-details")).toEqual({ state: "EXPANDED", width: 540, height: 560 });
-    expect(nextPanel("EXPANDED", "toggle-details")).toEqual({ state: "COMPACT", width: 540, height: 220 });
+    expect(nextPanel("COMPACT", "toggle-details")).toEqual({
+      state: "EXPANDED",
+      width: 540,
+      height: 560,
+    });
+    expect(nextPanel("EXPANDED", "toggle-details")).toEqual({
+      state: "COMPACT",
+      width: 540,
+      height: 220,
+    });
   });
 
   it("auto-engages CONNECTED_MIN on connect from any state", () => {
-    expect(nextPanel("COMPACT", "connect")).toEqual({ state: "CONNECTED_MIN", width: 156, height: 72 });
-    expect(nextPanel("EXPANDED", "connect")).toEqual({ state: "CONNECTED_MIN", width: 156, height: 72 });
+    expect(nextPanel("COMPACT", "connect")).toEqual({
+      state: "CONNECTED_MIN",
+      width: 156,
+      height: 72,
+    });
+    expect(nextPanel("EXPANDED", "connect")).toEqual({
+      state: "CONNECTED_MIN",
+      width: 156,
+      height: 72,
+    });
   });
 
   it("expands CONNECTED_MIN → COMPACT on expand-click (stays connected)", () => {
-    expect(nextPanel("CONNECTED_MIN", "expand-click")).toEqual({ state: "COMPACT", width: 540, height: 220 });
+    expect(nextPanel("CONNECTED_MIN", "expand-click")).toEqual({
+      state: "COMPACT",
+      width: 540,
+      height: 220,
+    });
   });
 
   it("returns to COMPACT on disconnect from any state", () => {
-    expect(nextPanel("CONNECTED_MIN", "disconnect")).toEqual({ state: "COMPACT", width: 540, height: 220 });
-    expect(nextPanel("EXPANDED", "disconnect")).toEqual({ state: "COMPACT", width: 540, height: 220 });
+    expect(nextPanel("CONNECTED_MIN", "disconnect")).toEqual({
+      state: "COMPACT",
+      width: 540,
+      height: 220,
+    });
+    expect(nextPanel("EXPANDED", "disconnect")).toEqual({
+      state: "COMPACT",
+      width: 540,
+      height: 220,
+    });
   });
 
   it("ignores irrelevant events (no-op transitions)", () => {
@@ -1291,7 +1409,8 @@ async function loadCode(fig: FakeFigma): Promise<void> {
 }
 
 const lastOfType = <T extends MainToUi["type"]>(fig: FakeFigma, type: T) =>
-  [...fig.ui.posted].reverse().find((m) => m.type === type) as Extract<MainToUi, { type: T }> | undefined;
+  [...fig.ui.posted].reverse().find((m) => m.type === type) as
+    Extract<MainToUi, { type: T }> | undefined;
 
 const design: DesignSpec = {
   editor: "figma",
@@ -1375,7 +1494,9 @@ describe("code.ts render", () => {
             y: 0,
             width: 100,
             height: 100,
-            children: [{ type: "shape", name: "box", x: 10, y: 10, width: 20, height: 20, fill: "#000000" }],
+            children: [
+              { type: "shape", name: "box", x: 10, y: 10, width: 20, height: 20, fill: "#000000" },
+            ],
           },
         ],
         edits: [
@@ -1647,7 +1768,10 @@ function describeDiff(before: Record<string, unknown>, props: Partial<EditSet>):
 
 // ---- node lookup ----
 
-function findByName(node: { children?: readonly EditableNode[] }, name: string): EditableNode | null {
+function findByName(
+  node: { children?: readonly EditableNode[] },
+  name: string,
+): EditableNode | null {
   for (const child of node.children ?? []) {
     if (child.name === name) return child;
     const nested = findByName(child, name);
@@ -1699,7 +1823,10 @@ async function renderChild(child: PlannedChild, parent: EditableNode): Promise<E
 async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
   const result = validate(raw);
   if (!result.valid) {
-    post({ type: "render-error", message: result.errors.map((e) => `${e.path}: ${e.message}`).join("; ") });
+    post({
+      type: "render-error",
+      message: result.errors.map((e) => `${e.path}: ${e.message}`).join("; "),
+    });
     return;
   }
   const plan = planRender(raw as Spec);
@@ -1754,7 +1881,11 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
     try {
       const target = findTarget(edit, byName);
       if (!target) {
-        editDiffs.push({ ...(edit.id ? { id: edit.id } : {}), ...(edit.name ? { name: edit.name } : {}), diff: "skipped (target not found)" });
+        editDiffs.push({
+          ...(edit.id ? { id: edit.id } : {}),
+          ...(edit.name ? { name: edit.name } : {}),
+          diff: "skipped (target not found)",
+        });
         continue;
       }
       const resolved: Edit = { id: target.id, set: edit.set };
@@ -1763,10 +1894,18 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
       applyProps(target, planned.props);
       undo.push(captureInverse(resolved, before));
       reportNodes.set(target.id, toReportNode(target));
-      editDiffs.push({ id: target.id, name: target.name, diff: describeDiff(before, planned.props) });
+      editDiffs.push({
+        id: target.id,
+        name: target.name,
+        diff: describeDiff(before, planned.props),
+      });
     } catch (err) {
       // One bad edit doesn't kill the batch.
-      editDiffs.push({ ...(edit.id ? { id: edit.id } : {}), ...(edit.name ? { name: edit.name } : {}), diff: `error: ${(err as Error).message}` });
+      editDiffs.push({
+        ...(edit.id ? { id: edit.id } : {}),
+        ...(edit.name ? { name: edit.name } : {}),
+        diff: `error: ${(err as Error).message}`,
+      });
     }
   }
 
@@ -1808,7 +1947,15 @@ function applyUndo(): void {
 function postSelection(): void {
   const page = fig.currentPage;
   const raw: RawSelNode[] = page.selection.map((n) => {
-    const out: RawSelNode = { id: n.id, name: n.name, type: n.type, x: n.x, y: n.y, w: n.width, h: n.height };
+    const out: RawSelNode = {
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      x: n.x,
+      y: n.y,
+      w: n.width,
+      h: n.height,
+    };
     if (n.opacity !== undefined) out.opacity = n.opacity;
     if (n.rotation !== undefined) out.rotation = n.rotation;
     if (n.visible !== undefined) out.visible = n.visible;
@@ -1816,7 +1963,14 @@ function postSelection(): void {
     if (n.characters !== undefined) out.characters = n.characters;
     return out;
   });
-  post({ type: "selection", selection: mapSelection(raw, { page: page.name, fileName: fig.root.name, fileKey: fig.fileKey ?? "" }) });
+  post({
+    type: "selection",
+    selection: mapSelection(raw, {
+      page: page.name,
+      fileName: fig.root.name,
+      fileKey: fig.fileKey ?? "",
+    }),
+  });
 }
 ```
 
@@ -1870,7 +2024,14 @@ const DOM = `
   </div>`;
 
 const okFetch = (body: unknown, status = 200) =>
-  vi.fn(async () => ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response);
+  vi.fn(
+    async () =>
+      ({
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => body,
+      }) as unknown as Response,
+  );
 
 beforeEach(() => {
   document.body.innerHTML = DOM;
@@ -1883,7 +2044,11 @@ describe("ui poll", () => {
     const ui = createUi({ postToMain, fetchImpl });
     await ui.pollOnce();
     expect(fetchImpl).toHaveBeenCalledWith("http://localhost:3779/next");
-    expect(postToMain).toHaveBeenCalledWith({ type: "render", spec: { edits: [] }, jobId: "job_9" });
+    expect(postToMain).toHaveBeenCalledWith({
+      type: "render",
+      spec: { edits: [] },
+      jobId: "job_9",
+    });
   });
 
   it("does nothing on a 204 (empty queue)", async () => {
@@ -1898,8 +2063,22 @@ describe("ui main-message handling", () => {
   it("POSTs a render report (with jobId) to /rendered", async () => {
     const fetchImpl = okFetch({});
     const ui = createUi({ fetchImpl, postToMain: vi.fn() });
-    const report = { renderId: "r_1", editor: "figma", page: "P", pageKey: "0:1", fileName: "F", fileKey: "k", counts: { frames: 0, sections: 0, objects: 0, connectors: 0 }, nodes: [], jobId: "job_9" };
-    await ui.onMainMessage({ type: "rendered", report } as Extract<UiToMain, never> extends never ? never : never extends never ? { type: "rendered"; report: typeof report } : never);
+    const report = {
+      renderId: "r_1",
+      editor: "figma",
+      page: "P",
+      pageKey: "0:1",
+      fileName: "F",
+      fileKey: "k",
+      counts: { frames: 0, sections: 0, objects: 0, connectors: 0 },
+      nodes: [],
+      jobId: "job_9",
+    };
+    await ui.onMainMessage({ type: "rendered", report } as Extract<UiToMain, never> extends never
+      ? never
+      : never extends never
+        ? { type: "rendered"; report: typeof report }
+        : never);
     const [url, init] = fetchImpl.mock.calls.at(-1)!;
     expect(url).toBe("http://localhost:3779/rendered");
     expect(JSON.parse((init as RequestInit).body as string).jobId).toBe("job_9");
@@ -1916,15 +2095,22 @@ describe("ui manual textarea", () => {
   it("renders a valid manual spec", () => {
     const postToMain = vi.fn();
     const ui = createUi({ fetchImpl: okFetch({}), postToMain });
-    (document.getElementById("spec") as HTMLTextAreaElement).value = JSON.stringify({ edits: [{ id: "1:2", set: { x: 1 } }] });
+    (document.getElementById("spec") as HTMLTextAreaElement).value = JSON.stringify({
+      edits: [{ id: "1:2", set: { x: 1 } }],
+    });
     ui.submitManual();
-    expect(postToMain).toHaveBeenCalledWith({ type: "render", spec: { edits: [{ id: "1:2", set: { x: 1 } }] } });
+    expect(postToMain).toHaveBeenCalledWith({
+      type: "render",
+      spec: { edits: [{ id: "1:2", set: { x: 1 } }] },
+    });
   });
 
   it("shows errors and does NOT render an invalid manual spec", () => {
     const postToMain = vi.fn();
     const ui = createUi({ fetchImpl: okFetch({}), postToMain });
-    (document.getElementById("spec") as HTMLTextAreaElement).value = JSON.stringify({ frames: "not-an-array" });
+    (document.getElementById("spec") as HTMLTextAreaElement).value = JSON.stringify({
+      frames: "not-an-array",
+    });
     ui.submitManual();
     expect(document.getElementById("errors")!.textContent!.length).toBeGreaterThan(0);
     expect(postToMain).not.toHaveBeenCalled();
@@ -2004,7 +2190,8 @@ export interface UiController {
 export function createUi(options: UiOptions = {}): UiController {
   const doc = options.doc ?? document;
   const doFetch = options.fetchImpl ?? fetch;
-  const postToMain = options.postToMain ?? ((msg: UiToMain) => parent.postMessage({ pluginMessage: msg }, "*"));
+  const postToMain =
+    options.postToMain ?? ((msg: UiToMain) => parent.postMessage({ pluginMessage: msg }, "*"));
 
   let panel: PanelState = "COMPACT";
   let connected = false;

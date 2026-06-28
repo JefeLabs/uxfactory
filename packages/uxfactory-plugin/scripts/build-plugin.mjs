@@ -25,10 +25,18 @@ export async function buildPlugin() {
   await mkdir(dist, { recursive: true });
 
   // 1. main thread → dist/code.js
-  await build({ ...common, entryPoints: [path.join(root, "src/code.ts")], outfile: path.join(dist, "code.js") });
+  await build({
+    ...common,
+    entryPoints: [path.join(root, "src/code.ts")],
+    outfile: path.join(dist, "code.js"),
+  });
 
   // 2. iframe UI → bundled JS string, inlined into ui.html
-  const uiResult = await build({ ...common, entryPoints: [path.join(root, "src/ui.ts")], write: false });
+  const uiResult = await build({
+    ...common,
+    entryPoints: [path.join(root, "src/ui.ts")],
+    write: false,
+  });
   const uiJs = uiResult.outputFiles[0].text;
   const template = await readFile(path.join(root, "src/ui.html"), "utf8");
   // Function replacement avoids `$`-pattern expansion in the bundled JS.
