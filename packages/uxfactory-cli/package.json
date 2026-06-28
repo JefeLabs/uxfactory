@@ -3,15 +3,21 @@
   "version": "0.0.0",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=20.10" },
-  "bin": { "uxfactory": "./dist/src/cli.js" },
+  "engines": {
+    "node": ">=20.10"
+  },
+  "bin": {
+    "uxfactory": "./dist/src/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json"
@@ -19,7 +25,7 @@
   "dependencies": {
     "@uxfactory/bridge": "workspace:*",
     "@uxfactory/spec": "workspace:*",
-    "commander": "15.0.0"
+    "commander": "14.0.1"
   },
   "devDependencies": {
     "@types/node": "26.0.1"

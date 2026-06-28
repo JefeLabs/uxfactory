@@ -58,8 +58,8 @@ importers:
         specifier: workspace:*
         version: link:../uxfactory-spec
       commander:
-        specifier: 15.0.0
-        version: 15.0.0
+        specifier: 14.0.1
+        version: 14.0.1
     devDependencies:
       '@types/node':
         specifier: 26.0.1
@@ -421,9 +421,9 @@ packages:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
 
-  commander@15.0.0:
-    resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
-    engines: {node: '>=22.12.0'}
+  commander@14.0.1:
+    resolution: {integrity: sha512-2JkV3gUZUVrbNA+1sjBOYLsMZ5cEEl8GTFP2a4AVz5hvasAMCQ1D2l2le/cX+pV4N6ZU17zjUahLpIXRrnWL8A==}
+    engines: {node: '>=20'}
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
@@ -1419,7 +1419,7 @@ snapshots:
 
   chai@6.2.2: {}
 
-  commander@15.0.0: {}
+  commander@14.0.1: {}
 
   convert-source-map@2.0.0: {}
 
