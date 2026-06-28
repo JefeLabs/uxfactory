@@ -19,8 +19,13 @@ export async function scanCmd(
   let raw: string | null = null;
   try {
     raw = await readFile(manifestPath, "utf8");
-  } catch {
-    raw = null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      raw = null; // absent → write {}
+    } else {
+      io.err(`cannot read uxfactory.assets.json: ${(err as Error).message}`);
+      return EXIT.TRANSPORT;
+    }
   }
 
   let catalog: Record<string, string> = {};
