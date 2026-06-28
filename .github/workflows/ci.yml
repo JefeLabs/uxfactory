@@ -9,16 +9,27 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 11.9.0
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm typecheck
-      - run: pnpm -r build
-      - run: pnpm test
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check formatting
+        run: pnpm format:check
+      - name: Type-check
+        run: pnpm typecheck
+      - name: Build packages
+        run: pnpm -r build
+      - name: Verify built artifact loads in Node
+        run: |
+          node --input-type=module -e "import('./packages/uxfactory-spec/dist/src/index.js').then(m => { if (!m.validate({ edits: [{ id: '1', set: { x: 1 } }] }).valid) process.exit(1); console.log('spec artifact ok'); })"
+      - name: Run tests
+        run: pnpm test

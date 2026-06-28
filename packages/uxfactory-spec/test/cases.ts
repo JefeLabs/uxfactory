@@ -109,4 +109,13 @@ export const cases: Case[] = [
   { name: "extra top-level property", valid: false, input: { frames: [], extra: 1 } },
   { name: "opacity above 1", valid: false, input: { edits: [{ id: "1", set: { opacity: 1.5 } }] } },
   { name: "bad hex color", valid: false, input: { edits: [{ id: "1", set: { fill: "red" } }] } },
+  {
+    name: "edit-only spec with editor present",
+    valid: true,
+    input: { editor: "figma", edits: [{ id: "1", set: { x: 1 } }] },
+  },
+  { name: "null root", valid: false, input: null },
+  { name: "array root", valid: false, input: [] },
+  { name: "string root", valid: false, input: "nope" },
+  { name: "number root", valid: false, input: 5 },
 ];

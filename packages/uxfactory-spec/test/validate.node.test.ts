@@ -24,4 +24,16 @@ describe("validate (node)", () => {
     expect(isSpec({ edits: [{ id: "1", set: { x: 1 } }] })).toBe(true);
     expect(isSpec({})).toBe(false);
   });
+
+  it('maps the root path to "/"', () => {
+    const result = validate({});
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.path === "/")).toBe(true);
+  });
+
+  it("points the path at the offending nested location", () => {
+    const result = validate({ edits: [{ id: "1", set: { color: "#fff" } }] });
+    const extra = result.errors.find((e) => e.message.includes("color"));
+    expect(extra?.path).toBe("/edits/0/set");
+  });
 });

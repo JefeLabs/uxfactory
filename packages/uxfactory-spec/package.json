@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.10"
+  },
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",
