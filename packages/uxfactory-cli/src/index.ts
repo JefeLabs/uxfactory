@@ -18,3 +18,5 @@ export type { IO } from "./io.js";
 export * from "./drift/map-schema.js";
 export { readMap, writeMap, serializeMap, setAutoFilled } from "./drift/map-io.js";
 export type { AutoFill } from "./drift/map-io.js";
+export { resolveSource, getByPath, parseRef, extractBraceBody } from "./drift/sources.js";
+export type { ResolvedSource } from "./drift/sources.js";

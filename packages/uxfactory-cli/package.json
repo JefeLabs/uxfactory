@@ -25,7 +25,8 @@
   "dependencies": {
     "@uxfactory/bridge": "workspace:*",
     "@uxfactory/spec": "workspace:*",
-    "commander": "14.0.1"
+    "commander": "14.0.1",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@types/node": "26.0.1"
