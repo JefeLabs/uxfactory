@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.uxfactory/
+*.log
+.DS_Store
+.idea/

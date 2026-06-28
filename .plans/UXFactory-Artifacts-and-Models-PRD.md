@@ -13,11 +13,11 @@
 
 ## 1. Overview & Thesis
 
-UXFactory is the authoring and quality-gate layer for an AI UI-rendering agent. It stores the documents that describe what a UI *should be*, binds them to the design (Figma) and the code, and runs a tiered quality gate that decides whether a rendered output passes, fails, or escalates to a human.
+UXFactory is the authoring and quality-gate layer for an AI UI-rendering agent. It stores the documents that describe what a UI _should be_, binds them to the design (Figma) and the code, and runs a tiered quality gate that decides whether a rendered output passes, fails, or escalates to a human.
 
 **Core thesis — three claims that the whole product rests on:**
 
-1. **Every source-of-truth document compiles into a gate check.** An acceptance criterion, a brand rule, a design principle — each one compiles into a check of some *hardness* (deterministic lint, integration test, visual diff, or VLM-judge-with-rubric). UXFactory's authoring experience is not "write nice UX docs"; it is "write docs that compile into gates." That is the product wedge a generic Figma plugin or Notion template structurally cannot replicate.
+1. **Every source-of-truth document compiles into a gate check.** An acceptance criterion, a brand rule, a design principle — each one compiles into a check of some _hardness_ (deterministic lint, integration test, visual diff, or VLM-judge-with-rubric). UXFactory's authoring experience is not "write nice UX docs"; it is "write docs that compile into gates." That is the product wedge a generic Figma plugin or Notion template structurally cannot replicate.
 
 2. **Own the spec and the trace; reference the rest by pointer + hash.** Figma already owns geometry and tokens; the code repo / component registry already owns components. UXFactory's unique, durable artifact is the **trace graph** — the binding between a story's acceptance criteria, the view-states they imply, the Figma nodes that render them, and the components that implement them. That bridge is the thing everyone else leaves implicit and lets rot. Making it first-class is the moat.
 
@@ -30,6 +30,7 @@ UXFactory is the authoring and quality-gate layer for an AI UI-rendering agent. 
 ## 2. Goals & Non-Goals
 
 ### Goals
+
 - Provide a structured authoring model for the full chain: **Story Map → Activity → Task → Story → Acceptance Criteria → View-State → View → Component.**
 - Own and version the **trace/binding graph** linking problem-space specs to solution-space renderings.
 - Compile authored documents (ACs, design principles, brand rules) into an executable **gate profile**.
@@ -38,7 +39,8 @@ UXFactory is the authoring and quality-gate layer for an AI UI-rendering agent. 
 - Route soft/judgment failures through a **role-based HITL gate ladder** with the correct escalation owner per check class.
 
 ### Non-Goals
-- Re-storing Figma geometry or token *values* as authored copies (referenced by pointer + hash; variables are materialized-with-provenance, not authored).
+
+- Re-storing Figma geometry or token _values_ as authored copies (referenced by pointer + hash; variables are materialized-with-provenance, not authored).
 - Replacing the orchestration/runtime substrate (**AWS AgentCore**) or the integration-test/registry layer (generic **CI + code repo**).
 - Acting as the design canvas itself — UXFactory binds to Figma, it does not replace it.
 - Maintaining a single rigid end-to-end artifact across the product/design tool boundary (the durable link is acceptance criteria + naming convention + the binding graph, not one spanning tool).
@@ -59,7 +61,7 @@ Activity (epic)                ── problem space (product-owned)
                   └─ Component
 ```
 
-**Acceptance criteria are the hinge** between problem and solution space. They are written in user terms but directly *enumerate the states* that must be built. States fall **out of** ACs — they are not invented independently. A designer adding a state with no backing AC is a signal of either a missing story or scope creep; either way it surfaces a conversation.
+**Acceptance criteria are the hinge** between problem and solution space. They are written in user terms but directly _enumerate the states_ that must be built. States fall **out of** ACs — they are not invented independently. A designer adding a state with no backing AC is a signal of either a missing story or scope creep; either way it surfaces a conversation.
 
 ### 3.2 Cross-cutting guidelines
 
@@ -72,13 +74,13 @@ This restores the clean split: **ACs are local** (per story, behavioral); **guid
 
 ### 3.3 Cardinality that matters
 
-| Relationship | Cardinality | Consequence |
-|---|---|---|
-| Story ↔ View | many-to-many | a story spans views; a view serves many stories |
-| AcceptanceCriterion → ViewState | one-to-many | each AC implies one or more states |
-| ViewState → Binding → FigmaNode / Component | one-to-one(ish) | the trace anchor |
-| BrandGuide → Project | one-to-many | brand inherited across a customer's projects |
-| Collection mode → tenant/viewport | one-to-one | a mode = a theme or a breakpoint |
+| Relationship                                | Cardinality     | Consequence                                     |
+| ------------------------------------------- | --------------- | ----------------------------------------------- |
+| Story ↔ View                                | many-to-many    | a story spans views; a view serves many stories |
+| AcceptanceCriterion → ViewState             | one-to-many     | each AC implies one or more states              |
+| ViewState → Binding → FigmaNode / Component | one-to-one(ish) | the trace anchor                                |
+| BrandGuide → Project                        | one-to-many     | brand inherited across a customer's projects    |
+| Collection mode → tenant/viewport           | one-to-one      | a mode = a theme or a breakpoint                |
 
 ---
 
@@ -86,30 +88,30 @@ This restores the clean split: **ACs are local** (per story, behavioral); **guid
 
 Each artifact is classified by **ownership** — `OWNED` (authored, exists nowhere else), `REFERENCED` (pointer + content hash into Figma/repo), `MATERIALIZED` (synced cache with provenance hash), or `GENERATED` (produced by the gate, stored for audit).
 
-| Artifact | Ownership | Scope | Purpose |
-|---|---|---|---|
-| **StoryMap** | OWNED | project | 2D organizing surface; backbone of activities × prioritized tasks |
-| **Activity** | OWNED | project | backbone node; maps loosely to an epic |
-| **Task** | OWNED | activity | decomposes an activity into steps |
-| **Story** | OWNED | task | `As a/I want/so that` unit of value |
-| **AcceptanceCriterion** | OWNED | story | behavioral source of truth; compiles into coverage/correctness checks |
-| **View / Route** | OWNED | project | a navigable surface; many-to-many with stories |
-| **ViewState** | OWNED (derived) | view | empty/loading/error/success/edge; derived from ACs |
-| **Binding** | OWNED | view-state | **the trace** — links state ↔ Figma node ↔ component (the moat) |
-| **DesignGuide.Principle** | OWNED | project | prose rubric for integrity/craft tiers |
-| **DesignGuide.token_ref** | REFERENCED | project | pointer + hash into Figma tokens/variables |
-| **BrandGuide.Rule** | OWNED | tenant | brand assertions; compile into lint or judge rubric |
-| **VariableCollection / Variable** | MATERIALIZED | project | lossless mirror of Figma variables + provenance hash |
-| **ResolvedToken** | MATERIALIZED (derived) | project | flattened, alias-walked token index the gate greps |
-| **GateProfile** | GENERATED (semi) | project | which checks apply to which view/component class + escalation routing |
-| **GateRun / GateResult** | GENERATED | run | audit record of a gate execution, with trace back-links |
+| Artifact                          | Ownership              | Scope      | Purpose                                                               |
+| --------------------------------- | ---------------------- | ---------- | --------------------------------------------------------------------- |
+| **StoryMap**                      | OWNED                  | project    | 2D organizing surface; backbone of activities × prioritized tasks     |
+| **Activity**                      | OWNED                  | project    | backbone node; maps loosely to an epic                                |
+| **Task**                          | OWNED                  | activity   | decomposes an activity into steps                                     |
+| **Story**                         | OWNED                  | task       | `As a/I want/so that` unit of value                                   |
+| **AcceptanceCriterion**           | OWNED                  | story      | behavioral source of truth; compiles into coverage/correctness checks |
+| **View / Route**                  | OWNED                  | project    | a navigable surface; many-to-many with stories                        |
+| **ViewState**                     | OWNED (derived)        | view       | empty/loading/error/success/edge; derived from ACs                    |
+| **Binding**                       | OWNED                  | view-state | **the trace** — links state ↔ Figma node ↔ component (the moat)       |
+| **DesignGuide.Principle**         | OWNED                  | project    | prose rubric for integrity/craft tiers                                |
+| **DesignGuide.token_ref**         | REFERENCED             | project    | pointer + hash into Figma tokens/variables                            |
+| **BrandGuide.Rule**               | OWNED                  | tenant     | brand assertions; compile into lint or judge rubric                   |
+| **VariableCollection / Variable** | MATERIALIZED           | project    | lossless mirror of Figma variables + provenance hash                  |
+| **ResolvedToken**                 | MATERIALIZED (derived) | project    | flattened, alias-walked token index the gate greps                    |
+| **GateProfile**                   | GENERATED (semi)       | project    | which checks apply to which view/component class + escalation routing |
+| **GateRun / GateResult**          | GENERATED              | run        | audit record of a gate execution, with trace back-links               |
 
 ### Artifact definitions (narrative)
 
-- **Story Map** — a collection of stories plus *two dimensions of meaning*: horizontal = narrative sequence; vertical = priority / release slices. It is a flexible organizing surface, not a rigid parent/child tree.
-- **User Story** — one small unit of requirement, `As a <role>, I want <goal> so that <benefit>`. Captures *what* and *why* for one piece of functionality. Says nothing about flow or emotion.
-- **User Journey** *(input artifact, not stored as a gate source)* — end-to-end experience with stages, actions, thoughts, touchpoints, pain points, emotion. Used upstream to reveal friction that motivates stories. Not dereferenced by the gate.
-- **User Flow** *(input artifact)* — screen-level navigation logic with decision points/branches. Informs view/route structure.
+- **Story Map** — a collection of stories plus _two dimensions of meaning_: horizontal = narrative sequence; vertical = priority / release slices. It is a flexible organizing surface, not a rigid parent/child tree.
+- **User Story** — one small unit of requirement, `As a <role>, I want <goal> so that <benefit>`. Captures _what_ and _why_ for one piece of functionality. Says nothing about flow or emotion.
+- **User Journey** _(input artifact, not stored as a gate source)_ — end-to-end experience with stages, actions, thoughts, touchpoints, pain points, emotion. Used upstream to reveal friction that motivates stories. Not dereferenced by the gate.
+- **User Flow** _(input artifact)_ — screen-level navigation logic with decision points/branches. Informs view/route structure.
 - **View / ViewState** — a view is a surface; its states are the explicit conditions the surface moves through. States are first-class because the gate's coverage tier checks that every AC-implied state is rendered. (Cf. the JobComposer three-state pattern — Intake → Scoping → Confirm — a single conceptual view decomposed into explicit states, each corresponding to a phase of the underlying job.)
 - **Binding (trace)** — the durable link between a view-state and the `figma_node_ref` + `component_ref` that realize it. Pointer + hash, never copies. This is the artifact that exists nowhere else and is UXFactory's reason to exist.
 - **DesignGuide** — half-pointer (`token_ref` into Figma), half-owned (prose `Principle`s the VLM judge needs as a rubric).
@@ -229,7 +231,7 @@ ResolvedToken
   source_hash                  # back to the mirror; drift → re-derive
 ```
 
-**Why materialized, not referenced:** the conformance tier must *resolve* the legal token set (name → value → code symbol) on every check to verify the rendering used a token rather than a magic value. You cannot grep code against a pointer. Variables are therefore a synced cache keyed by a content hash, not an authored copy and not a bare pointer.
+**Why materialized, not referenced:** the conformance tier must _resolve_ the legal token set (name → value → code symbol) on every check to verify the rendering used a token rather than a magic value. You cannot grep code against a pointer. Variables are therefore a synced cache keyed by a content hash, not an authored copy and not a bare pointer.
 
 **Keep the alias chain, not just the resolved value:** the rule "use semantic tokens, not raw primitives" is only checkable if you can see that code reached for `color/brand/500` directly instead of the semantic `color/bg/primary` that aliases to it. Resolved-only loses this.
 
@@ -263,33 +265,33 @@ GateResult
   trace               # back-link to story / AC / figma_node   ← makes failures actionable
 ```
 
-**The `trace` / `compiled_from` fields close the loop.** A failure points at the exact AC, design principle, brand rule, or Figma node — so the rendering agent (or the human) knows *what* to fix, not merely *that* it is wrong.
+**The `trace` / `compiled_from` fields close the loop.** A failure points at the exact AC, design principle, brand rule, or Figma node — so the rendering agent (or the human) knows _what_ to fix, not merely _that_ it is wrong.
 
 ### 5.6 Design System Primitives & Requirement Profiles
 
-Design-system primitives (colors, spacing, grids, typography, icons, imagery, logos, motion, radius, elevation, …) are **not** a flat set of new entities. Each follows the same shape as the rest of the model — a **values layer** (referenced or materialized) plus a **policy layer** (owned) — and slots under the existing `BrandGuide` (tenant) / `DesignGuide` (project) containers. Token *values* already live in `ResolvedToken` (§5.4); this section adds the **owned policy** for those tokens and the families Figma variables structurally cannot express (type pairings, asset libraries, grids, motion choreography).
+Design-system primitives (colors, spacing, grids, typography, icons, imagery, logos, motion, radius, elevation, …) are **not** a flat set of new entities. Each follows the same shape as the rest of the model — a **values layer** (referenced or materialized) plus a **policy layer** (owned) — and slots under the existing `BrandGuide` (tenant) / `DesignGuide` (project) containers. Token _values_ already live in `ResolvedToken` (§5.4); this section adds the **owned policy** for those tokens and the families Figma variables structurally cannot express (type pairings, asset libraries, grids, motion choreography).
 
-**a11y and i18n are a different shape.** They are not primitives/assets — they are **cross-cutting requirement profiles** that (a) *generate* checks directly and (b) *constrain* the primitive families (a11y bounds color tokens via contrast; i18n bounds type/layout via expansion + RTL). They are modeled as Profiles, not Sets/Libraries.
+**a11y and i18n are a different shape.** They are not primitives/assets — they are **cross-cutting requirement profiles** that (a) _generate_ checks directly and (b) _constrain_ the primitive families (a11y bounds color tokens via contrast; i18n bounds type/layout via expansion + RTL). They are modeled as Profiles, not Sets/Libraries.
 
-**Typed families vs. prose rules.** Apply the hardness gradient to the schema shape itself: families with enough structure to drive a *deterministic* check (grids, spacing steps, logo geometry, icon manifest) are **typed entities**; inherently-prose families (imagery "feel", pairing rationale) remain **judge-rubric Rules**. Structured schema → lint check; prose schema → VLM check.
+**Typed families vs. prose rules.** Apply the hardness gradient to the schema shape itself: families with enough structure to drive a _deterministic_ check (grids, spacing steps, logo geometry, icon manifest) are **typed entities**; inherently-prose families (imagery "feel", pairing rationale) remain **judge-rubric Rules**. Structured schema → lint check; prose schema → VLM check.
 
 #### Family → layer → tier mapping
 
-| Family | Values (class) | Policy (class) | Scope | Primary tier(s) |
-|---|---|---|---|---|
-| Colors | variable → `ResolvedToken` (MAT) | meaning rule (OWN) | tenant (meaning) / project (ramp) | 3 conformance · 5 contrast · 7 meaning |
-| Spacing | FLOAT var (MAT) | rhythm / grid-step (OWN) | project | 3 · 4 |
-| Radius / elevation / opacity *(etc.)* | FLOAT·COLOR var (MAT) | usage rule (OWN) | project | 3 |
-| Grids | grid style (REF) | grid rule (OWN) | project | 3 snap · 4 breakpoints |
-| Breakpoints | = variable **modes** (MAT) | rule (OWN) | project | 4 integrity |
-| Typography scale | size/lh/weight var · text style (MAT/REF) | scale rule (OWN) | project | 3 |
-| Font pairings | font-family token · `font_ref` (REF) | pairing + rationale (OWN) | project | 6 craft · 3 |
-| Icon set | Figma set + code pkg (REF) | usage policy (OWN) | project | 3 approved-set · 5 labels |
-| Imagery set | asset library (REF) | treatment rules (OWN) | tenant | 7 brand · 4 responsive |
-| Logos | logo variants (REF) | clear-space / min-size (OWN) | tenant | 7 brand |
-| Motion | duration/easing var (MAT) | choreography (OWN) | project | 4·6 match · 5 reduced-motion |
-| a11y *(profile)* | — | target + rules (OWN) → results (GEN) | project | **5 (own tier)**; constrains 3·4·7 |
-| i18n *(profile)* | string catalog (REF) | locales/RTL/expansion (OWN) | project | 1 externalized · 4 expansion/RTL · 5 lang |
+| Family                                | Values (class)                            | Policy (class)                       | Scope                             | Primary tier(s)                           |
+| ------------------------------------- | ----------------------------------------- | ------------------------------------ | --------------------------------- | ----------------------------------------- |
+| Colors                                | variable → `ResolvedToken` (MAT)          | meaning rule (OWN)                   | tenant (meaning) / project (ramp) | 3 conformance · 5 contrast · 7 meaning    |
+| Spacing                               | FLOAT var (MAT)                           | rhythm / grid-step (OWN)             | project                           | 3 · 4                                     |
+| Radius / elevation / opacity _(etc.)_ | FLOAT·COLOR var (MAT)                     | usage rule (OWN)                     | project                           | 3                                         |
+| Grids                                 | grid style (REF)                          | grid rule (OWN)                      | project                           | 3 snap · 4 breakpoints                    |
+| Breakpoints                           | = variable **modes** (MAT)                | rule (OWN)                           | project                           | 4 integrity                               |
+| Typography scale                      | size/lh/weight var · text style (MAT/REF) | scale rule (OWN)                     | project                           | 3                                         |
+| Font pairings                         | font-family token · `font_ref` (REF)      | pairing + rationale (OWN)            | project                           | 6 craft · 3                               |
+| Icon set                              | Figma set + code pkg (REF)                | usage policy (OWN)                   | project                           | 3 approved-set · 5 labels                 |
+| Imagery set                           | asset library (REF)                       | treatment rules (OWN)                | tenant                            | 7 brand · 4 responsive                    |
+| Logos                                 | logo variants (REF)                       | clear-space / min-size (OWN)         | tenant                            | 7 brand                                   |
+| Motion                                | duration/easing var (MAT)                 | choreography (OWN)                   | project                           | 4·6 match · 5 reduced-motion              |
+| a11y _(profile)_                      | —                                         | target + rules (OWN) → results (GEN) | project                           | **5 (own tier)**; constrains 3·4·7        |
+| i18n _(profile)_                      | string catalog (REF)                      | locales/RTL/expansion (OWN)          | project                           | 1 externalized · 4 expansion/RTL · 5 lang |
 
 #### Schemas
 
@@ -350,7 +352,7 @@ I18nProfile
 
 ### 5.7 Context & Content Envelope
 
-Four artifacts wrap the product surface rather than describe its appearance: the **design brief** (where it comes from), **editorial style** (the words on it), **discoverability strategy** (how it is found), and **viewport strategy** (the contexts it renders in). Two introduce new gate classes (Tiers 8–9); the brief sits *above* the spec tree as root provenance; the viewport strategy refines Tiers 4–5.
+Four artifacts wrap the product surface rather than describe its appearance: the **design brief** (where it comes from), **editorial style** (the words on it), **discoverability strategy** (how it is found), and **viewport strategy** (the contexts it renders in). Two introduce new gate classes (Tiers 8–9); the brief sits _above_ the spec tree as root provenance; the viewport strategy refines Tiers 4–5.
 
 **The brief parameterizes the downstream profiles** — this is the connective structure:
 
@@ -416,7 +418,7 @@ ViewportStrategy
   # compiles → Tier 4 integrity (render at each class) + Tier 5 a11y (modality constraints)
 ```
 
-**The SEO/AIO scope boundary is load-bearing.** The render gate owns *on-page* signals (semantic structure, JSON-LD, metadata, answer-first shape, `llms.txt`). It does **not** own *off-page* signals — the majority of AI brand citations originate off-site, and citability depends on trust footprint and freshness that no render-time check can verify. Off-page belongs to a separate monitoring loop (a sibling concern), and the gate must not promise what it structurally cannot check.
+**The SEO/AIO scope boundary is load-bearing.** The render gate owns _on-page_ signals (semantic structure, JSON-LD, metadata, answer-first shape, `llms.txt`). It does **not** own _off-page_ signals — the majority of AI brand citations originate off-site, and citability depends on trust footprint and freshness that no render-time check can verify. Off-page belongs to a separate monitoring loop (a sibling concern), and the gate must not promise what it structurally cannot check.
 
 **Content & Voice and Discoverability are separate tiers despite a shared verifier** (both judge the words via an LLM) because their escalation owners differ — content/brand vs. SEO/growth — the same role-based-HITL reason Brand is separate from Craft.
 
@@ -434,18 +436,18 @@ ViewportStrategy
 
 ### 6.2 Tier table (canonical)
 
-| Tier | Source of truth | Verifier | Hardness |
-|---|---|---|---|
-| **0 · Spec presence** | — | deterministic | hard (a missing spec is itself a finding) |
-| **1 · Coverage** | acceptance criteria | deterministic + integration test | hard |
-| **2 · Correctness** | acceptance criteria | integration test (CI) | hard |
-| **3 · Conformance** | tokens (`token_ref`, pointer) **+** `DesignGuide.Rule` (owned) **+** required SEO/AIO markup (semantic landmarks, valid JSON-LD, meta, canonical) | AST / lint | hard |
-| **4 · Integrity** | `DesignGuide.Principle` (owned rubric) + `ViewportStrategy` matrix + Figma as target instance | snapshot + VLM judge | soft |
-| **5 · A11y** | — (shares semantic substrate with SEO/AIO markup) | axe-core + judge | mixed |
-| **6 · Craft** | `DesignGuide.Principle` rubric + exemplars; Figma as instance | VLM judge | escalate (HITL) |
-| **7 · Brand** | `BrandGuide.Rule` + exemplars | lint (structured) / VLM judge | mixed → escalate |
-| **8 · Content & Voice** | `EditorialStyle` + exemplars | LLM judge | escalate (owner: content / brand) |
-| **9 · Discoverability (AIO content)** | `DiscoverabilityStrategy` — answer-first, entity density, citability shape (on-page only) | LLM judge | soft → escalate (owner: SEO / growth) |
+| Tier                                  | Source of truth                                                                                                                                   | Verifier                         | Hardness                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------- |
+| **0 · Spec presence**                 | —                                                                                                                                                 | deterministic                    | hard (a missing spec is itself a finding) |
+| **1 · Coverage**                      | acceptance criteria                                                                                                                               | deterministic + integration test | hard                                      |
+| **2 · Correctness**                   | acceptance criteria                                                                                                                               | integration test (CI)            | hard                                      |
+| **3 · Conformance**                   | tokens (`token_ref`, pointer) **+** `DesignGuide.Rule` (owned) **+** required SEO/AIO markup (semantic landmarks, valid JSON-LD, meta, canonical) | AST / lint                       | hard                                      |
+| **4 · Integrity**                     | `DesignGuide.Principle` (owned rubric) + `ViewportStrategy` matrix + Figma as target instance                                                     | snapshot + VLM judge             | soft                                      |
+| **5 · A11y**                          | — (shares semantic substrate with SEO/AIO markup)                                                                                                 | axe-core + judge                 | mixed                                     |
+| **6 · Craft**                         | `DesignGuide.Principle` rubric + exemplars; Figma as instance                                                                                     | VLM judge                        | escalate (HITL)                           |
+| **7 · Brand**                         | `BrandGuide.Rule` + exemplars                                                                                                                     | lint (structured) / VLM judge    | mixed → escalate                          |
+| **8 · Content & Voice**               | `EditorialStyle` + exemplars                                                                                                                      | LLM judge                        | escalate (owner: content / brand)         |
+| **9 · Discoverability (AIO content)** | `DiscoverabilityStrategy` — answer-first, entity density, citability shape (on-page only)                                                         | LLM judge                        | soft → escalate (owner: SEO / growth)     |
 
 ### 6.3 What each tier checks
 
@@ -457,8 +459,8 @@ ViewportStrategy
 - **5 A11y** — semantics, keyboard, contrast, focus order, touch-target sizing per viewport input modality. Shares the semantic-structure substrate (landmarks, headings, alt, `lang`) with the SEO/AIO markup check — one verifier serves both.
 - **6 Craft** — hierarchy, rhythm, alignment, intentionality. Escalates to a human.
 - **7 Brand** — logo usage, color meaning, imagery treatment, naming. Earns its own class chiefly because the **escalation owner differs** (brand / tenant admin, not eng).
-- **8 Content & Voice** — generated microcopy (labels, empty/error/success text, headings) matches `EditorialStyle` voice + `tone_map` context + lexicon + reading level. New class because nothing else gates the *words* the render agent produces; owner is content/brand.
-- **9 Discoverability (AIO content)** — *on-page* citability shape: direct answer in first 40–60 words, self-contained sections, entity density, statistic/source density. **Off-page signals (backlinks, off-site trust, cross-platform presence, actual citation rates) are out of scope for the render gate** — they belong to a separate monitoring loop, not a render-time check.
+- **8 Content & Voice** — generated microcopy (labels, empty/error/success text, headings) matches `EditorialStyle` voice + `tone_map` context + lexicon + reading level. New class because nothing else gates the _words_ the render agent produces; owner is content/brand.
+- **9 Discoverability (AIO content)** — _on-page_ citability shape: direct answer in first 40–60 words, self-contained sections, entity density, statistic/source density. **Off-page signals (backlinks, off-site trust, cross-platform presence, actual citation rates) are out of scope for the render gate** — they belong to a separate monitoring loop, not a render-time check.
 
 ### 6.4 The compile pipeline
 
@@ -483,13 +485,13 @@ Not every render owes every gate. Fidelity is a **selector over the catalog and 
 
 **The five levels — each a strict superset of the prior:**
 
-| Level | Adds these artifacts as binding | Activates (tiers) | Medium |
-|---|---|---|---|
-| **1 · Wireframe** | `StoryMap`/`AC` coverage · `LayoutSystem` grid · `ViewportStrategy` structural reflow | 0 spec · 1 coverage · 4 *structural* · 5 *landmarks* | greybox design |
-| **2 · Content** | `EditorialStyle` (voice/tone/reading-level) · real component usage · `I18nProfile` string externalization | + 8 content & voice · + 3 *components* · + 1 *i18n externalized* | mid-fi / stubbed |
-| **3 · Visual** | full `TokenSet`/type/color/spacing/icons · `BrandGuide` · `DesignGuide.Principle` | + 3 *tokens* · + 6 craft · + 7 brand · + 4 *visual* · + 5 *contrast* | hi-fi design |
-| **4 · Interactive** | `MotionSystem` · interaction outcomes · all states exercised | + 2 correctness · + motion · + 5 *keyboard/focus* | wired proto / code |
-| **5 · Production** | full `A11yProfile` · full `I18nProfile` (RTL, formatting) · `DiscoverabilityStrategy` · perf | + 9 discoverability · 5 *full a11y* · 4 *full i18n* · all | code |
+| Level               | Adds these artifacts as binding                                                                           | Activates (tiers)                                                    | Medium             |
+| ------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------ |
+| **1 · Wireframe**   | `StoryMap`/`AC` coverage · `LayoutSystem` grid · `ViewportStrategy` structural reflow                     | 0 spec · 1 coverage · 4 _structural_ · 5 _landmarks_                 | greybox design     |
+| **2 · Content**     | `EditorialStyle` (voice/tone/reading-level) · real component usage · `I18nProfile` string externalization | + 8 content & voice · + 3 _components_ · + 1 _i18n externalized_     | mid-fi / stubbed   |
+| **3 · Visual**      | full `TokenSet`/type/color/spacing/icons · `BrandGuide` · `DesignGuide.Principle`                         | + 3 _tokens_ · + 6 craft · + 7 brand · + 4 _visual_ · + 5 _contrast_ | hi-fi design       |
+| **4 · Interactive** | `MotionSystem` · interaction outcomes · all states exercised                                              | + 2 correctness · + motion · + 5 _keyboard/focus_                    | wired proto / code |
+| **5 · Production**  | full `A11yProfile` · full `I18nProfile` (RTL, formatting) · `DiscoverabilityStrategy` · perf              | + 9 discoverability · 5 _full a11y_ · 4 _full i18n_ · all            | code               |
 
 **Fidelity is a promotion ratchet, not just a filter.** Because each level is a superset, the levels are pipeline stages: a render is promoted from Lₙ to Lₙ₊₁ only when every hard check with `min_fidelity ≤ Lₙ` passes and the soft/escalate checks at that level are resolved. This is the HITL gate ladder staged by fidelity — structurally the same as the phase progression in the dashboard model (Discover → … → Verify → Run).
 
@@ -513,10 +515,10 @@ FidelityGate (promotion)
 
 ### 7.1 Access paths (decision-critical)
 
-| Path | Endpoint | Fidelity | Gate |
-|---|---|---|---|
-| **REST API** | `GET /v1/files/:key/variables/local` | full (modes, scopes, codeSyntax, aliases) | **Enterprise Full-seat only**; guests excluded |
-| **Plugin API** | `figma.variables` export → JSON | full read/export | **no plan gate** |
+| Path           | Endpoint                             | Fidelity                                  | Gate                                           |
+| -------------- | ------------------------------------ | ----------------------------------------- | ---------------------------------------------- |
+| **REST API**   | `GET /v1/files/:key/variables/local` | full (modes, scopes, codeSyntax, aliases) | **Enterprise Full-seat only**; guests excluded |
+| **Plugin API** | `figma.variables` export → JSON      | full read/export                          | **no plan gate**                               |
 
 - The REST API requires an Enterprise org + Full seat. Most small design teams UXFactory sells to are **not** Enterprise, so the product cannot assume this path.
 - `/variables/published` does **not** return modes — use `/variables/local` for mode values. "Published" is the wrong endpoint for a gate that cares about theming.
@@ -529,22 +531,22 @@ A collection's modes are per-context value sets. **Extended collections** (`isEx
 - a white-label **tenant theme** = an extension collection (or a mode),
 - a responsive **breakpoint** = a mode.
 
-This folds directly into the SkoolScout-shaped multi-tenancy *and* the tier-4 "holds across viewport range" integrity check — same mechanism, two axes. Model `mode` as a first-class dimension on `ResolvedToken` rather than special-casing light/dark.
+This folds directly into the SkoolScout-shaped multi-tenancy _and_ the tier-4 "holds across viewport range" integrity check — same mechanism, two axes. Model `mode` as a first-class dimension on `ResolvedToken` rather than special-casing light/dark.
 
 ### 7.3 `codeSyntax` is the linchpin
 
-`codeSyntax.WEB` is the literal Figma-variable → code-symbol map. Tier-3 conformance becomes a deterministic match — *did the emitted React reference `code_symbol` rather than a hardcoded hex?* No judge required. This is the design↔code bridge made first-class — UXFactory's reason to exist.
+`codeSyntax.WEB` is the literal Figma-variable → code-symbol map. Tier-3 conformance becomes a deterministic match — _did the emitted React reference `code_symbol` rather than a hardcoded hex?_ No judge required. This is the design↔code bridge made first-class — UXFactory's reason to exist.
 
 ---
 
 ## 8. Storage Taxonomy (summary)
 
-| Class | Examples | Why | Form |
-|---|---|---|---|
-| **Authored / Owned** | ACs, DesignGuide principles, BrandGuide rules, Binding graph | exists nowhere else | source of truth |
-| **Pointer + hash** | frame geometry, node layout, `token_ref`, `component_ref` | high-churn; gate never resolves it deterministically | link + fingerprint |
-| **Materialized + provenance** | Figma variables (mirror + ResolvedToken) | the conformance *contract*; gate must resolve it every check | synced cache keyed by hash |
-| **Generated** | GateProfile, GateRun, GateResult | produced by execution | audit record |
+| Class                         | Examples                                                     | Why                                                          | Form                       |
+| ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | -------------------------- |
+| **Authored / Owned**          | ACs, DesignGuide principles, BrandGuide rules, Binding graph | exists nowhere else                                          | source of truth            |
+| **Pointer + hash**            | frame geometry, node layout, `token_ref`, `component_ref`    | high-churn; gate never resolves it deterministically         | link + fingerprint         |
+| **Materialized + provenance** | Figma variables (mirror + ResolvedToken)                     | the conformance _contract_; gate must resolve it every check | synced cache keyed by hash |
+| **Generated**                 | GateProfile, GateRun, GateResult                             | produced by execution                                        | audit record               |
 
 **Net stored-doc set:** ACs (owned, per-story) · DesignGuide principles + BrandGuide rules (owned, cross-cutting rubric) · the trace/binding graph (owned — the moat) · the variable mirror + resolved index (materialized) · gate runs (generated, audit). **Referenced by pointer + hash:** Figma nodes, tokens, components.
 
@@ -556,7 +558,7 @@ The differentiator is **gate-ready authoring**. The authoring flow captures `imp
 
 - An **AC is not a separate thing from a GateCheck — it compiles into one.**
 - The **GateProfile half-generates itself** from the authored spec + guidelines.
-- The guidance UXFactory sells is *"write docs that compile into gates,"* not *"write nice UX docs."*
+- The guidance UXFactory sells is _"write docs that compile into gates,"_ not _"write nice UX docs."_
 
 This collapses the SPEC and PROFILE layers into a single authored act — the thing a generic Figma plugin or Notion template structurally cannot do.
 
@@ -578,17 +580,17 @@ This collapses the SPEC and PROFILE layers into a single authored act — the th
 
 5. **Drift policy.** On `content_hash` mismatch for a `figma_node_ref` or variable mirror — auto-re-sync, flag-and-hold, or fail the affected checks? Affects how stale the gate is allowed to be.
 
-6. **Asset binaries vs. references.** `AssetLibrary.members[]` stores *references* (Figma node + code symbol), not binaries. Confirm UXFactory never stores logo/icon/image binaries itself, and that the gate verifies "uses an approved asset" by matching `code_symbol` / `figma_node_ref` rather than by image comparison. (Image comparison may still be needed for tier-7 imagery *treatment*.)
+6. **Asset binaries vs. references.** `AssetLibrary.members[]` stores _references_ (Figma node + code symbol), not binaries. Confirm UXFactory never stores logo/icon/image binaries itself, and that the gate verifies "uses an approved asset" by matching `code_symbol` / `figma_node_ref` rather than by image comparison. (Image comparison may still be needed for tier-7 imagery _treatment_.)
 
-7. **Typed-family threshold.** Which primitive families graduate from generic `Rule { statement, kind }` to typed entities? Proposed line: anything whose policy can drive a *deterministic* check (grids, spacing steps, logo geometry, icon manifest, breakpoints) is typed; prose-only families stay generic. Confirm the cut and whether tenants can author new typed families.
+7. **Typed-family threshold.** Which primitive families graduate from generic `Rule { statement, kind }` to typed entities? Proposed line: anything whose policy can drive a _deterministic_ check (grids, spacing steps, logo geometry, icon manifest, breakpoints) is typed; prose-only families stay generic. Confirm the cut and whether tenants can author new typed families.
 
-8. **a11y / i18n constraint propagation.** Profiles *constrain* token families (contrast bounds colors; expansion bounds type/layout). Decide whether those constraints are enforced at **authoring time** (reject a color pair that fails AA when the token is defined) or only at **gate time** (flag the rendered output). Authoring-time is stronger but couples the token editor to the profiles.
+8. **a11y / i18n constraint propagation.** Profiles _constrain_ token families (contrast bounds colors; expansion bounds type/layout). Decide whether those constraints are enforced at **authoring time** (reject a color pair that fails AA when the token is defined) or only at **gate time** (flag the rendered output). Authoring-time is stronger but couples the token editor to the profiles.
 
-9. **SEO/AIO scope line.** Confirm the render gate owns *on-page* only and that off-page citability (backlinks, trust, cross-platform presence, citation rates) is a separate monitoring product/loop — not a render-time check. Decide whether UXFactory ships that monitor at all or integrates an external one.
+9. **SEO/AIO scope line.** Confirm the render gate owns _on-page_ only and that off-page citability (backlinks, trust, cross-platform presence, citation rates) is a separate monitoring product/loop — not a render-time check. Decide whether UXFactory ships that monitor at all or integrates an external one.
 
-10. **`market/tone/explore` semantics.** Confirm whether these are voice *axes* (segment positioning / register / a third dimension) or authoring *modes/operations* (define market, define tone, generative explore). Changes whether `explore` is a stored field or an editor affordance.
+10. **`market/tone/explore` semantics.** Confirm whether these are voice _axes_ (segment positioning / register / a third dimension) or authoring _modes/operations_ (define market, define tone, generative explore). Changes whether `explore` is a stored field or an editor affordance.
 
-11. **Brief as enforced parameter source.** `DesignBrief.audience` is proposed to *derive* i18n locales, a11y target, and reading level. Decide whether these are auto-populated-and-locked from the brief, auto-suggested-then-editable, or merely advisory. Tighter coupling improves provenance but reduces per-profile flexibility.
+11. **Brief as enforced parameter source.** `DesignBrief.audience` is proposed to _derive_ i18n locales, a11y target, and reading level. Decide whether these are auto-populated-and-locked from the brief, auto-suggested-then-editable, or merely advisory. Tighter coupling improves provenance but reduces per-profile flexibility.
 
 12. **Viewport class set.** desktop|tablet|mobile is the default matrix. Decide whether tenants can add classes (e.g. `wide`, `watch`, `tv`) and whether each class must map to a Figma variable mode or can be a gate-only test target without a corresponding mode.
 
@@ -596,17 +598,17 @@ This collapses the SPEC and PROFILE layers into a single authored act — the th
 
 ## Appendix — Glossary
 
-| Term | Meaning |
-|---|---|
-| **Activity / backbone** | top-level story-map node, left→right narrative order; ≈ epic |
+| Term                          | Meaning                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Activity / backbone**       | top-level story-map node, left→right narrative order; ≈ epic                                     |
 | **Acceptance criterion (AC)** | behavioral requirement; the hinge between problem and solution space; compiles into a gate check |
-| **Binding / trace** | owned link from a view-state to its Figma node + component (pointer + hash); the moat |
-| **codeSyntax** | Figma variable's per-platform code name map; the design↔code bridge |
-| **Hardness** | `hard` (blocks) · `soft` (advisory) · `escalate` (HITL) |
-| **HITL gate ladder** | role-based human-in-the-loop escalation; the gate reuses it |
-| **Materialized + provenance** | synced cache keyed by content hash (variables), neither owned-copy nor bare pointer |
-| **Mode** | a Figma collection's per-context value set; = tenant theme or viewport breakpoint |
-| **Pointer + hash** | a reference into Figma/repo plus a content fingerprint for drift detection |
-| **ResolvedToken** | flattened, alias-walked projection of variables that the gate greps |
-| **Source of truth** | what a check dereferences: acceptance criteria, Figma ref, design system, brand guide, or none |
-| **View-state** | an explicit condition a view moves through; derived from an AC |
+| **Binding / trace**           | owned link from a view-state to its Figma node + component (pointer + hash); the moat            |
+| **codeSyntax**                | Figma variable's per-platform code name map; the design↔code bridge                              |
+| **Hardness**                  | `hard` (blocks) · `soft` (advisory) · `escalate` (HITL)                                          |
+| **HITL gate ladder**          | role-based human-in-the-loop escalation; the gate reuses it                                      |
+| **Materialized + provenance** | synced cache keyed by content hash (variables), neither owned-copy nor bare pointer              |
+| **Mode**                      | a Figma collection's per-context value set; = tenant theme or viewport breakpoint                |
+| **Pointer + hash**            | a reference into Figma/repo plus a content fingerprint for drift detection                       |
+| **ResolvedToken**             | flattened, alias-walked projection of variables that the gate greps                              |
+| **Source of truth**           | what a check dereferences: acceptance criteria, Figma ref, design system, brand guide, or none   |
+| **View-state**                | an explicit condition a view moves through; derived from an AC                                   |

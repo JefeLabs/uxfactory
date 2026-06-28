@@ -34,19 +34,30 @@ A spec is one of three shapes. The authoritative contract is the JSON Schema (`u
 ```jsonc
 {
   "editor": "figma",
-  "page": "Architecture",                 // target page; created if absent
+  "page": "Architecture", // target page; created if absent
   "frames": [
     {
       "name": "prod-vpc",
-      "x": 0, "y": 0, "width": 1200, "height": 800,
+      "x": 0,
+      "y": 0,
+      "width": 1200,
+      "height": 800,
       "children": [
-        { "type": "shape", "name": "api-gateway", "x": 80, "y": 80,
-          "width": 160, "height": 64, "fill": "#1E88E5", "characters": "API Gateway" },
-        { "type": "instance", "name": "lambda-ingest", "asset": "aws:lambda", "x": 320, "y": 80 }
-      ]
-    }
+        {
+          "type": "shape",
+          "name": "api-gateway",
+          "x": 80,
+          "y": 80,
+          "width": 160,
+          "height": 64,
+          "fill": "#1E88E5",
+          "characters": "API Gateway",
+        },
+        { "type": "instance", "name": "lambda-ingest", "asset": "aws:lambda", "x": 320, "y": 80 },
+      ],
+    },
   ],
-  "connectors": [ { "from": "api-gateway", "to": "lambda-ingest" } ]
+  "connectors": [{ "from": "api-gateway", "to": "lambda-ingest" }],
 }
 ```
 
@@ -58,8 +69,8 @@ A spec is one of three shapes. The authoritative contract is the JSON Schema (`u
 {
   "edits": [
     { "id": "12:34", "set": { "x": 120, "fill": "#43A047" } },
-    { "name": "redis-cache", "set": { "characters": "Redis 7.2" } }
-  ]
+    { "name": "redis-cache", "set": { "characters": "Redis 7.2" } },
+  ],
 }
 ```
 
@@ -103,11 +114,11 @@ The gate checks: editor type, node counts (frames/sections/objects/connectors), 
 
 **Exit codes — distinguish "wrong" from "broken":**
 
-| Code | Meaning | What to do |
-|------|---------|------------|
-| `0` | PASS | Done. |
-| `1` | FAIL — the canvas doesn't match the spec | Read the `failures[]`, fix the spec, re-publish. |
-| `2` | Transport/setup error (bridge down, plugin not open, timeout) | Fix the environment; do **not** treat as drift. |
+| Code | Meaning                                                       | What to do                                       |
+| ---- | ------------------------------------------------------------- | ------------------------------------------------ |
+| `0`  | PASS                                                          | Done.                                            |
+| `1`  | FAIL — the canvas doesn't match the spec                      | Read the `failures[]`, fix the spec, re-publish. |
+| `2`  | Transport/setup error (bridge down, plugin not open, timeout) | Fix the environment; do **not** treat as drift.  |
 
 ### The verification loop (your default when asked to "make sure it's right")
 
@@ -135,11 +146,11 @@ Forward edits are reversible: the plugin captures the BEFORE values (by `id`) an
 
 ## Quick reference
 
-| Command | Does |
-|---------|------|
-| `uxfactory bridge` | Start the localhost relay (`--port` / `UXFACTORY_PORT` to override). |
-| `uxfactory lint <spec>` | Validate a spec against the schema; renders nothing. |
-| `uxfactory publish <spec> [--wait] [--verify] [--dry-run]` | Enqueue a spec for rendering; optionally wait and/or gate. |
+| Command                                                               | Does                                                                        |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `uxfactory bridge`                                                    | Start the localhost relay (`--port` / `UXFACTORY_PORT` to override).        |
+| `uxfactory lint <spec>`                                               | Validate a spec against the schema; renders nothing.                        |
+| `uxfactory publish <spec> [--wait] [--verify] [--dry-run]`            | Enqueue a spec for rendering; optionally wait and/or gate.                  |
 | `uxfactory verify <spec> [--tolerance <px>] [--render <id>] [--json]` | Gate the latest (or a specific) render against the spec via `POST /verify`. |
-| `uxfactory selection` | Read the current Figma selection (`GET /selection`). |
-| `uxfactory scan` | Rebuild the asset catalog (friendly name → component key). |
+| `uxfactory selection`                                                 | Read the current Figma selection (`GET /selection`).                        |
+| `uxfactory scan`                                                      | Rebuild the asset catalog (friendly name → component key).                  |

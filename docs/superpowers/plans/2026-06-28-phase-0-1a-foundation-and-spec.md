@@ -26,6 +26,7 @@
 ### Task 1: Workspace skeleton, toolchain & Vitest smoke test
 
 **Files:**
+
 - Create: `pnpm-workspace.yaml`
 - Create: `package.json` (root)
 - Create: `tsconfig.base.json`
@@ -38,12 +39,14 @@
 - Test: `test/smoke.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: a working workspace where `pnpm install`, `pnpm test`, `pnpm format:check` run. Root scripts later packages rely on: `build` (`pnpm -r build`), `test` (`vitest run`), `typecheck` (`pnpm -r exec tsc --noEmit`).
 
 - [ ] **Step 1: Write the failing test**
 
 `test/smoke.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 
@@ -62,6 +65,7 @@ Expected: FAIL — `vitest: command not found` / no `package.json` (toolchain no
 - [ ] **Step 3: Create the workspace config files**
 
 `pnpm-workspace.yaml`:
+
 ```yaml
 packages:
   - "packages/*"
@@ -69,6 +73,7 @@ packages:
 ```
 
 `package.json` (root):
+
 ```json
 {
   "name": "uxfactory",
@@ -99,6 +104,7 @@ packages:
 ```
 
 `tsconfig.base.json`:
+
 ```json
 {
   "compilerOptions": {
@@ -124,6 +130,7 @@ packages:
 ```
 
 `tsconfig.json` (root — convenience only; packages each have their own):
+
 ```json
 {
   "extends": "./tsconfig.base.json",
@@ -133,6 +140,7 @@ packages:
 ```
 
 `vitest.config.ts`:
+
 ```ts
 import { defineConfig } from "vitest/config";
 
@@ -145,6 +153,7 @@ export default defineConfig({
 ```
 
 `.gitignore`:
+
 ```gitignore
 node_modules/
 dist/
@@ -156,6 +165,7 @@ coverage/
 ```
 
 `.prettierrc.json`:
+
 ```json
 {
   "printWidth": 100,
@@ -165,6 +175,7 @@ coverage/
 ```
 
 `.prettierignore`:
+
 ```gitignore
 dist
 coverage
@@ -173,6 +184,7 @@ pnpm-lock.yaml
 ```
 
 `.npmrc`:
+
 ```ini
 auto-install-peers=true
 ```
@@ -199,15 +211,18 @@ git commit -m "chore: scaffold pnpm/TypeScript monorepo with Vitest"
 ### Task 2: Continuous integration workflow
 
 **Files:**
+
 - Create: `.github/workflows/ci.yml`
 
 **Interfaces:**
+
 - Consumes: root scripts `format:check`, `build`, `test` from Task 1.
 - Produces: a CI gate that runs on push to `main` and on every PR.
 
 - [ ] **Step 1: Create the workflow**
 
 `.github/workflows/ci.yml`:
+
 ```yaml
 name: CI
 
@@ -253,6 +268,7 @@ git commit -m "ci: add build + test + format workflow"
 ### Task 3: Package scaffold & TypeScript types
 
 **Files:**
+
 - Create: `packages/uxfactory-spec/package.json`
 - Create: `packages/uxfactory-spec/tsconfig.json`
 - Create: `packages/uxfactory-spec/src/types.ts`
@@ -260,12 +276,14 @@ git commit -m "ci: add build + test + format workflow"
 - Test: `packages/uxfactory-spec/test/types.test.ts`
 
 **Interfaces:**
+
 - Consumes: `tsconfig.base.json` (Task 1).
 - Produces: exported types `Editor`, `Box`, `ShapeNode`, `TextNode`, `InstanceNode`, `StickyNode`, `FrameChild`, `SectionChild`, `Frame`, `Section`, `Connector`, `EditSet`, `Edit`, `DesignSpec`, `FigjamSpec`, `EditOnlySpec`, `Spec`. These are imported by every later package and by `validate.ts`.
 
 - [ ] **Step 1: Write the failing test**
 
 `packages/uxfactory-spec/test/types.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 import type { DesignSpec, FigjamSpec, EditOnlySpec } from "../src/types.js";
@@ -283,7 +301,16 @@ describe("spec types", () => {
           width: 1200,
           height: 800,
           children: [
-            { type: "shape", name: "api-gateway", x: 80, y: 80, width: 160, height: 64, fill: "#1E88E5", characters: "API Gateway" },
+            {
+              type: "shape",
+              name: "api-gateway",
+              x: 80,
+              y: 80,
+              width: 160,
+              height: 64,
+              fill: "#1E88E5",
+              characters: "API Gateway",
+            },
             { type: "instance", name: "lambda-ingest", asset: "aws:lambda", x: 320, y: 80 },
           ],
         },
@@ -330,6 +357,7 @@ Expected: FAIL — cannot find module `../src/types.js`.
 - [ ] **Step 3: Create the package files**
 
 `packages/uxfactory-spec/package.json`:
+
 ```json
 {
   "name": "@uxfactory/spec",
@@ -354,6 +382,7 @@ Expected: FAIL — cannot find module `../src/types.js`.
 ```
 
 `packages/uxfactory-spec/tsconfig.json`:
+
 ```json
 {
   "extends": "../../tsconfig.base.json",
@@ -366,6 +395,7 @@ Expected: FAIL — cannot find module `../src/types.js`.
 ```
 
 `packages/uxfactory-spec/src/types.ts`:
+
 ```ts
 /** Target editor for a spec. */
 export type Editor = "figma" | "figjam";
@@ -505,6 +535,7 @@ export type Spec = DesignSpec | FigjamSpec | EditOnlySpec;
 ```
 
 `packages/uxfactory-spec/src/index.ts`:
+
 ```ts
 export * from "./types.js";
 ```
@@ -531,17 +562,20 @@ git commit -m "feat(spec): scaffold @uxfactory/spec with TypeScript types"
 ### Task 4: Authoritative JSON Schema (three shapes + edit rejection)
 
 **Files:**
+
 - Create: `packages/uxfactory-spec/schema/uxfactory.schema.json`
 - Modify: `packages/uxfactory-spec/package.json` (build script — add schema copy)
 - Test: `packages/uxfactory-spec/test/schema.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing at runtime (the schema is standalone JSON validated directly via ajv in the test).
 - Produces: `schema/uxfactory.schema.json`, a draft-07 schema with a root `oneOf` over `designSpec` / `figjamSpec` / `editOnlySpec` and reusable `definitions`. Consumed by `validate.ts` (Task 5).
 
 - [ ] **Step 1: Write the failing test**
 
 `packages/uxfactory-spec/test/schema.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 import Ajv from "ajv";
@@ -561,7 +595,16 @@ const designSpec = {
       width: 1200,
       height: 800,
       children: [
-        { type: "shape", name: "api-gateway", x: 80, y: 80, width: 160, height: 64, fill: "#1E88E5", characters: "API Gateway" },
+        {
+          type: "shape",
+          name: "api-gateway",
+          x: 80,
+          y: 80,
+          width: 160,
+          height: 64,
+          fill: "#1E88E5",
+          characters: "API Gateway",
+        },
         { type: "instance", name: "lambda-ingest", asset: "aws:lambda", x: 320, y: 80 },
       ],
     },
@@ -572,7 +615,14 @@ const designSpec = {
 const figjamSpec = {
   editor: "figjam",
   sections: [
-    { name: "retro", x: 0, y: 0, width: 400, height: 300, children: [{ type: "sticky", name: "went-well", x: 10, y: 10, characters: "shipping" }] },
+    {
+      name: "retro",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      children: [{ type: "sticky", name: "went-well", x: 10, y: 10, characters: "shipping" }],
+    },
   ],
 };
 
@@ -608,12 +658,25 @@ describe("uxfactory.schema.json", () => {
   });
 
   it("rejects a shape missing a required dimension", () => {
-    const bad = { frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10, children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10 }] }] };
+    const bad = {
+      frames: [
+        {
+          name: "f",
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+          children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10 }],
+        },
+      ],
+    };
     expect(check(bad)).toBe(false);
   });
 
   it("rejects a contradictory figjam-with-frames spec", () => {
-    expect(check({ editor: "figjam", frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1 }] })).toBe(false);
+    expect(
+      check({ editor: "figjam", frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1 }] }),
+    ).toBe(false);
   });
 
   it("rejects an unknown top-level property", () => {
@@ -638,6 +701,7 @@ Expected: FAIL — cannot find module `../schema/uxfactory.schema.json`.
 - [ ] **Step 3: Create the schema**
 
 `packages/uxfactory-spec/schema/uxfactory.schema.json`:
+
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -849,6 +913,7 @@ Expected: PASS — all 10 tests pass.
 - [ ] **Step 5: Update the build script to ship the schema next to the compiled output**
 
 In `packages/uxfactory-spec/package.json`, change the `build` script to:
+
 ```json
     "build": "tsc -p tsconfig.json && shx mkdir -p dist/schema && shx cp schema/uxfactory.schema.json dist/schema/uxfactory.schema.json"
 ```
@@ -870,11 +935,13 @@ git commit -m "feat(spec): add authoritative JSON Schema for the three spec shap
 ### Task 5: `validate()` over the committed schema (Node)
 
 **Files:**
+
 - Create: `packages/uxfactory-spec/src/validate.ts`
 - Test: `packages/uxfactory-spec/test/cases.ts`
 - Test: `packages/uxfactory-spec/test/validate.node.test.ts`
 
 **Interfaces:**
+
 - Consumes: `schema/uxfactory.schema.json`; types from `./types.js`.
 - Produces:
   - `interface ValidationError { path: string; message: string }`
@@ -886,6 +953,7 @@ git commit -m "feat(spec): add authoritative JSON Schema for the three spec shap
 - [ ] **Step 1: Write the shared cases fixture**
 
 `packages/uxfactory-spec/test/cases.ts`:
+
 ```ts
 export interface Case {
   name: string;
@@ -897,7 +965,18 @@ export const cases: Case[] = [
   {
     name: "minimal design spec",
     valid: true,
-    input: { frames: [{ name: "f", x: 0, y: 0, width: 100, height: 100, children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10 }] }] },
+    input: {
+      frames: [
+        {
+          name: "f",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10 }],
+        },
+      ],
+    },
   },
   {
     name: "design spec with instance + connectors + editor",
@@ -905,36 +984,85 @@ export const cases: Case[] = [
     input: {
       editor: "figma",
       page: "Architecture",
-      frames: [{ name: "f", x: 0, y: 0, width: 100, height: 100, children: [{ type: "instance", name: "i", asset: "aws:lambda", x: 1, y: 2 }] }],
+      frames: [
+        {
+          name: "f",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          children: [{ type: "instance", name: "i", asset: "aws:lambda", x: 1, y: 2 }],
+        },
+      ],
       connectors: [{ from: "s", to: "i", label: "calls" }],
     },
   },
   {
     name: "design spec carrying edits",
     valid: true,
-    input: { frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1 }], edits: [{ id: "1:2", set: { x: 5 } }] },
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1 }],
+      edits: [{ id: "1:2", set: { x: 5 } }],
+    },
   },
   {
     name: "figjam spec with sticky + connectors",
     valid: true,
     input: {
       editor: "figjam",
-      sections: [{ name: "retro", x: 0, y: 0, width: 400, height: 300, children: [{ type: "sticky", name: "w", x: 1, y: 1, characters: "ok" }] }],
+      sections: [
+        {
+          name: "retro",
+          x: 0,
+          y: 0,
+          width: 400,
+          height: 300,
+          children: [{ type: "sticky", name: "w", x: 1, y: 1, characters: "ok" }],
+        },
+      ],
       connectors: [{ from: "w", to: "w" }],
     },
   },
   {
     name: "edit-only spec by id and name",
     valid: true,
-    input: { edits: [{ id: "12:34", set: { x: 120, fill: "#43A047" } }, { name: "redis-cache", set: { characters: "Redis 7.2" } }] },
+    input: {
+      edits: [
+        { id: "12:34", set: { x: 120, fill: "#43A047" } },
+        { name: "redis-cache", set: { characters: "Redis 7.2" } },
+      ],
+    },
   },
-  { name: "unknown edit property", valid: false, input: { edits: [{ id: "1", set: { color: "#fff" } }] } },
+  {
+    name: "unknown edit property",
+    valid: false,
+    input: { edits: [{ id: "1", set: { color: "#fff" } }] },
+  },
   { name: "edit with neither id nor name", valid: false, input: { edits: [{ set: { x: 1 } }] } },
   { name: "empty object", valid: false, input: {} },
   { name: "design spec missing frames", valid: false, input: { page: "x" } },
   { name: "figjam missing editor", valid: false, input: { sections: [] } },
-  { name: "shape missing height", valid: false, input: { frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1, children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10 }] }] } },
-  { name: "figjam with frames (contradiction)", valid: false, input: { editor: "figjam", frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1 }] } },
+  {
+    name: "shape missing height",
+    valid: false,
+    input: {
+      frames: [
+        {
+          name: "f",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10 }],
+        },
+      ],
+    },
+  },
+  {
+    name: "figjam with frames (contradiction)",
+    valid: false,
+    input: { editor: "figjam", frames: [{ name: "f", x: 0, y: 0, width: 1, height: 1 }] },
+  },
   { name: "extra top-level property", valid: false, input: { frames: [], extra: 1 } },
   { name: "opacity above 1", valid: false, input: { edits: [{ id: "1", set: { opacity: 1.5 } }] } },
   { name: "bad hex color", valid: false, input: { edits: [{ id: "1", set: { fill: "red" } }] } },
@@ -944,6 +1072,7 @@ export const cases: Case[] = [
 - [ ] **Step 2: Write the failing test**
 
 `packages/uxfactory-spec/test/validate.node.test.ts`:
+
 ```ts
 import { describe, it, expect } from "vitest";
 import { validate, isSpec } from "../src/validate.js";
@@ -982,6 +1111,7 @@ Expected: FAIL — cannot find module `../src/validate.js`.
 - [ ] **Step 4: Implement `validate()`**
 
 `packages/uxfactory-spec/src/validate.ts`:
+
 ```ts
 import Ajv from "ajv";
 import type { ErrorObject, ValidateFunction } from "ajv";
@@ -1047,16 +1177,19 @@ git commit -m "feat(spec): add validate() and isSpec() over the JSON Schema"
 ### Task 6: Cross-environment parity (jsdom) & public exports
 
 **Files:**
+
 - Modify: `packages/uxfactory-spec/src/index.ts`
 - Test: `packages/uxfactory-spec/test/validate.dom.test.ts`
 
 **Interfaces:**
+
 - Consumes: `validate`, `isSpec`, `ValidationError`, `ValidationResult` from `./validate.js`; `cases` from `./cases.js`.
 - Produces: the package's public surface — `validate`, `isSpec`, `ValidationError`, `ValidationResult`, and all type exports — importable as `@uxfactory/spec`.
 
 - [ ] **Step 1: Write the failing jsdom parity test**
 
 `packages/uxfactory-spec/test/validate.dom.test.ts`:
+
 ```ts
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
@@ -1079,11 +1212,12 @@ describe("validate (jsdom / browser parity)", () => {
 - [ ] **Step 2: Run test to verify it passes (parity already holds)**
 
 Run: `pnpm vitest run packages/uxfactory-spec/test/validate.dom.test.ts`
-Expected: PASS — the DOM env is active (`typeof window === "object"`) and every case yields the same verdict as the Node suite. (This is a parity *guard*; ajv is environment-agnostic so it passes immediately. If any case diverged, this would fail.)
+Expected: PASS — the DOM env is active (`typeof window === "object"`) and every case yields the same verdict as the Node suite. (This is a parity _guard_; ajv is environment-agnostic so it passes immediately. If any case diverged, this would fail.)
 
 - [ ] **Step 3: Extend the public exports**
 
 Replace `packages/uxfactory-spec/src/index.ts` with:
+
 ```ts
 export * from "./types.js";
 export { validate, isSpec } from "./validate.js";
@@ -1098,10 +1232,12 @@ Expected: PASS — types, schema, validate.node, validate.dom suites all green.
 - [ ] **Step 5: Verify the built artifact resolves the schema at runtime**
 
 Run:
+
 ```bash
 pnpm --filter @uxfactory/spec build
 node --input-type=module -e "import('./packages/uxfactory-spec/dist/src/index.js').then(m => { const r = m.validate({ edits: [{ id: '1', set: { x: 1 } }] }); if (!r.valid) { console.error(r.errors); process.exit(1); } console.log('built artifact ok:', r.valid); })"
 ```
+
 Expected: prints `built artifact ok: true` — proving the compiled `dist/src/validate.js` loads `dist/schema/uxfactory.schema.json` correctly.
 
 - [ ] **Step 6: Typecheck and format**
@@ -1121,6 +1257,7 @@ git commit -m "feat(spec): export public API and prove Node/jsdom validation par
 ## Self-Review
 
 **1. Spec coverage** (against the design doc Phase 0 + Phase 1a and PRD §9, §19):
+
 - Monorepo foundation (pnpm workspace, tsconfig base, Vitest, CI, `.gitignore` for `.uxfactory/`) → Tasks 1–2. ✅
 - Types compile → Task 3 (type-construction test + `pnpm --filter build`). ✅
 - JSON Schema validates the three shapes → Task 4 (schema.test.ts). ✅
