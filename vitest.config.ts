@@ -14,6 +14,9 @@ export default defineConfig({
       "@uxfactory/gate": fileURLToPath(
         new URL("./packages/uxfactory-gate/src/index.ts", import.meta.url),
       ),
+      "@uxfactory/bridge": fileURLToPath(
+        new URL("./packages/uxfactory-bridge/src/index.ts", import.meta.url),
+      ),
     },
   },
 });
