@@ -1,5 +1,9 @@
 packages:
   - "packages/*"
+  # @uxfactory/agent (AWS AgentCore runtime) lives in the separate uxfactory-cloud
+  # project, not this engine repo. Exclude it so it never enters this workspace's
+  # install / lockfile / CI even when present on disk.
+  - "!packages/uxfactory-agent"
   - "clients/*"
 # Dependency build scripts are blocked by pnpm 11 unless allowlisted here.
 # esbuild has a postinstall (node install.js) that sets up its platform binary;
@@ -11,4 +15,3 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - prettier@3.9.1
   - fastify@5.9.0
-  - "@langchain/langgraph@1.4.7"
