@@ -20,3 +20,5 @@ export { readMap, writeMap, serializeMap, setAutoFilled } from "./drift/map-io.j
 export type { AutoFill } from "./drift/map-io.js";
 export { resolveSource, getByPath, parseRef, extractBraceBody } from "./drift/sources.js";
 export type { ResolvedSource } from "./drift/sources.js";
+export { computeDrift, syncMapFromReport, findSpecNode } from "./drift/drift-core.js";
+export type { DriftFinding, DriftReport, DriftInput, DriftKind } from "./drift/drift-core.js";
