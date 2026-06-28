@@ -136,6 +136,10 @@ describe("withinTolerance", () => {
 
 describe("normalizeColor", () => {
   it("lowercases hex", () => expect(normalizeColor("#43A047")).toBe("#43a047"));
+  it("expands 3-digit hex to 6-digit", () => {
+    expect(normalizeColor("#FFF")).toBe("#ffffff");
+    expect(normalizeColor("#abc")).toBe(normalizeColor("#aabbcc"));
+  });
 });
 
 describe("numbersEqual", () => {

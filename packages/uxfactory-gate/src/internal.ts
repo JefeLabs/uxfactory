@@ -71,6 +71,7 @@ export function findNode(
     if (byId) return byId;
   }
   if (target.name !== undefined) {
+    // First-match by name; duplicate names collapse to the first — the `counts` check catches cardinality.
     return report.nodes.find((n) => n.name === target.name);
   }
   return undefined;
@@ -81,9 +82,12 @@ export function withinTolerance(a: number, b: number, tolerancePx: number): bool
   return Math.abs(a - b) <= tolerancePx;
 }
 
-/** Normalize a hex color for comparison (lowercased). */
+/** Normalize a hex color for comparison: trim, lowercase, expand #abc → #aabbcc. */
 export function normalizeColor(c: string): string {
-  return c.toLowerCase();
+  const hex = c.trim().toLowerCase();
+  const m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(hex);
+  if (m) return `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}`;
+  return hex;
 }
 
 /** Equality for non-geometry numbers, tolerant of IEEE-754 drift. */

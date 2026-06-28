@@ -247,4 +247,35 @@ describe("checkEdits", () => {
   it("skips a spec with no edits", () => {
     expect(checkEdits(oneBoxDesign, baseReport(), 0.5).check.status).toBe("SKIP");
   });
+  it("fails when an edited opacity is not reflected (numeric routing)", () => {
+    const spec = { edits: [{ id: "1:2", set: { opacity: 0.5 } }] };
+    const report = baseReport({
+      nodes: [{ id: "1:2", name: "box", type: "shape", x: 10, y: 20, w: 30, h: 40, opacity: 1 }],
+    });
+    const out = checkEdits(spec, report, 0.5);
+    expect(out.check.status).toBe("FAIL");
+    expect(out.failures[0]).toMatchObject({
+      check: "edits",
+      nodeId: "1:2",
+      property: "opacity",
+      expected: 0.5,
+      actual: 1,
+    });
+  });
+  it("passes when an edited visible flag is reflected (boolean routing)", () => {
+    const spec = { edits: [{ id: "1:2", set: { visible: false } }] };
+    const report = baseReport({
+      nodes: [
+        { id: "1:2", name: "box", type: "shape", x: 10, y: 20, w: 30, h: 40, visible: false },
+      ],
+    });
+    expect(checkEdits(spec, report, 0.5).check.status).toBe("PASS");
+  });
+  it("fails when an edited visible flag is not reflected (boolean routing)", () => {
+    const spec = { edits: [{ id: "1:2", set: { visible: false } }] };
+    const report = baseReport({
+      nodes: [{ id: "1:2", name: "box", type: "shape", x: 10, y: 20, w: 30, h: 40, visible: true }],
+    });
+    expect(checkEdits(spec, report, 0.5).check.status).toBe("FAIL");
+  });
 });

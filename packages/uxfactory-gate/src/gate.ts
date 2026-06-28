@@ -36,7 +36,8 @@ function runCheck(id: CheckId, spec: Spec, report: RenderReport, tolerancePx: nu
  */
 export function gate(spec: Spec, report: RenderReport, options: GateOptions = {}): GateResult {
   const tolerancePx = options.tolerancePx ?? DEFAULT_TOLERANCE_PX;
-  const requested = options.checks ?? ALL_CHECKS;
+  // An explicit empty array would otherwise run zero checks → vacuous PASS; treat it as "all".
+  const requested = options.checks && options.checks.length > 0 ? options.checks : ALL_CHECKS;
 
   const checks: GateCheck[] = [];
   const failures: GateFailure[] = [];

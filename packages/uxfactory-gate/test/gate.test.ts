@@ -97,4 +97,24 @@ describe("gate", () => {
     expect(a).toEqual(b);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
+
+  it("treats an empty checks array as all checks (no vacuous PASS)", () => {
+    const result = gate(matchingSpec, report, { checks: [] });
+    expect(result.summary.checks).toBe(5);
+  });
+
+  it("skips editorType/counts/geometry for an editor-less edit-only spec", () => {
+    const editOnly = { edits: [{ id: "1:2", set: { x: 80 } }] };
+    const result = gate(editOnly, report); // report node 1:2 ("api-gateway") is at x:80, so the edit is reflected
+    const byId = Object.fromEntries(result.checks.map((c) => [c.id, c.status]));
+    expect(byId).toMatchObject({
+      editorType: "SKIP",
+      counts: "SKIP",
+      presence: "PASS",
+      geometry: "SKIP",
+      edits: "PASS",
+    });
+    expect(result.summary.skipped).toBe(3);
+    expect(result.status).toBe("PASS");
+  });
 });
