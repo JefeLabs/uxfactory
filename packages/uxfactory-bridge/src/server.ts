@@ -2,7 +2,10 @@ import path from "node:path";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
-import type { RenderReport } from "@uxfactory/gate";
+import type { RenderReport, GateResult, CheckId } from "@uxfactory/gate";
+import { gate } from "@uxfactory/gate";
+import type { Spec } from "@uxfactory/spec";
+import { validate } from "@uxfactory/spec";
 import { BridgeStore } from "./store.js";
 
 /** Options for building a bridge. */
@@ -14,6 +17,7 @@ export interface BridgeOptions {
 }
 
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
+const DEFAULT_TOLERANCE_PX = 0.5;
 
 /** A POST /edits caller awaiting the render keyed by the enqueued jobId. */
 interface EditWaiter {
@@ -34,6 +38,12 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   await app.register(cors, { origin: true });
 
   const waiters = new Map<string, EditWaiter>();
+
+  let verifyCounter = 0;
+  const nextVerifyId = (): string => {
+    verifyCounter += 1;
+    return `v_${Date.now()}_${verifyCounter}`;
+  };
 
   // --- health & queue ---
 
@@ -83,6 +93,50 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     const sel = await store.getSelection();
     if (sel === null) return reply.code(404).send({ error: "no selection yet" });
     return sel;
+  });
+
+  // --- verify ---
+
+  app.post("/verify", async (req, reply) => {
+    const body = req.body as {
+      spec?: unknown;
+      renderId?: string;
+      tolerance?: { geometryPx?: number };
+      checks?: CheckId[];
+    };
+
+    const result = validate(body.spec);
+    if (!result.valid) {
+      return reply.code(400).send({ error: "invalid spec", details: result.errors });
+    }
+
+    let report: RenderReport | null;
+    if (body.renderId !== undefined) {
+      report = await store.getReport(body.renderId);
+      if (report === null) return reply.code(404).send({ error: "unknown renderId" });
+    } else {
+      report = await store.getReport();
+    }
+    if (report === null) {
+      if (!store.pluginSeen) return reply.code(503).send({ error: "plugin has never connected" });
+      return reply.code(409).send({ error: "no render report yet" });
+    }
+
+    const verifyId = nextVerifyId();
+    const gateResult: GateResult = gate(body.spec as Spec, report, {
+      tolerancePx: body.tolerance?.geometryPx ?? DEFAULT_TOLERANCE_PX,
+      ...(body.checks !== undefined ? { checks: body.checks } : {}),
+      verifyId,
+    });
+    const stored: GateResult & { verifyId: string } = { ...gateResult, verifyId };
+    await store.saveVerify(stored);
+    return stored;
+  });
+
+  app.get<{ Params: { id: string } }>("/verify/:id", async (req, reply) => {
+    const found = await store.getVerify(req.params.id);
+    if (found === null) return reply.code(404).send({ error: "unknown verifyId" });
+    return found;
   });
 
   void editTimeoutMs;
