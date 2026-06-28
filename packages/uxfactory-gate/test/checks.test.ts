@@ -74,7 +74,13 @@ describe("checkGeometry", () => {
     expect(out.check.status).toBe("FAIL");
     expect(out.failures[0]).toMatchObject({ check: "geometry", name: "box", property: "x", expected: 10, actual: 10.6, tolerancePx: 0.5 });
   });
-  it("skips missing nodes (presence handles those)", () => {
+  it("fails for a width mismatch and names the property", () => {
+    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 10, y: 20, w: 999, h: 40 }] });
+    const out = checkGeometry(oneBoxDesign, report, 0.5);
+    expect(out.check.status).toBe("FAIL");
+    expect(out.failures[0]).toMatchObject({ check: "geometry", name: "box", property: "width", expected: 30, actual: 999, tolerancePx: 0.5 });
+  });
+  it("passes (does not fail) for nodes missing from the report — presence handles those", () => {
     expect(checkGeometry(oneBoxDesign, baseReport({ nodes: [] }), 0.5).check.status).toBe("PASS");
   });
   it("skips for an edit-only spec", () => {
@@ -102,6 +108,13 @@ describe("checkEdits", () => {
   it("compares colors case-insensitively", () => {
     const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 120, y: 20, w: 30, h: 40, fill: "#43A047", characters: "Redis" }] });
     expect(checkEdits(editSpec, report, 0.5).check.status).toBe("PASS");
+  });
+  it("fails when an edited width is not reflected", () => {
+    const spec = { edits: [{ id: "1:2", set: { width: 30 } }] };
+    const report = baseReport({ nodes: [{ id: "1:2", name: "box", type: "shape", x: 10, y: 20, w: 999, h: 40 }] });
+    const out = checkEdits(spec, report, 0.5);
+    expect(out.check.status).toBe("FAIL");
+    expect(out.failures[0]).toMatchObject({ check: "edits", nodeId: "1:2", property: "width", expected: 30, actual: 999, tolerancePx: 0.5 });
   });
   it("skips a spec with no edits", () => {
     expect(checkEdits(oneBoxDesign, baseReport(), 0.5).check.status).toBe("SKIP");
