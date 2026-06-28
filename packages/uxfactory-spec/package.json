@@ -10,9 +10,13 @@
     },
     "./schema": "./schema/uxfactory.schema.json"
   },
-  "files": ["dist", "schema"],
+  "files": [
+    "dist",
+    "schema"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json"
   },
   "dependencies": {
     "ajv": "8.20.0"
