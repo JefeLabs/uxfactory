@@ -139,6 +139,24 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     return found;
   });
 
-  void editTimeoutMs;
+  // --- synchronous edit channel ---
+
+  app.post("/edits", async (req, reply) => {
+    const result = validate(req.body);
+    if (!result.valid) {
+      return reply.code(400).send({ error: "invalid spec", details: result.errors });
+    }
+    const jobId = await store.enqueue(req.body);
+    const report = await new Promise<RenderReport | null>((resolve) => {
+      const timer = setTimeout(() => {
+        waiters.delete(jobId);
+        resolve(null);
+      }, editTimeoutMs);
+      waiters.set(jobId, { resolve, timer });
+    });
+    if (report === null) return reply.code(504).send({ error: "render timed out" });
+    return report;
+  });
+
   return app;
 }
