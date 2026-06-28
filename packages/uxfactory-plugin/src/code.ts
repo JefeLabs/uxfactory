@@ -1,5 +1,411 @@
-declare const __html__: string;
-const api = figma as unknown as {
-  showUI(html: string, opts: { width: number; height: number }): void;
-};
-api.showUI(__html__, { width: 540, height: 220 });
+import { validate } from "@uxfactory/spec";
+import type { Spec, Edit, EditSet } from "@uxfactory/spec";
+import type { ReportNode, ReportCounts, ReportEditDiff } from "@uxfactory/gate";
+import type { MainToUi, UiToMain } from "./messages.js";
+import { planRender, type PlannedChild } from "./planner.js";
+import { planEdit, captureInverse } from "./edits.js";
+import { UndoStack } from "./undo-stack.js";
+import { assembleReport, newRenderId } from "./report.js";
+import { mapSelection, type RawSelNode } from "./selection.js";
+
+/** The narrow node surface the orchestrator uses (cast from the real figma node). */
+interface EditableNode {
+  id: string;
+  type: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fills: unknown;
+  strokes: unknown;
+  strokeWeight: number | undefined;
+  cornerRadius: number | undefined;
+  opacity: number | undefined;
+  rotation: number | undefined;
+  visible: boolean | undefined;
+  characters: string | undefined;
+  connectorStart: unknown;
+  connectorEnd: unknown;
+  children?: readonly EditableNode[];
+  resize(w: number, h: number): void;
+  appendChild(child: EditableNode): void;
+  remove(): void;
+}
+
+/** The narrow figma surface the orchestrator uses. */
+interface FigmaApi {
+  currentPage: {
+    id: string;
+    name: string;
+    selection: readonly EditableNode[];
+    children: readonly EditableNode[];
+    appendChild(node: EditableNode): void;
+  };
+  root: { name: string };
+  fileKey?: string;
+  showUI(html: string, options: { width: number; height: number }): void;
+  getNodeById(id: string): EditableNode | null;
+  on(type: "selectionchange", cb: () => void): void;
+  createFrame(): EditableNode;
+  createRectangle(): EditableNode;
+  createText(): EditableNode;
+  createSection(): EditableNode;
+  createSticky(): EditableNode;
+  createConnector(): EditableNode;
+  importComponentByKeyAsync(key: string): Promise<{ createInstance(): EditableNode }>;
+  ui: {
+    postMessage(msg: MainToUi): void;
+    onmessage: ((msg: UiToMain) => void) | null;
+    resize(width: number, height: number): void;
+  };
+}
+
+const fig = figma as unknown as FigmaApi;
+const undo = new UndoStack();
+let renderCounter = 0;
+
+fig.showUI(__html__, { width: 540, height: 220 });
+fig.ui.onmessage = (msg) => handleMessage(msg);
+fig.on("selectionchange", () => postSelection());
+
+function post(msg: MainToUi): void {
+  fig.ui.postMessage(msg);
+}
+
+async function handleMessage(msg: UiToMain): Promise<void> {
+  if (msg.type === "render") await renderSpec(msg.spec, msg.jobId);
+  else if (msg.type === "undo") applyUndo();
+  else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
+}
+
+// ---- color helpers (figma uses 0..1 RGB; the report uses 6-digit hex) ----
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const body = hex.replace("#", "");
+  const full = body.length === 3 ? body.replace(/./g, (c) => c + c) : body;
+  const num = parseInt(full, 16);
+  return { r: ((num >> 16) & 255) / 255, g: ((num >> 8) & 255) / 255, b: (num & 255) / 255 };
+}
+
+function channel(v: number): string {
+  return Math.round(v * 255)
+    .toString(16)
+    .padStart(2, "0");
+}
+
+function solidPaint(hex: string): unknown {
+  const { r, g, b } = hexToRgb(hex);
+  return [{ type: "SOLID", color: { r, g, b } }];
+}
+
+function paintToHex(fills: unknown): string | undefined {
+  if (!Array.isArray(fills) || fills.length === 0) return undefined;
+  const first = fills[0] as { type?: string; color?: { r: number; g: number; b: number } };
+  if (first.type !== "SOLID" || !first.color) return undefined;
+  return `#${channel(first.color.r)}${channel(first.color.g)}${channel(first.color.b)}`;
+}
+
+// ---- node read/write ----
+
+function toReportNode(node: EditableNode): ReportNode {
+  const out: ReportNode = {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    x: node.x,
+    y: node.y,
+    w: node.width,
+    h: node.height,
+  };
+  if (node.rotation !== undefined) out.rotation = node.rotation;
+  if (node.opacity !== undefined) out.opacity = node.opacity;
+  if (node.visible !== undefined) out.visible = node.visible;
+  if (node.cornerRadius !== undefined) out.cornerRadius = node.cornerRadius;
+  const fill = paintToHex(node.fills);
+  if (fill !== undefined) out.fill = fill;
+  const stroke = paintToHex(node.strokes);
+  if (stroke !== undefined) out.stroke = stroke;
+  if (node.strokeWeight !== undefined) out.strokeWidth = node.strokeWeight;
+  if (node.characters !== undefined) out.characters = node.characters;
+  return out;
+}
+
+function applyProps(node: EditableNode, props: Partial<EditSet>): void {
+  if (props.name !== undefined) node.name = props.name;
+  if (props.x !== undefined) node.x = props.x;
+  if (props.y !== undefined) node.y = props.y;
+  if (props.width !== undefined || props.height !== undefined) {
+    node.resize(props.width ?? node.width, props.height ?? node.height);
+  }
+  if (props.rotation !== undefined) node.rotation = props.rotation;
+  if (props.opacity !== undefined) node.opacity = props.opacity;
+  if (props.visible !== undefined) node.visible = props.visible;
+  if (props.cornerRadius !== undefined) node.cornerRadius = props.cornerRadius;
+  if (props.fill !== undefined) node.fills = solidPaint(props.fill);
+  if (props.stroke !== undefined) node.strokes = solidPaint(props.stroke);
+  if (props.strokeWidth !== undefined) node.strokeWeight = props.strokeWidth;
+  if (props.characters !== undefined) node.characters = props.characters;
+}
+
+function readBefore(node: EditableNode, keys: string[]): Record<string, unknown> {
+  const before: Record<string, unknown> = {};
+  for (const key of keys) {
+    switch (key) {
+      case "name":
+        before.name = node.name;
+        break;
+      case "x":
+        before.x = node.x;
+        break;
+      case "y":
+        before.y = node.y;
+        break;
+      case "width":
+        before.width = node.width;
+        break;
+      case "height":
+        before.height = node.height;
+        break;
+      case "rotation":
+        before.rotation = node.rotation;
+        break;
+      case "opacity":
+        before.opacity = node.opacity;
+        break;
+      case "visible":
+        before.visible = node.visible;
+        break;
+      case "cornerRadius":
+        before.cornerRadius = node.cornerRadius;
+        break;
+      case "fill":
+        before.fill = paintToHex(node.fills);
+        break;
+      case "stroke":
+        before.stroke = paintToHex(node.strokes);
+        break;
+      case "strokeWidth":
+        before.strokeWidth = node.strokeWeight;
+        break;
+      case "characters":
+        before.characters = node.characters;
+        break;
+    }
+  }
+  return before;
+}
+
+function describeDiff(before: Record<string, unknown>, props: Partial<EditSet>): string {
+  const p = props as Record<string, unknown>;
+  return Object.keys(props)
+    .map((k) => `${k}: ${JSON.stringify(before[k])} → ${JSON.stringify(p[k])}`)
+    .join(", ");
+}
+
+// ---- node lookup ----
+
+function findByName(
+  node: { children?: readonly EditableNode[] },
+  name: string,
+): EditableNode | null {
+  for (const child of node.children ?? []) {
+    if (child.name === name) return child;
+    const nested = findByName(child, name);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findTarget(edit: Edit, byName: Map<string, EditableNode>): EditableNode | null {
+  if (edit.id) {
+    const byId = fig.getNodeById(edit.id);
+    if (byId) return byId;
+  }
+  if (edit.name) return byName.get(edit.name) ?? findByName(fig.currentPage, edit.name);
+  return null;
+}
+
+// ---- rendering ----
+
+async function renderChild(child: PlannedChild, parent: EditableNode): Promise<EditableNode> {
+  let node: EditableNode;
+  if (child.kind === "instance") {
+    const component = await fig.importComponentByKeyAsync(child.asset ?? "");
+    node = component.createInstance();
+  } else if (child.kind === "text") {
+    node = fig.createText();
+  } else if (child.kind === "sticky") {
+    node = fig.createSticky();
+  } else {
+    node = fig.createRectangle();
+  }
+  node.name = child.name;
+  node.x = child.x;
+  node.y = child.y;
+  if (child.width !== undefined || child.height !== undefined) {
+    node.resize(child.width ?? node.width, child.height ?? node.height);
+  }
+  if (child.fill !== undefined) node.fills = solidPaint(child.fill);
+  if (child.stroke !== undefined) node.strokes = solidPaint(child.stroke);
+  if (child.strokeWidth !== undefined) node.strokeWeight = child.strokeWidth;
+  if (child.cornerRadius !== undefined) node.cornerRadius = child.cornerRadius;
+  if (child.rotation !== undefined) node.rotation = child.rotation;
+  if (child.opacity !== undefined) node.opacity = child.opacity;
+  if (child.characters !== undefined) node.characters = child.characters;
+  parent.appendChild(node);
+  return node;
+}
+
+async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
+  const result = validate(raw);
+  if (!result.valid) {
+    post({
+      type: "render-error",
+      message: result.errors.map((e) => `${e.path}: ${e.message}`).join("; "),
+    });
+    return;
+  }
+  const plan = planRender(raw as Spec);
+  const page = fig.currentPage;
+  page.name = plan.page;
+
+  const reportNodes = new Map<string, ReportNode>();
+  const byName = new Map<string, EditableNode>();
+
+  for (const frame of plan.frames) {
+    const node = fig.createFrame();
+    node.name = frame.name;
+    node.x = frame.x;
+    node.y = frame.y;
+    node.resize(frame.width, frame.height);
+    page.appendChild(node);
+    byName.set(frame.name, node);
+    for (const child of frame.children) {
+      const childNode = await renderChild(child, node);
+      byName.set(child.name, childNode);
+      reportNodes.set(childNode.id, toReportNode(childNode));
+    }
+  }
+
+  for (const section of plan.sections) {
+    const node = fig.createSection();
+    node.name = section.name;
+    node.x = section.x;
+    node.y = section.y;
+    node.resize(section.width, section.height);
+    page.appendChild(node);
+    byName.set(section.name, node);
+    for (const child of section.children) {
+      const childNode = await renderChild(child, node);
+      byName.set(child.name, childNode);
+      reportNodes.set(childNode.id, toReportNode(childNode));
+    }
+  }
+
+  for (const connector of plan.connectors) {
+    const c = fig.createConnector();
+    const from = byName.get(connector.from) ?? findByName(page, connector.from);
+    const to = byName.get(connector.to) ?? findByName(page, connector.to);
+    if (from) c.connectorStart = { endpointNodeId: from.id, magnet: "AUTO" };
+    if (to) c.connectorEnd = { endpointNodeId: to.id, magnet: "AUTO" };
+    if (connector.label !== undefined) c.characters = connector.label;
+    page.appendChild(c);
+  }
+
+  const editDiffs: ReportEditDiff[] = [];
+  for (const edit of plan.edits) {
+    try {
+      const target = findTarget(edit, byName);
+      if (!target) {
+        editDiffs.push({
+          ...(edit.id ? { id: edit.id } : {}),
+          ...(edit.name ? { name: edit.name } : {}),
+          diff: "skipped (target not found)",
+        });
+        continue;
+      }
+      const resolved: Edit = { id: target.id, set: edit.set };
+      const before = readBefore(target, Object.keys(edit.set));
+      const planned = planEdit(resolved, true);
+      applyProps(target, planned.props);
+      undo.push(captureInverse(resolved, before));
+      reportNodes.set(target.id, toReportNode(target));
+      editDiffs.push({
+        id: target.id,
+        name: target.name,
+        diff: describeDiff(before, planned.props),
+      });
+    } catch (err) {
+      // One bad edit doesn't kill the batch.
+      editDiffs.push({
+        ...(edit.id ? { id: edit.id } : {}),
+        ...(edit.name ? { name: edit.name } : {}),
+        diff: `error: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  const counts: ReportCounts = {
+    frames: plan.frames.length,
+    sections: plan.sections.length,
+    objects:
+      plan.frames.reduce((n, f) => n + f.children.length, 0) +
+      plan.sections.reduce((n, s) => n + s.children.length, 0),
+    connectors: plan.connectors.length,
+  };
+
+  const report = assembleReport({
+    editor: plan.editor,
+    page: page.name,
+    pageKey: page.id,
+    fileName: fig.root.name,
+    fileKey: fig.fileKey ?? "",
+    renderId: newRenderId((renderCounter += 1)),
+    jobId,
+    nodes: [...reportNodes.values()],
+    counts,
+    edits: editDiffs.length > 0 ? editDiffs : undefined,
+  });
+
+  post({ type: "rendered", report });
+  post({ type: "undo-count", count: undo.size });
+}
+
+function applyUndo(): void {
+  const inverse = undo.pop(); // popping is the only mutation — never re-push
+  if (inverse && inverse.id) {
+    const target = fig.getNodeById(inverse.id);
+    if (target) applyProps(target, planEdit(inverse, true).props);
+  }
+  post({ type: "undo-count", count: undo.size });
+}
+
+function postSelection(): void {
+  const page = fig.currentPage;
+  const raw: RawSelNode[] = page.selection.map((n) => {
+    const out: RawSelNode = {
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      x: n.x,
+      y: n.y,
+      w: n.width,
+      h: n.height,
+    };
+    if (n.opacity !== undefined) out.opacity = n.opacity;
+    if (n.rotation !== undefined) out.rotation = n.rotation;
+    if (n.visible !== undefined) out.visible = n.visible;
+    if (n.cornerRadius !== undefined) out.cornerRadius = n.cornerRadius;
+    if (n.characters !== undefined) out.characters = n.characters;
+    return out;
+  });
+  post({
+    type: "selection",
+    selection: mapSelection(raw, {
+      page: page.name,
+      fileName: fig.root.name,
+      fileKey: fig.fileKey ?? "",
+    }),
+  });
+}
