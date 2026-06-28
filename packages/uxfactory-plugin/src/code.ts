@@ -25,6 +25,10 @@ interface EditableNode {
   rotation: number | undefined;
   visible: boolean | undefined;
   characters: string | undefined;
+  /** Optional font descriptor; present on TEXT nodes. */
+  fontName?: { family: string; style: string };
+  /** Text sublayer; present on STICKY and CONNECTOR nodes. */
+  text?: { characters?: string };
   connectorStart: unknown;
   connectorEnd: unknown;
   children?: readonly EditableNode[];
@@ -33,16 +37,19 @@ interface EditableNode {
   remove(): void;
 }
 
+/** A Figma page node. */
+interface PageNode {
+  id: string;
+  name: string;
+  selection: readonly EditableNode[];
+  children: readonly EditableNode[];
+  appendChild(node: EditableNode): void;
+}
+
 /** The narrow figma surface the orchestrator uses. */
 interface FigmaApi {
-  currentPage: {
-    id: string;
-    name: string;
-    selection: readonly EditableNode[];
-    children: readonly EditableNode[];
-    appendChild(node: EditableNode): void;
-  };
-  root: { name: string };
+  currentPage: PageNode;
+  root: { name: string; children: readonly PageNode[] };
   fileKey?: string;
   showUI(html: string, options: { width: number; height: number }): void;
   getNodeById(id: string): EditableNode | null;
@@ -53,6 +60,8 @@ interface FigmaApi {
   createSection(): EditableNode;
   createSticky(): EditableNode;
   createConnector(): EditableNode;
+  createPage(): PageNode;
+  loadFontAsync(name: { family: string; style: string }): Promise<void>;
   importComponentByKeyAsync(key: string): Promise<{ createInstance(): EditableNode }>;
   ui: {
     postMessage(msg: MainToUi): void;
@@ -73,10 +82,15 @@ function post(msg: MainToUi): void {
   fig.ui.postMessage(msg);
 }
 
+// Fix 1: wrap the entire handler so no unhandled rejections escape.
 async function handleMessage(msg: UiToMain): Promise<void> {
-  if (msg.type === "render") await renderSpec(msg.spec, msg.jobId);
-  else if (msg.type === "undo") applyUndo();
-  else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
+  try {
+    if (msg.type === "render") await renderSpec(msg.spec, msg.jobId);
+    else if (msg.type === "undo") applyUndo();
+    else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
+  } catch (err) {
+    post({ type: "render-error", message: String(err) });
+  }
 }
 
 // ---- color helpers (figma uses 0..1 RGB; the report uses 6-digit hex) ----
@@ -127,7 +141,9 @@ function toReportNode(node: EditableNode): ReportNode {
   const stroke = paintToHex(node.strokes);
   if (stroke !== undefined) out.stroke = stroke;
   if (node.strokeWeight !== undefined) out.strokeWidth = node.strokeWeight;
-  if (node.characters !== undefined) out.characters = node.characters;
+  // Fix 2: prefer text sublayer (STICKY / CONNECTOR) over direct characters.
+  const chars = node.text !== undefined ? node.text.characters : node.characters;
+  if (chars) out.characters = chars;
   return out;
 }
 
@@ -228,11 +244,27 @@ function findTarget(edit: Edit, byName: Map<string, EditableNode>): EditableNode
 
 // ---- rendering ----
 
-async function renderChild(child: PlannedChild, parent: EditableNode): Promise<EditableNode> {
+/**
+ * Creates a single child node inside `parent`.
+ * Returns `null` when an instance import fails (Fix 5 — graceful skip).
+ * Calls `onSkip` with a human-readable reason so the caller can add a note.
+ */
+async function renderChild(
+  child: PlannedChild,
+  parent: EditableNode,
+  onSkip?: (reason: string) => void,
+): Promise<EditableNode | null> {
   let node: EditableNode;
+
   if (child.kind === "instance") {
-    const component = await fig.importComponentByKeyAsync(child.asset ?? "");
-    node = component.createInstance();
+    // Fix 5: catch import errors so one bad asset key doesn't abort the batch.
+    try {
+      const component = await fig.importComponentByKeyAsync(child.asset ?? "");
+      node = component.createInstance();
+    } catch (err) {
+      onSkip?.(`instance "${child.name}" import failed: ${String(err)}`);
+      return null;
+    }
   } else if (child.kind === "text") {
     node = fig.createText();
   } else if (child.kind === "sticky") {
@@ -240,6 +272,7 @@ async function renderChild(child: PlannedChild, parent: EditableNode): Promise<E
   } else {
     node = fig.createRectangle();
   }
+
   node.name = child.name;
   node.x = child.x;
   node.y = child.y;
@@ -252,7 +285,22 @@ async function renderChild(child: PlannedChild, parent: EditableNode): Promise<E
   if (child.cornerRadius !== undefined) node.cornerRadius = child.cornerRadius;
   if (child.rotation !== undefined) node.rotation = child.rotation;
   if (child.opacity !== undefined) node.opacity = child.opacity;
-  if (child.characters !== undefined) node.characters = child.characters;
+
+  // Fix 2: route text to the correct property depending on node kind.
+  if (child.characters !== undefined) {
+    if (child.kind === "sticky") {
+      // StickyNode.text is a TextSublayer — never use .characters directly.
+      if (node.text !== undefined) node.text.characters = child.characters;
+    } else if (child.kind === "text") {
+      // TextNode requires loadFontAsync before characters can be set.
+      await fig.loadFontAsync(node.fontName ?? { family: "Inter", style: "Regular" });
+      node.characters = child.characters;
+    } else {
+      // Shape / other: keep existing behaviour.
+      node.characters = child.characters;
+    }
+  }
+
   parent.appendChild(node);
   return node;
 }
@@ -266,110 +314,143 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
     });
     return;
   }
-  const plan = planRender(raw as Spec);
-  const page = fig.currentPage;
-  page.name = plan.page;
 
-  const reportNodes = new Map<string, ReportNode>();
-  const byName = new Map<string, EditableNode>();
+  // Fix 1: any throw from node creation / font loading / etc. posts render-error.
+  try {
+    const plan = planRender(raw as Spec);
 
-  for (const frame of plan.frames) {
-    const node = fig.createFrame();
-    node.name = frame.name;
-    node.x = frame.x;
-    node.y = frame.y;
-    node.resize(frame.width, frame.height);
-    page.appendChild(node);
-    byName.set(frame.name, node);
-    for (const child of frame.children) {
-      const childNode = await renderChild(child, node);
-      byName.set(child.name, childNode);
-      reportNodes.set(childNode.id, toReportNode(childNode));
+    // Fix 3: find-or-create the target page instead of renaming currentPage.
+    const existingPage = fig.root.children.find((p) => p.name === plan.page);
+    if (existingPage !== undefined) {
+      fig.currentPage = existingPage;
+    } else {
+      const newPage = fig.createPage();
+      newPage.name = plan.page;
+      fig.currentPage = newPage;
     }
-  }
+    const page = fig.currentPage;
 
-  for (const section of plan.sections) {
-    const node = fig.createSection();
-    node.name = section.name;
-    node.x = section.x;
-    node.y = section.y;
-    node.resize(section.width, section.height);
-    page.appendChild(node);
-    byName.set(section.name, node);
-    for (const child of section.children) {
-      const childNode = await renderChild(child, node);
-      byName.set(child.name, childNode);
-      reportNodes.set(childNode.id, toReportNode(childNode));
+    const reportNodes = new Map<string, ReportNode>();
+    const byName = new Map<string, EditableNode>();
+    const editDiffs: ReportEditDiff[] = [];
+
+    for (const frame of plan.frames) {
+      const node = fig.createFrame();
+      node.name = frame.name;
+      node.x = frame.x;
+      node.y = frame.y;
+      node.resize(frame.width, frame.height);
+      page.appendChild(node);
+      byName.set(frame.name, node);
+      for (const child of frame.children) {
+        // Fix 5: skip failing instances; record a note in editDiffs.
+        const childNode = await renderChild(child, node, (reason) => {
+          editDiffs.push({ name: child.name, diff: `skipped: ${reason}` });
+        });
+        if (childNode) {
+          byName.set(child.name, childNode);
+          reportNodes.set(childNode.id, toReportNode(childNode));
+        }
+      }
     }
-  }
 
-  for (const connector of plan.connectors) {
-    const c = fig.createConnector();
-    const from = byName.get(connector.from) ?? findByName(page, connector.from);
-    const to = byName.get(connector.to) ?? findByName(page, connector.to);
-    if (from) c.connectorStart = { endpointNodeId: from.id, magnet: "AUTO" };
-    if (to) c.connectorEnd = { endpointNodeId: to.id, magnet: "AUTO" };
-    if (connector.label !== undefined) c.characters = connector.label;
-    page.appendChild(c);
-  }
+    for (const section of plan.sections) {
+      const node = fig.createSection();
+      node.name = section.name;
+      node.x = section.x;
+      node.y = section.y;
+      node.resize(section.width, section.height);
+      page.appendChild(node);
+      byName.set(section.name, node);
+      for (const child of section.children) {
+        const childNode = await renderChild(child, node, (reason) => {
+          editDiffs.push({ name: child.name, diff: `skipped: ${reason}` });
+        });
+        if (childNode) {
+          byName.set(child.name, childNode);
+          reportNodes.set(childNode.id, toReportNode(childNode));
+        }
+      }
+    }
 
-  const editDiffs: ReportEditDiff[] = [];
-  for (const edit of plan.edits) {
-    try {
-      const target = findTarget(edit, byName);
-      if (!target) {
+    for (const connector of plan.connectors) {
+      const c = fig.createConnector();
+      const from = byName.get(connector.from) ?? findByName(page, connector.from);
+      const to = byName.get(connector.to) ?? findByName(page, connector.to);
+      if (from) c.connectorStart = { endpointNodeId: from.id, magnet: "AUTO" };
+      if (to) c.connectorEnd = { endpointNodeId: to.id, magnet: "AUTO" };
+      // Fix 2: ConnectorNode label lives in .text.characters (a TextSublayer).
+      if (connector.label !== undefined) {
+        if (c.text !== undefined) c.text.characters = connector.label;
+        else c.characters = connector.label; // fallback for non-standard mocks
+      }
+      page.appendChild(c);
+    }
+
+    for (const edit of plan.edits) {
+      try {
+        const target = findTarget(edit, byName);
+        if (!target) {
+          editDiffs.push({
+            ...(edit.id ? { id: edit.id } : {}),
+            ...(edit.name ? { name: edit.name } : {}),
+            diff: "skipped (target not found)",
+          });
+          continue;
+        }
+        const resolved: Edit = { id: target.id, set: edit.set };
+        const before = readBefore(target, Object.keys(edit.set));
+        const planned = planEdit(resolved, true);
+        // Fix 2: load font before setting characters on a TEXT node (edit path).
+        if (planned.props.characters !== undefined && target.type === "TEXT") {
+          await fig.loadFontAsync(target.fontName ?? { family: "Inter", style: "Regular" });
+        }
+        applyProps(target, planned.props);
+        undo.push(captureInverse(resolved, before));
+        reportNodes.set(target.id, toReportNode(target));
+        editDiffs.push({
+          id: target.id,
+          name: target.name,
+          diff: describeDiff(before, planned.props),
+        });
+      } catch (err) {
+        // One bad edit doesn't kill the batch.
         editDiffs.push({
           ...(edit.id ? { id: edit.id } : {}),
           ...(edit.name ? { name: edit.name } : {}),
-          diff: "skipped (target not found)",
+          diff: `error: ${(err as Error).message}`,
         });
-        continue;
       }
-      const resolved: Edit = { id: target.id, set: edit.set };
-      const before = readBefore(target, Object.keys(edit.set));
-      const planned = planEdit(resolved, true);
-      applyProps(target, planned.props);
-      undo.push(captureInverse(resolved, before));
-      reportNodes.set(target.id, toReportNode(target));
-      editDiffs.push({
-        id: target.id,
-        name: target.name,
-        diff: describeDiff(before, planned.props),
-      });
-    } catch (err) {
-      // One bad edit doesn't kill the batch.
-      editDiffs.push({
-        ...(edit.id ? { id: edit.id } : {}),
-        ...(edit.name ? { name: edit.name } : {}),
-        diff: `error: ${(err as Error).message}`,
-      });
     }
+
+    const counts: ReportCounts = {
+      frames: plan.frames.length,
+      sections: plan.sections.length,
+      objects:
+        plan.frames.reduce((n, f) => n + f.children.length, 0) +
+        plan.sections.reduce((n, s) => n + s.children.length, 0),
+      connectors: plan.connectors.length,
+    };
+
+    const report = assembleReport({
+      editor: plan.editor,
+      page: page.name,
+      pageKey: page.id,
+      fileName: fig.root.name,
+      fileKey: fig.fileKey ?? "",
+      renderId: newRenderId((renderCounter += 1)),
+      jobId,
+      nodes: [...reportNodes.values()],
+      counts,
+      edits: editDiffs.length > 0 ? editDiffs : undefined,
+    });
+
+    post({ type: "rendered", report });
+    post({ type: "undo-count", count: undo.size });
+  } catch (err) {
+    // Fix 1: surface any unexpected throw as a render-error instead of silently hanging.
+    post({ type: "render-error", message: String(err) });
   }
-
-  const counts: ReportCounts = {
-    frames: plan.frames.length,
-    sections: plan.sections.length,
-    objects:
-      plan.frames.reduce((n, f) => n + f.children.length, 0) +
-      plan.sections.reduce((n, s) => n + s.children.length, 0),
-    connectors: plan.connectors.length,
-  };
-
-  const report = assembleReport({
-    editor: plan.editor,
-    page: page.name,
-    pageKey: page.id,
-    fileName: fig.root.name,
-    fileKey: fig.fileKey ?? "",
-    renderId: newRenderId((renderCounter += 1)),
-    jobId,
-    nodes: [...reportNodes.values()],
-    counts,
-    edits: editDiffs.length > 0 ? editDiffs : undefined,
-  });
-
-  post({ type: "rendered", report });
-  post({ type: "undo-count", count: undo.size });
 }
 
 function applyUndo(): void {

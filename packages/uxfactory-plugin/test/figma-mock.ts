@@ -34,7 +34,7 @@ export class FakeNode {
 
 export interface FakeFigma {
   currentPage: FakeNode & { selection: FakeNode[] };
-  root: { name: string };
+  root: { name: string; children: Array<FakeNode & { selection: FakeNode[] }> };
   fileKey: string;
   showUI(html: string, opts: { width: number; height: number }): void;
   getNodeById(id: string): FakeNode | null;
@@ -45,6 +45,10 @@ export interface FakeFigma {
   createSection(): FakeNode;
   createSticky(): FakeNode;
   createConnector(): FakeNode;
+  createPage(): FakeNode & { selection: FakeNode[] };
+  loadFontAsync(name: { family: string; style: string }): Promise<void>;
+  /** Recorded keys of every loadFontAsync call, as "family/style". */
+  loadFontAsyncCalls: string[];
   importComponentByKeyAsync(key: string): Promise<{ createInstance(): FakeNode }>;
   exportAsync(): Promise<Uint8Array>;
   ui: {
@@ -70,40 +74,131 @@ export function makeFigma(): FakeFigma {
     return node;
   };
 
-  const page = Object.assign(create("PAGE"), { selection: [] as FakeNode[] });
+  // ---- font-loading enforcement (Fix 2) ----
+  const loadedFonts = new Set<string>();
+  const loadFontAsyncCalls: string[] = [];
+
+  const loadFontAsync = async (name: { family: string; style: string }): Promise<void> => {
+    const key = `${name.family}/${name.style}`;
+    loadedFonts.add(key);
+    loadFontAsyncCalls.push(key);
+  };
+
+  /**
+   * TEXT node whose `characters` setter throws unless loadFontAsync was called
+   * first — mirrors real Figma's font-load requirement.
+   */
+  const createText = (): FakeNode => {
+    const node = create("TEXT");
+    const fontName = { family: "Inter", style: "Regular" };
+    // Expose fontName so code.ts can pass it to loadFontAsync.
+    (node as unknown as Record<string, unknown>).fontName = fontName;
+    // Remove the class-field `characters` and replace with an enforcing accessor.
+    delete (node as unknown as Record<string, unknown>).characters;
+    let _chars: string | undefined = undefined;
+    Object.defineProperty(node, "characters", {
+      get() {
+        return _chars;
+      },
+      set(v: string | undefined) {
+        if (v !== undefined && !loadedFonts.has(`${fontName.family}/${fontName.style}`)) {
+          throw new Error(
+            `figma.loadFontAsync must be called before setting TextNode.characters ` +
+              `(font: ${fontName.family} ${fontName.style})`,
+          );
+        }
+        _chars = v;
+      },
+      configurable: true,
+      enumerable: true,
+    });
+    return node;
+  };
+
+  /**
+   * STICKY node with a `text` TextSublayer — real Figma's StickyNode exposes
+   * text via `.text.characters`, not `.characters` directly.
+   */
+  const createSticky = (): FakeNode => {
+    const node = create("STICKY");
+    (node as unknown as Record<string, unknown>).text = {
+      characters: undefined as string | undefined,
+    };
+    return node;
+  };
+
+  /**
+   * CONNECTOR node with a `text` TextSublayer — real Figma's ConnectorNode
+   * exposes its label via `.text.characters`.
+   */
+  const createConnector = (): FakeNode => {
+    const node = create("CONNECTOR");
+    (node as unknown as Record<string, unknown>).text = {
+      characters: undefined as string | undefined,
+    };
+    return node;
+  };
+
+  // ---- page management (Fix 3) ----
+  const initialPage = Object.assign(create("PAGE"), { selection: [] as FakeNode[] });
+  const pages: Array<FakeNode & { selection: FakeNode[] }> = [initialPage];
+  // Mutable slot so code.ts can reassign fig.currentPage.
+  let _currentPage: FakeNode & { selection: FakeNode[] } = initialPage;
+
+  const createPage = (): FakeNode & { selection: FakeNode[] } => {
+    const p = Object.assign(create("PAGE"), { selection: [] as FakeNode[] });
+    pages.push(p);
+    return p;
+  };
+
+  // ---- ui bus ----
   const posted: MainToUi[] = [];
   const ui: FakeFigma["ui"] = {
     posted,
     onmessage: null,
-    postMessage(msg) {
+    postMessage(msg: MainToUi) {
       posted.push(msg);
     },
     resize() {},
   };
 
-  return {
-    currentPage: page,
-    root: { name: "Test File" },
+  // Build the object with explicit parameter types so that contextual typing works
+  // even without the `as FakeFigma` shorthand on methods.
+  const result: FakeFigma = {
+    get currentPage(): FakeNode & { selection: FakeNode[] } {
+      return _currentPage;
+    },
+    set currentPage(p: FakeNode & { selection: FakeNode[] }) {
+      _currentPage = p;
+    },
+    root: { name: "Test File", children: pages },
     fileKey: "file-key-123",
     showUI() {},
-    getNodeById: (id) => registry.get(id) ?? null,
-    on(type, cb) {
+    getNodeById(id: string) {
+      return registry.get(id) ?? null;
+    },
+    on(type: string, cb: () => void) {
       if (type === "selectionchange") selectionHandlers.push(cb);
     },
     createFrame: () => create("FRAME"),
     createRectangle: () => create("RECTANGLE"),
-    createText: () => create("TEXT"),
+    createText,
     createSection: () => create("SECTION"),
-    createSticky: () => create("STICKY"),
-    createConnector: () => create("CONNECTOR"),
+    createSticky,
+    createConnector,
+    createPage,
+    loadFontAsync,
+    loadFontAsyncCalls,
     importComponentByKeyAsync: () => Promise.resolve({ createInstance: () => create("INSTANCE") }),
     exportAsync: () => Promise.resolve(new Uint8Array([1, 2, 3])),
     ui,
     __fireSelectionChange() {
       for (const cb of selectionHandlers) cb();
     },
-    async __send(msg) {
+    async __send(msg: UiToMain) {
       await ui.onmessage?.(msg);
     },
   };
+
+  return result;
 }

@@ -30,6 +30,7 @@ export function createUi(options: UiOptions = {}): UiController {
   let panel: PanelState = "COMPACT";
   let connected = false;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let keydownHandler: ((e: KeyboardEvent) => void) | undefined;
 
   const el = (id: string): HTMLElement | null => doc.getElementById(id);
 
@@ -131,11 +132,23 @@ export function createUi(options: UiOptions = {}): UiController {
       const data = event.data as { pluginMessage?: MainToUi };
       if (data && data.pluginMessage) void onMainMessage(data.pluginMessage);
     };
+    // Fix 4 (§7.3): Cmd/Ctrl+Z triggers undo from anywhere in the panel.
+    keydownHandler = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        clickUndo();
+      }
+    };
+    doc.addEventListener("keydown", keydownHandler);
   }
 
   function stop(): void {
     if (timer) clearInterval(timer);
     if (typeof window !== "undefined") window.onmessage = null;
+    if (keydownHandler) {
+      doc.removeEventListener("keydown", keydownHandler);
+      keydownHandler = undefined;
+    }
   }
 
   return {

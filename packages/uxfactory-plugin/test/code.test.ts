@@ -151,3 +151,184 @@ describe("code.ts render", () => {
     expect(strip(posts[0]!)).toEqual(strip(posts[1]!));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fix 1 — error boundary
+// ---------------------------------------------------------------------------
+describe("code.ts error boundary (Fix 1)", () => {
+  it("posts render-error instead of hanging when a node-creation call throws", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    // Simulate a Figma runtime crash mid-render by making createFrame throw.
+    (fig as unknown as Record<string, unknown>).createFrame = () => {
+      throw new Error("simulated Figma crash");
+    };
+    await fig.__send({ type: "render", spec: design });
+    const err = lastOfType(fig, "render-error");
+    expect(err).toBeDefined();
+    expect(err!.message).toContain("simulated");
+    // The render did NOT complete — no "rendered" message posted.
+    expect(lastOfType(fig, "rendered")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 2 — font loading + sticky/connector text sublayer
+// ---------------------------------------------------------------------------
+describe("code.ts font loading + text sublayer (Fix 2)", () => {
+  it("calls loadFontAsync before setting TextNode.characters", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "f",
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 200,
+          children: [
+            {
+              type: "text",
+              name: "label",
+              x: 10,
+              y: 10,
+              width: 100,
+              height: 30,
+              characters: "Hello",
+            },
+          ],
+        },
+      ],
+    };
+    await fig.__send({ type: "render", spec });
+    // Font loading must have been called.
+    expect(fig.loadFontAsyncCalls.length).toBeGreaterThan(0);
+    // Text renders successfully.
+    const report = lastOfType(fig, "rendered")!.report;
+    expect(report.nodes.some((n) => n.name === "label" && n.characters === "Hello")).toBe(true);
+    // No render-error — the guard did not throw.
+    expect(lastOfType(fig, "render-error")).toBeUndefined();
+  });
+
+  it("sets sticky text via .text.characters (not .characters)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const figjam: FigjamSpec = {
+      editor: "figjam",
+      sections: [
+        {
+          name: "board",
+          x: 0,
+          y: 0,
+          width: 400,
+          height: 300,
+          children: [
+            { type: "sticky", name: "stk", x: 10, y: 10, characters: "hello sticky" },
+            { type: "shape", name: "box", x: 100, y: 100, width: 80, height: 40 },
+          ],
+        },
+      ],
+      connectors: [{ from: "stk", to: "box", label: "points to" }],
+    };
+    await fig.__send({ type: "render", spec: figjam });
+    expect(lastOfType(fig, "render-error")).toBeUndefined();
+
+    // Sticky's text sublayer must have been set.
+    const section = fig.currentPage.children.find((n) => n.type === "SECTION")!;
+    const sticky = section.children.find((n) => n.type === "STICKY")!;
+    expect((sticky as unknown as { text: { characters?: string } }).text.characters).toBe(
+      "hello sticky",
+    );
+
+    // Connector label must be in its text sublayer.
+    const connector = fig.currentPage.children.find((n) => n.type === "CONNECTOR")!;
+    expect((connector as unknown as { text: { characters?: string } }).text.characters).toBe(
+      "points to",
+    );
+
+    // Report still surfaces characters for sticky nodes.
+    const report = lastOfType(fig, "rendered")!.report;
+    expect(report.nodes.some((n) => n.type === "STICKY" && n.characters === "hello sticky")).toBe(
+      true,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 3 — find-or-create page
+// ---------------------------------------------------------------------------
+describe("code.ts find-or-create page (Fix 3)", () => {
+  it("creates a new page when the named page is absent", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    // Initial state: only the blank default page.
+    expect(fig.root.children).toHaveLength(1);
+
+    await fig.__send({ type: "render", spec: design }); // page: "Architecture"
+    expect(fig.root.children).toHaveLength(2);
+    expect(fig.currentPage.name).toBe("Architecture");
+  });
+
+  it("reuses an existing page on a second render (no duplicate createPage)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "render", spec: design });
+    const afterFirst = fig.root.children.length;
+    const pageIdAfterFirst = fig.currentPage.id;
+
+    await fig.__send({ type: "render", spec: design });
+    // No new page should have been created.
+    expect(fig.root.children).toHaveLength(afterFirst);
+    // The same page is reused.
+    expect(fig.currentPage.id).toBe(pageIdAfterFirst);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 5 — graceful instance failure
+// ---------------------------------------------------------------------------
+describe("code.ts graceful instance failure (Fix 5)", () => {
+  it("skips a failing instance and still renders remaining nodes", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    // Make importComponentByKeyAsync always reject.
+    (fig as unknown as Record<string, unknown>).importComponentByKeyAsync = () =>
+      Promise.reject(new Error("asset not found"));
+
+    const spec: DesignSpec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "f",
+          x: 0,
+          y: 0,
+          width: 300,
+          height: 300,
+          children: [
+            { type: "instance", name: "bad-instance", asset: "bad:key", x: 0, y: 0 },
+            { type: "shape", name: "good-shape", x: 50, y: 50, width: 80, height: 40 },
+          ],
+        },
+      ],
+    };
+
+    await fig.__send({ type: "render", spec });
+
+    // Render completes — no whole-spec render-error.
+    const rendered = lastOfType(fig, "rendered");
+    expect(rendered).toBeDefined();
+
+    // The good shape is present.
+    expect(rendered!.report.nodes.some((n) => n.name === "good-shape")).toBe(true);
+
+    // The bad instance is absent from the report nodes.
+    expect(rendered!.report.nodes.some((n) => n.name === "bad-instance")).toBe(false);
+
+    // A skip note is recorded in the report's edit diffs.
+    expect(rendered!.report.edits?.some((e) => /skip/i.test(e.diff))).toBe(true);
+  });
+});

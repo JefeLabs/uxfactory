@@ -156,6 +156,39 @@ describe("ui health-driven panel", () => {
   });
 });
 
+describe("ui Cmd/Ctrl+Z shortcut (Fix 4)", () => {
+  it("dispatches Cmd+Z → posts an undo message", () => {
+    const postToMain = vi.fn();
+    const ui = createUi({ fetchImpl: okFetch({}), postToMain });
+    ui.start();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { metaKey: true, key: "z", bubbles: true }),
+    );
+    ui.stop();
+    expect(postToMain).toHaveBeenCalledWith({ type: "undo" });
+  });
+
+  it("dispatches Ctrl+Z → posts an undo message", () => {
+    const postToMain = vi.fn();
+    const ui = createUi({ fetchImpl: okFetch({}), postToMain });
+    ui.start();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { ctrlKey: true, key: "z", bubbles: true }),
+    );
+    ui.stop();
+    expect(postToMain).toHaveBeenCalledWith({ type: "undo" });
+  });
+
+  it("does NOT post undo for unrelated keydown events", () => {
+    const postToMain = vi.fn();
+    const ui = createUi({ fetchImpl: okFetch({}), postToMain });
+    ui.start();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    ui.stop();
+    expect(postToMain).not.toHaveBeenCalledWith({ type: "undo" });
+  });
+});
+
 describe("ui selection main-message", () => {
   it("POSTs the selection payload to /selection", async () => {
     const fetchImpl = okFetch({});
