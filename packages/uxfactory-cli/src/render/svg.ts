@@ -97,14 +97,17 @@ function textTag(
   );
 }
 
-/** Normalize a frame/section child into a single drawable. */
-function leaf(child: FrameChild | SectionChild): Drawable {
+/** Normalize a frame/section child into a single drawable.
+ * `ox`/`oy` are the parent frame/section origin — child x/y are frame-relative
+ * (as in Figma), so we add the parent origin to get absolute canvas coordinates.
+ */
+function leaf(child: FrameChild | SectionChild, ox = 0, oy = 0): Drawable {
   switch (child.type) {
     case "shape":
       return {
         kind: "shape",
         name: child.name,
-        geom: { x: child.x, y: child.y, width: child.width, height: child.height },
+        geom: { x: ox + child.x, y: oy + child.y, width: child.width, height: child.height },
         fill: child.fill ?? SHAPE_FILL,
         stroke: child.stroke,
         strokeWidth: child.strokeWidth,
@@ -115,7 +118,7 @@ function leaf(child: FrameChild | SectionChild): Drawable {
       return {
         kind: "text",
         name: child.name,
-        geom: { x: child.x, y: child.y, width: child.width, height: child.height },
+        geom: { x: ox + child.x, y: oy + child.y, width: child.width, height: child.height },
         characters: child.characters,
       };
     case "instance":
@@ -123,8 +126,8 @@ function leaf(child: FrameChild | SectionChild): Drawable {
         kind: "instance",
         name: child.name,
         geom: {
-          x: child.x,
-          y: child.y,
+          x: ox + child.x,
+          y: oy + child.y,
           width: child.width ?? INSTANCE_W,
           height: child.height ?? INSTANCE_H,
         },
@@ -134,7 +137,7 @@ function leaf(child: FrameChild | SectionChild): Drawable {
       return {
         kind: "sticky",
         name: child.name,
-        geom: { x: child.x, y: child.y, width: STICKY_W, height: STICKY_H },
+        geom: { x: ox + child.x, y: oy + child.y, width: STICKY_W, height: STICKY_H },
         fill: child.fill ?? STICKY_FILL,
         characters: child.characters,
       };
@@ -151,7 +154,8 @@ function normalize(spec: Spec): Drawable[] {
         name: frame.name,
         geom: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
       });
-      for (const child of frame.children ?? []) out.push(leaf(child));
+      // Children carry frame-relative coordinates; resolve to canvas-absolute.
+      for (const child of frame.children ?? []) out.push(leaf(child, frame.x, frame.y));
     }
   } else if ("sections" in spec) {
     for (const section of spec.sections) {
@@ -160,7 +164,8 @@ function normalize(spec: Spec): Drawable[] {
         name: section.name,
         geom: { x: section.x, y: section.y, width: section.width, height: section.height },
       });
-      for (const child of section.children ?? []) out.push(leaf(child));
+      // Children carry section-relative coordinates; resolve to canvas-absolute.
+      for (const child of section.children ?? []) out.push(leaf(child, section.x, section.y));
     }
   }
   return out;

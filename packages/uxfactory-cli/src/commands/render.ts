@@ -3,7 +3,8 @@ import path from "node:path";
 import { EXIT } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
 import { specToSvg } from "../render/svg.js";
-import { svgToPng } from "../render/raster.js";
+// svgToPng (raster.ts) is lazy-loaded inside the PNG branch so that the native
+// @resvg/resvg-js binding is never touched when writing SVG or in unrelated commands.
 import type { Spec } from "@uxfactory/spec";
 import type { IO } from "../io.js";
 
@@ -35,6 +36,7 @@ export async function renderCmd(file: string, flags: RenderFlags, io: IO): Promi
     if (out.toLowerCase().endsWith(".svg")) {
       await writeFile(out, svg, "utf8");
     } else {
+      const { svgToPng } = await import("../render/raster.js");
       await writeFile(out, svgToPng(svg));
     }
   } catch (err) {

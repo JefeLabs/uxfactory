@@ -13,8 +13,9 @@ import { scanCmd } from "./commands/scan.js";
 import { stubCmd } from "./commands/stub.js";
 import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 import { driftCmd } from "./commands/drift.js";
-import { renderCmd } from "./commands/render.js";
-// bridgeCmd is lazy-loaded inside the action (Fix 2 — avoid pulling in fastify on every call)
+// renderCmd and bridgeCmd are lazy-loaded inside their actions
+// (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
+//  bridgeCmd avoids pulling in fastify on every call)
 
 /** Module-scoped state reset by every run() call. */
 let lastCode: number = EXIT.OK;
@@ -192,6 +193,7 @@ export function buildProgram(): Command {
     .description("Render a spec to an image offline (approximate; no Figma)")
     .option("--out <file>", "output path (.png or .svg; default <spec>.png)")
     .action(async (spec: string, opts: { out?: string }) => {
+      const { renderCmd } = await import("./commands/render.js");
       lastCode = await renderCmd(spec, { out: opts.out }, consoleIO);
     });
 

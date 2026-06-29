@@ -149,4 +149,76 @@ describe("specToSvg", () => {
     expect(svg).not.toContain("<rect");
     expect(svg).not.toContain("<line");
   });
+
+  // Regression: Fix 1 — children must be drawn at frame-relative-resolved (absolute) coords.
+  // A child at x:20 inside a frame at x:400 must render at x=420, NOT x=20.
+  it("[Fix-1] child in a non-origin frame is drawn at frame.x+child.x (absolute)", () => {
+    const spec: DesignSpec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "f2",
+          x: 400,
+          y: 0,
+          width: 200,
+          height: 100,
+          children: [{ type: "shape", name: "box", x: 20, y: 20, width: 50, height: 30 }],
+        },
+      ],
+    };
+    const svg = specToSvg(spec);
+    // The child rect must be at absolute x=420 (400+20) and y=20 (0+20).
+    expect(svg).toContain('x="420"');
+    expect(svg).toContain('y="20"');
+    // It must NOT be at x=20 (raw child.x without the frame offset).
+    // Guard: ensure the 'x="20"' that appears is only from the child rect position,
+    // not as a standalone raw child coordinate — the child rect should be at x=420.
+    const rects = [...svg.matchAll(/<rect [^/]*/g)];
+    // Find the child shape rect (width=50, height=30) and assert its x is 420.
+    const childRect = rects.find((m) => m[0].includes('width="50"'));
+    expect(childRect).toBeDefined();
+    expect(childRect![0]).toContain('x="420"');
+    expect(childRect![0]).not.toContain('x="20"');
+  });
+
+  // Regression: Fix 1 — connector endpoints resolve to offset-corrected centers.
+  // Two shapes in non-origin frames: centers must include the frame offset.
+  it("[Fix-1] connector endpoints in non-origin frames use offset-resolved centers", () => {
+    const spec: DesignSpec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "FA",
+          x: 100,
+          y: 0,
+          width: 200,
+          height: 100,
+          children: [
+            // child.x=0, child.y=0, width=100, height=100
+            // absolute center = (100+0+50, 0+0+50) = (150, 50)
+            { type: "shape", name: "nodeA", x: 0, y: 0, width: 100, height: 100 },
+          ],
+        },
+        {
+          name: "FB",
+          x: 400,
+          y: 0,
+          width: 200,
+          height: 100,
+          children: [
+            // child.x=0, child.y=0, width=100, height=100
+            // absolute center = (400+0+50, 0+0+50) = (450, 50)
+            { type: "shape", name: "nodeB", x: 0, y: 0, width: 100, height: 100 },
+          ],
+        },
+      ],
+      connectors: [{ from: "nodeA", to: "nodeB" }],
+    };
+    const svg = specToSvg(spec);
+    // Connector line must run from (150,50) to (450,50).
+    expect(svg).toContain('x1="150"');
+    expect(svg).toContain('y1="50"');
+    expect(svg).toContain('x2="450"');
+    expect(svg).toContain('y2="50"');
+  });
 });
