@@ -259,13 +259,11 @@ export function buildProgram(): Command {
     )
     .option("--confirm", "pin the profile as approved (the compute-commit boundary)")
     .option("--json", "emit the GateProfile as JSON to stdout")
-    .option("--data-dir <path>", "data directory (kept for flag parity with batch)")
-    .action(async (opts: { confirm?: boolean; json?: boolean; dataDir?: string }) => {
+    .action(async (opts: { confirm?: boolean; json?: boolean }) => {
       lastCode = await classifyCmd(
         {
           confirm: opts.confirm,
           json: opts.json,
-          dataDir: opts.dataDir !== undefined ? resolveDataDir(opts.dataDir) : undefined,
           cwd: process.cwd(),
         },
         consoleIO,

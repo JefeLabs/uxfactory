@@ -32,7 +32,7 @@ describe("intake skill content — Intake → Scoping → Confirm", () => {
     expect(content).toMatch(/^description:/m);
   });
 
-  it("names all seven dimensions: category, industry, age_demographic, style, visual, editorial, coverage, flow", async () => {
+  it("names all eight enumerated dimensions (category, industry, age_demographic, style, visual, editorial, coverage, flow) plus flow_refs", async () => {
     const content = await load();
     expect(content).toMatch(/\bcategory\b/);
     expect(content).toMatch(/\bindustry\b/);

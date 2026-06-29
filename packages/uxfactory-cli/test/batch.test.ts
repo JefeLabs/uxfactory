@@ -400,6 +400,36 @@ describe("batchCmd", () => {
 
   // ── profile integration (Phase 8 Task 3) ────────────────────────────────
 
+  // ── Fix 2 (Phase 8 review): present-but-broken profile → fail closed (exit 2) ────
+
+  it("Fix 2: present-but-corrupt profile.json (invalid JSON) → exit 2, NOT silent fall-through to registry scope", async () => {
+    // Write a corrupt profile (not valid JSON) — batch must fail closed, not silently fall through.
+    await writeFile(path.join(root, "uxfactory.profile.json"), "{ not valid json }", "utf8");
+    // Also write a valid registry + stories so that IF it silently fell through it would exit 0.
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeRegistry({ stories: "design/stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
+    // Must produce an error message that names the profile and instructs re-classify.
+    expect(io.errText()).toMatch(/uxfactory\.profile\.json/);
+    expect(io.errText()).toMatch(/classify/);
+  });
+
+  it("Fix 2: present-but-shape-mismatched profile.json → exit 2, NOT silent fall-through", async () => {
+    // Valid JSON but wrong shape (missing confirm_status / scope).
+    await writeFile(
+      path.join(root, "uxfactory.profile.json"),
+      JSON.stringify({ something: "unexpected" }),
+      "utf8",
+    );
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeRegistry({ stories: "design/stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
+    expect(io.errText()).toMatch(/uxfactory\.profile\.json/);
+    expect(io.errText()).toMatch(/classify/);
+  });
+
   it("DRAFT profile → exit 2 with 'not confirmed' message (compute-commit boundary)", async () => {
     // Write a draft profile (no registry needed — fails before registry check)
     const draftProfile = {

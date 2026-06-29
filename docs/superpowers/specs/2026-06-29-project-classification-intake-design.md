@@ -75,7 +75,9 @@ ManifestEntry
 
 **Style:** `formal` → `EditorialStyle.voice` = formal, tightens Tier 8 voice threshold; `informal`/`mix` → defaults.
 
-**Scope dials:** `scope.visual/editorial/coverage/flow` set the `min_*` cuts → the `RenderScope` (reuse Phase 6.5). Category provides **defaults**; the classification's explicit dials **override**; compliance **floors** can't be lowered (strictest-wins).
+**Scope dials:** `scope.visual/editorial/coverage/flow` set the `min_*` cuts → the `RenderScope` (reuse Phase 6.5). Category sets **floors** on the four dials — a dial you set below its category floor is raised to the floor (strictest-wins); dials at or above the floor take your value. Only `web_app` has non-trivial floors (coverage/flow = high). Industry/age/style affect compliance constraints, A11y/voice/reading-level requirements, and tier notes — NOT the scope dials.
+
+> **Note:** Because `ProjectClassification.scope` dials are REQUIRED (always present after validation), category acts as a binding floor rather than an overridable default. A future version with optional dials could make it a true default.
 
 **flow_refs:** enumerate which flows seed the batch's view-states (expected sequence → Tier 2).
 

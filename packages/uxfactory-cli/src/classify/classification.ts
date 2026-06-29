@@ -185,10 +185,18 @@ export async function readClassification(filePath: string): Promise<Classificati
   let text: string;
   try {
     text = await readFile(filePath, "utf8");
-  } catch {
+  } catch (err) {
+    // ENOENT = genuinely absent → "not found" (back-compat).
+    // Any other fs error (EACCES, EISDIR, …) surfaces as a distinct error message.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        ok: false,
+        message: `classification file not found: ${filePath}`,
+      };
+    }
     return {
       ok: false,
-      message: `classification file not found: ${filePath}`,
+      message: `cannot read classification file ${filePath}: ${(err as Error).message}`,
     };
   }
 

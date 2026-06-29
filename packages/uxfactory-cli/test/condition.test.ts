@@ -16,6 +16,8 @@ import { describe, it, expect } from "vitest";
 import { condition } from "../src/classify/condition.js";
 import type { GateProfile, ManifestEntry } from "../src/classify/condition.js";
 import type { ProjectClassification } from "../src/classify/classification.js";
+import { requiredInputs } from "../src/batch/scope.js";
+import type { RenderScope } from "../src/batch/scope.js";
 
 // ---------------------------------------------------------------------------
 // Test fixture helpers
@@ -948,4 +950,107 @@ describe("gate_effect derivation", () => {
     const p = condition(cls({ category: "web_app" }));
     expect(findEntry(p, "DiscoverabilityStrategy").gate_effect).toBe("suppressed");
   });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 3 (Phase 8 review) — Scope→enforced-readiness coupling invariant
+//
+// The "visual≥medium ⇒ tokens / flow≥medium ⇒ flow" threshold is hardcoded in
+// BOTH condition.ts (manifest enforced+requested) and scope.ts GATE_THRESHOLDS
+// (batch readiness).  This test ensures they agree — if either table drifts this
+// test fails loudly.
+// ---------------------------------------------------------------------------
+
+/**
+ * Mapping from enforced manifest artifact_kind → the input name that
+ * `requiredInputs(scope)` returns (reuse is optional/excluded).
+ */
+const KIND_TO_INPUT: Record<string, string> = {
+  AcceptanceCriterion: "stories",
+  TokenSet: "tokens",
+  UserFlow: "flow",
+  // reuse → optional; never appears in requiredInputs()
+};
+
+describe("scope→enforced-readiness coupling invariant (Fix 3)", () => {
+  /**
+   * For a given scope, derive the MANDATORY input set from `condition()` and
+   * compare it to `requiredInputs()` from scope.ts.
+   * They must agree exactly.
+   */
+  function mandatoryInputsFromCondition(scope: RenderScope): Set<string> {
+    const classification = cls({ scope });
+    const profile = condition(classification);
+    const mandatory = new Set<string>();
+    for (const entry of profile.manifest) {
+      if (entry.requirement === "requested" && entry.enforced) {
+        const input = KIND_TO_INPUT[entry.artifact_kind];
+        if (input !== undefined) mandatory.add(input);
+      }
+    }
+    return mandatory;
+  }
+
+  const REPRESENTATIVE_SCOPES: Array<{ label: string; scope: RenderScope }> = [
+    {
+      label: "all-low",
+      scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+    },
+    {
+      label: "visual:medium (tokens threshold)",
+      scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" },
+    },
+    {
+      label: "flow:medium (flow threshold)",
+      scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" },
+    },
+    {
+      label: "visual:medium + flow:medium",
+      scope: { visual: "medium", editorial: "low", coverage: "low", flow: "medium" },
+    },
+    {
+      label: "all-high",
+      scope: { visual: "high", editorial: "high", coverage: "high", flow: "high" },
+    },
+    {
+      label: "visual:high only",
+      scope: { visual: "high", editorial: "low", coverage: "low", flow: "low" },
+    },
+    {
+      label: "flow:high only",
+      scope: { visual: "low", editorial: "low", coverage: "low", flow: "high" },
+    },
+  ];
+
+  for (const { label, scope } of REPRESENTATIVE_SCOPES) {
+    it(`condition() mandatory inputs === requiredInputs() for scope [${label}]`, () => {
+      // Use ecommerce (no category floors) so scope dials are passed through unmodified.
+      const classification: ProjectClassification = {
+        version: 1,
+        category: "ecommerce",
+        industry: "corporate",
+        age_demographic: "26-35",
+        style: "informal",
+        scope,
+        flow_refs: [],
+      };
+
+      const profile = condition(classification);
+
+      // Collect mandatory inputs from condition() manifest (enforced + requested, excluding reuse).
+      const fromCondition = new Set<string>();
+      for (const entry of profile.manifest) {
+        if (entry.requirement === "requested" && entry.enforced) {
+          const input = KIND_TO_INPUT[entry.artifact_kind];
+          if (input !== undefined) fromCondition.add(input);
+        }
+      }
+
+      // requiredInputs() from scope.ts (single source of truth for batch readiness).
+      const fromScope = new Set(requiredInputs(profile.scope));
+
+      // They must agree exactly — "stories" is always required (coverage≥low, which is always true).
+      expect(fromCondition).toEqual(fromScope);
+    });
+  }
 });

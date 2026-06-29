@@ -64,35 +64,52 @@ function isRenderScope(v: unknown): v is RenderScope {
   );
 }
 
+/** Three-way result for reading `uxfactory.profile.json`. */
+type ProfileReadResult =
+  | { state: "absent" }
+  | { state: "broken"; message: string }
+  | { state: "ok"; profile: PinnedProfile };
+
 /**
  * Try to read `uxfactory.profile.json` from `cwd`.
  *
- * - Absent file → `{ found: false }` (back-compat; batch behaves as before).
- * - Present but unparseable → `{ found: false }` (treat as absent; log a warning).
- * - Present and valid → `{ found: true; profile }`.
+ * - ENOENT (absent file) → `{ state: "absent" }` — back-compat; batch behaves as before.
+ * - Present but unreadable (EACCES/etc.) → `{ state: "broken"; message }` — FAIL CLOSED.
+ * - Present but invalid JSON → `{ state: "broken"; message }` — FAIL CLOSED.
+ * - Present but wrong shape → `{ state: "broken"; message }` — FAIL CLOSED.
+ * - Present and valid → `{ state: "ok"; profile }`.
+ *
+ * "Fail closed" means a present-but-broken profile is a hard error: re-run
+ * `uxfactory classify` to regenerate it.  Only a truly ABSENT file falls back to
+ * registry scope (back-compat).
  */
-async function readProfile(
-  cwd: string,
-  io: IO,
-): Promise<{ found: false } | { found: true; profile: PinnedProfile }> {
+async function readProfile(cwd: string): Promise<ProfileReadResult> {
   const profilePath = path.join(cwd, "uxfactory.profile.json");
   let raw: string;
   try {
     raw = await readFile(profilePath, "utf8");
-  } catch {
-    // File absent — back-compat: no profile → batch behaves as today.
-    return { found: false };
+  } catch (err) {
+    // ENOENT = genuinely absent → back-compat fall-through.
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { state: "absent" };
+    }
+    // Any other fs error (EACCES, EISDIR, …) → fail closed.
+    return {
+      state: "broken",
+      message: `uxfactory.profile.json is present but cannot be read: ${(err as Error).message} — re-run \`uxfactory classify\``,
+    };
   }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch {
-    // Unparseable — treat as absent and warn
-    io.err(
-      `uxfactory.profile.json exists but could not be parsed as JSON; run \`uxfactory classify\``,
-    );
-    return { found: false };
+    return {
+      state: "broken",
+      message: "uxfactory.profile.json is present but invalid JSON — re-run `uxfactory classify`",
+    };
   }
+
   if (
     typeof parsed === "object" &&
     parsed !== null &&
@@ -103,14 +120,16 @@ async function readProfile(
     const status = obj["confirm_status"];
     const scope = obj["scope"];
     if ((status === "draft" || status === "approved") && isRenderScope(scope)) {
-      return { found: true, profile: { confirm_status: status, scope } };
+      return { state: "ok", profile: { confirm_status: status, scope } };
     }
   }
-  // Shape mismatch — treat as absent
-  io.err(
-    `uxfactory.profile.json has an unexpected shape; run \`uxfactory classify\` to regenerate`,
-  );
-  return { found: false };
+
+  // Shape mismatch — fail closed.
+  return {
+    state: "broken",
+    message:
+      "uxfactory.profile.json is present but has an unexpected shape — re-run `uxfactory classify`",
+  };
 }
 
 /**
@@ -134,9 +153,14 @@ export async function batchCmd(
   // 0. Profile integration (Phase 8, Task 3) — the compute-commit boundary.
   //    Scope precedence: CLI flags > profile scope > registry scope.
   //    If no profile file → back-compat (batch behaves exactly as today).
-  const profileResult = await readProfile(cwd, io);
+  //    A present-but-broken profile is a HARD ERROR (fail closed): re-run classify.
+  const profileResult = await readProfile(cwd);
+  if (profileResult.state === "broken") {
+    io.err(profileResult.message);
+    return EXIT.TRANSPORT;
+  }
   let profileScope: RenderScope | undefined;
-  if (profileResult.found) {
+  if (profileResult.state === "ok") {
     if (profileResult.profile.confirm_status !== "approved") {
       io.err("profile not confirmed — run `uxfactory classify --confirm`");
       return EXIT.TRANSPORT;

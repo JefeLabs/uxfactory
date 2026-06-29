@@ -27,8 +27,6 @@ export interface ClassifyFlags {
   confirm?: boolean;
   /** Emit the GateProfile as JSON to stdout (instead of human summary). */
   json?: boolean;
-  /** Data directory (kept for CLI flag parity; classify uses cwd for both files). */
-  dataDir?: string;
   /** Project root — where uxfactory.classification.json lives (default process.cwd()). */
   cwd?: string;
 }
