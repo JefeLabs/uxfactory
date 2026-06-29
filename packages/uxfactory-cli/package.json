@@ -30,6 +30,7 @@
     "yaml": "2.9.0"
   },
   "devDependencies": {
-    "@types/node": "26.0.1"
+    "@types/node": "26.0.1",
+    "playwright": "1.50.1"
   }
 }
