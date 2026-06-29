@@ -35,7 +35,7 @@ export { renderCmd } from "./commands/render.js";
 export type { RenderFlags } from "./commands/render.js";
 export { readRegistry, validateRegistry, resolveInputs } from "./batch/registry.js";
 export type { BatchRegistry, BatchInputs, ResolvedInputs, ReadRegistryResult } from "./batch/registry.js";
-export { tokenConformance, reuse } from "./batch/checks.js";
+export { tokenConformance, reuse, requirementCoverage, flowReachability } from "./batch/checks.js";
 export type {
   CheckResult,
   CheckStatus,
@@ -49,3 +49,5 @@ export type {
   ImpliedState,
   Flow,
 } from "./batch/checks.js";
+export { runBatch } from "./batch/run.js";
+export type { RunBatchInput, BatchReport } from "./batch/run.js";

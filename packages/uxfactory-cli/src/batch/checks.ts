@@ -170,3 +170,120 @@ export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResu
   }
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
 }
+
+// --- gates (Task 3) ---------------------------------------------------------
+
+/** Every container (frame/section) name across the batch. */
+function frameNames(specs: LoadedSpec[]): { file: string; name: string }[] {
+  const out: { file: string; name: string }[] = [];
+  for (const loaded of specs) for (const c of containers(loaded.spec)) out.push({ file: loaded.file, name: c.name });
+  return out;
+}
+
+/** Every node name across the batch (containers + children) for keyword search. */
+function allNodeNames(specs: LoadedSpec[]): string[] {
+  const names: string[] = [];
+  for (const loaded of specs) {
+    for (const c of containers(loaded.spec)) {
+      names.push(c.name);
+      for (const child of c.children) names.push(child.name);
+    }
+  }
+  return names;
+}
+
+/** Build a directed name→names graph from every spec's connectors. */
+function buildGraph(specs: LoadedSpec[]): Map<string, Set<string>> {
+  const adj = new Map<string, Set<string>>();
+  for (const loaded of specs) {
+    const conns = "connectors" in loaded.spec && loaded.spec.connectors ? loaded.spec.connectors : [];
+    for (const c of conns) {
+      const set = adj.get(c.from) ?? new Set<string>();
+      set.add(c.to);
+      adj.set(c.from, set);
+    }
+  }
+  return adj;
+}
+
+/** Is `to` reachable from `from` in the directed graph (trivially true if equal). */
+function reachable(adj: Map<string, Set<string>>, from: string, to: string): boolean {
+  if (from === to) return true;
+  const seen = new Set<string>([from]);
+  const stack: string[] = [from];
+  while (stack.length > 0) {
+    const cur = stack.pop() as string;
+    for (const next of adj.get(cur) ?? []) {
+      if (next === to) return true;
+      if (!seen.has(next)) {
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * requirement & state coverage (must) — name-based traceability between stories
+ * and the batch. Each story.id must be named by ≥1 frame; each AC.impliedState
+ * keyword must appear in some node name; any frame naming no story id is story-less.
+ * Skip-and-declare when no stories. Pure + deterministic (no LLM, no judge).
+ */
+export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | null): CheckResult {
+  const id = "requirement-coverage";
+  if (stories === null) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
+  }
+  const storyList = stories.stories ?? [];
+  const frames = frameNames(specs);
+  const lowerFrames = frames.map((f) => ({ ...f, lname: f.name.toLowerCase() }));
+  const lowerNodes = allNodeNames(specs).map((n) => n.toLowerCase());
+  const findings: BatchFinding[] = [];
+
+  for (const story of storyList) {
+    const idl = story.id.toLowerCase();
+    if (!lowerFrames.some((f) => f.lname.includes(idl))) {
+      findings.push({ detail: `story ${story.id} is not covered by any frame (no frame name contains "${story.id}")`, ref: story.id });
+    }
+    for (const ac of story.acceptanceCriteria ?? []) {
+      const kw = ac.impliedState.toLowerCase();
+      if (!lowerNodes.some((n) => n.includes(kw))) {
+        findings.push({ detail: `story ${story.id} AC "${ac.statement}" implies a ${ac.impliedState} state with no matching node`, ref: story.id });
+      }
+    }
+  }
+
+  const storyIds = storyList.map((s) => s.id.toLowerCase());
+  for (const f of lowerFrames) {
+    if (!storyIds.some((sid) => f.lname.includes(sid))) {
+      findings.push({ detail: `frame ${f.name} (${f.file}) has no story basis (its name contains no registered story id)`, ref: f.name });
+    }
+  }
+
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+}
+
+/**
+ * flow reachability (ADVISORY) — when a flow declares a step order, verify each
+ * consecutive pair is reachable along the specs' connectors. Skip-and-declare when
+ * no flow. Pure deterministic graph reachability — NO LLM. Always severity:"advisory",
+ * so an unreachable finding never trips the must-pass set.
+ */
+export function flowReachability(specs: LoadedSpec[], flow: Flow | null): CheckResult {
+  const id = "flow-reachability";
+  if (flow === null) {
+    return { id, status: "skip", severity: "advisory", findings: [], reason: "no flow registered" };
+  }
+  const steps = flow.steps ?? [];
+  const adj = buildGraph(specs);
+  const findings: BatchFinding[] = [];
+  for (let i = 0; i < steps.length - 1; i++) {
+    const from = steps[i] as string;
+    const to = steps[i + 1] as string;
+    if (!reachable(adj, from, to)) {
+      findings.push({ detail: `flow step "${from}" → "${to}" is not reachable along any connector path`, ref: `${from}->${to}` });
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
+}
