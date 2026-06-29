@@ -1,6 +1,7 @@
 import { validate } from "@uxfactory/spec";
 import type { MainToUi, UiToMain } from "./messages.js";
 import { nextPanel, type PanelState, type PanelView } from "./panel.js";
+import type { ReviewReportLike } from "./annotation-plan.js";
 
 const BRIDGE = "http://localhost:3779";
 
@@ -16,6 +17,7 @@ export interface UiController {
   onMainMessage(msg: MainToUi): Promise<void>;
   submitManual(): void;
   clickUndo(): void;
+  clickReview(): Promise<void>;
   start(): void;
   stop(): void;
   readonly panel: PanelState;
@@ -92,7 +94,31 @@ export function createUi(options: UiOptions = {}): UiController {
       if (undo) undo.textContent = `Undo (${msg.count})`;
     } else if (msg.type === "render-error") {
       showErrors([msg.message]);
+    } else if (msg.type === "review-done") {
+      setStatus(`Review complete${msg.skipped > 0 ? ` (${msg.skipped} nodes skipped)` : ""}`);
+    } else if (msg.type === "review-error") {
+      showErrors([`Review error: ${msg.message}`]);
     }
+  }
+
+  /** Fetches the latest review report from the bridge and asks the main thread to draw it. */
+  async function clickReview(): Promise<void> {
+    showErrors([]);
+    setStatus("Reviewing…");
+    let res: Response;
+    try {
+      res = await doFetch(`${BRIDGE}/review`);
+    } catch (err) {
+      showErrors([`Could not reach bridge: ${String(err)}`]);
+      return;
+    }
+    if (!res.ok) {
+      showErrors([`No review report available (bridge returned ${res.status})`]);
+      setStatus("Connected");
+      return;
+    }
+    const report = (await res.json()) as ReviewReportLike;
+    postToMain({ type: "review", report });
   }
 
   function submitManual(): void {
@@ -125,6 +151,7 @@ export function createUi(options: UiOptions = {}): UiController {
       void pollOnce();
     }, 2000);
     el("undo")?.addEventListener("click", clickUndo);
+    el("review")?.addEventListener("click", () => void clickReview());
     el("render-manual")?.addEventListener("click", submitManual);
     el("details")?.addEventListener("toggle", () => applyPanel(nextPanel(panel, "toggle-details")));
     el("expand")?.addEventListener("click", () => applyPanel(nextPanel(panel, "expand-click")));
@@ -157,6 +184,7 @@ export function createUi(options: UiOptions = {}): UiController {
     onMainMessage,
     submitManual,
     clickUndo,
+    clickReview,
     start,
     stop,
     get panel() {

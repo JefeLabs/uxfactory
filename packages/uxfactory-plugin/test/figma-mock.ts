@@ -18,6 +18,8 @@ export class FakeNode {
   connectorStart: unknown = undefined;
   connectorEnd: unknown = undefined;
   children: FakeNode[] = [];
+  /** Tracks which parent this node was appended to — used by remove(). */
+  _parent: FakeNode | null = null;
   constructor(
     readonly type: string,
     readonly id: string,
@@ -27,9 +29,17 @@ export class FakeNode {
     this.height = h;
   }
   appendChild(child: FakeNode): void {
+    child._parent = this;
     this.children.push(child);
   }
-  remove(): void {}
+  /** Actually removes this node from its parent's children array. */
+  remove(): void {
+    if (this._parent) {
+      const idx = this._parent.children.indexOf(this);
+      if (idx !== -1) this._parent.children.splice(idx, 1);
+      this._parent = null;
+    }
+  }
 }
 
 export interface FakeFigma {

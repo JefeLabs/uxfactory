@@ -1,4 +1,5 @@
 import type { PluginRenderReport } from "./report.js";
+import type { ReviewReportLike } from "./annotation-plan.js";
 
 /** A selected node mapped to the §7.5 reporting fields. */
 export interface SelectionNode {
@@ -27,6 +28,7 @@ export interface SelectionPayload {
 /** Messages the iframe UI sends to the main thread. */
 export type UiToMain =
   | { type: "render"; spec: unknown; jobId?: string }
+  | { type: "review"; report: ReviewReportLike }
   | { type: "undo" }
   | { type: "resize"; width: number; height: number };
 
@@ -35,4 +37,6 @@ export type MainToUi =
   | { type: "rendered"; report: PluginRenderReport }
   | { type: "selection"; selection: SelectionPayload }
   | { type: "undo-count"; count: number }
-  | { type: "render-error"; message: string };
+  | { type: "render-error"; message: string }
+  | { type: "review-done"; skipped: number }
+  | { type: "review-error"; message: string };

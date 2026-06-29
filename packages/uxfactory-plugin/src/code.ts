@@ -7,6 +7,8 @@ import { planEdit, captureInverse } from "./edits.js";
 import { UndoStack } from "./undo-stack.js";
 import { assembleReport, newRenderId } from "./report.js";
 import { mapSelection, type RawSelNode } from "./selection.js";
+import { planAnnotations } from "./annotation-plan.js";
+import type { ReviewReportLike } from "./annotation-plan.js";
 
 /** The narrow node surface the orchestrator uses (cast from the real figma node). */
 interface EditableNode {
@@ -86,6 +88,7 @@ function post(msg: MainToUi): void {
 async function handleMessage(msg: UiToMain): Promise<void> {
   try {
     if (msg.type === "render") await renderSpec(msg.spec, msg.jobId);
+    else if (msg.type === "review") await drawReview(msg.report);
     else if (msg.type === "undo") applyUndo();
     else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
   } catch (err) {
@@ -450,6 +453,97 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
   } catch (err) {
     // Fix 1: surface any unexpected throw as a render-error instead of silently hanging.
     post({ type: "render-error", message: String(err) });
+  }
+}
+
+// ---- review annotation drawing (§7.8) ----
+
+const REVIEW_GROUP_NAME = "UXFactory Review";
+const RED_FILL = "#E53935"; // conformance violation
+const AMBER_FILL = "#FB8C00"; // advisory suggestion
+const BADGE_SIZE = 20;
+
+/**
+ * Draws conformance-review annotations on the current page from a ReviewReport.
+ * §7.8: one removable "UXFactory Review" group; numbered badges (red=conformance,
+ * amber=advisory) at found nodes; "Review notes" panel with coverage gaps, legend,
+ * and verdict.
+ */
+async function drawReview(report: ReviewReportLike): Promise<void> {
+  try {
+    const plan = planAnnotations(report);
+    const page = fig.currentPage;
+
+    // Clear any prior annotation group (idempotent re-review — §7.1 concern).
+    for (const child of [...page.children]) {
+      if (child.name === REVIEW_GROUP_NAME) {
+        child.remove();
+        break;
+      }
+    }
+
+    // Create the single removable group.
+    const group = fig.createFrame();
+    group.name = REVIEW_GROUP_NAME;
+    group.x = 0;
+    group.y = 0;
+    group.resize(1, 1); // position/size is structural; live placement noted below
+
+    let skipped = 0;
+
+    // Draw a numbered badge for each element flag.
+    for (const flag of plan.elementFlags) {
+      const target = findByName(page, flag.nodeName);
+      if (!target) {
+        skipped++;
+        continue;
+      }
+      const badge = fig.createRectangle();
+      badge.name = `Badge ${flag.index + 1}`;
+      // Position badge at the top-right corner of the target node.
+      badge.x = target.x + target.width;
+      badge.y = target.y;
+      badge.resize(BADGE_SIZE, BADGE_SIZE);
+      badge.fills = solidPaint(flag.kind === "conformance" ? RED_FILL : AMBER_FILL);
+      group.appendChild(badge);
+    }
+
+    // Build the "Review notes" panel (frame + text child).
+    const notesFrame = fig.createFrame();
+    notesFrame.name = "Review notes";
+    notesFrame.x = 0;
+    notesFrame.y = 260;
+    notesFrame.resize(400, 120);
+    group.appendChild(notesFrame);
+
+    // Load font before creating any text node.
+    await fig.loadFontAsync({ family: "Inter", style: "Regular" });
+
+    const lines: string[] = [];
+    lines.push(`Verdict: ${plan.conformant ? "CONFORMANT" : "NON-CONFORMANT"}`);
+    if (plan.coverageGaps.length > 0) {
+      lines.push("Coverage gaps:");
+      for (const gap of plan.coverageGaps) {
+        lines.push(`  ${gap.index + 1}. [${gap.severity}] ${gap.reason}`);
+      }
+    }
+    lines.push("Legend:");
+    lines.push("  RED = requirement violation");
+    lines.push("  AMBER = advisory suggestion");
+
+    const notesText = fig.createText();
+    notesText.name = "notes-content";
+    notesText.x = 8;
+    notesText.y = 8;
+    notesText.characters = lines.join("\n");
+    notesFrame.appendChild(notesText);
+
+    // Append the whole group to the page as one removable layer.
+    page.appendChild(group);
+
+    post({ type: "review-done", skipped });
+  } catch (err) {
+    post({ type: "review-error", message: String(err) });
   }
 }
 
