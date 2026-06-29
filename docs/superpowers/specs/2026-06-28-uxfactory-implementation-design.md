@@ -1,7 +1,7 @@
 # UXFactory — Implementation Decomposition & Design
 
 > **Status:** Approved decomposition (master plan) · **Date:** 2026-06-28 · **Owner:** Edwin Cruz
-> **Source contracts:** [`.plans/UXFactory-Implementation-PRD.md`](../../../.plans/UXFactory-Implementation-PRD.md) and [`.plans/UXFactory-Artifacts-and-Models-PRD.md`](../../../.plans/UXFactory-Artifacts-and-Models-PRD.md)
+> **Source contracts:** [`.plans/UXFactory-Implementation-PRD.md`](../../../.plans/UXFactory-Implementation-PRD.md) and [`.plans/UXFactory-Design-Artifacts-and-Models-PRD.md`](../../../.plans/UXFactory-Design-Artifacts-and-Models-PRD.md)
 
 This document is **not** a re-statement of the PRDs. The two PRDs are the detailed design and the build contract; they own _what_ to build and _why_. This document owns the **decomposition into buildable sub-projects, their dependency order, the cross-cutting technical decisions the PRDs leave open, and the execution discipline**. Each phase below defers to the PRD sections it implements.
 
