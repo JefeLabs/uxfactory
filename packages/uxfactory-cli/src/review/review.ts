@@ -40,6 +40,17 @@ export interface ReviewReport {
   /** Gate ids that do not bind at this scope. */
   notOwed: string[];
   /**
+   * Binding gate ids that RAN and PASSED (positive evidence: conformant because checks
+   * passed, not because everything was skipped). Empty only when no binding gates ran.
+   */
+  passed: string[];
+  /**
+   * Declared future tier artifact names (informational; not binding at this scope).
+   * Parity with batch's `declared` entries — surfaced so the caller knows what tiers
+   * will activate when the scope is raised.
+   */
+  declared: string[];
+  /**
    * Fixed note: heuristic-UX checks (visual hierarchy, affordances, contrast,
    * cognitive load) are the agent/plugin judgment layer and are NOT run by the engine.
    */
@@ -70,6 +81,10 @@ const ADVISORY_NOTE =
  * Try to extract the implied state keyword from a requirement-coverage finding detail.
  * Detail format: `story X AC "..." implies a <state> state with no matching node`
  * Returns the state token or undefined when the pattern doesn't match.
+ *
+ * NOTE (v1 coupling): this re-parses the human `detail` string produced by
+ * `requirementCoverage` in checks.ts. If that wording changes, `property` degrades
+ * to `undefined`. Keep this regex in sync with the finding detail format in checks.ts.
  */
 function extractImpliedState(detail: string): string | undefined {
   const m = /implies a (\w+) state/.exec(detail);
@@ -77,7 +92,7 @@ function extractImpliedState(detail: string): string | undefined {
 }
 
 /**
- * Map a single CheckResult into ReviewFindings / skipped / notOwed entries.
+ * Map a single CheckResult into ReviewFindings / skipped / notOwed / passed / declared entries.
  * Mutates the provided output arrays in-place (avoids object allocation per call).
  */
 function mapCheckResult(
@@ -85,6 +100,8 @@ function mapCheckResult(
   findings: ReviewFinding[],
   skipped: { check: string; reason: string }[],
   notOwed: string[],
+  passed: string[],
+  declared: string[],
 ): void {
   switch (check.status) {
     case "not-owed":
@@ -92,12 +109,14 @@ function mapCheckResult(
       return;
     case "declared":
       // Future tiers — informational only; not binding, not skipped, not owed.
+      declared.push(check.id);
       return;
     case "skip":
       skipped.push({ check: check.id, reason: check.reason ?? "input absent" });
       return;
     case "pass":
-      // A passing binding gate emits no negative finding. Keep it simple.
+      // A passing binding gate: record as positive evidence (Fix 3 — self-evidencing verdict).
+      passed.push(check.id);
       return;
     case "fail": {
       const isAdvisory = ADVISORY_GATE_IDS.has(check.id) || check.severity === "advisory";
@@ -163,9 +182,11 @@ export function reviewDesign(input: {
   const findings: ReviewFinding[] = [];
   const skipped: { check: string; reason: string }[] = [];
   const notOwed: string[] = [];
+  const passed: string[] = [];
+  const declared: string[] = [];
 
   for (const check of checks) {
-    mapCheckResult(check, findings, skipped, notOwed);
+    mapCheckResult(check, findings, skipped, notOwed, passed, declared);
   }
 
   return {
@@ -175,6 +196,8 @@ export function reviewDesign(input: {
     findings,
     skipped,
     notOwed,
+    passed,
+    declared,
     advisory: ADVISORY_NOTE,
   };
 }

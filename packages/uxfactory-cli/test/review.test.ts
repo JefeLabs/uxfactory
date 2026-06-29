@@ -469,3 +469,81 @@ describe("reviewDesign — scope echoed in report", () => {
     expect(report.scope).toEqual(wireframe);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 9 (Fix 3): hardened conformant verdict — passed[] is evidence gates ran
+// ---------------------------------------------------------------------------
+
+describe("reviewDesign — self-evidencing passed[] (Fix 3)", () => {
+  it("passed includes requirement-coverage when it ran and passed", () => {
+    const report = reviewDesign({
+      specs: [{ file: "story-1.uxfactory.json", spec: coveringSpec }],
+      stories: storiesConformant,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    expect(report.rubric).toContain("requirement-coverage");
+    expect(report.skipped.find((s) => s.check === "requirement-coverage")).toBeUndefined();
+    expect(report.passed).toContain("requirement-coverage");
+    expect(report.conformant).toBe(true);
+  });
+
+  it("passed is empty for a gate that failed", () => {
+    const report = reviewDesign({
+      specs: [{ file: "story-2.uxfactory.json", spec: missingLoadingSpec }],
+      stories: storiesRequiringLoading,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    // requirement-coverage FAILED → must not appear in passed
+    expect(report.passed).not.toContain("requirement-coverage");
+  });
+
+  it("passed is empty for a skipped gate (absent input)", () => {
+    const report = reviewDesign({
+      specs: [{ file: "s.uxfactory.json", spec: coveringSpec }],
+      stories: null,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    // requirement-coverage SKIPPED → must not appear in passed
+    expect(report.passed).not.toContain("requirement-coverage");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 10 (Fix 4): declared tiers surfaced in the report
+// ---------------------------------------------------------------------------
+
+describe("reviewDesign — declared tiers in report (Fix 4)", () => {
+  it("declared is a non-empty array at wireframe scope (future tiers always present)", () => {
+    const report = reviewDesign({
+      specs: [{ file: "s.uxfactory.json", spec: coveringSpec }],
+      stories: null,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    expect(Array.isArray(report.declared)).toBe(true);
+    expect(report.declared.length).toBeGreaterThan(0);
+  });
+
+  it("declared contains a11y at wireframe scope (always declared)", () => {
+    const report = reviewDesign({
+      specs: [{ file: "s.uxfactory.json", spec: coveringSpec }],
+      stories: null,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    expect(report.declared).toContain("a11y");
+  });
+});

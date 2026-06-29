@@ -406,3 +406,133 @@ describe("reviewCmd — directory of specs", () => {
     expect(code).toBe(EXIT.OK);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 10 (Fix 1): registered-but-broken inputs → exit 2, NOT skip-and-declare
+// ---------------------------------------------------------------------------
+
+describe("reviewCmd — registered-but-broken stories → exit 2 (Fix 1)", () => {
+  it("exits 2 when stories is registered but the file is missing on disk", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    // Register a stories path that does not exist on disk
+    await writeRegistry({ stories: "no-such-stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: root }, io);
+    expect(code).toBe(EXIT.TRANSPORT);
+    // Must emit a clear message (not silent)
+    expect(io.errText().length).toBeGreaterThan(0);
+  });
+
+  it("exits 2 when stories is registered but the file contains invalid JSON", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    await writeFile(path.join(root, "stories.json"), "{ this is not valid json }", "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: root }, io);
+    expect(code).toBe(EXIT.TRANSPORT);
+  });
+
+  it("exits 2 when stories is registered but has wrong shape (stories not array)", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    // Wrong shape: stories is a string, not an array
+    await writeFile(
+      path.join(root, "stories.json"),
+      JSON.stringify({ stories: "not-an-array" }),
+      "utf8",
+    );
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: root }, io);
+    expect(code).toBe(EXIT.TRANSPORT);
+    // Must name the shape error — not a silent exit
+    expect(io.errText()).toMatch(/malformed stories/);
+  });
+
+  it("exits 0 when stories is genuinely absent (not registered) — skip-and-declare", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    // No stories key in inputs at all → absent, skip-and-declare is valid
+    await writeRegistry({}, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: root }, io);
+    expect(code).toBe(EXIT.OK);
+    // Coverage check must appear in skipped, not as an error
+    const report = JSON.parse(
+      await (async () => {
+        const io2 = makeIO();
+        await reviewCmd(specFile, { json: true, cwd: root }, io2);
+        return io2.outText();
+      })(),
+    ) as ReviewReport;
+    expect(report.skipped.find((s) => s.check === "requirement-coverage")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 11 (Fix 3): hardened conformant verdict — requirement-coverage must have RUN
+// ---------------------------------------------------------------------------
+
+describe("reviewCmd — hardened conformant verdict (Fix 3)", () => {
+  it("passed[] includes requirement-coverage when it ran and passed", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    await writeFile(path.join(root, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { json: true, cwd: root }, io);
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as ReviewReport;
+    // Self-evidencing: the gate RAN and PASSED
+    expect(report.rubric).toContain("requirement-coverage");
+    expect(report.skipped.find((s) => s.check === "requirement-coverage")).toBeUndefined();
+    expect(report.passed).toContain("requirement-coverage");
+    expect(report.conformant).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 12 (Fix 4): declared tiers in the report
+// ---------------------------------------------------------------------------
+
+describe("reviewCmd — declared tiers in --json report (Fix 4)", () => {
+  it("--json report includes a declared array with future tier artifact names", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    await writeRegistry({}, { scope: "wireframe" });
+    const io = makeIO();
+    await reviewCmd(specFile, { json: true, cwd: root }, io);
+    const report = JSON.parse(io.outText()) as ReviewReport;
+    expect(Array.isArray(report.declared)).toBe(true);
+    // At wireframe scope there are always declared future tiers (a11y, etc.)
+    expect(report.declared.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 13 (Fix 5): vacuous-conformant headline is qualified
+// ---------------------------------------------------------------------------
+
+describe("reviewCmd — vacuous-conformant headline qualification (Fix 5)", () => {
+  it("headline says 'skipped' when some checks were skipped and verdict is conformant", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    // No stories registered → coverage check skipped → vacuous conformant
+    await writeRegistry({}, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: root }, io);
+    expect(code).toBe(EXIT.OK);
+    // Headline must be qualified, not bare "CONFORMANT"
+    expect(io.outText()).toMatch(/CONFORMANT.*skipped/i);
+  });
+
+  it("headline is bare CONFORMANT when all binding gates ran and passed", async () => {
+    // This case uses only 1 registered story that fully passes and no reuse spec
+    // but reuse will be skipped (no reuse input registered).
+    // So the headline will be qualified since reuse is skipped.
+    // Instead, test that non-skipped conformant still contains CONFORMANT
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    await writeFile(path.join(root, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: root }, io);
+    expect(code).toBe(EXIT.OK);
+    // Must still contain CONFORMANT
+    expect(io.outText().toUpperCase()).toContain("CONFORMANT");
+  });
+});

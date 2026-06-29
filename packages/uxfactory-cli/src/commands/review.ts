@@ -1,13 +1,14 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
 import { readRegistry } from "../batch/registry.js";
 import { resolveScope, parseScope } from "../batch/scope.js";
+import { loadTokensInput, loadStoriesInput, loadFlowInput } from "../batch/inputs.js";
 import { reviewDesign } from "../review/review.js";
 import type { ReviewReport } from "../review/review.js";
 import type { Dial, DialLevel } from "../batch/scope.js";
-import type { LoadedSpec, TokenSet, StorySet, Flow } from "../batch/checks.js";
+import type { LoadedSpec } from "../batch/checks.js";
 import type { Spec } from "@uxfactory/spec";
 import type { IO } from "../io.js";
 
@@ -29,15 +30,6 @@ export interface ReviewFlags {
 
 /** Valid values for a dial flag (not `none` — that is threshold-only). */
 const VALID_DIAL_LEVELS = new Set(["low", "medium", "high"]);
-
-/** Read + JSON-parse a registered input; returns null on any failure (review is lenient). */
-async function tryReadJson<T>(file: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(file, "utf8")) as T;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * `uxfactory review <design>` — offline conformance review (§14).
@@ -133,11 +125,31 @@ export async function reviewCmd(design: string, flags: ReviewFlags, io: IO): Pro
     return EXIT.TRANSPORT;
   }
 
-  // 4. Load registered inputs that EXIST (absent → null = skip-and-declare; lenient)
-  const tokens = reg.inputs.tokens !== null ? await tryReadJson<TokenSet>(reg.inputs.tokens) : null;
-  const stories =
-    reg.inputs.stories !== null ? await tryReadJson<StorySet>(reg.inputs.stories) : null;
-  const flowData = reg.inputs.flow !== null ? await tryReadJson<Flow>(reg.inputs.flow) : null;
+  // 4. Load registered inputs.
+  //    Fix 1/2: distinguish "not registered" (absent → null, skip-and-declare is valid)
+  //    from "registered-but-broken" (unreadable / invalid JSON / wrong shape → exit 2 with
+  //    a clear message).  The shared loader in batch/inputs.ts enforces the same shape
+  //    checks as batch, so the two commands cannot drift.
+  const tokensResult = await loadTokensInput(reg.inputs.tokens);
+  if (tokensResult.state === "broken") {
+    io.err(`review: ${tokensResult.message}`);
+    return EXIT.TRANSPORT;
+  }
+  const tokens = tokensResult.state === "ok" ? tokensResult.value : null;
+
+  const storiesResult = await loadStoriesInput(reg.inputs.stories);
+  if (storiesResult.state === "broken") {
+    io.err(`review: ${storiesResult.message}`);
+    return EXIT.TRANSPORT;
+  }
+  const stories = storiesResult.state === "ok" ? storiesResult.value : null;
+
+  const flowResult = await loadFlowInput(reg.inputs.flow);
+  if (flowResult.state === "broken") {
+    io.err(`review: ${flowResult.message}`);
+    return EXIT.TRANSPORT;
+  }
+  const flowData = flowResult.state === "ok" ? flowResult.value : null;
 
   let reuseSpecs: { file: string; spec: unknown }[] | null = null;
   if (reg.inputs.reuse.length > 0) {
@@ -145,7 +157,7 @@ export async function reviewCmd(design: string, flags: ReviewFlags, io: IO): Pro
     for (const file of reg.inputs.reuse) {
       const result = await loadSpec(file);
       if (result.ok) reuseSpecs.push({ file: path.basename(file), spec: result.spec });
-      // unreadable/invalid reuse spec → silently skip (review is lenient)
+      // unreadable/invalid reuse spec → silently skip (review is lenient for reuse)
     }
     if (reuseSpecs.length === 0) reuseSpecs = null;
   }
@@ -164,7 +176,18 @@ export async function reviewCmd(design: string, flags: ReviewFlags, io: IO): Pro
   if (flags.json === true) {
     io.out(JSON.stringify(report));
   } else {
-    const verdict = report.conformant ? "CONFORMANT" : "NON-CONFORMANT";
+    // Fix 5: qualify CONFORMANT when gates were skipped so a vacuous/partial pass is
+    // not mistaken for a fully-checked one.  NON-CONFORMANT is always unambiguous.
+    let verdict: string;
+    if (report.conformant) {
+      if (report.skipped.length > 0) {
+        verdict = `CONFORMANT (${report.skipped.length} check(s) skipped — see below)`;
+      } else {
+        verdict = "CONFORMANT";
+      }
+    } else {
+      verdict = "NON-CONFORMANT";
+    }
     io.out(
       `review: ${verdict} — ${specs.length} spec(s) ` +
         `at visual:${scope.visual}/editorial:${scope.editorial}/coverage:${scope.coverage}/flow:${scope.flow}`,

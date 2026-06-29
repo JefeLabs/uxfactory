@@ -1,8 +1,9 @@
-import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
+import { readdir, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { EXIT, TransportError } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
 import { readRegistry } from "../batch/registry.js";
+import { loadTokensInput, loadStoriesInput, loadFlowInput } from "../batch/inputs.js";
 import { runBatch } from "../batch/run.js";
 import { specToSvg } from "../render/svg.js";
 import { rasterize } from "../render/raster-select.js";
@@ -28,11 +29,6 @@ export interface BatchFlags {
   editorial?: string;
   coverage?: string;
   flow?: string;
-}
-
-/** Read + JSON-parse a registered input; throws on any failure (→ setup error). */
-async function readJson<T>(file: string): Promise<T> {
-  return JSON.parse(await readFile(file, "utf8")) as T;
 }
 
 /** Valid values for a dial flag (not `none` — that is threshold-only). */
@@ -84,50 +80,40 @@ export async function batchCmd(
   }
 
   // 3. load the registered inputs that EXIST (absent → null = skip; registered-but-unreadable → 2)
-  let tokens: TokenSet | null = null;
-  let stories: StorySet | null = null;
-  let flowData: Flow | null = null;
+  //    Uses the shared loader in batch/inputs.ts so shape checks stay in sync with review.
   let reuseSpecs: Spec[] | null = null;
-  try {
-    if (reg.inputs.tokens !== null) {
-      tokens = await readJson<TokenSet>(reg.inputs.tokens);
-      // Fix 5: light shape check — malformed tokens.ds.json → exit 2
-      if (
-        tokens.colors === null ||
-        typeof tokens.colors !== "object" ||
-        Array.isArray(tokens.colors)
-      ) {
-        io.err(
-          `malformed tokens file: "colors" must be an object (got ${JSON.stringify(typeof tokens.colors)})`,
-        );
-        return EXIT.TRANSPORT;
-      }
-    }
-    if (reg.inputs.stories !== null) {
-      stories = await readJson<StorySet>(reg.inputs.stories);
-      // Fix 5: light shape check — malformed stories.json → exit 2
-      if (!Array.isArray(stories.stories)) {
-        io.err(
-          `malformed stories file: "stories" must be an array (got ${JSON.stringify(typeof stories.stories)})`,
-        );
-        return EXIT.TRANSPORT;
-      }
-    }
-    if (reg.inputs.flow !== null) flowData = await readJson<Flow>(reg.inputs.flow);
-    if (reg.inputs.reuse.length > 0) {
-      reuseSpecs = [];
-      for (const file of reg.inputs.reuse) {
-        const result = await loadSpec(file);
-        if (!result.ok) {
-          io.err(`unreadable/invalid reuse spec: ${file}`);
-          return EXIT.TRANSPORT;
-        }
-        reuseSpecs.push(result.spec as Spec);
-      }
-    }
-  } catch (err) {
-    io.err(`cannot read a registered input: ${(err as Error).message}`);
+
+  const tokensResult = await loadTokensInput(reg.inputs.tokens);
+  if (tokensResult.state === "broken") {
+    io.err(tokensResult.message);
     return EXIT.TRANSPORT;
+  }
+  const tokens: TokenSet | null = tokensResult.state === "ok" ? tokensResult.value : null;
+
+  const storiesResult = await loadStoriesInput(reg.inputs.stories);
+  if (storiesResult.state === "broken") {
+    io.err(storiesResult.message);
+    return EXIT.TRANSPORT;
+  }
+  const stories: StorySet | null = storiesResult.state === "ok" ? storiesResult.value : null;
+
+  const flowResult = await loadFlowInput(reg.inputs.flow);
+  if (flowResult.state === "broken") {
+    io.err(flowResult.message);
+    return EXIT.TRANSPORT;
+  }
+  const flowData: Flow | null = flowResult.state === "ok" ? flowResult.value : null;
+
+  if (reg.inputs.reuse.length > 0) {
+    reuseSpecs = [];
+    for (const file of reg.inputs.reuse) {
+      const result = await loadSpec(file);
+      if (!result.ok) {
+        io.err(`unreadable/invalid reuse spec: ${file}`);
+        return EXIT.TRANSPORT;
+      }
+      reuseSpecs.push(result.spec as Spec);
+    }
   }
 
   // 4. Validate per-dial flag values (must be low|medium|high; `none` is threshold-only)
