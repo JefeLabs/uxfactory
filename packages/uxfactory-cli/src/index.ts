@@ -61,6 +61,10 @@ export { runBatch } from "./batch/run.js";
 export type { RunBatchInput, BatchReport } from "./batch/run.js";
 export { batchCmd } from "./commands/batch.js";
 export type { BatchFlags } from "./commands/batch.js";
+export { reviewCmd } from "./commands/review.js";
+export type { ReviewFlags } from "./commands/review.js";
+export { reviewDesign } from "./review/review.js";
+export type { ReviewFinding, ReviewReport } from "./review/review.js";
 export {
   LEVEL_ORD,
   PRESETS,

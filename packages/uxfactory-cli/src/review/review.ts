@@ -148,13 +148,11 @@ export function reviewDesign(input: {
   // The command layer (Task 2) is responsible for spec validation before calling here.
   const batchInput = {
     specs: input.specs as LoadedSpec[],
-    stories: (input.stories as StorySet | null),
-    flow: (input.flow as Flow | null),
-    tokens: (input.tokens as TokenSet | null),
+    stories: input.stories as StorySet | null,
+    flow: input.flow as Flow | null,
+    tokens: input.tokens as TokenSet | null,
     // runBatch.reuseSpecs is Spec[] (not LoadedSpec[]) — extract the spec payload.
-    reuseSpecs: input.reuseSpecs !== null
-      ? input.reuseSpecs.map((r) => r.spec as Spec)
-      : null,
+    reuseSpecs: input.reuseSpecs !== null ? input.reuseSpecs.map((r) => r.spec as Spec) : null,
     scope: input.scope,
   };
 

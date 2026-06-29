@@ -14,6 +14,7 @@ import { stubCmd } from "./commands/stub.js";
 import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 import { driftCmd } from "./commands/drift.js";
 import { batchCmd } from "./commands/batch.js";
+import { reviewCmd } from "./commands/review.js";
 // renderCmd and bridgeCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call)
@@ -250,8 +251,52 @@ export function buildProgram(): Command {
       },
     );
 
+  program
+    .command("review <design>")
+    .description(
+      "Conformance review: assess whether a design satisfies its registered requirements (§14)",
+    )
+    .option("--json", "machine-readable output")
+    .option(
+      "--scope <preset>",
+      "render scope preset (wireframe|content|visual|interactive|production); default: interactive",
+    )
+    .option("--visual <level>", "visual dial override (low|medium|high)")
+    .option("--editorial <level>", "editorial dial override (low|medium|high)")
+    .option("--coverage <level>", "coverage dial override (low|medium|high)")
+    .option("--flow <level>", "flow dial override (low|medium|high)")
+    .option("--data-dir <path>", "data directory (unused; kept for flag parity with batch)")
+    .action(
+      async (
+        design: string,
+        opts: {
+          json?: boolean;
+          scope?: string;
+          visual?: string;
+          editorial?: string;
+          coverage?: string;
+          flow?: string;
+          dataDir?: string;
+        },
+      ) => {
+        lastCode = await reviewCmd(
+          design,
+          {
+            json: opts.json,
+            scope: opts.scope,
+            visual: opts.visual,
+            editorial: opts.editorial,
+            coverage: opts.coverage,
+            flow: opts.flow,
+            dataDir: opts.dataDir !== undefined ? resolveDataDir(opts.dataDir) : undefined,
+            cwd: process.cwd(),
+          },
+          consoleIO,
+        );
+      },
+    );
+
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["review", "7", "Conformance review"],
     ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
   ];
   for (const [name, phase, desc] of stubs) {

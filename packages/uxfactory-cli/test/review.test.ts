@@ -10,8 +10,18 @@ import type { DesignSpec } from "@uxfactory/spec";
 // ---------------------------------------------------------------------------
 
 const wireframe = PRESETS.wireframe; // { visual:low, editorial:low, coverage:low, flow:low }
-const visualMedScope = { visual: "medium" as const, editorial: "low" as const, coverage: "low" as const, flow: "low" as const };
-const flowMedScope = { visual: "low" as const, editorial: "low" as const, coverage: "low" as const, flow: "medium" as const };
+const visualMedScope = {
+  visual: "medium" as const,
+  editorial: "low" as const,
+  coverage: "low" as const,
+  flow: "low" as const,
+};
+const flowMedScope = {
+  visual: "low" as const,
+  editorial: "low" as const,
+  coverage: "low" as const,
+  flow: "medium" as const,
+};
 
 /** A spec that COVERS story-1 with an empty state. */
 const coveringSpec: DesignSpec = {
@@ -25,7 +35,15 @@ const coveringSpec: DesignSpec = {
       height: 812,
       children: [
         { type: "shape", name: "story-1-empty-state", x: 0, y: 0, width: 1, height: 1 },
-        { type: "text", name: "story-1-success-banner", x: 0, y: 0, width: 1, height: 1, characters: "Success" },
+        {
+          type: "text",
+          name: "story-1-success-banner",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          characters: "Success",
+        },
       ],
     },
   ],
@@ -58,8 +76,24 @@ const missingLoadingSpec: DesignSpec = {
       width: 375,
       height: 812,
       children: [
-        { type: "text", name: "story-2-header", x: 0, y: 0, width: 1, height: 1, characters: "Header" },
-        { type: "text", name: "story-2-content", x: 0, y: 0, width: 1, height: 1, characters: "Content" },
+        {
+          type: "text",
+          name: "story-2-header",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          characters: "Header",
+        },
+        {
+          type: "text",
+          name: "story-2-content",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          characters: "Content",
+        },
         // No "loading" node → AC "loading" state is unmet
       ],
     },

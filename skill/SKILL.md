@@ -146,11 +146,12 @@ Forward edits are reversible: the plugin captures the BEFORE values (by `id`) an
 
 ## Quick reference
 
-| Command                                                               | Does                                                                        |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `uxfactory bridge`                                                    | Start the localhost relay (`--port` / `UXFACTORY_PORT` to override).        |
-| `uxfactory lint <spec>`                                               | Validate a spec against the schema; renders nothing.                        |
-| `uxfactory publish <spec> [--wait] [--verify] [--dry-run]`            | Enqueue a spec for rendering; optionally wait and/or gate.                  |
-| `uxfactory verify <spec> [--tolerance <px>] [--render <id>] [--json]` | Gate the latest (or a specific) render against the spec via `POST /verify`. |
-| `uxfactory selection`                                                 | Read the current Figma selection (`GET /selection`).                        |
-| `uxfactory scan`                                                      | Rebuild the asset catalog (friendly name → component key).                  |
+| Command                                                               | Does                                                                                                                      |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `uxfactory bridge`                                                    | Start the localhost relay (`--port` / `UXFACTORY_PORT` to override).                                                      |
+| `uxfactory lint <spec>`                                               | Validate a spec against the schema; renders nothing.                                                                      |
+| `uxfactory publish <spec> [--wait] [--verify] [--dry-run]`            | Enqueue a spec for rendering; optionally wait and/or gate.                                                                |
+| `uxfactory verify <spec> [--tolerance <px>] [--render <id>] [--json]` | Gate the latest (or a specific) render against the spec via `POST /verify`.                                               |
+| `uxfactory selection`                                                 | Read the current Figma selection (`GET /selection`).                                                                      |
+| `uxfactory scan`                                                      | Rebuild the asset catalog (friendly name → component key).                                                                |
+| `uxfactory review <design> [--scope <preset>] [--json]`               | Conformance review: check a design against registered requirements (§14); exit 0 conformant / 1 non-conformant / 2 setup. |
