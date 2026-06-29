@@ -2,8 +2,13 @@ import type { Spec } from "@uxfactory/spec";
 
 // --- result + input-data types ---------------------------------------------
 
-/** Outcome of a single gate. */
-export type CheckStatus = "pass" | "fail" | "skip";
+/**
+ * Outcome of a single gate.
+ * - "pass" / "fail" / "skip" — produced by the deterministic gate runners.
+ * - "not-owed"  — gate does not bind at the current render scope; was not run.
+ * - "declared"  — informational future tier; not yet implemented as a gate.
+ */
+export type CheckStatus = "pass" | "fail" | "skip" | "not-owed" | "declared";
 /** Whether a gate blocks the loop (`must`) or only advises (`advisory`). */
 export type Severity = "must" | "advisory";
 

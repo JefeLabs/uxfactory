@@ -8,6 +8,7 @@ import { specToSvg } from "../render/svg.js";
 import type { LoadedSpec, TokenSet, StorySet, Flow } from "../batch/checks.js";
 import type { BatchReport } from "../batch/run.js";
 import type { Spec } from "@uxfactory/spec";
+import { PRESETS } from "../batch/scope.js";
 import type { IO } from "../io.js";
 import type { BridgeClient } from "../client.js";
 
@@ -115,7 +116,9 @@ export async function batchCmd(
   }
 
   // 4. ONE deterministic pass
-  const report: BatchReport = runBatch({ specs, tokens, stories, reuseSpecs, flow });
+  // TODO(Task 3): resolve scope from registry + CLI flags; use interactive as a transitional
+  // fallback so all gates bind (preserving existing gate behavior) until scope is wired.
+  const report: BatchReport = runBatch({ specs, tokens, stories, reuseSpecs, flow, scope: PRESETS.interactive });
 
   // 5. offline previews per spec (§13.6)
   const batchDir = path.join(flags.dataDir, "batch");
