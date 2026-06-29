@@ -1,4 +1,4 @@
-import { readdir, writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { EXIT, TransportError } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
@@ -8,7 +8,7 @@ import { runBatch } from "../batch/run.js";
 import { specToSvg } from "../render/svg.js";
 import { rasterize } from "../render/raster-select.js";
 import { resolveScope, checkReadiness, parseScope } from "../batch/scope.js";
-import type { Dial, DialLevel } from "../batch/scope.js";
+import type { Dial, DialLevel, RenderScope } from "../batch/scope.js";
 import type { LoadedSpec, TokenSet, StorySet, Flow } from "../batch/checks.js";
 import type { BatchReport } from "../batch/run.js";
 import type { Spec } from "@uxfactory/spec";
@@ -34,6 +34,85 @@ export interface BatchFlags {
 /** Valid values for a dial flag (not `none` — that is threshold-only). */
 const VALID_DIAL_LEVELS = new Set(["low", "medium", "high"]);
 
+// ---------------------------------------------------------------------------
+// Profile reading — uxfactory.profile.json (Phase 8, Task 3)
+// ---------------------------------------------------------------------------
+
+/** Runtime shape of a pinned uxfactory.profile.json (subset we need for batch). */
+interface PinnedProfile {
+  confirm_status: "draft" | "approved";
+  scope: RenderScope;
+}
+
+/**
+ * Narrow-guard: checks that `v` is a valid `RenderScope` (four DialLevel dials).
+ * Used to defensively validate the profile's scope before adopting it as the batch base.
+ */
+function isRenderScope(v: unknown): v is RenderScope {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  const levels = new Set(["low", "medium", "high"]);
+  return (
+    typeof o["visual"] === "string" &&
+    levels.has(o["visual"]) &&
+    typeof o["editorial"] === "string" &&
+    levels.has(o["editorial"]) &&
+    typeof o["coverage"] === "string" &&
+    levels.has(o["coverage"]) &&
+    typeof o["flow"] === "string" &&
+    levels.has(o["flow"])
+  );
+}
+
+/**
+ * Try to read `uxfactory.profile.json` from `cwd`.
+ *
+ * - Absent file → `{ found: false }` (back-compat; batch behaves as before).
+ * - Present but unparseable → `{ found: false }` (treat as absent; log a warning).
+ * - Present and valid → `{ found: true; profile }`.
+ */
+async function readProfile(
+  cwd: string,
+  io: IO,
+): Promise<{ found: false } | { found: true; profile: PinnedProfile }> {
+  const profilePath = path.join(cwd, "uxfactory.profile.json");
+  let raw: string;
+  try {
+    raw = await readFile(profilePath, "utf8");
+  } catch {
+    // File absent — back-compat: no profile → batch behaves as today.
+    return { found: false };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    // Unparseable — treat as absent and warn
+    io.err(
+      `uxfactory.profile.json exists but could not be parsed as JSON; run \`uxfactory classify\``,
+    );
+    return { found: false };
+  }
+  if (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "confirm_status" in parsed &&
+    "scope" in parsed
+  ) {
+    const obj = parsed as { confirm_status: unknown; scope: unknown };
+    const status = obj["confirm_status"];
+    const scope = obj["scope"];
+    if ((status === "draft" || status === "approved") && isRenderScope(scope)) {
+      return { found: true, profile: { confirm_status: status, scope } };
+    }
+  }
+  // Shape mismatch — treat as absent
+  io.err(
+    `uxfactory.profile.json has an unexpected shape; run \`uxfactory classify\` to regenerate`,
+  );
+  return { found: false };
+}
+
 /**
  * `uxfactory batch <dir>` — ONE deterministic, self-contained offline pass (§13).
  * Reads the registry, loads + validates the batch specs, loads the registered inputs
@@ -51,6 +130,19 @@ export async function batchCmd(
   client: BridgeClient,
 ): Promise<number> {
   const cwd = flags.cwd ?? process.cwd();
+
+  // 0. Profile integration (Phase 8, Task 3) — the compute-commit boundary.
+  //    Scope precedence: CLI flags > profile scope > registry scope.
+  //    If no profile file → back-compat (batch behaves exactly as today).
+  const profileResult = await readProfile(cwd, io);
+  let profileScope: RenderScope | undefined;
+  if (profileResult.found) {
+    if (profileResult.profile.confirm_status !== "approved") {
+      io.err("profile not confirmed — run `uxfactory classify --confirm`");
+      return EXIT.TRANSPORT;
+    }
+    profileScope = profileResult.profile.scope;
+  }
 
   // 1. registry (absent/invalid → 2)
   const reg = await readRegistry(path.join(cwd, "uxfactory.batch.json"));
@@ -147,8 +239,13 @@ export async function batchCmd(
   if (flags.coverage !== undefined) overrides.coverage = flags.coverage as DialLevel;
   if (flags.flow !== undefined) overrides.flow = flags.flow as DialLevel;
 
+  // Scope precedence: CLI --scope flag > profile scope > registry scope > undefined
   const rawBase: string | Record<string, unknown> | undefined =
-    flags.scope !== undefined ? flags.scope : reg.registry.scope;
+    flags.scope !== undefined
+      ? flags.scope
+      : profileScope !== undefined
+        ? profileScope
+        : reg.registry.scope;
 
   const scope = resolveScope(rawBase, overrides);
   if (scope === null) {

@@ -397,4 +397,111 @@ describe("batchCmd", () => {
     expect(batch.items.length).toBe(1);
     expect(typeof batch.items[0]!.preview).toBe("string");
   });
+
+  // ── profile integration (Phase 8 Task 3) ────────────────────────────────
+
+  it("DRAFT profile → exit 2 with 'not confirmed' message (compute-commit boundary)", async () => {
+    // Write a draft profile (no registry needed — fails before registry check)
+    const draftProfile = {
+      scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      manifest: [],
+      constraints: [],
+      notes: [],
+      confirm_status: "draft",
+    };
+    await writeFile(
+      path.join(root, "uxfactory.profile.json"),
+      JSON.stringify(draftProfile, null, 2),
+      "utf8",
+    );
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
+    expect(io.errText()).toMatch(/not confirmed/);
+    expect(io.errText()).toMatch(/classify --confirm/);
+  });
+
+  it("APPROVED profile → uses profile scope (no --scope flag or registry scope needed)", async () => {
+    // Approved profile with wireframe scope → only stories required
+    const approvedProfile = {
+      scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      manifest: [],
+      constraints: [],
+      notes: [],
+      confirm_status: "approved",
+    };
+    await writeFile(
+      path.join(root, "uxfactory.profile.json"),
+      JSON.stringify(approvedProfile, null, 2),
+      "utf8",
+    );
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    // Registry has NO scope field — profile scope is the base
+    await writeRegistry({ stories: "design/stories.json" });
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, json: true, cwd: root }, io, client)).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as { scope: Record<string, string> };
+    // Profile scope (visual:low) is used
+    expect(report.scope.visual).toBe("low");
+  });
+
+  it("APPROVED profile with visual:high scope → requires tokens (REQUESTED+enforced readiness)", async () => {
+    const approvedProfile = {
+      scope: { visual: "high", editorial: "low", coverage: "low", flow: "low" },
+      manifest: [],
+      constraints: [],
+      notes: [],
+      confirm_status: "approved",
+    };
+    await writeFile(
+      path.join(root, "uxfactory.profile.json"),
+      JSON.stringify(approvedProfile, null, 2),
+      "utf8",
+    );
+    // Only stories, no tokens → readiness fails
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeRegistry({ stories: "design/stories.json" });
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
+    expect(io.errText()).toMatch(/tokens/);
+  });
+
+  it("--scope flag overrides APPROVED profile scope (flags > profile > registry)", async () => {
+    // Approved profile with high scope (would require tokens+flow)
+    const approvedProfile = {
+      scope: { visual: "high", editorial: "high", coverage: "high", flow: "high" },
+      manifest: [],
+      constraints: [],
+      notes: [],
+      confirm_status: "approved",
+    };
+    await writeFile(
+      path.join(root, "uxfactory.profile.json"),
+      JSON.stringify(approvedProfile, null, 2),
+      "utf8",
+    );
+    // --scope wireframe overrides profile → only stories needed
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeRegistry({ stories: "design/stories.json" });
+    const io = makeIO();
+    expect(
+      await batchCmd(specsDir, { dataDir, json: true, cwd: root, scope: "wireframe" }, io, client),
+    ).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as { scope: Record<string, string> };
+    // --scope wireframe wins over profile's high scope
+    expect(report.scope.visual).toBe("low");
+    expect(report.scope.flow).toBe("low");
+  });
+
+  it("NO profile → batch behaves exactly as today (back-compat — no profile file)", async () => {
+    // No uxfactory.profile.json in root — back-compat: uses registry scope via --scope
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeRegistry({ stories: "design/stories.json" });
+    const io = makeIO();
+    // --scope wireframe as usual → exit 0 (no profile file present)
+    expect(
+      await batchCmd(specsDir, { dataDir, json: true, cwd: root, scope: "wireframe" }, io, client),
+    ).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as { scope: Record<string, string> };
+    expect(report.scope.visual).toBe("low");
+  });
 });

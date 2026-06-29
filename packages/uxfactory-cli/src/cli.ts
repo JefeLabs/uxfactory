@@ -15,6 +15,7 @@ import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 import { driftCmd } from "./commands/drift.js";
 import { batchCmd } from "./commands/batch.js";
 import { reviewCmd } from "./commands/review.js";
+import { classifyCmd } from "./commands/classify.js";
 // renderCmd and bridgeCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call)
@@ -250,6 +251,26 @@ export function buildProgram(): Command {
         );
       },
     );
+
+  program
+    .command("classify")
+    .description(
+      "Derive a GateProfile from uxfactory.classification.json; --confirm pins it (§6.6)",
+    )
+    .option("--confirm", "pin the profile as approved (the compute-commit boundary)")
+    .option("--json", "emit the GateProfile as JSON to stdout")
+    .option("--data-dir <path>", "data directory (kept for flag parity with batch)")
+    .action(async (opts: { confirm?: boolean; json?: boolean; dataDir?: string }) => {
+      lastCode = await classifyCmd(
+        {
+          confirm: opts.confirm,
+          json: opts.json,
+          dataDir: opts.dataDir !== undefined ? resolveDataDir(opts.dataDir) : undefined,
+          cwd: process.cwd(),
+        },
+        consoleIO,
+      );
+    });
 
   program
     .command("review <design>")

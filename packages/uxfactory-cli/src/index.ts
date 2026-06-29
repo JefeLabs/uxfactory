@@ -63,6 +63,18 @@ export { batchCmd } from "./commands/batch.js";
 export type { BatchFlags } from "./commands/batch.js";
 export { reviewCmd } from "./commands/review.js";
 export type { ReviewFlags } from "./commands/review.js";
+export { classifyCmd } from "./commands/classify.js";
+export type { ClassifyFlags } from "./commands/classify.js";
+export { validateClassification, readClassification } from "./classify/classification.js";
+export type {
+  ProjectClassification,
+  Category,
+  Industry,
+  AgeDemographic,
+  Style,
+} from "./classify/classification.js";
+export { condition } from "./classify/condition.js";
+export type { GateProfile, ManifestEntry, Requirement, GateEffect } from "./classify/condition.js";
 export { reviewDesign } from "./review/review.js";
 export type { ReviewFinding, ReviewReport } from "./review/review.js";
 export {
