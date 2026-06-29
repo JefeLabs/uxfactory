@@ -1,8 +1,5 @@
 packages:
   - "packages/*"
-  # packages/uxfactory-agent is not part of this engine build; exclude it so it
-  # never enters this workspace's install / lockfile / CI even when present on disk.
-  - "!packages/uxfactory-agent"
   - "clients/*"
 # Dependency build scripts are blocked by pnpm 11 unless allowlisted here.
 # esbuild has a postinstall (node install.js) that sets up its platform binary;
