@@ -15,21 +15,27 @@ describe("skill/batch/SKILL.md (the batch-loop skill)", () => {
     expect(content.split("\n").length).toBeLessThan(500);
   });
 
-  it("documents the loop, the gates, skip-and-declare, exit-code termination, and the max-iterations stop", async () => {
+  it("documents the four-dial render scope, the loop, per-dial gate binding, skip-and-declare, exit codes, and the max-iterations stop", async () => {
     const content = await readFile(skillPath, "utf8");
     expect(content).toContain("## The loop");
-    expect(content).toContain("## The gates");
+    expect(content).toContain("## Per-dial gate binding");
     expect(content.toLowerCase()).toContain("skip-and-declare");
     expect(content).toContain("Exit codes");
     expect(content).toContain("`0`");
     expect(content).toContain("`1`");
     expect(content).toContain("`2`");
     expect(content).toContain("maxIterations");
-    // the four gates named
-    expect(content.toLowerCase()).toContain("token conformance");
-    expect(content.toLowerCase()).toContain("coverage");
-    expect(content.toLowerCase()).toContain("reuse");
-    expect(content.toLowerCase()).toContain("reachability");
+    // the four render-scope dials + how scope is set
+    expect(content).toContain("visual");
+    expect(content).toContain("editorial");
+    expect(content).toContain("coverage");
+    expect(content).toContain("flow");
+    expect(content).toContain("--scope");
+    // the gates named (actual ids)
+    expect(content).toContain("requirement-coverage");
+    expect(content).toContain("token-conformance");
+    expect(content).toContain("flow-reachability");
+    expect(content).toContain("reuse");
   });
 
   it("makes no external-project mentions", async () => {
