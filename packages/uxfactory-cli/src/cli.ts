@@ -13,6 +13,7 @@ import { scanCmd } from "./commands/scan.js";
 import { stubCmd } from "./commands/stub.js";
 import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 import { driftCmd } from "./commands/drift.js";
+import { batchCmd } from "./commands/batch.js";
 // renderCmd and bridgeCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call)
@@ -197,8 +198,36 @@ export function buildProgram(): Command {
       lastCode = await renderCmd(spec, { out: opts.out }, consoleIO);
     });
 
+  program
+    .command("batch <dir>")
+    .description(
+      "Offline batch mode: gate a set of specs against registered inputs, then stage (§13)",
+    )
+    .option("--json", "machine-readable output")
+    .option("--stage", "on a clean batch, stage it to the bridge for approval")
+    .option("--data-dir <path>", "data directory (default <cwd>/.uxfactory)")
+    .option("--bridge <url>", "bridge base URL")
+    .action(
+      async (
+        dir: string,
+        opts: { json?: boolean; stage?: boolean; dataDir?: string; bridge?: string },
+      ) => {
+        const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+        lastCode = await batchCmd(
+          dir,
+          {
+            json: opts.json,
+            stage: opts.stage,
+            dataDir: resolveDataDir(opts.dataDir),
+            cwd: process.cwd(),
+          },
+          consoleIO,
+          client,
+        );
+      },
+    );
+
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["batch", "6", "Offline batch mode"],
     ["review", "7", "Conformance review"],
     ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
   ];

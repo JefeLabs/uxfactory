@@ -70,7 +70,11 @@ describe("readRegistry", () => {
   it("reads + validates + resolves a real file", async () => {
     await mkdir(path.join(dir, "design"), { recursive: true });
     const file = path.join(dir, "uxfactory.batch.json");
-    await writeFile(file, JSON.stringify({ version: 1, inputs: { tokens: "design/tokens.ds.json" } }), "utf8");
+    await writeFile(
+      file,
+      JSON.stringify({ version: 1, inputs: { tokens: "design/tokens.ds.json" } }),
+      "utf8",
+    );
     const res = await readRegistry(file);
     expect(res.ok).toBe(true);
     if (res.ok) {

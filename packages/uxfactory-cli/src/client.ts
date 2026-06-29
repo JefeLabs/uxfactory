@@ -52,6 +52,20 @@ export class BridgeClient {
     return { status: res.status, body: await this.json(res) };
   }
 
+  /** POST /batch → stage a pre-validated batch (specs + preview refs) for approval. Throws on a non-200. */
+  async postBatch(items: { spec: unknown; preview?: string }[]): Promise<{ batchId: string }> {
+    const res = await this.request("/batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const body = await this.json(res);
+    if (res.status !== 200) {
+      throw new TransportError(`bridge rejected the batch (HTTP ${res.status})`);
+    }
+    return body as { batchId: string };
+  }
+
   private async request(routePath: string, init: RequestInit): Promise<Response> {
     try {
       return await fetch(`${this.baseUrl}${routePath}`, init);

@@ -56,7 +56,10 @@ describe("requirementCoverage", () => {
       frames: [{ name: "story-1-home", x: 0, y: 0, width: 1, height: 1, children: [] }],
     };
     const twoStories: StorySet = {
-      stories: [...stories.stories, { id: "story-2", role: "u", goal: "g", benefit: "b", acceptanceCriteria: [] }],
+      stories: [
+        ...stories.stories,
+        { id: "story-2", role: "u", goal: "g", benefit: "b", acceptanceCriteria: [] },
+      ],
     };
     const r = requirementCoverage([loaded(spec)], twoStories);
     expect(r.status).toBe("fail");
@@ -86,10 +89,17 @@ describe("requirementCoverage", () => {
     const spec: DesignSpec = {
       editor: "figma",
       frames: [
-        { name: "story-1-home", x: 0, y: 0, width: 1, height: 1, children: [
-          { type: "shape", name: "home-empty-state", x: 0, y: 0, width: 1, height: 1 },
-          { type: "shape", name: "home-success-view", x: 0, y: 10, width: 1, height: 1 },
-        ] },
+        {
+          name: "story-1-home",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          children: [
+            { type: "shape", name: "home-empty-state", x: 0, y: 0, width: 1, height: 1 },
+            { type: "shape", name: "home-success-view", x: 0, y: 10, width: 1, height: 1 },
+          ],
+        },
         { name: "orphan-frame", x: 0, y: 0, width: 1, height: 1, children: [] },
       ],
     };

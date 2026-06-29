@@ -8,9 +8,14 @@ const tokens: TokenSet = { colors: { brand: "#1E88E5" } };
 const adhoc: DesignSpec = {
   editor: "figma",
   frames: [
-    { name: "home", x: 0, y: 0, width: 1, height: 1, children: [
-      { type: "shape", name: "card", x: 0, y: 0, width: 1, height: 1, fill: "#abcdef" },
-    ] },
+    {
+      name: "home",
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      children: [{ type: "shape", name: "card", x: 0, y: 0, width: 1, height: 1, fill: "#abcdef" }],
+    },
   ],
 };
 

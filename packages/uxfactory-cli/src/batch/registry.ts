@@ -31,8 +31,7 @@ export interface ResolvedInputs {
 
 /** Outcome of reading a registry: resolved inputs on success, a setup message on failure. */
 export type ReadRegistryResult =
-  | { ok: true; registry: BatchRegistry; inputs: ResolvedInputs }
-  | { ok: false; message: string };
+  { ok: true; registry: BatchRegistry; inputs: ResolvedInputs } | { ok: false; message: string };
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -44,7 +43,8 @@ export function validateRegistry(
 ): { ok: true; registry: BatchRegistry } | { ok: false; message: string } {
   if (!isPlainObject(raw)) return { ok: false, message: "registry must be a JSON object" };
   if (raw["version"] !== 1) return { ok: false, message: "registry version must be 1" };
-  if (!isPlainObject(raw["inputs"])) return { ok: false, message: "registry.inputs must be an object" };
+  if (!isPlainObject(raw["inputs"]))
+    return { ok: false, message: "registry.inputs must be an object" };
 
   const inputs = raw["inputs"];
   for (const key of ["tokens", "stories", "flow"] as const) {
@@ -85,7 +85,10 @@ export async function readRegistry(registryPath: string): Promise<ReadRegistryRe
   try {
     text = await readFile(registryPath, "utf8");
   } catch {
-    return { ok: false, message: `cannot read ${registryPath} (run 'uxfactory batch' from the repo root)` };
+    return {
+      ok: false,
+      message: `cannot read ${registryPath} (run 'uxfactory batch' from the repo root)`,
+    };
   }
   let parsed: unknown;
   try {
@@ -95,5 +98,9 @@ export async function readRegistry(registryPath: string): Promise<ReadRegistryRe
   }
   const result = validateRegistry(parsed);
   if (!result.ok) return { ok: false, message: result.message };
-  return { ok: true, registry: result.registry, inputs: resolveInputs(result.registry, path.dirname(registryPath)) };
+  return {
+    ok: true,
+    registry: result.registry,
+    inputs: resolveInputs(result.registry, path.dirname(registryPath)),
+  };
 }

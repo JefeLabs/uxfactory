@@ -74,10 +74,16 @@ interface AnyChild {
 /** Each container's (frame/section) children, regardless of editor. */
 function containers(spec: Spec): { name: string; children: AnyChild[] }[] {
   if ("frames" in spec) {
-    return spec.frames.map((f) => ({ name: f.name, children: (f.children ?? []) as unknown as AnyChild[] }));
+    return spec.frames.map((f) => ({
+      name: f.name,
+      children: (f.children ?? []) as unknown as AnyChild[],
+    }));
   }
   if ("sections" in spec) {
-    return spec.sections.map((s) => ({ name: s.name, children: (s.children ?? []) as unknown as AnyChild[] }));
+    return spec.sections.map((s) => ({
+      name: s.name,
+      children: (s.children ?? []) as unknown as AnyChild[],
+    }));
   }
   return [];
 }
@@ -102,8 +108,10 @@ function specColors(loaded: LoadedSpec): { value: string; where: string }[] {
   const out: { value: string; where: string }[] = [];
   for (const c of containers(loaded.spec)) {
     for (const child of c.children) {
-      if (typeof child.fill === "string") out.push({ value: child.fill, where: `${loaded.file}:${c.name}/${child.name}.fill` });
-      if (typeof child.stroke === "string") out.push({ value: child.stroke, where: `${loaded.file}:${c.name}/${child.name}.stroke` });
+      if (typeof child.fill === "string")
+        out.push({ value: child.fill, where: `${loaded.file}:${c.name}/${child.name}.fill` });
+      if (typeof child.stroke === "string")
+        out.push({ value: child.stroke, where: `${loaded.file}:${c.name}/${child.name}.stroke` });
     }
   }
   return out;
@@ -127,7 +135,13 @@ function containerSignatures(spec: Spec): { name: string; sig: string }[] {
 export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): CheckResult {
   const id = "token-conformance";
   if (tokens === null) {
-    return { id, status: "skip", severity: "must", findings: [], reason: "no token register registered" };
+    return {
+      id,
+      status: "skip",
+      severity: "must",
+      findings: [],
+      reason: "no token register registered",
+    };
   }
   const registered = new Set<string>();
   for (const value of Object.values(tokens.colors ?? {})) {
@@ -139,7 +153,10 @@ export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): 
     for (const used of specColors(loaded)) {
       const n = normalizeColor(used.value);
       if (n === null || !registered.has(n)) {
-        findings.push({ detail: `ad-hoc color ${used.value} at ${used.where} is not a registered token`, ref: used.value });
+        findings.push({
+          detail: `ad-hoc color ${used.value} at ${used.where} is not a registered token`,
+          ref: used.value,
+        });
       }
     }
   }
@@ -154,7 +171,13 @@ export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): 
 export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResult {
   const id = "reuse";
   if (reuseSpecs === null) {
-    return { id, status: "skip", severity: "must", findings: [], reason: "no existing specs registered for reuse" };
+    return {
+      id,
+      status: "skip",
+      severity: "must",
+      findings: [],
+      reason: "no existing specs registered for reuse",
+    };
   }
   const existing = new Map<string, string>(); // sig -> container name
   for (const spec of reuseSpecs) {
@@ -164,7 +187,10 @@ export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResu
   for (const loaded of specs) {
     for (const { name, sig } of containerSignatures(loaded.spec)) {
       if (existing.has(sig)) {
-        findings.push({ detail: `${loaded.file}:${name} duplicates an existing spec — reference it instead of regenerating`, ref: name });
+        findings.push({
+          detail: `${loaded.file}:${name} duplicates an existing spec — reference it instead of regenerating`,
+          ref: name,
+        });
       }
     }
   }
@@ -176,7 +202,8 @@ export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResu
 /** Every container (frame/section) name across the batch. */
 function frameNames(specs: LoadedSpec[]): { file: string; name: string }[] {
   const out: { file: string; name: string }[] = [];
-  for (const loaded of specs) for (const c of containers(loaded.spec)) out.push({ file: loaded.file, name: c.name });
+  for (const loaded of specs)
+    for (const c of containers(loaded.spec)) out.push({ file: loaded.file, name: c.name });
   return out;
 }
 
@@ -196,7 +223,8 @@ function allNodeNames(specs: LoadedSpec[]): string[] {
 function buildGraph(specs: LoadedSpec[]): Map<string, Set<string>> {
   const adj = new Map<string, Set<string>>();
   for (const loaded of specs) {
-    const conns = "connectors" in loaded.spec && loaded.spec.connectors ? loaded.spec.connectors : [];
+    const conns =
+      "connectors" in loaded.spec && loaded.spec.connectors ? loaded.spec.connectors : [];
     for (const c of conns) {
       const set = adj.get(c.from) ?? new Set<string>();
       set.add(c.to);
@@ -244,12 +272,18 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
   for (const story of storyList) {
     const idl = story.id.toLowerCase();
     if (!lowerFrames.some((f) => f.lname.includes(idl))) {
-      findings.push({ detail: `story ${story.id} is not covered by any frame (no frame name contains "${story.id}")`, ref: story.id });
+      findings.push({
+        detail: `story ${story.id} is not covered by any frame (no frame name contains "${story.id}")`,
+        ref: story.id,
+      });
     }
     for (const ac of story.acceptanceCriteria ?? []) {
       const kw = ac.impliedState.toLowerCase();
       if (!lowerNodes.some((n) => n.includes(kw))) {
-        findings.push({ detail: `story ${story.id} AC "${ac.statement}" implies a ${ac.impliedState} state with no matching node`, ref: story.id });
+        findings.push({
+          detail: `story ${story.id} AC "${ac.statement}" implies a ${ac.impliedState} state with no matching node`,
+          ref: story.id,
+        });
       }
     }
   }
@@ -257,7 +291,10 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
   const storyIds = storyList.map((s) => s.id.toLowerCase());
   for (const f of lowerFrames) {
     if (!storyIds.some((sid) => f.lname.includes(sid))) {
-      findings.push({ detail: `frame ${f.name} (${f.file}) has no story basis (its name contains no registered story id)`, ref: f.name });
+      findings.push({
+        detail: `frame ${f.name} (${f.file}) has no story basis (its name contains no registered story id)`,
+        ref: f.name,
+      });
     }
   }
 
@@ -282,7 +319,10 @@ export function flowReachability(specs: LoadedSpec[], flow: Flow | null): CheckR
     const from = steps[i] as string;
     const to = steps[i + 1] as string;
     if (!reachable(adj, from, to)) {
-      findings.push({ detail: `flow step "${from}" → "${to}" is not reachable along any connector path`, ref: `${from}->${to}` });
+      findings.push({
+        detail: `flow step "${from}" → "${to}" is not reachable along any connector path`,
+        ref: `${from}->${to}`,
+      });
     }
   }
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };

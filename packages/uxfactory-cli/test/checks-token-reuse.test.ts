@@ -19,7 +19,16 @@ const conforming: DesignSpec = {
       width: 200,
       height: 200,
       children: [
-        { type: "shape", name: "card", x: 0, y: 0, width: 50, height: 50, fill: "#1e88e5", stroke: "#111111" },
+        {
+          type: "shape",
+          name: "card",
+          x: 0,
+          y: 0,
+          width: 50,
+          height: 50,
+          fill: "#1e88e5",
+          stroke: "#111111",
+        },
       ],
     },
   ],
@@ -34,7 +43,9 @@ const adhoc: DesignSpec = {
       y: 0,
       width: 200,
       height: 200,
-      children: [{ type: "shape", name: "card", x: 0, y: 0, width: 50, height: 50, fill: "#abcdef" }],
+      children: [
+        { type: "shape", name: "card", x: 0, y: 0, width: 50, height: 50, fill: "#abcdef" },
+      ],
     },
   ],
 };
