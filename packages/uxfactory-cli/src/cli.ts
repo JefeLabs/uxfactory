@@ -13,6 +13,7 @@ import { scanCmd } from "./commands/scan.js";
 import { stubCmd } from "./commands/stub.js";
 import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 import { driftCmd } from "./commands/drift.js";
+import { renderCmd } from "./commands/render.js";
 // bridgeCmd is lazy-loaded inside the action (Fix 2 — avoid pulling in fastify on every call)
 
 /** Module-scoped state reset by every run() call. */
@@ -186,8 +187,15 @@ export function buildProgram(): Command {
       lastCode = await driftCmd({ json: opts.json }, consoleIO, client);
     });
 
+  program
+    .command("render <spec>")
+    .description("Render a spec to an image offline (approximate; no Figma)")
+    .option("--out <file>", "output path (.png or .svg; default <spec>.png)")
+    .action(async (spec: string, opts: { out?: string }) => {
+      lastCode = await renderCmd(spec, { out: opts.out }, consoleIO);
+    });
+
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["render", "5", "Render a spec to an image offline"],
     ["batch", "6", "Offline batch mode"],
     ["review", "7", "Conformance review"],
     ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
