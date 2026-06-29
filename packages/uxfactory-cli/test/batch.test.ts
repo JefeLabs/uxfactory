@@ -198,6 +198,8 @@ describe("batchCmd", () => {
     expect(errOut).toMatch(/visual/);
     expect(errOut).toMatch(/medium/);
     expect(errOut).toMatch(/provide-or-generate/);
+    // Fix 6: visual preset has flow:medium → flow is also required and must appear in the missing list
+    expect(errOut).toMatch(/flow/);
   });
 
   // ── wireframe scope (visual:low → token-conformance not-owed) ─────────────
@@ -355,6 +357,29 @@ describe("batchCmd", () => {
     expect(doc.checks.some((c) => c.status === "not-owed")).toBe(true);
     // declared future tiers always present
     expect(doc.checks.some((c) => c.status === "declared")).toBe(true);
+  });
+
+  // ── Fix 3: invalid --scope names the bad value, not the generic "set a scope" message ──
+
+  it("Fix 3: returns 2 when --scope has an unknown preset name, error names the bad value", async () => {
+    await writeRegistry({});
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root, scope: "wirefram" }, io, client)).toBe(
+      EXIT.TRANSPORT,
+    );
+    // Must name the bad value, not the generic unset message
+    expect(io.errText()).toMatch(/wirefram/);
+    expect(io.errText()).not.toMatch(/set a render scope before requesting a batch/);
+  });
+
+  // ── Fix 6: registry scope "bogus" → exit 2 via registry validation ────────
+
+  it("Fix 6: uxfactory.batch.json with scope: 'bogus' → returns 2 (registry validation catches it)", async () => {
+    await writeRegistry({}, { scope: "bogus" });
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
+    // Registry validation surfaces the bad value via readRegistry → reg.message
+    expect(io.errText()).toMatch(/bogus/);
   });
 
   // ── --stage ───────────────────────────────────────────────────────────────

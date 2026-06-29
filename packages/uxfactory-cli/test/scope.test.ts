@@ -3,6 +3,7 @@ import {
   LEVEL_ORD,
   PRESETS,
   GATE_THRESHOLDS,
+  GATE_REQUIRED_INPUT,
   parseScope,
   resolveScope,
   binds,
@@ -541,5 +542,50 @@ describe("checkReadiness", () => {
     });
     expect(r.ready).toBe(false);
     expect(r.missing.length).toBeGreaterThanOrEqual(4); // specs + stories + tokens + flow
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GUARD TEST: requiredInputs ⊇ all required (non-optional) inputs of bindingGateIds
+// (single-source invariant — binding and readiness can never desync)
+// ---------------------------------------------------------------------------
+
+describe("GUARD: requiredInputs ⊇ required (non-optional) inputs of every bindingGateId", () => {
+  const scopeMatrix: RenderScope[] = [
+    PRESETS.wireframe,
+    PRESETS.content,
+    PRESETS.visual,
+    PRESETS.interactive,
+    PRESETS.production,
+    // off-preset combos
+    { visual: "medium", editorial: "low", coverage: "low", flow: "low" },
+    { visual: "low", editorial: "low", coverage: "low", flow: "medium" },
+    { visual: "high", editorial: "low", coverage: "high", flow: "medium" },
+    { visual: "low", editorial: "high", coverage: "medium", flow: "low" },
+    { visual: "high", editorial: "high", coverage: "low", flow: "low" },
+  ];
+
+  it("for every scope in the matrix, requiredInputs ⊇ all non-optional inputs of bindingGateIds", () => {
+    for (const scope of scopeMatrix) {
+      const required = new Set(requiredInputs(scope));
+      for (const id of bindingGateIds(scope)) {
+        const gi = GATE_REQUIRED_INPUT[id];
+        if (gi !== undefined && !gi.optional) {
+          expect(
+            required.has(gi.input),
+            `scope ${JSON.stringify(scope)}: gate "${id}" requires "${gi.input}" but requiredInputs omits it`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("requiredInputs never contains 'reuse' (optional input, never blocking)", () => {
+    for (const scope of scopeMatrix) {
+      expect(
+        requiredInputs(scope),
+        `scope ${JSON.stringify(scope)} must never include reuse`,
+      ).not.toContain("reuse");
+    }
   });
 });

@@ -10,7 +10,7 @@
  */
 
 import { svgToPng } from "./raster.js";
-import { LEVEL_ORD, type Level } from "../batch/scope.js";
+import { LEVEL_ORD, type DialLevel } from "../batch/scope.js";
 
 /** Injectable playwright-rasterizer for deterministic testing without a real browser. */
 export interface PlaywrightRasterizerDeps {
@@ -22,7 +22,7 @@ export interface PlaywrightRasterizerDeps {
  * - "resvg"      when visual < medium (low)
  * - "playwright" when visual >= medium (medium, high)
  */
-export function selectRasterizer(visual: Level): "resvg" | "playwright" {
+export function selectRasterizer(visual: DialLevel): "resvg" | "playwright" {
   return LEVEL_ORD[visual] < LEVEL_ORD["medium"] ? "resvg" : "playwright";
 }
 
@@ -38,7 +38,7 @@ export function selectRasterizer(visual: Level): "resvg" | "playwright" {
  */
 export async function rasterize(
   svg: string,
-  visual: Level,
+  visual: DialLevel,
   deps?: PlaywrightRasterizerDeps,
 ): Promise<{ png: Buffer; rasterizer: "resvg" | "playwright"; note?: string }> {
   if (selectRasterizer(visual) !== "playwright") {

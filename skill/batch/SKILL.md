@@ -83,11 +83,11 @@ A gate binds **only when the scope meets every one of its per-dial thresholds**.
 | `token-conformance`           | `visual >= medium` | `tokens`                                 |
 | `flow-reachability`           | `flow >= medium`   | `flow`                                   |
 
-At `--scope wireframe` (all low): `token-conformance` is `not-owed` (tokens not required); `flow-reachability` is `not-owed`; only the coverage trio binds (and only if stories is registered).
+At `--scope wireframe` (all low): `token-conformance` is `not-owed` (tokens not required); `flow-reachability` is `not-owed`; only the coverage trio binds — `stories` is required (readiness fails if absent; see real-use note in Gotchas).
 
 ### Declared tiers (acknowledged, not yet gated)
 
-The following quality tiers are **declared** in the report but never block a batch in this version: brand, contrast, motion, a11y, i18n, discoverability. They appear in the report as `declared` — never silently ignored, never blocking.
+The following quality tiers are **declared** in the report but never block a batch in this version: brand, contrast, motion, keyboard, content-voice, a11y, i18n, discoverability. They appear in the report as `declared` — never silently ignored, never blocking.
 
 ## The loop
 
@@ -97,15 +97,31 @@ Pick a preset (or raw vector) in `uxfactory.batch.json` or via `--scope`. Start 
 
 ### Step 1 — Readiness check (exit 2 + missing list)
 
-Run `uxfactory batch <dir>`. If the scope requires an artifact that is absent, the command exits 2 with a structured **missing** list:
+Run `uxfactory batch <dir>`. If the scope requires an artifact that is absent, the command exits 2.
+
+**Human mode (stderr):**
+
+```
+batch: readiness check failed — missing required artifacts:
+  - tokens (visual:medium) — provide-or-generate
+  - flow (flow:medium) — provide-or-generate
+```
+
+**`--json` mode (stdout):**
 
 ```json
 {
+  "ok": false,
+  "reason": "not-ready",
   "missing": [
-    { "artifact": "tokens", "dial": "visual", "level": "medium", "action": "provide-or-generate" }
-  ]
+    { "artifact": "tokens", "dial": "visual", "level": "medium", "action": "provide-or-generate" },
+    { "artifact": "flow", "dial": "flow", "level": "medium", "action": "provide-or-generate" }
+  ],
+  "declared": []
 }
 ```
+
+Scope unset (no `--scope` flag and no `scope` in the registry) also exits 2. In `--json` mode: `{ "ok": false, "reason": "scope-unset", "missing": [], "declared": [] }`.
 
 When you receive exit 2 with a missing list, **generate the missing artifacts** (stories, tokens, flow) based on the user's content, then re-run. Do not spin: count generate-and-retry attempts against `maxIterations`.
 
@@ -155,6 +171,8 @@ Ephemeral under `.uxfactory/batch/` (gitignored): `report.json` (gates + finding
 - **One call = one deterministic pass.** You iterate; the exit code stops you.
 - **Non-binding gates are `not-owed`** — `token-conformance` at `wireframe` is not a skip, it is genuinely not owed.
 - **`coverage-orphans` is advisory** — story-less frames never gate the batch.
+- **`stories.json` is always required.** `coverage >= low` holds for every valid scope, so `requirement-coverage` always binds and `stories` is always a REQUESTED input. For a pure component batch with no stories yet, use `{"stories":[]}` as a placeholder.
+- **`flow.json` is required at `flow >= medium`** (e.g. the `visual` and `interactive` presets) even though `flow-reachability` is advisory. Readiness enforces presence before the gate even runs.
 - **Previews at `visual:low`** are approximate raster; `visual>=medium` uses the high-fidelity renderer (falls back to resvg with a declared note if unavailable — not a hard error).
 - **Name for traceability** — gates match on **names**: story ids in frame names, state keywords in node names, flow step names matching node/frame names.
 - **Respect `maxIterations`**; count both generate attempts (step 1) and revise attempts (step 2).

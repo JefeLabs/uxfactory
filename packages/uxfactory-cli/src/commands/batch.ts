@@ -6,8 +6,8 @@ import { readRegistry } from "../batch/registry.js";
 import { runBatch } from "../batch/run.js";
 import { specToSvg } from "../render/svg.js";
 import { rasterize } from "../render/raster-select.js";
-import { resolveScope, checkReadiness } from "../batch/scope.js";
-import type { Dial, Level } from "../batch/scope.js";
+import { resolveScope, checkReadiness, parseScope } from "../batch/scope.js";
+import type { Dial, DialLevel } from "../batch/scope.js";
 import type { LoadedSpec, TokenSet, StorySet, Flow } from "../batch/checks.js";
 import type { BatchReport } from "../batch/run.js";
 import type { Spec } from "@uxfactory/spec";
@@ -144,19 +144,36 @@ export async function batchCmd(
     }
   }
 
+  // 4a. Fix 3: Validate --scope flag BEFORE resolveScope — give a specific error for a bad
+  //     preset name or invalid vector rather than the generic "set a render scope" message.
+  if (flags.scope !== undefined) {
+    const scopeCheck = parseScope(flags.scope);
+    if (!scopeCheck.ok) {
+      io.err(scopeCheck.message);
+      return EXIT.TRANSPORT;
+    }
+  }
+
   // 5. Resolve render scope: CLI --scope flag (runtime) → registry.scope (committed) → null (unset)
-  const overrides: Partial<Record<Dial, Level>> = {};
-  if (flags.visual !== undefined) overrides.visual = flags.visual as Level;
-  if (flags.editorial !== undefined) overrides.editorial = flags.editorial as Level;
-  if (flags.coverage !== undefined) overrides.coverage = flags.coverage as Level;
-  if (flags.flow !== undefined) overrides.flow = flags.flow as Level;
+  const overrides: Partial<Record<Dial, DialLevel>> = {};
+  if (flags.visual !== undefined) overrides.visual = flags.visual as DialLevel;
+  if (flags.editorial !== undefined) overrides.editorial = flags.editorial as DialLevel;
+  if (flags.coverage !== undefined) overrides.coverage = flags.coverage as DialLevel;
+  if (flags.flow !== undefined) overrides.flow = flags.flow as DialLevel;
 
   const rawBase: string | Record<string, unknown> | undefined =
     flags.scope !== undefined ? flags.scope : reg.registry.scope;
 
   const scope = resolveScope(rawBase, overrides);
   if (scope === null) {
-    io.err("set a render scope before requesting a batch.");
+    // Fix 2: structured JSON output in --json mode; human text to stderr otherwise.
+    // This path is the genuinely-undefined case: no --scope flag AND no registry scope
+    // (invalid --scope is caught above in step 4a before reaching here).
+    if (flags.json === true) {
+      io.out(JSON.stringify({ ok: false, reason: "scope-unset", missing: [], declared: [] }));
+    } else {
+      io.err("set a render scope before requesting a batch.");
+    }
     return EXIT.TRANSPORT;
   }
 
@@ -168,9 +185,21 @@ export async function batchCmd(
     flow: flowData !== null,
   });
   if (!readiness.ready) {
-    io.err("batch: readiness check failed — missing required artifacts:");
-    for (const m of readiness.missing) {
-      io.err(`  - ${m.artifact} (${m.dial}:${m.level}) — ${m.action}`);
+    // Fix 2: structured JSON output in --json mode; human text to stderr otherwise.
+    if (flags.json === true) {
+      io.out(
+        JSON.stringify({
+          ok: false,
+          reason: "not-ready",
+          missing: readiness.missing,
+          declared: readiness.declared,
+        }),
+      );
+    } else {
+      io.err("batch: readiness check failed — missing required artifacts:");
+      for (const m of readiness.missing) {
+        io.err(`  - ${m.artifact} (${m.dial}:${m.level}) — ${m.action}`);
+      }
     }
     return EXIT.TRANSPORT;
   }

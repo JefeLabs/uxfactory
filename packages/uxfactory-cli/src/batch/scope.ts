@@ -12,18 +12,21 @@
 // Types
 // ---------------------------------------------------------------------------
 
+/** Scope dial levels — the three valid values for a RenderScope dial (never `none`; that is threshold-only). */
+export type DialLevel = "low" | "medium" | "high";
+
 /** Ordinal level.  `none` is a threshold-only value; scope dials are low|medium|high. */
-export type Level = "none" | "low" | "medium" | "high";
+export type Level = "none" | DialLevel;
 
 /** The four scope dials. */
 export type Dial = "visual" | "editorial" | "coverage" | "flow";
 
-/** A fully-resolved render scope — every dial is low|medium|high. */
+/** A fully-resolved render scope — every dial is low|medium|high (never none). */
 export type RenderScope = {
-  visual: Level;
-  editorial: Level;
-  coverage: Level;
-  flow: Level;
+  visual: DialLevel;
+  editorial: DialLevel;
+  coverage: DialLevel;
+  flow: DialLevel;
 };
 
 /** Per-gate threshold on all four dials (each Level; `none` means "not gated on this dial"). */
@@ -68,7 +71,7 @@ const VALID_DIALS = new Set<string>(["visual", "editorial", "coverage", "flow"])
 const DIAL_LEVELS = new Set<string>(["low", "medium", "high"]);
 const PRESET_NAMES = new Set<string>(Object.keys(PRESETS));
 
-function isDialLevel(v: unknown): v is Level {
+function isDialLevel(v: unknown): v is DialLevel {
   return typeof v === "string" && DIAL_LEVELS.has(v);
 }
 
@@ -140,7 +143,7 @@ export function parseScope(
  */
 export function resolveScope(
   base: string | object | undefined,
-  overrides: Partial<Record<Dial, Level>>,
+  overrides: Partial<Record<Dial, DialLevel>>,
 ): RenderScope | null {
   if (base === undefined) return null;
 
@@ -195,6 +198,20 @@ export const GATE_THRESHOLDS: Record<string, GateThresholds> = {
   },
 };
 
+/**
+ * Per-gate required input specification.  Only gates with a required input appear here.
+ * `optional:true` = skip-and-declare if absent, never block readiness (reuse).
+ * `optional:false` = REQUESTED; must be present for readiness to pass.
+ *
+ * Single source of truth for both `requiredInputs()` and `checkReadiness()`.
+ */
+export const GATE_REQUIRED_INPUT: Record<string, { input: string; optional: boolean }> = {
+  "requirement-coverage": { input: "stories", optional: false },
+  "token-conformance": { input: "tokens", optional: false },
+  "flow-reachability": { input: "flow", optional: false },
+  reuse: { input: "reuse", optional: true },
+};
+
 // ---------------------------------------------------------------------------
 // binds / bindingGateIds
 // ---------------------------------------------------------------------------
@@ -221,23 +238,40 @@ export function bindingGateIds(s: RenderScope): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// primaryBindingDial (internal)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the first non-none binding dial and its minimum level from a gate threshold.
+ * Used by `checkReadiness` to derive the `{dial, level}` for a missing required input.
+ */
+function primaryBindingDial(t: GateThresholds): { dial: Dial; level: Level } | null {
+  if (t.min_visual !== "none") return { dial: "visual", level: t.min_visual };
+  if (t.min_editorial !== "none") return { dial: "editorial", level: t.min_editorial };
+  if (t.min_coverage !== "none") return { dial: "coverage", level: t.min_coverage };
+  if (t.min_flow !== "none") return { dial: "flow", level: t.min_flow };
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // requiredInputs
 // ---------------------------------------------------------------------------
 
 /**
- * The MANDATORY registered inputs for a scope: stories whenever coverage≥low (always for a
- * valid scope), tokens when visual≥medium, flow when flow≥medium.  `reuse` is optional —
- * never appears here.
+ * The MANDATORY registered inputs for a scope — single-sourced from GATE_THRESHOLDS via
+ * bindingGateIds() + GATE_REQUIRED_INPUT.  Only non-optional inputs are included; `reuse`
+ * is optional and never appears here.
+ *
+ * Result: stories whenever coverage≥low (always for a valid scope), tokens when
+ * visual≥medium, flow when flow≥medium.
  */
 export function requiredInputs(s: RenderScope): string[] {
-  const out: string[] = [];
-  // requirement-coverage binds whenever coverage >= low (all valid scopes)
-  if (LEVEL_ORD[s.coverage] >= LEVEL_ORD["low"]) out.push("stories");
-  // token-conformance binds at visual >= medium
-  if (LEVEL_ORD[s.visual] >= LEVEL_ORD["medium"]) out.push("tokens");
-  // flow-reachability binds at flow >= medium
-  if (LEVEL_ORD[s.flow] >= LEVEL_ORD["medium"]) out.push("flow");
-  return out;
+  return bindingGateIds(s)
+    .filter((id) => {
+      const gi = GATE_REQUIRED_INPUT[id];
+      return gi !== undefined && !gi.optional;
+    })
+    .map((id) => GATE_REQUIRED_INPUT[id]!.input);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,8 +346,8 @@ export interface ReadinessResult {
 /**
  * Readiness precondition: every REQUESTED input (stories/tokens/flow) of binding gates, plus
  * specs, must be present.  Missing → not ready; each absence listed with the dial+level that
- * requires it and the "provide-or-generate" action.  Declared-future tiers are listed
- * separately and are never blocking.
+ * requires it (derived from GATE_THRESHOLDS via GATE_REQUIRED_INPUT — single-sourced) and the
+ * "provide-or-generate" action.  Declared-future tiers are listed separately and never block.
  */
 export function checkReadiness(
   s: RenderScope,
@@ -331,34 +365,27 @@ export function checkReadiness(
     });
   }
 
-  // stories required when coverage >= low (always in practice)
-  if (LEVEL_ORD[s.coverage] >= LEVEL_ORD["low"] && !present.stories) {
-    missing.push({
-      artifact: "stories",
-      dial: "coverage",
-      level: "low",
-      action: "provide-or-generate",
-    });
-  }
+  // Derive missing required inputs from GATE_REQUIRED_INPUT via bindingGateIds —
+  // single-sourced from GATE_THRESHOLDS; dial+level come from the gate's threshold.
+  const presentMap: Record<string, boolean> = {
+    stories: present.stories,
+    tokens: present.tokens,
+    flow: present.flow,
+  };
 
-  // tokens required when visual >= medium
-  if (LEVEL_ORD[s.visual] >= LEVEL_ORD["medium"] && !present.tokens) {
-    missing.push({
-      artifact: "tokens",
-      dial: "visual",
-      level: "medium",
-      action: "provide-or-generate",
-    });
-  }
-
-  // flow required when flow >= medium
-  if (LEVEL_ORD[s.flow] >= LEVEL_ORD["medium"] && !present.flow) {
-    missing.push({
-      artifact: "flow",
-      dial: "flow",
-      level: "medium",
-      action: "provide-or-generate",
-    });
+  for (const id of bindingGateIds(s)) {
+    const gi = GATE_REQUIRED_INPUT[id];
+    if (gi === undefined || gi.optional) continue;
+    if (!presentMap[gi.input]) {
+      const t = GATE_THRESHOLDS[id];
+      const bd = t !== undefined ? primaryBindingDial(t) : null;
+      missing.push({
+        artifact: gi.input,
+        dial: bd?.dial ?? "coverage",
+        level: bd?.level ?? "low",
+        action: "provide-or-generate",
+      });
+    }
   }
 
   return { ready: missing.length === 0, missing, declared: declaredFuture(s) };
