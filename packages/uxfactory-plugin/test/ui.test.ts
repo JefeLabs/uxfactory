@@ -227,3 +227,47 @@ describe("ui selection main-message", () => {
     expect(JSON.parse(init.body as string)).toEqual(selection);
   });
 });
+
+describe("ui review-selection", () => {
+  it("clickReviewSelection posts review-selection to main", () => {
+    const postToMain = vi.fn();
+    const ui = createUi({ fetchImpl: okFetch({}), postToMain });
+    ui.clickReviewSelection();
+    expect(postToMain).toHaveBeenCalledWith({ type: "review-selection" });
+  });
+
+  it("review-selection-ready POSTs snapshot+screenshot to /canvas", async () => {
+    const fetchImpl = okFetch({});
+    const ui = createUi({ fetchImpl, postToMain: vi.fn() });
+    const snapshot = {
+      source: "canvas-inferred" as const,
+      page: "Page 1",
+      frames: [
+        {
+          name: "Screen",
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 600,
+          children: [{ type: "shape", name: "bg", x: 0, y: 0, width: 800, height: 600 }],
+        },
+      ],
+    };
+    const screenshot = [137, 80, 78, 71];
+    await ui.onMainMessage({ type: "review-selection-ready", snapshot, screenshot });
+    const [url, init] = fetchImpl.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(url).toBe("http://localhost:3779/canvas");
+    const body = JSON.parse(init.body as string) as {
+      snapshot: typeof snapshot;
+      screenshot: number[];
+    };
+    expect(body.snapshot.source).toBe("canvas-inferred");
+    expect(body.screenshot).toEqual(screenshot);
+  });
+
+  it("review-selection-error shows an error message", async () => {
+    const ui = createUi({ fetchImpl: okFetch({}), postToMain: vi.fn() });
+    await ui.onMainMessage({ type: "review-selection-error", message: "Select a frame first" });
+    expect(document.getElementById("errors")!.textContent).toMatch(/Select a frame first/);
+  });
+});

@@ -18,6 +18,7 @@ export interface UiController {
   submitManual(): void;
   clickUndo(): void;
   clickReview(): Promise<void>;
+  clickReviewSelection(): void;
   start(): void;
   stop(): void;
   readonly panel: PanelState;
@@ -98,6 +99,13 @@ export function createUi(options: UiOptions = {}): UiController {
       setStatus(`Review complete${msg.skipped > 0 ? ` (${msg.skipped} nodes skipped)` : ""}`);
     } else if (msg.type === "review-error") {
       showErrors([`Review error: ${msg.message}`]);
+    } else if (msg.type === "review-selection-ready") {
+      await doFetch(
+        `${BRIDGE}/canvas`,
+        postInit({ snapshot: msg.snapshot, screenshot: msg.screenshot }),
+      );
+    } else if (msg.type === "review-selection-error") {
+      showErrors([`Review selection error: ${msg.message}`]);
     }
   }
 
@@ -146,6 +154,11 @@ export function createUi(options: UiOptions = {}): UiController {
     postToMain({ type: "undo" });
   }
 
+  /** Triggers a canvas snapshot of the current Figma selection for best-effort review. */
+  function clickReviewSelection(): void {
+    postToMain({ type: "review-selection" });
+  }
+
   function start(): void {
     void checkHealth();
     timer = setInterval(() => {
@@ -154,6 +167,7 @@ export function createUi(options: UiOptions = {}): UiController {
     }, 2000);
     el("undo")?.addEventListener("click", clickUndo);
     el("review")?.addEventListener("click", () => void clickReview());
+    el("review-selection")?.addEventListener("click", () => clickReviewSelection());
     el("render-manual")?.addEventListener("click", submitManual);
     el("details")?.addEventListener("toggle", () => applyPanel(nextPanel(panel, "toggle-details")));
     el("expand")?.addEventListener("click", () => applyPanel(nextPanel(panel, "expand-click")));
@@ -187,6 +201,7 @@ export function createUi(options: UiOptions = {}): UiController {
     submitManual,
     clickUndo,
     clickReview,
+    clickReviewSelection,
     start,
     stop,
     get panel() {

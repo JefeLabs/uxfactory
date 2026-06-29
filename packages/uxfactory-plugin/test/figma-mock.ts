@@ -42,6 +42,10 @@ export class FakeNode {
       this._parent = null;
     }
   }
+  /** Fake exportAsync — mirrors SceneNode.exportAsync (returns fake PNG bytes). */
+  async exportAsync(_settings?: { format?: string }): Promise<Uint8Array> {
+    return new Uint8Array([137, 80, 78, 71]); // PNG magic bytes
+  }
 }
 
 export interface FakeFigma {

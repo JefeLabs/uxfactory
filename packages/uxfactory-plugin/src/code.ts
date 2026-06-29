@@ -9,6 +9,8 @@ import { assembleReport, newRenderId } from "./report.js";
 import { mapSelection, type RawSelNode } from "./selection.js";
 import { planAnnotations } from "./annotation-plan.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
+import { snapshotNode } from "./canvas-snapshot.js";
+import type { CanvasSnapshot, SnapshotFrame, FrameLike } from "./canvas-snapshot.js";
 
 /** The narrow node surface the orchestrator uses (cast from the real figma node). */
 interface EditableNode {
@@ -37,6 +39,7 @@ interface EditableNode {
   resize(w: number, h: number): void;
   appendChild(child: EditableNode): void;
   remove(): void;
+  exportAsync?(settings: { format: string }): Promise<Uint8Array>;
 }
 
 /** A Figma page node. */
@@ -89,6 +92,7 @@ async function handleMessage(msg: UiToMain): Promise<void> {
   try {
     if (msg.type === "render") await renderSpec(msg.spec, msg.jobId);
     else if (msg.type === "review") await drawReview(msg.report);
+    else if (msg.type === "review-selection") await reviewSelection();
     else if (msg.type === "undo") applyUndo();
     else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
   } catch (err) {
@@ -586,6 +590,52 @@ async function drawReview(report: ReviewReportLike): Promise<void> {
     // so a mid-draw throw leaves no orphan layer.
     if (group !== null) group.remove();
     post({ type: "review-error", message: String(err) });
+  }
+}
+
+// ---- canvas-snapshot review (§14.2) ----
+
+/**
+ * Reads the current selection, builds a DesignSpec-shaped CanvasSnapshot,
+ * takes a PNG screenshot of the first selected node, and posts the result
+ * to the UI to be relayed to the bridge /canvas endpoint.
+ *
+ * Error boundary: any failure posts review-selection-error (never hangs).
+ * Empty selection posts a clear error message.
+ */
+async function reviewSelection(): Promise<void> {
+  const selection = fig.currentPage.selection;
+
+  if (selection.length === 0) {
+    post({ type: "review-selection-error", message: "Select at least one frame to review." });
+    return;
+  }
+
+  try {
+    const pageName = fig.currentPage.name;
+    const allFrames: SnapshotFrame[] = [];
+
+    for (const node of selection) {
+      const snap = snapshotNode(node as unknown as FrameLike, pageName);
+      for (const f of snap.frames) {
+        allFrames.push(f);
+      }
+    }
+
+    const snapshot: CanvasSnapshot = {
+      source: "canvas-inferred",
+      page: pageName,
+      frames: allFrames,
+    };
+
+    // Screenshot of the first selected node (PNG bytes → number[] for JSON transport).
+    const firstNode = selection[0]!;
+    const bytes = (await firstNode.exportAsync?.({ format: "PNG" })) ?? new Uint8Array(0);
+    const screenshot = Array.from(bytes);
+
+    post({ type: "review-selection-ready", snapshot, screenshot });
+  } catch (err) {
+    post({ type: "review-selection-error", message: String(err) });
   }
 }
 

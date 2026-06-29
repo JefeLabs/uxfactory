@@ -1,5 +1,6 @@
 import type { PluginRenderReport } from "./report.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
+import type { CanvasSnapshot } from "./canvas-snapshot.js";
 
 /** A selected node mapped to the §7.5 reporting fields. */
 export interface SelectionNode {
@@ -29,6 +30,7 @@ export interface SelectionPayload {
 export type UiToMain =
   | { type: "render"; spec: unknown; jobId?: string }
   | { type: "review"; report: ReviewReportLike }
+  | { type: "review-selection" }
   | { type: "undo" }
   | { type: "resize"; width: number; height: number };
 
@@ -39,4 +41,6 @@ export type MainToUi =
   | { type: "undo-count"; count: number }
   | { type: "render-error"; message: string }
   | { type: "review-done"; skipped: number }
-  | { type: "review-error"; message: string };
+  | { type: "review-error"; message: string }
+  | { type: "review-selection-ready"; snapshot: CanvasSnapshot; screenshot: number[] }
+  | { type: "review-selection-error"; message: string };
