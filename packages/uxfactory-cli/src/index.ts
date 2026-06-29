@@ -33,3 +33,5 @@ export { figmaImageExport } from "./render/figma-export.js";
 export type { FigmaExportOptions, FigmaImageResult, FetchLike } from "./render/figma-export.js";
 export { renderCmd } from "./commands/render.js";
 export type { RenderFlags } from "./commands/render.js";
+export { readRegistry, validateRegistry, resolveInputs } from "./batch/registry.js";
+export type { BatchRegistry, BatchInputs, ResolvedInputs, ReadRegistryResult } from "./batch/registry.js";
