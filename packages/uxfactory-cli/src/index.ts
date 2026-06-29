@@ -59,24 +59,24 @@ export type { RunBatchInput, BatchReport } from "./batch/run.js";
 export { batchCmd } from "./commands/batch.js";
 export type { BatchFlags } from "./commands/batch.js";
 export {
-  parseLevel,
-  parseFidelity,
-  resolveFidelity,
+  LEVEL_ORD,
+  PRESETS,
+  GATE_THRESHOLDS,
+  parseScope,
+  resolveScope,
+  binds,
   bindingGateIds,
   requiredInputs,
   declaredFuture,
   checkReadiness,
-  PRESETS,
-  PRESET_NAMES,
-  DIMENSIONS,
-  GATE_DIMENSION,
-  GATE_MIN_LEVEL,
-} from "./batch/fidelity.js";
+} from "./batch/scope.js";
 export type {
-  Fidelity,
-  Dimension,
+  Level,
+  Dial,
+  RenderScope,
+  GateThresholds,
   PresetName,
-  DeclaredFuture,
-  ReadinessReport,
+  DeclaredFutureTier,
   ReadinessMissing,
-} from "./batch/fidelity.js";
+  ReadinessResult,
+} from "./batch/scope.js";
