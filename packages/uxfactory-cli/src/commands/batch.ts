@@ -73,8 +73,30 @@ export async function batchCmd(
   let flow: Flow | null = null;
   let reuseSpecs: Spec[] | null = null;
   try {
-    if (reg.inputs.tokens !== null) tokens = await readJson<TokenSet>(reg.inputs.tokens);
-    if (reg.inputs.stories !== null) stories = await readJson<StorySet>(reg.inputs.stories);
+    if (reg.inputs.tokens !== null) {
+      tokens = await readJson<TokenSet>(reg.inputs.tokens);
+      // Fix 5: light shape check — malformed tokens.ds.json → exit 2
+      if (
+        tokens.colors === null ||
+        typeof tokens.colors !== "object" ||
+        Array.isArray(tokens.colors)
+      ) {
+        io.err(
+          `malformed tokens file: "colors" must be an object (got ${JSON.stringify(typeof tokens.colors)})`,
+        );
+        return EXIT.TRANSPORT;
+      }
+    }
+    if (reg.inputs.stories !== null) {
+      stories = await readJson<StorySet>(reg.inputs.stories);
+      // Fix 5: light shape check — malformed stories.json → exit 2
+      if (!Array.isArray(stories.stories)) {
+        io.err(
+          `malformed stories file: "stories" must be an array (got ${JSON.stringify(typeof stories.stories)})`,
+        );
+        return EXIT.TRANSPORT;
+      }
+    }
     if (reg.inputs.flow !== null) flow = await readJson<Flow>(reg.inputs.flow);
     if (reg.inputs.reuse.length > 0) {
       reuseSpecs = [];

@@ -96,3 +96,4 @@ Everything the pass produces is ephemeral and lives under **`.uxfactory/batch/`*
 - **Previews are approximate** (offline raster) — good for review, not for pixel sign-off.
 - **`exit 2` is never a quality signal** — it means a registry/input/bridge problem; fix the setup, do not "revise the spec."
 - **Don't spin.** Respect `maxIterations`; surface best-effort with the open findings when the budget is spent.
+- **Pure reusable components (no 1:1 story):** leave `stories` unregistered so requirement coverage skip-and-declares; story-less frames surface only as an advisory `coverage-orphans` finding and never gate the batch.

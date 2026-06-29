@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { requirementCoverage, flowReachability } from "../src/batch/checks.js";
+import { requirementCoverage, coverageOrphans, flowReachability } from "../src/batch/checks.js";
 import type { LoadedSpec, StorySet, Flow } from "../src/batch/checks.js";
 import type { DesignSpec, Spec } from "@uxfactory/spec";
 
@@ -85,7 +85,7 @@ describe("requirementCoverage", () => {
     expect(r.findings.some((f) => f.detail.includes("success"))).toBe(true);
   });
 
-  it("flags a story-less frame (its name contains no story id)", () => {
+  it("story-less frames are now advisory (Fix 3): requirementCoverage passes, coverageOrphans reports them", () => {
     const spec: DesignSpec = {
       editor: "figma",
       frames: [
@@ -103,9 +103,88 @@ describe("requirementCoverage", () => {
         { name: "orphan-frame", x: 0, y: 0, width: 1, height: 1, children: [] },
       ],
     };
+    // Fix 3: requirementCoverage (must) no longer gates on story-less frames
     const r = requirementCoverage([loaded(spec)], stories);
+    expect(r.status).toBe("pass");
+    expect(r.findings.some((f) => f.ref === "orphan-frame")).toBe(false);
+    // advisory coverageOrphans reports the orphan without gating
+    const orphans = coverageOrphans([loaded(spec)], stories);
+    expect(orphans.severity).toBe("advisory");
+    expect(orphans.status).toBe("fail");
+    expect(orphans.findings.some((f) => f.ref === "orphan-frame")).toBe(true);
+  });
+});
+
+// --- Fix 1 regression: AC-state coverage is PER-STORY, not batch-global -----------
+
+describe("requirementCoverage — Fix 1: per-story AC scoping", () => {
+  it("story A's empty AC is NOT satisfied by story B's empty-state node", () => {
+    const twoStorySpec: DesignSpec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "story-a-home",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          children: [{ type: "shape", name: "loading-spinner", x: 0, y: 0, width: 1, height: 1 }],
+        },
+        {
+          name: "story-b-home",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          children: [{ type: "shape", name: "empty-state", x: 0, y: 0, width: 1, height: 1 }],
+        },
+      ],
+    };
+    const twoStories: StorySet = {
+      stories: [
+        {
+          id: "story-a",
+          role: "u",
+          goal: "g",
+          benefit: "b",
+          acceptanceCriteria: [{ statement: "no data", impliedState: "empty" }],
+        },
+        {
+          id: "story-b",
+          role: "u",
+          goal: "g",
+          benefit: "b",
+          acceptanceCriteria: [],
+        },
+      ],
+    };
+    const r = requirementCoverage([loaded(twoStorySpec)], twoStories);
+    // story-a's "empty" AC must be UNCOVERED: empty-state lives in story-b's frame
     expect(r.status).toBe("fail");
-    expect(r.findings.some((f) => f.ref === "orphan-frame")).toBe(true);
+    expect(r.findings.some((f) => f.detail.includes("empty") && f.ref === "story-a")).toBe(true);
+  });
+});
+
+// --- Fix 2 regression: story-id matching must be TOKEN-BOUNDARY ---------------------
+
+describe("requirementCoverage — Fix 2: token-boundary story-id matching", () => {
+  it("story-1 is UNCOVERED when only story-12-home exists (no substring false-match)", () => {
+    const spec: DesignSpec = {
+      editor: "figma",
+      frames: [{ name: "story-12-home", x: 0, y: 0, width: 1, height: 1, children: [] }],
+    };
+    const twoStories: StorySet = {
+      stories: [
+        { id: "story-1", role: "u", goal: "g", benefit: "b", acceptanceCriteria: [] },
+        { id: "story-12", role: "u", goal: "g", benefit: "b", acceptanceCriteria: [] },
+      ],
+    };
+    const r = requirementCoverage([loaded(spec)], twoStories);
+    expect(r.status).toBe("fail");
+    // story-1 must be flagged as uncovered
+    expect(r.findings.some((f) => f.ref === "story-1")).toBe(true);
+    // story-12 must NOT be flagged (it is covered)
+    expect(r.findings.some((f) => f.ref === "story-12")).toBe(false);
   });
 });
 

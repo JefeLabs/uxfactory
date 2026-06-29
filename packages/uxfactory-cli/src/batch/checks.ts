@@ -114,6 +114,22 @@ function specColors(loaded: LoadedSpec): { value: string; where: string }[] {
         out.push({ value: child.stroke, where: `${loaded.file}:${c.name}/${child.name}.stroke` });
     }
   }
+  // Fix 4: also check edits[].set.fill / edits[].set.stroke (covers EditOnlySpec + spec edits)
+  const edits =
+    "edits" in loaded.spec && Array.isArray((loaded.spec as { edits?: unknown }).edits)
+      ? (
+          loaded.spec as {
+            edits: { id?: string; name?: string; set: { fill?: string; stroke?: string } }[];
+          }
+        ).edits
+      : [];
+  for (const edit of edits) {
+    const target = edit.id ?? edit.name ?? "(unknown)";
+    if (typeof edit.set.fill === "string")
+      out.push({ value: edit.set.fill, where: `${loaded.file}:edit[${target}].set.fill` });
+    if (typeof edit.set.stroke === "string")
+      out.push({ value: edit.set.stroke, where: `${loaded.file}:edit[${target}].set.stroke` });
+  }
   return out;
 }
 
@@ -219,6 +235,44 @@ function allNodeNames(specs: LoadedSpec[]): string[] {
   return names;
 }
 
+/**
+ * Fix 2: token-boundary match — storyId's segments must appear as a CONTIGUOUS run
+ * in frameName's segments (split on [-_/\s]+). Prevents "story-1" from matching
+ * "story-12-home" because "12" ≠ "1".
+ */
+function tokenBoundaryMatch(frameName: string, storyId: string): boolean {
+  const frameSegs = frameName
+    .toLowerCase()
+    .split(/[-_/\s]+/)
+    .filter(Boolean);
+  const storySegs = storyId
+    .toLowerCase()
+    .split(/[-_/\s]+/)
+    .filter(Boolean);
+  if (storySegs.length === 0) return false;
+  for (let i = 0; i <= frameSegs.length - storySegs.length; i++) {
+    if (storySegs.every((seg, j) => frameSegs[i + j] === seg)) return true;
+  }
+  return false;
+}
+
+/**
+ * Fix 1: per-story node names — container name + children only from frames that cover
+ * the given story (via token-boundary match). Used to scope AC-state coverage checks.
+ */
+function storyNodeNames(specs: LoadedSpec[], storyId: string): string[] {
+  const names: string[] = [];
+  for (const loaded of specs) {
+    for (const c of containers(loaded.spec)) {
+      if (tokenBoundaryMatch(c.name, storyId)) {
+        names.push(c.name);
+        for (const child of c.children) names.push(child.name);
+      }
+    }
+  }
+  return names;
+}
+
 /** Build a directed name→names graph from every spec's connectors. */
 function buildGraph(specs: LoadedSpec[]): Map<string, Set<string>> {
   const adj = new Map<string, Set<string>>();
@@ -254,8 +308,10 @@ function reachable(adj: Map<string, Set<string>>, from: string, to: string): boo
 
 /**
  * requirement & state coverage (must) — name-based traceability between stories
- * and the batch. Each story.id must be named by ≥1 frame; each AC.impliedState
- * keyword must appear in some node name; any frame naming no story id is story-less.
+ * and the batch. Each story.id must match ≥1 frame at token boundaries (Fix 2);
+ * each AC.impliedState keyword must appear in a node name of THAT STORY'S OWN
+ * covering frame(s) only (Fix 1). Story-less frames are moved to coverageOrphans
+ * (advisory, Fix 3) and never gate this check.
  * Skip-and-declare when no stories. Pure + deterministic (no LLM, no judge).
  */
 export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | null): CheckResult {
@@ -265,21 +321,21 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
   }
   const storyList = stories.stories ?? [];
   const frames = frameNames(specs);
-  const lowerFrames = frames.map((f) => ({ ...f, lname: f.name.toLowerCase() }));
-  const lowerNodes = allNodeNames(specs).map((n) => n.toLowerCase());
   const findings: BatchFinding[] = [];
 
   for (const story of storyList) {
-    const idl = story.id.toLowerCase();
-    if (!lowerFrames.some((f) => f.lname.includes(idl))) {
+    // Fix 2: token-boundary match (prevents "story-1" matching "story-12-home")
+    if (!frames.some((f) => tokenBoundaryMatch(f.name, story.id))) {
       findings.push({
-        detail: `story ${story.id} is not covered by any frame (no frame name contains "${story.id}")`,
+        detail: `story ${story.id} is not covered by any frame (no frame name matches "${story.id}" at token boundaries)`,
         ref: story.id,
       });
     }
+    // Fix 1: AC states checked only against nodes in THIS story's covering frames
+    const storyNodes = storyNodeNames(specs, story.id).map((n) => n.toLowerCase());
     for (const ac of story.acceptanceCriteria ?? []) {
       const kw = ac.impliedState.toLowerCase();
-      if (!lowerNodes.some((n) => n.includes(kw))) {
+      if (!storyNodes.some((n) => n.includes(kw))) {
         findings.push({
           detail: `story ${story.id} AC "${ac.statement}" implies a ${ac.impliedState} state with no matching node`,
           ref: story.id,
@@ -288,17 +344,38 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
     }
   }
 
-  const storyIds = storyList.map((s) => s.id.toLowerCase());
-  for (const f of lowerFrames) {
-    if (!storyIds.some((sid) => f.lname.includes(sid))) {
+  // Fix 3: story-less frames no longer gate here — moved to coverageOrphans (advisory).
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+}
+
+/**
+ * coverage orphans (advisory, Fix 3) — frames whose names don't token-boundary-match
+ * any registered story id. Advisory only: never gates the batch, so reusable-component
+ * batches (no 1:1 story) are never false-failed. Skip-and-declare when no stories.
+ */
+export function coverageOrphans(specs: LoadedSpec[], stories: StorySet | null): CheckResult {
+  const id = "coverage-orphans";
+  if (stories === null) {
+    return {
+      id,
+      status: "skip",
+      severity: "advisory",
+      findings: [],
+      reason: "no stories registered",
+    };
+  }
+  const storyList = stories.stories ?? [];
+  const frames = frameNames(specs);
+  const findings: BatchFinding[] = [];
+  for (const f of frames) {
+    if (!storyList.some((s) => tokenBoundaryMatch(f.name, s.id))) {
       findings.push({
         detail: `frame ${f.name} (${f.file}) has no story basis (its name contains no registered story id)`,
         ref: f.name,
       });
     }
   }
-
-  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
 }
 
 /**

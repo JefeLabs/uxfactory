@@ -1,4 +1,10 @@
-import { tokenConformance, requirementCoverage, reuse, flowReachability } from "./checks.js";
+import {
+  tokenConformance,
+  requirementCoverage,
+  coverageOrphans,
+  reuse,
+  flowReachability,
+} from "./checks.js";
 import type { CheckResult, LoadedSpec, TokenSet, StorySet, Flow } from "./checks.js";
 import type { Spec } from "@uxfactory/spec";
 
@@ -28,6 +34,7 @@ export function runBatch(input: RunBatchInput): BatchReport {
   const checks: CheckResult[] = [
     tokenConformance(input.specs, input.tokens),
     requirementCoverage(input.specs, input.stories),
+    coverageOrphans(input.specs, input.stories),
     reuse(input.specs, input.reuseSpecs),
     flowReachability(input.specs, input.flow),
   ];

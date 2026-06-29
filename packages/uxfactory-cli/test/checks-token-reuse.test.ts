@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { tokenConformance, reuse } from "../src/batch/checks.js";
 import type { LoadedSpec, TokenSet } from "../src/batch/checks.js";
-import type { DesignSpec, Spec } from "@uxfactory/spec";
+import type { DesignSpec, EditOnlySpec, Spec } from "@uxfactory/spec";
 
 function loaded(spec: Spec, file = "a.uxfactory.json"): LoadedSpec {
   return { file, spec };
@@ -69,6 +69,16 @@ describe("tokenConformance", () => {
     expect(r.status).toBe("fail");
     expect(r.findings.length).toBe(1);
     expect(r.findings[0]!.ref).toBe("#abcdef");
+  });
+
+  // Fix 4 regression: edits[].set.fill / edits[].set.stroke are also checked
+  it("Fix 4: edit-only spec with an ad-hoc set.fill → tokenConformance FAILS", () => {
+    const editOnly: EditOnlySpec = {
+      edits: [{ name: "btn", set: { fill: "#badcaf" } }],
+    };
+    const r = tokenConformance([loaded(editOnly as unknown as Spec)], tokens);
+    expect(r.status).toBe("fail");
+    expect(r.findings.some((f) => f.ref === "#badcaf")).toBe(true);
   });
 });
 

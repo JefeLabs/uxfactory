@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runBatch } from "../src/batch/run.js";
-import type { LoadedSpec, TokenSet, Flow } from "../src/batch/checks.js";
+import type { LoadedSpec, TokenSet, Flow, StorySet } from "../src/batch/checks.js";
 import type { DesignSpec } from "@uxfactory/spec";
 
 const tokens: TokenSet = { colors: { brand: "#1E88E5" } };
@@ -23,7 +23,7 @@ describe("runBatch", () => {
   it("skips every gate (all inputs absent) and is clean", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
     const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null });
-    expect(report.checks.length).toBe(4);
+    expect(report.checks.length).toBe(5);
     expect(report.checks.every((c) => c.status === "skip")).toBe(true);
     expect(report.mustPassFailed).toBe(false);
     expect(report.clean).toBe(true);
@@ -34,6 +34,53 @@ describe("runBatch", () => {
     const report = runBatch({ specs, tokens, stories: null, reuseSpecs: null, flow: null });
     expect(report.mustPassFailed).toBe(true);
     expect(report.clean).toBe(false);
+  });
+
+  // Fix 3 regression: story-less frames go to advisory coverage-orphans, never gate
+  it("Fix 3: story-less frame → requirementCoverage passes, coverage-orphans advisory, mustPassFailed:false", () => {
+    const storiesInput: StorySet = {
+      stories: [
+        {
+          id: "story-1",
+          role: "u",
+          goal: "g",
+          benefit: "b",
+          acceptanceCriteria: [{ statement: "no data", impliedState: "empty" }],
+        },
+      ],
+    };
+    const spec: DesignSpec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "story-1-home",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          children: [{ type: "shape", name: "home-empty-state", x: 0, y: 0, width: 1, height: 1 }],
+        },
+        // story-less frame: no matching story id
+        { name: "shared-toolbar", x: 0, y: 0, width: 1, height: 1, children: [] },
+      ],
+    };
+    const report = runBatch({
+      specs: [{ file: "a.uxfactory.json", spec }],
+      tokens: null,
+      stories: storiesInput,
+      reuseSpecs: null,
+      flow: null,
+    });
+    const covCheck = report.checks.find((c) => c.id === "requirement-coverage")!;
+    const orphanCheck = report.checks.find((c) => c.id === "coverage-orphans")!;
+    // requirementCoverage (must) passes — story-1 is covered
+    expect(covCheck.status).toBe("pass");
+    // coverage-orphans is advisory and reports shared-toolbar
+    expect(orphanCheck.severity).toBe("advisory");
+    expect(orphanCheck.findings.some((f) => f.ref === "shared-toolbar")).toBe(true);
+    // batch is clean despite the orphan advisory finding
+    expect(report.mustPassFailed).toBe(false);
+    expect(report.clean).toBe(true);
   });
 
   it("an advisory (flow) failure NEVER trips the must-pass set", () => {

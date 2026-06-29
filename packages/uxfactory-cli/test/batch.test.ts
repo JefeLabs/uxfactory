@@ -157,6 +157,20 @@ describe("batchCmd", () => {
     expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
   });
 
+  // Fix 5 regression: malformed tokens.ds.json (colors not an object) → exit 2
+  it("Fix 5: malformed tokens.ds.json (colors not an object) → returns 2", async () => {
+    const malformedTokens = { colors: ["red", "blue"] }; // array, not object
+    await writeFile(
+      path.join(root, "design", "tokens.ds.json"),
+      JSON.stringify(malformedTokens),
+      "utf8",
+    );
+    await writeRegistry({ tokens: "design/tokens.ds.json" });
+    const io = makeIO();
+    expect(await batchCmd(specsDir, { dataDir, cwd: root }, io, client)).toBe(EXIT.TRANSPORT);
+    expect(io.errText()).toMatch(/malformed tokens/);
+  });
+
   it("--stage on a clean batch posts the specs + previews to the bridge", async () => {
     await writeFile(path.join(root, "design", "tokens.ds.json"), JSON.stringify(tokens), "utf8");
     await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
