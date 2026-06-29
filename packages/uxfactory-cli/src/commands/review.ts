@@ -1,6 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { EXIT } from "../exit.js";
+import { EXIT, TransportError } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
 import { readRegistry } from "../batch/registry.js";
 import { resolveScope, parseScope } from "../batch/scope.js";
@@ -11,6 +11,7 @@ import type { Dial, DialLevel } from "../batch/scope.js";
 import type { LoadedSpec } from "../batch/checks.js";
 import type { Spec } from "@uxfactory/spec";
 import type { IO } from "../io.js";
+import type { BridgeClient } from "../client.js";
 
 /** Flags for `uxfactory review`. */
 export interface ReviewFlags {
@@ -26,6 +27,12 @@ export interface ReviewFlags {
   dataDir?: string;
   /** Repo root where uxfactory.batch.json lives (default process.cwd()). */
   cwd?: string;
+  /**
+   * When true, POST the computed ReviewReport to the bridge (POST /review) so the
+   * plugin can annotate the canvas (§7.8). Requires a BridgeClient to be provided.
+   * Without this flag, review is COMPLETELY unchanged — no network call is made.
+   */
+  annotate?: boolean;
 }
 
 /** Valid values for a dial flag (not `none` — that is threshold-only). */
@@ -47,7 +54,12 @@ const VALID_DIAL_LEVELS = new Set(["low", "medium", "high"]);
  * Lenient on missing inputs: an absent registered input is skip-and-declared,
  * never a setup error. Only an absent/invalid registry or design returns 2.
  */
-export async function reviewCmd(design: string, flags: ReviewFlags, io: IO): Promise<number> {
+export async function reviewCmd(
+  design: string,
+  flags: ReviewFlags,
+  io: IO,
+  client?: BridgeClient,
+): Promise<number> {
   const cwd = flags.cwd ?? process.cwd();
 
   // 1. Registry (absent/unreadable/invalid → EXIT.TRANSPORT(2))
@@ -210,6 +222,22 @@ export async function reviewCmd(design: string, flags: ReviewFlags, io: IO): Pro
       io.out(`  not-owed at this scope: ${report.notOwed.join(", ")}`);
     }
     io.out(`  note: ${report.advisory}`);
+  }
+
+  // 6a. --annotate: POST the report to the bridge so the plugin can annotate the canvas (§7.8).
+  //     Without --annotate the review is COMPLETELY unchanged — no network call.
+  //     A TransportError (bridge down / unreachable) → EXIT.TRANSPORT(2).
+  //     On success the conformance exit code is preserved (0 / 1).
+  if (flags.annotate === true) {
+    try {
+      await client?.postReview(report);
+    } catch (err) {
+      if (err instanceof TransportError) {
+        io.err(`review: bridge unreachable — ${err.message}`);
+        return EXIT.TRANSPORT;
+      }
+      throw err;
+    }
   }
 
   // 7. Exit: conformant → 0; non-conformant → 1; setup → 2 (already returned above)

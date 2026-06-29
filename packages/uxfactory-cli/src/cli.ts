@@ -285,6 +285,8 @@ export function buildProgram(): Command {
     .option("--coverage <level>", "coverage dial override (low|medium|high)")
     .option("--flow <level>", "flow dial override (low|medium|high)")
     .option("--data-dir <path>", "data directory (unused; kept for flag parity with batch)")
+    .option("--annotate", "post the conformance report to the bridge for in-Figma annotation (§7.8)")
+    .option("--bridge <url>", "bridge base URL")
     .action(
       async (
         design: string,
@@ -296,8 +298,11 @@ export function buildProgram(): Command {
           coverage?: string;
           flow?: string;
           dataDir?: string;
+          annotate?: boolean;
+          bridge?: string;
         },
       ) => {
+        const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
         lastCode = await reviewCmd(
           design,
           {
@@ -309,8 +314,10 @@ export function buildProgram(): Command {
             flow: opts.flow,
             dataDir: opts.dataDir !== undefined ? resolveDataDir(opts.dataDir) : undefined,
             cwd: process.cwd(),
+            annotate: opts.annotate,
           },
           consoleIO,
+          client,
         );
       },
     );

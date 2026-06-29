@@ -66,6 +66,22 @@ export class BridgeClient {
     return body as { batchId: string };
   }
 
+  /**
+   * POST /review → relay a ReviewReport to the bridge so the plugin can annotate
+   * the canvas (§7.8). Throws TransportError on a network failure or a non-200
+   * response (e.g. a 400 if the body is malformed).
+   */
+  async postReview(report: unknown): Promise<void> {
+    const res = await this.request("/review", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(report),
+    });
+    if (res.status !== 200) {
+      throw new TransportError(`bridge rejected the review report (HTTP ${res.status})`);
+    }
+  }
+
   private async request(routePath: string, init: RequestInit): Promise<Response> {
     try {
       return await fetch(`${this.baseUrl}${routePath}`, init);

@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { startBridge } from "@uxfactory/bridge";
 import { reviewCmd } from "../src/commands/review.js";
+import { BridgeClient } from "../src/client.js";
 import { EXIT } from "../src/exit.js";
 import { makeIO } from "./helpers.js";
 import type { ReviewReport } from "../src/review/review.js";
@@ -534,5 +536,116 @@ describe("reviewCmd — vacuous-conformant headline qualification (Fix 5)", () =
     expect(code).toBe(EXIT.OK);
     // Must still contain CONFORMANT
     expect(io.outText().toUpperCase()).toContain("CONFORMANT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 14: --annotate posts the report to the bridge
+// ---------------------------------------------------------------------------
+
+describe("reviewCmd — --annotate posts report to bridge", () => {
+  let annotateRoot: string;
+  let bridgeHandle: { url: string; close: () => Promise<void> };
+  let bridgeClient: BridgeClient;
+
+  async function writeAnnotateRegistry(
+    inputs: Record<string, unknown>,
+    extra?: { scope?: string },
+  ): Promise<void> {
+    const obj: Record<string, unknown> = { version: 1, inputs };
+    if (extra?.scope !== undefined) obj["scope"] = extra.scope;
+    await writeFile(
+      path.join(annotateRoot, "uxfactory.batch.json"),
+      JSON.stringify(obj),
+      "utf8",
+    );
+  }
+
+  beforeEach(async () => {
+    annotateRoot = await mkdtemp(path.join(os.tmpdir(), "uxf-review-annotate-"));
+    bridgeHandle = await startBridge({
+      port: 0,
+      dataDir: path.join(annotateRoot, ".uxfactory"),
+    });
+    bridgeClient = new BridgeClient(bridgeHandle.url);
+  });
+
+  afterEach(async () => {
+    await bridgeHandle.close();
+    await rm(annotateRoot, { recursive: true, force: true });
+  });
+
+  it("exits 0 (conformant) and posts report to bridge when --annotate is set", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec, annotateRoot);
+    await writeFile(path.join(annotateRoot, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeAnnotateRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+
+    const io = makeIO();
+    const code = await reviewCmd(
+      specFile,
+      { cwd: annotateRoot, annotate: true },
+      io,
+      bridgeClient,
+    );
+    expect(code).toBe(EXIT.OK);
+
+    // Assert the bridge received the report via GET /review
+    const res = await fetch(`${bridgeHandle.url}/review`);
+    expect(res.status).toBe(200);
+    const posted = (await res.json()) as { conformant: boolean; findings: unknown[] };
+    expect(posted.conformant).toBe(true);
+    expect(Array.isArray(posted.findings)).toBe(true);
+  });
+
+  it("exits 1 (non-conformant) and still posts the report when --annotate is set", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", nonConformantSpec, annotateRoot);
+    await writeFile(path.join(annotateRoot, "stories.json"), JSON.stringify(stories2), "utf8");
+    await writeAnnotateRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+
+    const io = makeIO();
+    const code = await reviewCmd(
+      specFile,
+      { cwd: annotateRoot, annotate: true },
+      io,
+      bridgeClient,
+    );
+    // Conformance exit code is preserved on a successful post
+    expect(code).toBe(EXIT.GATE_FAIL);
+
+    // Report was still posted
+    const res = await fetch(`${bridgeHandle.url}/review`);
+    expect(res.status).toBe(200);
+    const posted = (await res.json()) as { conformant: boolean };
+    expect(posted.conformant).toBe(false);
+  });
+
+  it("exits 2 when --annotate is set but the bridge is down", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec, annotateRoot);
+    await writeFile(path.join(annotateRoot, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeAnnotateRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+
+    // Client pointing to a dead port
+    const deadClient = new BridgeClient("http://127.0.0.1:19997");
+    const io = makeIO();
+    const code = await reviewCmd(
+      specFile,
+      { cwd: annotateRoot, annotate: true },
+      io,
+      deadClient,
+    );
+    expect(code).toBe(EXIT.TRANSPORT);
+  });
+
+  it("does not call the bridge when --annotate is NOT set (unchanged behavior)", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec, annotateRoot);
+    await writeFile(path.join(annotateRoot, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeAnnotateRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+
+    // Even with a dead client, omitting --annotate must NOT make a network call
+    const deadClient = new BridgeClient("http://127.0.0.1:19997");
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { cwd: annotateRoot }, io, deadClient);
+    // Should succeed — no network call attempted
+    expect(code).toBe(EXIT.OK);
   });
 });
