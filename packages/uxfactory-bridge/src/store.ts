@@ -265,11 +265,7 @@ export class BridgeStore {
 
   /** Persist the latest canvas review request to <canvasDir>/latest.json (atomic overwrite). */
   async saveCanvasRequest(r: CanvasRequest): Promise<CanvasRequest> {
-    await writeFile(
-      path.join(this.canvasDir, "latest.json"),
-      JSON.stringify(r, null, 2),
-      "utf8",
-    );
+    await writeFile(path.join(this.canvasDir, "latest.json"), JSON.stringify(r, null, 2), "utf8");
     return r;
   }
 
