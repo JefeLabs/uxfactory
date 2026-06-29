@@ -80,10 +80,11 @@ export interface ResolvedInputs {
   reuse: string[]; // absolute paths (empty when not registered)
 }
 export type ReadRegistryResult =
-  | { ok: true; registry: BatchRegistry; inputs: ResolvedInputs }
-  | { ok: false; message: string };
+  { ok: true; registry: BatchRegistry; inputs: ResolvedInputs } | { ok: false; message: string };
 
-export function validateRegistry(raw: unknown): { ok: true; registry: BatchRegistry } | { ok: false; message: string };
+export function validateRegistry(
+  raw: unknown,
+): { ok: true; registry: BatchRegistry } | { ok: false; message: string };
 export function resolveInputs(registry: BatchRegistry, registryDir: string): ResolvedInputs;
 export function readRegistry(registryPath: string): Promise<ReadRegistryResult>;
 ```
@@ -165,7 +166,11 @@ describe("readRegistry", () => {
   it("reads + validates + resolves a real file", async () => {
     await mkdir(path.join(dir, "design"), { recursive: true });
     const file = path.join(dir, "uxfactory.batch.json");
-    await writeFile(file, JSON.stringify({ version: 1, inputs: { tokens: "design/tokens.ds.json" } }), "utf8");
+    await writeFile(
+      file,
+      JSON.stringify({ version: 1, inputs: { tokens: "design/tokens.ds.json" } }),
+      "utf8",
+    );
     const res = await readRegistry(file);
     expect(res.ok).toBe(true);
     if (res.ok) {
@@ -238,8 +243,7 @@ export interface ResolvedInputs {
 
 /** Outcome of reading a registry: resolved inputs on success, a setup message on failure. */
 export type ReadRegistryResult =
-  | { ok: true; registry: BatchRegistry; inputs: ResolvedInputs }
-  | { ok: false; message: string };
+  { ok: true; registry: BatchRegistry; inputs: ResolvedInputs } | { ok: false; message: string };
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -251,7 +255,8 @@ export function validateRegistry(
 ): { ok: true; registry: BatchRegistry } | { ok: false; message: string } {
   if (!isPlainObject(raw)) return { ok: false, message: "registry must be a JSON object" };
   if (raw.version !== 1) return { ok: false, message: "registry version must be 1" };
-  if (!isPlainObject(raw.inputs)) return { ok: false, message: "registry.inputs must be an object" };
+  if (!isPlainObject(raw.inputs))
+    return { ok: false, message: "registry.inputs must be an object" };
 
   const inputs = raw.inputs;
   for (const key of ["tokens", "stories", "flow"] as const) {
@@ -292,7 +297,10 @@ export async function readRegistry(registryPath: string): Promise<ReadRegistryRe
   try {
     text = await readFile(registryPath, "utf8");
   } catch {
-    return { ok: false, message: `cannot read ${registryPath} (run 'uxfactory batch' from the repo root)` };
+    return {
+      ok: false,
+      message: `cannot read ${registryPath} (run 'uxfactory batch' from the repo root)`,
+    };
   }
   let parsed: unknown;
   try {
@@ -302,7 +310,11 @@ export async function readRegistry(registryPath: string): Promise<ReadRegistryRe
   }
   const result = validateRegistry(parsed);
   if (!result.ok) return { ok: false, message: result.message };
-  return { ok: true, registry: result.registry, inputs: resolveInputs(result.registry, path.dirname(registryPath)) };
+  return {
+    ok: true,
+    registry: result.registry,
+    inputs: resolveInputs(result.registry, path.dirname(registryPath)),
+  };
 }
 ```
 
@@ -317,7 +329,12 @@ Append to `packages/uxfactory-cli/src/index.ts`:
 
 ```ts
 export { readRegistry, validateRegistry, resolveInputs } from "./batch/registry.js";
-export type { BatchRegistry, BatchInputs, ResolvedInputs, ReadRegistryResult } from "./batch/registry.js";
+export type {
+  BatchRegistry,
+  BatchInputs,
+  ResolvedInputs,
+  ReadRegistryResult,
+} from "./batch/registry.js";
 ```
 
 - [ ] **Step 6: Typecheck the package**
@@ -416,7 +433,16 @@ const conforming: DesignSpec = {
       width: 200,
       height: 200,
       children: [
-        { type: "shape", name: "card", x: 0, y: 0, width: 50, height: 50, fill: "#1e88e5", stroke: "#111111" },
+        {
+          type: "shape",
+          name: "card",
+          x: 0,
+          y: 0,
+          width: 50,
+          height: 50,
+          fill: "#1e88e5",
+          stroke: "#111111",
+        },
       ],
     },
   ],
@@ -431,7 +457,9 @@ const adhoc: DesignSpec = {
       y: 0,
       width: 200,
       height: 200,
-      children: [{ type: "shape", name: "card", x: 0, y: 0, width: 50, height: 50, fill: "#abcdef" }],
+      children: [
+        { type: "shape", name: "card", x: 0, y: 0, width: 50, height: 50, fill: "#abcdef" },
+      ],
     },
   ],
 };
@@ -570,10 +598,16 @@ interface AnyChild {
 /** Each container's (frame/section) children, regardless of editor. */
 function containers(spec: Spec): { name: string; children: AnyChild[] }[] {
   if ("frames" in spec) {
-    return spec.frames.map((f) => ({ name: f.name, children: (f.children ?? []) as unknown as AnyChild[] }));
+    return spec.frames.map((f) => ({
+      name: f.name,
+      children: (f.children ?? []) as unknown as AnyChild[],
+    }));
   }
   if ("sections" in spec) {
-    return spec.sections.map((s) => ({ name: s.name, children: (s.children ?? []) as unknown as AnyChild[] }));
+    return spec.sections.map((s) => ({
+      name: s.name,
+      children: (s.children ?? []) as unknown as AnyChild[],
+    }));
   }
   return [];
 }
@@ -598,8 +632,10 @@ function specColors(loaded: LoadedSpec): { value: string; where: string }[] {
   const out: { value: string; where: string }[] = [];
   for (const c of containers(loaded.spec)) {
     for (const child of c.children) {
-      if (typeof child.fill === "string") out.push({ value: child.fill, where: `${loaded.file}:${c.name}/${child.name}.fill` });
-      if (typeof child.stroke === "string") out.push({ value: child.stroke, where: `${loaded.file}:${c.name}/${child.name}.stroke` });
+      if (typeof child.fill === "string")
+        out.push({ value: child.fill, where: `${loaded.file}:${c.name}/${child.name}.fill` });
+      if (typeof child.stroke === "string")
+        out.push({ value: child.stroke, where: `${loaded.file}:${c.name}/${child.name}.stroke` });
     }
   }
   return out;
@@ -623,7 +659,13 @@ function containerSignatures(spec: Spec): { name: string; sig: string }[] {
 export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): CheckResult {
   const id = "token-conformance";
   if (tokens === null) {
-    return { id, status: "skip", severity: "must", findings: [], reason: "no token register registered" };
+    return {
+      id,
+      status: "skip",
+      severity: "must",
+      findings: [],
+      reason: "no token register registered",
+    };
   }
   const registered = new Set<string>();
   for (const value of Object.values(tokens.colors ?? {})) {
@@ -635,7 +677,10 @@ export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): 
     for (const used of specColors(loaded)) {
       const n = normalizeColor(used.value);
       if (n === null || !registered.has(n)) {
-        findings.push({ detail: `ad-hoc color ${used.value} at ${used.where} is not a registered token`, ref: used.value });
+        findings.push({
+          detail: `ad-hoc color ${used.value} at ${used.where} is not a registered token`,
+          ref: used.value,
+        });
       }
     }
   }
@@ -650,7 +695,13 @@ export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): 
 export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResult {
   const id = "reuse";
   if (reuseSpecs === null) {
-    return { id, status: "skip", severity: "must", findings: [], reason: "no existing specs registered for reuse" };
+    return {
+      id,
+      status: "skip",
+      severity: "must",
+      findings: [],
+      reason: "no existing specs registered for reuse",
+    };
   }
   const existing = new Map<string, string>(); // sig -> container name
   for (const spec of reuseSpecs) {
@@ -660,7 +711,10 @@ export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResu
   for (const loaded of specs) {
     for (const { name, sig } of containerSignatures(loaded.spec)) {
       if (existing.has(sig)) {
-        findings.push({ detail: `${loaded.file}:${name} duplicates an existing spec — reference it instead of regenerating`, ref: name });
+        findings.push({
+          detail: `${loaded.file}:${name} duplicates an existing spec — reference it instead of regenerating`,
+          ref: name,
+        });
       }
     }
   }
@@ -804,7 +858,10 @@ describe("requirementCoverage", () => {
       frames: [{ name: "story-1-home", x: 0, y: 0, width: 1, height: 1, children: [] }],
     };
     const twoStories: StorySet = {
-      stories: [...stories.stories, { id: "story-2", role: "u", goal: "g", benefit: "b", acceptanceCriteria: [] }],
+      stories: [
+        ...stories.stories,
+        { id: "story-2", role: "u", goal: "g", benefit: "b", acceptanceCriteria: [] },
+      ],
     };
     const r = requirementCoverage([loaded(spec)], twoStories);
     expect(r.status).toBe("fail");
@@ -834,10 +891,17 @@ describe("requirementCoverage", () => {
     const spec: DesignSpec = {
       editor: "figma",
       frames: [
-        { name: "story-1-home", x: 0, y: 0, width: 1, height: 1, children: [
-          { type: "shape", name: "home-empty-state", x: 0, y: 0, width: 1, height: 1 },
-          { type: "shape", name: "home-success-view", x: 0, y: 10, width: 1, height: 1 },
-        ] },
+        {
+          name: "story-1-home",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          children: [
+            { type: "shape", name: "home-empty-state", x: 0, y: 0, width: 1, height: 1 },
+            { type: "shape", name: "home-success-view", x: 0, y: 10, width: 1, height: 1 },
+          ],
+        },
         { name: "orphan-frame", x: 0, y: 0, width: 1, height: 1, children: [] },
       ],
     };
@@ -902,9 +966,14 @@ const tokens: TokenSet = { colors: { brand: "#1E88E5" } };
 const adhoc: DesignSpec = {
   editor: "figma",
   frames: [
-    { name: "home", x: 0, y: 0, width: 1, height: 1, children: [
-      { type: "shape", name: "card", x: 0, y: 0, width: 1, height: 1, fill: "#abcdef" },
-    ] },
+    {
+      name: "home",
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      children: [{ type: "shape", name: "card", x: 0, y: 0, width: 1, height: 1, fill: "#abcdef" }],
+    },
   ],
 };
 
@@ -966,7 +1035,8 @@ Add to the end of `packages/uxfactory-cli/src/batch/checks.ts`:
 /** Every container (frame/section) name across the batch. */
 function frameNames(specs: LoadedSpec[]): { file: string; name: string }[] {
   const out: { file: string; name: string }[] = [];
-  for (const loaded of specs) for (const c of containers(loaded.spec)) out.push({ file: loaded.file, name: c.name });
+  for (const loaded of specs)
+    for (const c of containers(loaded.spec)) out.push({ file: loaded.file, name: c.name });
   return out;
 }
 
@@ -986,7 +1056,8 @@ function allNodeNames(specs: LoadedSpec[]): string[] {
 function buildGraph(specs: LoadedSpec[]): Map<string, Set<string>> {
   const adj = new Map<string, Set<string>>();
   for (const loaded of specs) {
-    const conns = "connectors" in loaded.spec && loaded.spec.connectors ? loaded.spec.connectors : [];
+    const conns =
+      "connectors" in loaded.spec && loaded.spec.connectors ? loaded.spec.connectors : [];
     for (const c of conns) {
       const set = adj.get(c.from) ?? new Set<string>();
       set.add(c.to);
@@ -1034,12 +1105,18 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
   for (const story of storyList) {
     const idl = story.id.toLowerCase();
     if (!lowerFrames.some((f) => f.lname.includes(idl))) {
-      findings.push({ detail: `story ${story.id} is not covered by any frame (no frame name contains "${story.id}")`, ref: story.id });
+      findings.push({
+        detail: `story ${story.id} is not covered by any frame (no frame name contains "${story.id}")`,
+        ref: story.id,
+      });
     }
     for (const ac of story.acceptanceCriteria ?? []) {
       const kw = ac.impliedState.toLowerCase();
       if (!lowerNodes.some((n) => n.includes(kw))) {
-        findings.push({ detail: `story ${story.id} AC "${ac.statement}" implies a ${ac.impliedState} state with no matching node`, ref: story.id });
+        findings.push({
+          detail: `story ${story.id} AC "${ac.statement}" implies a ${ac.impliedState} state with no matching node`,
+          ref: story.id,
+        });
       }
     }
   }
@@ -1047,7 +1124,10 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
   const storyIds = storyList.map((s) => s.id.toLowerCase());
   for (const f of lowerFrames) {
     if (!storyIds.some((sid) => f.lname.includes(sid))) {
-      findings.push({ detail: `frame ${f.name} (${f.file}) has no story basis (its name contains no registered story id)`, ref: f.name });
+      findings.push({
+        detail: `frame ${f.name} (${f.file}) has no story basis (its name contains no registered story id)`,
+        ref: f.name,
+      });
     }
   }
 
@@ -1072,7 +1152,10 @@ export function flowReachability(specs: LoadedSpec[], flow: Flow | null): CheckR
     const from = steps[i] as string;
     const to = steps[i + 1] as string;
     if (!reachable(adj, from, to)) {
-      findings.push({ detail: `flow step "${from}" → "${to}" is not reachable along any connector path`, ref: `${from}->${to}` });
+      findings.push({
+        detail: `flow step "${from}" → "${to}" is not reachable along any connector path`,
+        ref: `${from}->${to}`,
+      });
     }
   }
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
@@ -1215,8 +1298,24 @@ const cleanSpec = {
       width: 200,
       height: 200,
       children: [
-        { type: "shape", name: "home-empty-state", x: 0, y: 0, width: 10, height: 10, fill: "#1E88E5" },
-        { type: "shape", name: "home-success-view", x: 0, y: 20, width: 10, height: 10, fill: "#111111" },
+        {
+          type: "shape",
+          name: "home-empty-state",
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+          fill: "#1E88E5",
+        },
+        {
+          type: "shape",
+          name: "home-success-view",
+          x: 0,
+          y: 20,
+          width: 10,
+          height: 10,
+          fill: "#111111",
+        },
       ],
     },
   ],
@@ -1239,7 +1338,11 @@ const stories = {
 };
 
 async function writeRegistry(inputs: Record<string, unknown>): Promise<void> {
-  await writeFile(path.join(root, "uxfactory.batch.json"), JSON.stringify({ version: 1, inputs, maxIterations: 6 }), "utf8");
+  await writeFile(
+    path.join(root, "uxfactory.batch.json"),
+    JSON.stringify({ version: 1, inputs, maxIterations: 6 }),
+    "utf8",
+  );
 }
 
 beforeEach(async () => {
@@ -1277,13 +1380,34 @@ describe("batchCmd", () => {
   });
 
   it("a must-pass gate failure → 1 (ad-hoc color)", async () => {
-    await writeFile(path.join(specsDir, "home.uxfactory.json"), JSON.stringify({
-      editor: "figma",
-      frames: [{ name: "story-1-home", x: 0, y: 0, width: 1, height: 1, children: [
-        { type: "shape", name: "home-empty-state", x: 0, y: 0, width: 1, height: 1, fill: "#abcdef" },
-        { type: "shape", name: "home-success-view", x: 0, y: 1, width: 1, height: 1 },
-      ] }],
-    }), "utf8");
+    await writeFile(
+      path.join(specsDir, "home.uxfactory.json"),
+      JSON.stringify({
+        editor: "figma",
+        frames: [
+          {
+            name: "story-1-home",
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            children: [
+              {
+                type: "shape",
+                name: "home-empty-state",
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+                fill: "#abcdef",
+              },
+              { type: "shape", name: "home-success-view", x: 0, y: 1, width: 1, height: 1 },
+            ],
+          },
+        ],
+      }),
+      "utf8",
+    );
     await writeFile(path.join(root, "design", "tokens.ds.json"), JSON.stringify(tokens), "utf8");
     await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
     await writeRegistry({ tokens: "design/tokens.ds.json", stories: "design/stories.json" });
@@ -1480,7 +1604,9 @@ export async function batchCmd(
   // 7. stage a clean batch to the bridge (bridge error → 2)
   if (flags.stage === true && report.clean) {
     try {
-      const { batchId } = await client.postBatch(specs.map((s) => ({ spec: s.spec, preview: previews.get(s.file) })));
+      const { batchId } = await client.postBatch(
+        specs.map((s) => ({ spec: s.spec, preview: previews.get(s.file) })),
+      );
       io.out(`staged batch ${batchId} for approval`);
     } catch (err) {
       if (err instanceof TransportError) {
@@ -1509,20 +1635,32 @@ Add the real command immediately before the `const stubs` declaration:
 ```ts
 program
   .command("batch <dir>")
-  .description("Offline batch mode: gate a set of specs against registered inputs, then stage (§13)")
+  .description(
+    "Offline batch mode: gate a set of specs against registered inputs, then stage (§13)",
+  )
   .option("--json", "machine-readable output")
   .option("--stage", "on a clean batch, stage it to the bridge for approval")
   .option("--data-dir <path>", "data directory (default <cwd>/.uxfactory)")
   .option("--bridge <url>", "bridge base URL")
-  .action(async (dir: string, opts: { json?: boolean; stage?: boolean; dataDir?: string; bridge?: string }) => {
-    const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
-    lastCode = await batchCmd(
-      dir,
-      { json: opts.json, stage: opts.stage, dataDir: resolveDataDir(opts.dataDir), cwd: process.cwd() },
-      consoleIO,
-      client,
-    );
-  });
+  .action(
+    async (
+      dir: string,
+      opts: { json?: boolean; stage?: boolean; dataDir?: string; bridge?: string },
+    ) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await batchCmd(
+        dir,
+        {
+          json: opts.json,
+          stage: opts.stage,
+          dataDir: resolveDataDir(opts.dataDir),
+          cwd: process.cwd(),
+        },
+        consoleIO,
+        client,
+      );
+    },
+  );
 ```
 
 Remove the `["batch", "6", "Offline batch mode"]` row from the `stubs` table so it reads:
@@ -1739,9 +1877,9 @@ Two committed, authored things drive the gate (you do not invent these — the u
     "tokens": "design/tokens.ds.json", // name → hex color register
     "stories": "design/stories.json", // stories + acceptance criteria
     "flow": "design/flow.json", // a declared step order
-    "reuse": ["specs/existing.uxfactory.json"] // specs to compose against, not duplicate
+    "reuse": ["specs/existing.uxfactory.json"], // specs to compose against, not duplicate
   },
-  "maxIterations": 6
+  "maxIterations": 6,
 }
 ```
 
@@ -1791,11 +1929,11 @@ A gate whose **input is not registered** is reported as `skipped` with a reason 
 
 ## Exit codes — the loop-termination contract
 
-| Code | Meaning                                      | What to do                                             |
-| ---- | -------------------------------------------- | ------------------------------------------------------ |
-| `0`  | Every must-pass gate is green                | **Stop the loop.** Hand off for human approval.        |
-| `1`  | A must-pass gate failed                      | Read `report.json` findings, revise the spec(s), re-run. |
-| `2`  | Setup/transport (bad/missing registry, unreadable input, --stage bridge error) | Fix the environment; not a quality signal. |
+| Code | Meaning                                                                        | What to do                                               |
+| ---- | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| `0`  | Every must-pass gate is green                                                  | **Stop the loop.** Hand off for human approval.          |
+| `1`  | A must-pass gate failed                                                        | Read `report.json` findings, revise the spec(s), re-run. |
+| `2`  | Setup/transport (bad/missing registry, unreadable input, --stage bridge error) | Fix the environment; not a quality signal.               |
 
 ## Outputs
 

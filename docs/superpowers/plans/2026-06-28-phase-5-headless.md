@@ -86,7 +86,15 @@ const design: DesignSpec = {
           cornerRadius: 4,
           characters: "Hi & <ok>",
         },
-        { type: "text", name: "label", x: 10, y: 100, width: 80, height: 20, characters: "Caption" },
+        {
+          type: "text",
+          name: "label",
+          x: 10,
+          y: 100,
+          width: 80,
+          height: 20,
+          characters: "Caption",
+        },
         { type: "instance", name: "fn", asset: "aws:lambda", x: 120, y: 20, width: 48, height: 48 },
       ],
     },
@@ -102,7 +110,9 @@ const figjam: FigjamSpec = {
       y: 0,
       width: 300,
       height: 300,
-      children: [{ type: "sticky", name: "note", x: 20, y: 20, characters: "Idea", fill: "#FFD966" }],
+      children: [
+        { type: "sticky", name: "note", x: 20, y: 20, characters: "Idea", fill: "#FFD966" },
+      ],
     },
   ],
 };
@@ -128,7 +138,10 @@ const connSpec: DesignSpec = {
   ],
 };
 
-const editOnly: EditOnlySpec = { editor: "figma", edits: [{ name: "x", set: { fill: "#ffffff" } }] };
+const editOnly: EditOnlySpec = {
+  editor: "figma",
+  edits: [{ name: "x", set: { fill: "#ffffff" } }],
+};
 
 describe("specToSvg", () => {
   it("is deterministic — same spec renders to a byte-identical string", () => {
@@ -210,12 +223,7 @@ Expected: FAIL — `../src/render/svg.js` does not exist yet (resolution error /
 `packages/uxfactory-cli/src/render/svg.ts`:
 
 ```ts
-import type {
-  Spec,
-  Connector,
-  FrameChild,
-  SectionChild,
-} from "@uxfactory/spec";
+import type { Spec, Connector, FrameChild, SectionChild } from "@uxfactory/spec";
 
 /** Geometry of a positioned, sized box. */
 interface Geom {
@@ -433,9 +441,14 @@ function drawDrawable(d: Drawable): string[] {
       ];
       if (d.characters !== undefined && d.characters !== "") {
         out.push(
-          textTag(d.geom.x + d.geom.width / 2, d.geom.y + d.geom.height / 2 + FONT / 3, d.characters, {
-            anchor: "middle",
-          }),
+          textTag(
+            d.geom.x + d.geom.width / 2,
+            d.geom.y + d.geom.height / 2 + FONT / 3,
+            d.characters,
+            {
+              anchor: "middle",
+            },
+          ),
         );
       }
       return out;
@@ -758,23 +771,23 @@ import { renderCmd } from "./commands/render.js";
 Add the real command — place it immediately before the `const stubs` declaration:
 
 ```ts
-  program
-    .command("render <spec>")
-    .description("Render a spec to an image offline (approximate; no Figma)")
-    .option("--out <file>", "output path (.png or .svg; default <spec>.png)")
-    .action(async (spec: string, opts: { out?: string }) => {
-      lastCode = await renderCmd(spec, { out: opts.out }, consoleIO);
-    });
+program
+  .command("render <spec>")
+  .description("Render a spec to an image offline (approximate; no Figma)")
+  .option("--out <file>", "output path (.png or .svg; default <spec>.png)")
+  .action(async (spec: string, opts: { out?: string }) => {
+    lastCode = await renderCmd(spec, { out: opts.out }, consoleIO);
+  });
 ```
 
 Remove the `["render", "5", …]` row from the `stubs` table so it reads:
 
 ```ts
-  const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
-    ["batch", "6", "Offline batch mode"],
-    ["review", "7", "Conformance review"],
-    ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
-  ];
+const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
+  ["batch", "6", "Offline batch mode"],
+  ["review", "7", "Conformance review"],
+  ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
+];
 ```
 
 (Leave `commands/stub.ts` and `test/stub.test.ts` untouched — `batch`/`review`/`snapshot` remain stubs, and `stub.test.ts` exercises `stubCmd` directly.)
