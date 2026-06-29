@@ -1,6 +1,17 @@
 import { TransportError } from "./exit.js";
 import type { RenderReport } from "@uxfactory/bridge";
 
+/**
+ * Opaque canvas review request as relayed by the bridge (§14.2).
+ * Mirrors the bridge's CanvasRequest without importing from @uxfactory/bridge
+ * (which would create a circular dependency).
+ */
+export interface CanvasRequest {
+  snapshot: { source: string; frames: unknown[]; [k: string]: unknown };
+  screenshot?: string;
+  [k: string]: unknown;
+}
+
 /** Body accepted by the bridge's POST /verify (PRD §10.1). */
 export interface VerifyBody {
   spec: unknown;
@@ -40,6 +51,13 @@ export class BridgeClient {
     const res = await this.request("/rendered", { method: "GET" });
     if (res.status === 404) return null;
     return (await this.json(res)) as RenderReport;
+  }
+
+  /** GET /canvas → the pending canvas review request, or null on 404 (no request yet). */
+  async getCanvasRequest(): Promise<CanvasRequest | null> {
+    const res = await this.request("/canvas", { method: "GET" });
+    if (res.status === 404) return null;
+    return (await this.json(res)) as CanvasRequest;
   }
 
   /** POST /verify → the HTTP status plus the parsed body (caller maps status → exit code). */

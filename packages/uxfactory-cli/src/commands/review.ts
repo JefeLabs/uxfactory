@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { EXIT, TransportError } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
@@ -9,6 +9,7 @@ import { reviewDesign } from "../review/review.js";
 import type { ReviewReport } from "../review/review.js";
 import type { Dial, DialLevel } from "../batch/scope.js";
 import type { LoadedSpec } from "../batch/checks.js";
+import { validate } from "@uxfactory/spec";
 import type { Spec } from "@uxfactory/spec";
 import type { IO } from "../io.js";
 import type { BridgeClient } from "../client.js";
@@ -33,6 +34,11 @@ export interface ReviewFlags {
    * Without this flag, review is COMPLETELY unchanged — no network call is made.
    */
   annotate?: boolean;
+  /**
+   * When true, label the review as best-effort regardless of the design source.
+   * Automatically set when the design is a CanvasSnapshot (source:"canvas-inferred").
+   */
+  bestEffort?: boolean;
 }
 
 /** Valid values for a dial flag (not `none` — that is threshold-only). */
@@ -69,8 +75,15 @@ export async function reviewCmd(
     return EXIT.TRANSPORT;
   }
 
-  // 2. Load <design>: single *.uxfactory.json file OR a directory of them
+  // 2. Load <design>: single file (spec or CanvasSnapshot) OR a directory of *.uxfactory.json specs.
+  //
+  // CanvasSnapshot detection (§14.2): a CanvasSnapshot JSON has source:"canvas-inferred".
+  // Because the spec schema uses additionalProperties:false on designSpec, the `source`
+  // field would cause validation to fail. We detect it first (before validate), strip the
+  // `source` field, then validate the remaining DesignSpec body. The reliability label is
+  // set to "best-effort" for any canvas-inferred snapshot.
   let specFilePaths: string[];
+  let isCanvasSnapshot = false;
   try {
     const info = await stat(design);
     if (info.isDirectory()) {
@@ -92,9 +105,49 @@ export async function reviewCmd(
   }
   const specs: LoadedSpec[] = [];
   for (const file of specFilePaths) {
-    const result = await loadSpec(file);
-    if (!result.ok) return printSpecProblem(io, result, flags.json);
-    specs.push({ file: path.basename(file), spec: result.spec as Spec });
+    // Read raw JSON to detect canvas snapshot before delegating to loadSpec.
+    let rawJson: unknown;
+    try {
+      rawJson = JSON.parse(await readFile(file, "utf8")) as unknown;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (flags.json === true) {
+        io.out(JSON.stringify({ valid: false, errors: [{ path: "/", message }] }));
+      } else {
+        io.err(message);
+      }
+      return EXIT.TRANSPORT;
+    }
+
+    // Detect canvas snapshot: has source:"canvas-inferred" on the root object.
+    if (
+      typeof rawJson === "object" &&
+      rawJson !== null &&
+      (rawJson as Record<string, unknown>)["source"] === "canvas-inferred"
+    ) {
+      isCanvasSnapshot = true;
+      // Strip the source key before validating as a DesignSpec
+      // (additionalProperties:false would reject it otherwise).
+      const { source: _source, ...specBody } = rawJson as Record<string, unknown>;
+      void _source; // unused
+      const result = validate(specBody);
+      if (!result.valid) {
+        if (flags.json === true) {
+          io.out(JSON.stringify({ valid: false, errors: result.errors }));
+        } else {
+          for (const e of result.errors) {
+            io.err(`${e.path}: ${e.message}`);
+          }
+        }
+        return EXIT.TRANSPORT;
+      }
+      specs.push({ file: path.basename(file), spec: specBody as unknown as Spec });
+    } else {
+      // Normal spec: use the shared loadSpec (read + validate).
+      const result = await loadSpec(file);
+      if (!result.ok) return printSpecProblem(io, result, flags.json);
+      specs.push({ file: path.basename(file), spec: result.spec as Spec });
+    }
   }
 
   // 3. Validate per-dial flag values (must be low|medium|high)
@@ -174,7 +227,10 @@ export async function reviewCmd(
     if (reuseSpecs.length === 0) reuseSpecs = null;
   }
 
-  // 5. Run the conformance review (pure; reuses runBatch via reviewDesign)
+  // 5. Run the conformance review (pure; reuses runBatch via reviewDesign).
+  //    Set reliability:"best-effort" for CanvasSnapshots (source:"canvas-inferred") or
+  //    when the caller explicitly passes --best-effort.
+  const reliability = isCanvasSnapshot || flags.bestEffort === true ? "best-effort" : "exact";
   const report: ReviewReport = reviewDesign({
     specs,
     stories,
@@ -182,6 +238,7 @@ export async function reviewCmd(
     tokens,
     reuseSpecs,
     scope,
+    reliability,
   });
 
   // 6. Output: --json (machine-readable) or human-readable review
@@ -200,8 +257,11 @@ export async function reviewCmd(
     } else {
       verdict = "NON-CONFORMANT";
     }
+    // Surface reliability label for best-effort reviews (§14.2).
+    const reliabilityNote =
+      report.reliability === "best-effort" ? " [best-effort — inferred from canvas]" : "";
     io.out(
-      `review: ${verdict} — ${specs.length} spec(s) ` +
+      `review: ${verdict}${reliabilityNote} — ${specs.length} spec(s) ` +
         `at visual:${scope.visual}/editorial:${scope.editorial}/coverage:${scope.coverage}/flow:${scope.flow}`,
     );
     for (const f of report.findings) {

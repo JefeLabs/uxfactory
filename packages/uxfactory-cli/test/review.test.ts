@@ -549,6 +549,50 @@ describe("reviewDesign — declared tiers in report (Fix 4)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test 12 (Task 3): reliability field defaults to "exact"
+// ---------------------------------------------------------------------------
+
+describe("reviewDesign — reliability field (Task 3)", () => {
+  it("reliability defaults to 'exact' when not specified", () => {
+    const report = reviewDesign({
+      specs: [{ file: "s.uxfactory.json", spec: coveringSpec }],
+      stories: null,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    expect(report.reliability).toBe("exact");
+  });
+
+  it("reliability is 'exact' when explicitly set", () => {
+    const report = reviewDesign({
+      specs: [{ file: "s.uxfactory.json", spec: coveringSpec }],
+      stories: null,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+      reliability: "exact",
+    });
+    expect(report.reliability).toBe("exact");
+  });
+
+  it("reliability is 'best-effort' when set", () => {
+    const report = reviewDesign({
+      specs: [{ file: "s.uxfactory.json", spec: coveringSpec }],
+      stories: null,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+      reliability: "best-effort",
+    });
+    expect(report.reliability).toBe("best-effort");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test 11 (Fix I1): advisory findings carry property when a ref is available
 // ---------------------------------------------------------------------------
 

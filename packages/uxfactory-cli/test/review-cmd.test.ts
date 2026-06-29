@@ -630,3 +630,128 @@ describe("reviewCmd — --annotate posts report to bridge", () => {
     expect(code).toBe(EXIT.OK);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 15 (Task 3): CanvasSnapshot best-effort review
+// ---------------------------------------------------------------------------
+
+/** A CanvasSnapshot JSON: source:"canvas-inferred" + DesignSpec-shaped frames. */
+const canvasSnapshotSpec = {
+  source: "canvas-inferred",
+  editor: "figma",
+  frames: [
+    {
+      name: "story-1-home",
+      x: 0,
+      y: 0,
+      width: 375,
+      height: 812,
+      children: [
+        { type: "shape", name: "story-1-empty-state", x: 0, y: 0, width: 10, height: 10 },
+        { type: "shape", name: "story-1-success-view", x: 0, y: 20, width: 10, height: 10 },
+      ],
+    },
+  ],
+};
+
+describe("reviewCmd — CanvasSnapshot best-effort (Task 3)", () => {
+  it("exits 0 and report.reliability is best-effort for a canvas-inferred snapshot", async () => {
+    const specFile = await writeSpec("canvas.json", canvasSnapshotSpec);
+    await writeFile(path.join(root, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { json: true, cwd: root }, io);
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as ReviewReport & { reliability: string };
+    expect(report.reliability).toBe("best-effort");
+  });
+
+  it("human output mentions best-effort when reviewing a canvas snapshot", async () => {
+    const specFile = await writeSpec("canvas.json", canvasSnapshotSpec);
+    await writeFile(path.join(root, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    await reviewCmd(specFile, { cwd: root }, io);
+    expect(io.outText().toLowerCase()).toMatch(/best.effort/);
+  });
+
+  it("--json report.reliability is exact for a normal spec", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    await writeFile(path.join(root, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    await reviewCmd(specFile, { json: true, cwd: root }, io);
+    const report = JSON.parse(io.outText()) as ReviewReport & { reliability: string };
+    expect(report.reliability).toBe("exact");
+  });
+
+  it("--best-effort flag forces best-effort on a normal spec", async () => {
+    const specFile = await writeSpec("design.uxfactory.json", conformantSpec);
+    await writeFile(path.join(root, "stories.json"), JSON.stringify(stories1), "utf8");
+    await writeRegistry({ stories: "stories.json" }, { scope: "wireframe" });
+    const io = makeIO();
+    await reviewCmd(specFile, { json: true, cwd: root, bestEffort: true }, io);
+    const report = JSON.parse(io.outText()) as ReviewReport & { reliability: string };
+    expect(report.reliability).toBe("best-effort");
+  });
+
+  it("canvas snapshot filename need not end in .uxfactory.json", async () => {
+    // A CanvasSnapshot may be named canvas.json (any filename)
+    const specFile = await writeSpec("canvas-snapshot.json", canvasSnapshotSpec);
+    await writeRegistry({}, { scope: "wireframe" });
+    const io = makeIO();
+    const code = await reviewCmd(specFile, { json: true, cwd: root }, io);
+    // Should succeed (reliability:"best-effort", no stories = skipped)
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as ReviewReport & { reliability: string };
+    expect(report.reliability).toBe("best-effort");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 16 (Task 3): BridgeClient.getCanvasRequest
+// ---------------------------------------------------------------------------
+
+describe("BridgeClient.getCanvasRequest — fetch pending canvas request", () => {
+  let canvasRoot: string;
+  let bridgeHandle: { url: string; close: () => Promise<void> };
+  let bridgeClient: BridgeClient;
+
+  beforeEach(async () => {
+    canvasRoot = await mkdtemp(path.join(os.tmpdir(), "uxf-canvas-req-"));
+    bridgeHandle = await startBridge({
+      port: 0,
+      dataDir: path.join(canvasRoot, ".uxfactory"),
+    });
+    bridgeClient = new BridgeClient(bridgeHandle.url);
+  });
+
+  afterEach(async () => {
+    await bridgeHandle.close();
+    await rm(canvasRoot, { recursive: true, force: true });
+  });
+
+  it("returns null when no canvas request has been posted", async () => {
+    const result = await bridgeClient.getCanvasRequest();
+    expect(result).toBeNull();
+  });
+
+  it("returns the canvas request after one is POSTed to /canvas", async () => {
+    const snapshot = {
+      source: "canvas-inferred",
+      frames: [{ name: "Frame1", x: 0, y: 0, width: 375, height: 812, children: [] }],
+    };
+    // POST the canvas request directly to the bridge
+    const postRes = await fetch(`${bridgeHandle.url}/canvas`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ snapshot }),
+    });
+    expect(postRes.status).toBe(200);
+
+    // Now getCanvasRequest should return it
+    const result = await bridgeClient.getCanvasRequest();
+    expect(result).not.toBeNull();
+    expect(result?.snapshot.source).toBe("canvas-inferred");
+  });
+});

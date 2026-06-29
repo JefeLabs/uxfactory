@@ -55,6 +55,13 @@ export interface ReviewReport {
    * cognitive load) are the agent/plugin judgment layer and are NOT run by the engine.
    */
   advisory: string;
+  /**
+   * Review reliability label (§14.2).
+   * - "exact": the design is a UXFactory-authored spec rendered by the engine.
+   * - "best-effort": the design is a CanvasSnapshot inferred from an arbitrary canvas
+   *   (source:"canvas-inferred") or the caller passed --best-effort explicitly.
+   */
+  reliability: "exact" | "best-effort";
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +175,8 @@ export function reviewDesign(input: {
   tokens: unknown | null;
   reuseSpecs: { file: string; spec: unknown }[] | null;
   scope: RenderScope;
+  /** Reliability label for the report. Defaults to "exact" (UXFactory-authored spec). */
+  reliability?: "exact" | "best-effort";
 }): ReviewReport {
   // Build the RunBatchInput — cast external unknown types to the internal types.
   // The command layer (Task 2) is responsible for spec validation before calling here.
@@ -205,5 +214,6 @@ export function reviewDesign(input: {
     passed,
     declared,
     advisory: ADVISORY_NOTE,
+    reliability: input.reliability ?? "exact",
   };
 }

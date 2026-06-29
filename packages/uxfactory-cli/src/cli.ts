@@ -289,6 +289,10 @@ export function buildProgram(): Command {
       "--annotate",
       "post the conformance report to the bridge for in-Figma annotation (§7.8)",
     )
+    .option(
+      "--best-effort",
+      "label the review as best-effort (auto-set for canvas-inferred snapshots, §14.2)",
+    )
     .option("--bridge <url>", "bridge base URL")
     .action(
       async (
@@ -302,6 +306,7 @@ export function buildProgram(): Command {
           flow?: string;
           dataDir?: string;
           annotate?: boolean;
+          bestEffort?: boolean;
           bridge?: string;
         },
       ) => {
@@ -318,6 +323,7 @@ export function buildProgram(): Command {
             dataDir: opts.dataDir !== undefined ? resolveDataDir(opts.dataDir) : undefined,
             cwd: process.cwd(),
             annotate: opts.annotate,
+            bestEffort: opts.bestEffort,
           },
           consoleIO,
           client,
