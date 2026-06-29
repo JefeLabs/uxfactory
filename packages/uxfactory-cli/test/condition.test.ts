@@ -81,7 +81,10 @@ describe("category=marketing", () => {
 
   it("marketing scope: coverage=low, flow=low when classification sets them low", () => {
     const p = condition(
-      cls({ category: "marketing", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "marketing",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.coverage).toBe("low");
     expect(p.scope.flow).toBe("low");
@@ -89,7 +92,10 @@ describe("category=marketing", () => {
 
   it("marketing scope: explicit high dials stay high (category floor=low is trivial)", () => {
     const p = condition(
-      cls({ category: "marketing", scope: { visual: "high", editorial: "high", coverage: "high", flow: "high" } }),
+      cls({
+        category: "marketing",
+        scope: { visual: "high", editorial: "high", coverage: "high", flow: "high" },
+      }),
     );
     expect(p.scope.coverage).toBe("high");
     expect(p.scope.flow).toBe("high");
@@ -111,7 +117,10 @@ describe("category=web_app", () => {
 
   it("web_app scope floor: coverage=high, flow=high (can't be lowered by classification dials)", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.coverage).toBe("high");
     expect(p.scope.flow).toBe("high");
@@ -119,7 +128,10 @@ describe("category=web_app", () => {
 
   it("web_app: visual and editorial come from the classification dials", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "medium", editorial: "high", coverage: "low", flow: "low" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "medium", editorial: "high", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.visual).toBe("medium");
     expect(p.scope.editorial).toBe("high");
@@ -138,6 +150,11 @@ describe("category=ecommerce", () => {
     expect(p.notes.some((n) => n.includes("Tier 2 up"))).toBe(true);
   });
 
+  it("contains a payment-failure acceptance criteria note", () => {
+    const p = condition(cls({ category: "ecommerce" }));
+    expect(p.notes.some((n) => /payment.failure/i.test(n))).toBe(true);
+  });
+
   it("BrandGuide.Rule is requested for ecommerce", () => {
     const p = condition(cls({ category: "ecommerce" }));
     const e = findEntry(p, "BrandGuide.Rule");
@@ -152,7 +169,10 @@ describe("category=ecommerce", () => {
 
   it("ecommerce: scope comes directly from classification dials (no category floors)", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.coverage).toBe("low");
     expect(p.scope.flow).toBe("low");
@@ -165,6 +185,11 @@ describe("category=news", () => {
     expect(p.notes.some((n) => n.includes("Tier 9"))).toBe(true);
   });
 
+  it("contains a reading-level note", () => {
+    const p = condition(cls({ category: "news" }));
+    expect(p.notes.some((n) => /reading.level/i.test(n))).toBe(true);
+  });
+
   it("DiscoverabilityStrategy is requested for news", () => {
     const p = condition(cls({ category: "news" }));
     const e = findEntry(p, "DiscoverabilityStrategy");
@@ -173,7 +198,10 @@ describe("category=news", () => {
 
   it("news: scope comes directly from classification dials (no category floors)", () => {
     const p = condition(
-      cls({ category: "news", scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "news",
+        scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.coverage).toBe("low");
     expect(p.scope.flow).toBe("low");
@@ -203,6 +231,11 @@ describe("industry=education", () => {
     expect(e.requirement).toBe("requested");
     expect(e.derived_from).toContain("industry");
   });
+
+  it("notes include age-appropriate copy for education", () => {
+    const p = condition(cls({ industry: "education" }));
+    expect(p.notes.some((n) => /age-appropriate/i.test(n))).toBe(true);
+  });
 });
 
 describe("industry=healthcare", () => {
@@ -217,6 +250,11 @@ describe("industry=healthcare", () => {
     expect(p.constraints).not.toContain("COPPA");
     expect(p.constraints).not.toContain("disclosure");
   });
+
+  it("notes include Tier 5 + Tier 8 rigor raised (HIPAA)", () => {
+    const p = condition(cls({ industry: "healthcare" }));
+    expect(p.notes.some((n) => /Tier 5.*Tier 8/i.test(n))).toBe(true);
+  });
 });
 
 describe("industry=finance", () => {
@@ -230,6 +268,11 @@ describe("industry=finance", () => {
     expect(p.constraints).not.toContain("FERPA");
     expect(p.constraints).not.toContain("COPPA");
     expect(p.constraints).not.toContain("HIPAA");
+  });
+
+  it("notes include Tier 5 + Tier 8 rigor raised (disclosure)", () => {
+    const p = condition(cls({ industry: "finance" }));
+    expect(p.notes.some((n) => /Tier 5.*Tier 8/i.test(n))).toBe(true);
   });
 });
 
@@ -271,6 +314,11 @@ describe("age_demographic=children", () => {
   it("notes include 'dark-pattern ban' for age=children", () => {
     const p = condition(cls({ age_demographic: "children" }));
     expect(p.notes.some((n) => n.toLowerCase().includes("dark-pattern"))).toBe(true);
+  });
+
+  it("notes include reading_level for age=children", () => {
+    const p = condition(cls({ age_demographic: "children" }));
+    expect(p.notes.some((n) => /reading.level/i.test(n))).toBe(true);
   });
 
   it("A11yProfile derived_from contains both age_demographic and industry when both trigger it", () => {
@@ -346,14 +394,18 @@ describe("AcceptanceCriterion manifest entry", () => {
 
 describe("TokenSet manifest entry", () => {
   it("is requested when scope.visual >= medium", () => {
-    const p = condition(cls({ scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" } }));
+    const p = condition(
+      cls({ scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" } }),
+    );
     const e = findEntry(p, "TokenSet");
     expect(e.requirement).toBe("requested");
     expect(e.gate_effect).toBe("hard");
   });
 
   it("is requested when scope.visual = high", () => {
-    const p = condition(cls({ scope: { visual: "high", editorial: "low", coverage: "low", flow: "high" } }));
+    const p = condition(
+      cls({ scope: { visual: "high", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     const e = findEntry(p, "TokenSet");
     expect(e.requirement).toBe("requested");
     expect(e.gate_effect).toBe("hard");
@@ -361,7 +413,10 @@ describe("TokenSet manifest entry", () => {
 
   it("is generatable when scope.visual = low", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     const e = findEntry(p, "TokenSet");
     expect(e.requirement).toBe("generatable");
@@ -369,9 +424,14 @@ describe("TokenSet manifest entry", () => {
   });
 
   it("enforced=true regardless of requirement", () => {
-    const pHigh = condition(cls({ scope: { visual: "high", editorial: "low", coverage: "low", flow: "high" } }));
+    const pHigh = condition(
+      cls({ scope: { visual: "high", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     const pLow = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(findEntry(pHigh, "TokenSet").enforced).toBe(true);
     expect(findEntry(pLow, "TokenSet").enforced).toBe(true);
@@ -386,21 +446,28 @@ describe("TokenSet manifest entry", () => {
 
 describe("UserFlow manifest entry", () => {
   it("is requested when scope.flow >= medium", () => {
-    const p = condition(cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" } }));
+    const p = condition(
+      cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" } }),
+    );
     const e = findEntry(p, "UserFlow");
     expect(e.requirement).toBe("requested");
     expect(e.gate_effect).toBe("hard");
   });
 
   it("is requested when scope.flow = high", () => {
-    const p = condition(cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "high" } }));
+    const p = condition(
+      cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     const e = findEntry(p, "UserFlow");
     expect(e.requirement).toBe("requested");
   });
 
   it("is generatable when scope.flow = low (and no web_app floor applies)", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     const e = findEntry(p, "UserFlow");
     expect(e.requirement).toBe("generatable");
@@ -408,9 +475,14 @@ describe("UserFlow manifest entry", () => {
   });
 
   it("enforced=true regardless of requirement", () => {
-    const pHigh = condition(cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "high" } }));
+    const pHigh = condition(
+      cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     const pLow = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(findEntry(pHigh, "UserFlow").enforced).toBe(true);
     expect(findEntry(pLow, "UserFlow").enforced).toBe(true);
@@ -487,14 +559,19 @@ describe("BrandGuide.Rule manifest entry", () => {
 
 describe("EditorialStyle manifest entry", () => {
   it("is requested when scope.editorial >= medium", () => {
-    const p = condition(cls({ scope: { visual: "low", editorial: "medium", coverage: "low", flow: "low" } }));
+    const p = condition(
+      cls({ scope: { visual: "low", editorial: "medium", coverage: "low", flow: "low" } }),
+    );
     const e = findEntry(p, "EditorialStyle");
     expect(e.requirement).toBe("requested");
   });
 
   it("is generatable when scope.editorial = low", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     const e = findEntry(p, "EditorialStyle");
     expect(e.requirement).toBe("generatable");
@@ -517,7 +594,10 @@ describe("EditorialStyle manifest entry", () => {
 describe("MotionSystem manifest entry", () => {
   it("is suppressed when scope.visual = low", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     const e = findEntry(p, "MotionSystem");
     expect(e.requirement).toBe("suppressed");
@@ -525,14 +605,18 @@ describe("MotionSystem manifest entry", () => {
   });
 
   it("is generatable when scope.visual = medium", () => {
-    const p = condition(cls({ scope: { visual: "medium", editorial: "low", coverage: "low", flow: "high" } }));
+    const p = condition(
+      cls({ scope: { visual: "medium", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     const e = findEntry(p, "MotionSystem");
     expect(e.requirement).toBe("generatable");
     expect(e.gate_effect).toBe("soft");
   });
 
   it("is generatable when scope.visual = high", () => {
-    const p = condition(cls({ scope: { visual: "high", editorial: "low", coverage: "low", flow: "high" } }));
+    const p = condition(
+      cls({ scope: { visual: "high", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     const e = findEntry(p, "MotionSystem");
     expect(e.requirement).toBe("generatable");
     expect(e.gate_effect).toBe("soft");
@@ -593,28 +677,40 @@ describe("DiscoverabilityStrategy manifest entry", () => {
 describe("scope derivation — category defaults ⊕ explicit dials", () => {
   it("web_app: classification.scope.coverage=low is raised to high by floor", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" },
+      }),
     );
     expect(p.scope.coverage).toBe("high");
   });
 
   it("web_app: classification.scope.flow=low is raised to high by floor", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "medium", flow: "low" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "medium", flow: "low" },
+      }),
     );
     expect(p.scope.flow).toBe("high");
   });
 
   it("web_app: classification.scope.coverage=high stays high (floor doesn't raise what's already high)", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "high", flow: "high" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "high", flow: "high" },
+      }),
     );
     expect(p.scope.coverage).toBe("high");
   });
 
   it("ecommerce: scope dials come directly from the classification (no floors)", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "medium", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.visual).toBe("medium");
     expect(p.scope.editorial).toBe("low");
@@ -624,7 +720,10 @@ describe("scope derivation — category defaults ⊕ explicit dials", () => {
 
   it("news: scope dials come directly from the classification (no floors)", () => {
     const p = condition(
-      cls({ category: "news", scope: { visual: "high", editorial: "high", coverage: "medium", flow: "low" } }),
+      cls({
+        category: "news",
+        scope: { visual: "high", editorial: "high", coverage: "medium", flow: "low" },
+      }),
     );
     expect(p.scope.visual).toBe("high");
     expect(p.scope.editorial).toBe("high");
@@ -640,21 +739,30 @@ describe("scope derivation — category defaults ⊕ explicit dials", () => {
 describe("strictest-wins — a relaxing dial can't lower a compliance floor", () => {
   it("web_app coverage floor=high: cannot be lowered to medium by explicit dial", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "medium", flow: "high" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "medium", flow: "high" },
+      }),
     );
     expect(p.scope.coverage).toBe("high");
   });
 
   it("web_app flow floor=high: cannot be lowered to low by explicit dial", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "high", flow: "low" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "high", flow: "low" },
+      }),
     );
     expect(p.scope.flow).toBe("high");
   });
 
   it("web_app: visual and editorial are NOT floored (classification's low stays low)", () => {
     const p = condition(
-      cls({ category: "web_app", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "web_app",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(p.scope.visual).toBe("low");
     expect(p.scope.editorial).toBe("low");
@@ -662,7 +770,10 @@ describe("strictest-wins — a relaxing dial can't lower a compliance floor", ()
 
   it("marketing: no floor constraint — classification's coverage and flow are used as-is", () => {
     const p = condition(
-      cls({ category: "marketing", scope: { visual: "high", editorial: "high", coverage: "medium", flow: "high" } }),
+      cls({
+        category: "marketing",
+        scope: { visual: "high", editorial: "high", coverage: "medium", flow: "high" },
+      }),
     );
     expect(p.scope.coverage).toBe("medium");
     expect(p.scope.flow).toBe("high");
@@ -705,8 +816,20 @@ describe("derived_from provenance", () => {
   it("every manifest entry has a derived_from array (may be empty)", () => {
     const p = condition(BASE);
     for (const entry of p.manifest) {
-      expect(Array.isArray(entry.derived_from), `derived_from for ${entry.artifact_kind}`).toBe(true);
+      expect(Array.isArray(entry.derived_from), `derived_from for ${entry.artifact_kind}`).toBe(
+        true,
+      );
     }
+  });
+
+  it('AcceptanceCriterion.derived_from deep-equals ["always"] (total provenance sentinel)', () => {
+    const p = condition(BASE);
+    expect(findEntry(p, "AcceptanceCriterion").derived_from).toEqual(["always"]);
+  });
+
+  it('reuse.derived_from deep-equals ["always"] (total provenance sentinel)', () => {
+    const p = condition(BASE);
+    expect(findEntry(p, "reuse").derived_from).toEqual(["always"]);
   });
 
   it("TokenSet.derived_from contains 'scope.visual'", () => {
@@ -788,12 +911,16 @@ describe("gate_effect derivation", () => {
   });
 
   it("gate_effect=hard for TokenSet when visual>=medium (enforced+requested)", () => {
-    const p = condition(cls({ scope: { visual: "medium", editorial: "low", coverage: "low", flow: "high" } }));
+    const p = condition(
+      cls({ scope: { visual: "medium", editorial: "low", coverage: "low", flow: "high" } }),
+    );
     expect(findEntry(p, "TokenSet").gate_effect).toBe("hard");
   });
 
   it("gate_effect=hard for UserFlow when flow>=medium (enforced+requested)", () => {
-    const p = condition(cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" } }));
+    const p = condition(
+      cls({ scope: { visual: "low", editorial: "low", coverage: "low", flow: "medium" } }),
+    );
     expect(findEntry(p, "UserFlow").gate_effect).toBe("hard");
   });
 
@@ -809,7 +936,10 @@ describe("gate_effect derivation", () => {
 
   it("gate_effect=suppressed for MotionSystem when visual=low", () => {
     const p = condition(
-      cls({ category: "ecommerce", scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" } }),
+      cls({
+        category: "ecommerce",
+        scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+      }),
     );
     expect(findEntry(p, "MotionSystem").gate_effect).toBe("suppressed");
   });

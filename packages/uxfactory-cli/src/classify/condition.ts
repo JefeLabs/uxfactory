@@ -143,14 +143,25 @@ function deriveNotes(c: ProjectClassification): string[] {
   const notes: string[] = [];
 
   // §3.1 Category tier notes
-  if (c.category === "ecommerce") notes.push("Tier 2 up");
-  if (c.category === "news") notes.push("Tier 9 up");
+  if (c.category === "ecommerce") {
+    notes.push("Tier 2 up");
+    notes.push("payment-failure acceptance criteria requested");
+  }
+  if (c.category === "news") {
+    notes.push("Tier 9 up");
+    notes.push("gentler reading-level");
+  }
   if (c.category === "marketing") notes.push("Tiers 6-7 up; Tier 2 light");
   if (c.category === "web_app") notes.push("Tiers 2-4 up");
 
+  // §3.1 Industry rigor notes
+  if (c.industry === "healthcare") notes.push("Tier 5 + Tier 8 rigor raised (HIPAA)");
+  if (c.industry === "finance") notes.push("Tier 5 + Tier 8 rigor raised (disclosure)");
+  if (c.industry === "education") notes.push("age-appropriate copy");
+
   // §3.1 Age demographic notes
   if (c.age_demographic === "children") {
-    notes.push("dark-pattern ban; simplified flows");
+    notes.push("dark-pattern ban; simplified flows; reading_level low");
   }
 
   // §3.1 Style notes
@@ -205,13 +216,14 @@ function deriveManifest(c: ProjectClassification, scope: RenderScope): ManifestE
 
   // ── AcceptanceCriterion (→ stories) ──────────────────────────────────────
   // always requested (the moat); enforced → batch requirement-coverage / readiness stories
-  entries.push(entry("AcceptanceCriterion", "requested", true, []));
+  entries.push(entry("AcceptanceCriterion", "requested", true, ["always"]));
 
   // ── TokenSet (→ tokens) ──────────────────────────────────────────────────
   // requested if scope.visual ≥ medium; else generatable
   // enforced → token-conformance / readiness tokens
   {
-    const req: Requirement = LEVEL_ORD[scope.visual] >= LEVEL_ORD["medium"] ? "requested" : "generatable";
+    const req: Requirement =
+      LEVEL_ORD[scope.visual] >= LEVEL_ORD["medium"] ? "requested" : "generatable";
     entries.push(entry("TokenSet", req, true, ["scope.visual"]));
   }
 
@@ -219,13 +231,14 @@ function deriveManifest(c: ProjectClassification, scope: RenderScope): ManifestE
   // requested if scope.flow ≥ medium; else generatable
   // enforced → flow-reachability / readiness flow
   {
-    const req: Requirement = LEVEL_ORD[scope.flow] >= LEVEL_ORD["medium"] ? "requested" : "generatable";
+    const req: Requirement =
+      LEVEL_ORD[scope.flow] >= LEVEL_ORD["medium"] ? "requested" : "generatable";
     entries.push(entry("UserFlow", req, true, ["scope.flow"]));
   }
 
   // ── reuse specs ──────────────────────────────────────────────────────────
   // generatable/optional; enforced → reuse (optional, never blocks readiness)
-  entries.push(entry("reuse", "generatable", true, []));
+  entries.push(entry("reuse", "generatable", true, ["always"]));
 
   // ── A11yProfile ──────────────────────────────────────────────────────────
   // requested if age=children OR industry=education; else generatable

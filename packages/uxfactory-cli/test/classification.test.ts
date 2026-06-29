@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  validateClassification,
-  readClassification,
-} from "../src/classify/classification.js";
+import { validateClassification, readClassification } from "../src/classify/classification.js";
 import type { ProjectClassification } from "../src/classify/classification.js";
 
 // ---------------------------------------------------------------------------

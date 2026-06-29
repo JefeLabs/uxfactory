@@ -49,8 +49,7 @@ export interface ProjectClassification {
 // ---------------------------------------------------------------------------
 
 type ClassificationResult =
-  | { ok: true; value: ProjectClassification }
-  | { ok: false; message: string };
+  { ok: true; value: ProjectClassification } | { ok: false; message: string };
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -93,7 +92,10 @@ export function validateClassification(raw: unknown): ClassificationResult {
   }
 
   if (raw["version"] !== 1) {
-    return { ok: false, message: `classification.version must be 1 (got ${JSON.stringify(raw["version"])})` };
+    return {
+      ok: false,
+      message: `classification.version must be 1 (got ${JSON.stringify(raw["version"])})`,
+    };
   }
 
   const category = raw["category"];
@@ -131,7 +133,11 @@ export function validateClassification(raw: unknown): ClassificationResult {
   // Validate scope dials (each must be low|medium|high — reuses LEVEL_ORD from scope.ts)
   const scope = raw["scope"];
   if (!isPlainObject(scope)) {
-    return { ok: false, message: "classification.scope must be an object with four dials: visual, editorial, coverage, flow" };
+    return {
+      ok: false,
+      message:
+        "classification.scope must be an object with four dials: visual, editorial, coverage, flow",
+    };
   }
 
   for (const dial of ["visual", "editorial", "coverage", "flow"] as const) {
