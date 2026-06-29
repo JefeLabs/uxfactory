@@ -7,6 +7,7 @@ import { gate } from "@uxfactory/gate";
 import type { Spec } from "@uxfactory/spec";
 import { validate } from "@uxfactory/spec";
 import { BridgeStore } from "./store.js";
+import type { ReviewReportPayload } from "./store.js";
 
 /** Options for building a bridge. */
 export interface BridgeOptions {
@@ -79,6 +80,29 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   app.get("/rendered", async (_req, reply) => {
     const report = await store.getReport();
     if (report === null) return reply.code(404).send({ error: "no render report yet" });
+    return report;
+  });
+
+  // --- review report relay ---
+
+  app.post("/review", async (req, reply) => {
+    const body = req.body as Record<string, unknown>;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "body must be an object with conformant and findings" });
+    }
+    if (typeof body["conformant"] !== "boolean") {
+      return reply.code(400).send({ error: "conformant must be a boolean" });
+    }
+    if (!Array.isArray(body["findings"])) {
+      return reply.code(400).send({ error: "findings must be an array" });
+    }
+    const stored = await store.saveReviewReport(body as ReviewReportPayload);
+    return stored;
+  });
+
+  app.get("/review", async (_req, reply) => {
+    const report = await store.getReviewReport();
+    if (report === null) return reply.code(404).send({ error: "no review report yet" });
     return report;
   });
 

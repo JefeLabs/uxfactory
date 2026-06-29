@@ -23,6 +23,16 @@ export interface Batch {
 }
 
 /**
+ * Opaque relayed payload from `uxfactory review --annotate`.
+ * The bridge does NOT import @uxfactory/cli — this is a local structural type.
+ */
+export interface ReviewReportPayload {
+  conformant: boolean;
+  findings: unknown[];
+  [k: string]: unknown;
+}
+
+/**
  * File-backed persistence for the bridge. Everything lives under `dataDir`
  * (PRD §19/NF2: nothing is ever written outside it). All ids are generated
  * from a clock plus an internal monotonic counter so concurrent calls in the
@@ -36,6 +46,7 @@ export class BridgeStore {
   private readonly rendersDir: string;
   private readonly verifyDir: string;
   private readonly batchDir: string;
+  private readonly reviewDir: string;
   private readonly selectionFile: string;
   private counter = 0;
   private latestRenderId: string | null = null;
@@ -49,6 +60,7 @@ export class BridgeStore {
     this.rendersDir = path.join(dataDir, "renders");
     this.verifyDir = path.join(this.rendersDir, "verify");
     this.batchDir = path.join(dataDir, "batch");
+    this.reviewDir = path.join(dataDir, "review");
     this.selectionFile = path.join(dataDir, "selection.json");
   }
 
@@ -58,6 +70,7 @@ export class BridgeStore {
     await mkdir(this.failedDir, { recursive: true });
     await mkdir(this.verifyDir, { recursive: true });
     await mkdir(this.batchDir, { recursive: true });
+    await mkdir(this.reviewDir, { recursive: true });
   }
 
   /** True once a plugin has hit one of the plugin-facing routes this process. */
@@ -208,6 +221,28 @@ export class BridgeStore {
     try {
       const raw = await readFile(this.selectionFile, "utf8");
       return JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  // --- review report relay ---
+
+  /** Persist the latest review report to <reviewDir>/latest.json (atomic overwrite). */
+  async saveReviewReport(report: ReviewReportPayload): Promise<ReviewReportPayload> {
+    await writeFile(
+      path.join(this.reviewDir, "latest.json"),
+      JSON.stringify(report, null, 2),
+      "utf8",
+    );
+    return report;
+  }
+
+  /** Read the latest review report, or null if none has been stored. */
+  async getReviewReport(): Promise<ReviewReportPayload | null> {
+    try {
+      const raw = await readFile(path.join(this.reviewDir, "latest.json"), "utf8");
+      return JSON.parse(raw) as ReviewReportPayload;
     } catch {
       return null;
     }
