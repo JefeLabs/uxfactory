@@ -1,99 +1,160 @@
 ---
 name: uxfactory-batch
-description: "Create one or more UI components, a screen, or a set of pages OFFLINE as UXFactory specs — no Figma required — using only the uxfactory CLI and this loop. Use this skill WHENEVER the user wants to generate a batch of screens/components/pages as structured specs and have them mechanically gated for token conformance, requirement/state coverage, reuse, and flow reachability before a human reviews them. Run the deterministic gate, read its findings, revise the specs, and re-run until the gate is green or the iteration budget is spent, then hand the batch to the human. Do NOT use it for the online single-spec render→verify loop (that is the main uxfactory skill) or for pixel-faithful sign-off."
+description: "Create one or more UI components, a screen, or a set of pages OFFLINE as UXFactory specs at a declared render scope — no Figma required — using only the uxfactory CLI and this loop. Set a four-dial scope (visual/editorial/coverage/flow), drive the batch to a clean mechanical bar, and ratchet dials as the design matures. Use WHENEVER the user wants to generate a batch of screens/components/pages as structured specs and have them gated for the gates that bind at the chosen scope. Do NOT use it for the online single-spec render→verify loop (that is the main uxfactory skill) or for pixel-faithful sign-off."
 compatibility: "Requires the uxfactory-cli (Node 20+). Gating and previews run fully offline — no bridge or Figma needed until the optional --stage hand-off."
 ---
 
-# UXFactory — offline batch loop
+# UXFactory — scope-aware offline batch loop
 
-This skill teaches you to author **one or more UI components / a screen / a set of pages** entirely offline as UXFactory specs, and to drive them to a clean mechanical bar before a human ever looks. There is no judge and no scoring engine here: the CLI runs **one deterministic gate pass** and its **exit code** tells you whether to stop or revise. The subjective judgment — is the flow sensible, is the labeling clear — is **yours**, guided by the gate's findings. You are the loop; `uxfactory batch` is the gate.
+This skill teaches you to author **one or more UI components / a screen / a set of pages** as UXFactory specs, offline, driven by a **render scope** — four dials that select which gates bind. The CLI runs **one deterministic gate pass** and its **exit code** tells you whether to stop or revise. You are the loop; `uxfactory batch` is the gate.
 
-## When to use this skill
+## The four-dial render scope
 
-Use it when the user wants to **generate a batch of UI** — components, a page, or several pages / a screen-flow — as UXFactory specs, offline, and have it mechanically checked before review. Lead with this when there is no Figma session and the goal is to assemble and self-check a set of specs.
+A scope is a vector of **four dials** in two pairs. Every dial is **`low | medium | high`**.
 
-Do **not** use it for: the online single-spec render→verify loop (use the main `uxfactory` skill), pixel-faithful sign-off (the previews here are approximate), or freeform black-box UI with no structured spec.
+**Fidelity pair** — depth of one rendered ViewState:
 
-## The inputs
+| Dial        | Measures       | `low`               | `medium`                      | `high`                  |
+| ----------- | -------------- | ------------------- | ----------------------------- | ----------------------- |
+| `visual`    | how it _looks_ | greybox / wireframe | tokens + type + color applied | full production styling |
+| `editorial` | what it _says_ | placeholder / lorem | draft real copy               | final, on-voice copy    |
 
-Two committed, authored things drive the gate (you do not invent these — the user owns them):
+**Completeness pair** — traversal of the spec graph:
 
-- **`uxfactory.batch.json`** at the repo root — the registry. It points at the guidance inputs and carries an optional `maxIterations` budget:
+| Dial       | Measures                                | `low`                          | `medium`                  | `high`                               |
+| ---------- | --------------------------------------- | ------------------------------ | ------------------------- | ------------------------------------ |
+| `coverage` | states _within_ a view (AC → ViewState) | success/populated only         | + empty · loading · error | + all AC edge states                 |
+| `flow`     | paths _across_ views (View → View)      | single screen / happy snapshot | primary flow end-to-end   | all branches, back/cancel, deep-link |
+
+The four dials move **independently** — raising `visual` does not raise `flow`.
+
+### Presets
+
+A named preset is a convenient starting coordinate. Overrides apply on top.
+
+| Preset        | visual | editorial | coverage | flow   |
+| ------------- | ------ | --------- | -------- | ------ |
+| `wireframe`   | low    | low       | low      | low    |
+| `content`     | low    | high      | medium   | low    |
+| `visual`      | high   | medium    | medium   | medium |
+| `interactive` | high   | high      | high     | high   |
+| `production`  | high   | high      | high     | high   |
+
+(`interactive` and `production` coincide on the currently implemented gates; their difference is in deferred tiers.)
+
+### Setting the scope
+
+In `uxfactory.batch.json` set the `scope` field (preset name **or** partial vector):
 
 ```jsonc
 {
   "version": 1,
+  "scope": "wireframe", // or { "visual": "high", "coverage": "medium" }
   "inputs": {
-    "tokens": "design/tokens.ds.json", // name → hex color register
-    "stories": "design/stories.json", // stories + acceptance criteria
-    "flow": "design/flow.json", // a declared step order
-    "reuse": ["specs/existing.uxfactory.json"], // specs to compose against, not duplicate
+    "tokens": "design/tokens.ds.json",
+    "stories": "design/stories.json",
+    "flow": "design/flow.json",
   },
   "maxIterations": 6,
 }
 ```
 
-- The **`design/`** folder it points at — the actual tokens, stories, and flow files.
+Or pass flags at the CLI (flags override the registry):
 
-The specs you author live in their own directory (e.g. `specs/`), one `*.uxfactory.json` per component/screen/page.
+```bash
+uxfactory batch specs --scope visual           # preset
+uxfactory batch specs --scope wireframe --visual high  # preset + per-dial override
+uxfactory batch specs --visual high --coverage medium  # raw vector (partial; missing dials default to low)
+```
 
-### Minimal input shapes (v1)
+Per-dial flags: `--visual`, `--editorial`, `--coverage`, `--flow` each take `low | medium | high`.
 
-- **tokens** (`tokens.ds.json`): `{ "colors": { "brand": "#1E88E5" } }`
-- **stories** (`stories.json`): `{ "stories": [ { "id": "story-1", "role": "...", "goal": "...", "benefit": "...", "acceptanceCriteria": [ { "statement": "...", "impliedState": "empty|loading|error|success|edge" } ] } ] }`
-- **flow** (`flow.json`): `{ "steps": ["<node-or-frame-name>", "..."] }` — an ordered sequence
+**Scope unset** → exit 2. Set a scope before running a batch.
+
+## Per-dial gate binding
+
+A gate binds **only when the scope meets every one of its per-dial thresholds**. Non-binding gates report `not-owed` and never gate the batch.
+
+| Gate                          | Binds when         | Required input                           |
+| ----------------------------- | ------------------ | ---------------------------------------- |
+| `requirement-coverage`        | `coverage >= low`  | `stories`                                |
+| `reuse`                       | `coverage >= low`  | — (optional; skip-and-declare if absent) |
+| `coverage-orphans` (advisory) | `coverage >= low`  | —                                        |
+| `token-conformance`           | `visual >= medium` | `tokens`                                 |
+| `flow-reachability`           | `flow >= medium`   | `flow`                                   |
+
+At `--scope wireframe` (all low): `token-conformance` is `not-owed` (tokens not required); `flow-reachability` is `not-owed`; only the coverage trio binds (and only if stories is registered).
+
+### Declared tiers (acknowledged, not yet gated)
+
+The following quality tiers are **declared** in the report but never block a batch in this version: brand, contrast, motion, a11y, i18n, discoverability. They appear in the report as `declared` — never silently ignored, never blocking.
 
 ## The loop
 
-1. **Author / revise the spec(s)** under a directory (e.g. `specs/`). Name things so the gate can trace them:
-   - put each story's id in the **frame name** it satisfies (e.g. `story-1-home`),
-   - put each acceptance-criterion **state keyword** in a node name (e.g. `home-empty-state`, `home-success-view`),
-   - use **registered token colors** for every fill/stroke,
-   - **reference** an existing spec's screen instead of redrawing it.
-2. **Run the deterministic gate** and write offline previews:
-   ```bash
-   uxfactory batch specs            # the single deterministic pass; writes .uxfactory/batch/report.json + previews/
-   uxfactory render specs/home.uxfactory.json --out home.svg   # optional: an offline preview of one spec
-   ```
-3. **On exit `1`**, read the findings in `.uxfactory/batch/report.json` (uncovered stories/states, ad-hoc colors, duplicates) and **revise the spec(s)** to address each one — then re-run step 2.
-4. **Stop** when `uxfactory batch` exits `0` (every must-pass gate is green) **or** you have spent `maxIterations` revisions. If the budget runs out with findings still open, surface the **best-effort** batch with the unmet findings listed — do **not** spin.
-5. **Hand to the human.** Once it is clean and the human approves, stage it:
-   ```bash
-   uxfactory batch specs --stage    # posts the specs + previews to the bridge for review/approval
-   ```
+### Step 0 — Set scope
 
-The gate's **exit code is the termination condition** — you never decide "good enough" from a score; you decide from the binary gate plus your own read of the findings.
+Pick a preset (or raw vector) in `uxfactory.batch.json` or via `--scope`. Start low and ratchet up.
 
-## The gates
+### Step 1 — Readiness check (exit 2 + missing list)
 
-`uxfactory batch` runs four gates in one pass. Three are **must-pass** (they set the exit code); one is **advisory** (it never fails the batch):
+Run `uxfactory batch <dir>`. If the scope requires an artifact that is absent, the command exits 2 with a structured **missing** list:
 
-- **token conformance** (must) — every fill/stroke must be a registered token color; ad-hoc values are findings.
-- **requirement & state coverage** (must) — every story id maps to ≥1 frame, every acceptance-criterion state maps to a node, and no frame is story-less.
-- **reuse** (must) — a screen/component that already exists in a registered spec must be referenced, not regenerated.
-- **flow reachability** (advisory) — if a flow declares a step order, each consecutive pair must be reachable along your connectors; unreachable pairs are advisory findings only.
+```json
+{
+  "missing": [
+    { "artifact": "tokens", "dial": "visual", "level": "medium", "action": "provide-or-generate" }
+  ]
+}
+```
 
-## Skip-and-declare
+When you receive exit 2 with a missing list, **generate the missing artifacts** (stories, tokens, flow) based on the user's content, then re-run. Do not spin: count generate-and-retry attempts against `maxIterations`.
 
-A gate whose **input is not registered** is reported as `skipped` with a reason — never silently passed and never failed. "No stories registered" is honestly distinct from "coverage passed." If you need a check to run, make sure its input is registered in `uxfactory.batch.json`.
+Exit 2 without a missing list means a registry or input problem — fix the setup, not the spec.
 
-## Exit codes — the loop-termination contract
+### Step 2 — Iterate on the rubric (exit 1 → revise)
 
-| Code | Meaning                                                                        | What to do                                               |
-| ---- | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| `0`  | Every must-pass gate is green                                                  | **Stop the loop.** Hand off for human approval.          |
-| `1`  | A must-pass gate failed                                                        | Read `report.json` findings, revise the spec(s), re-run. |
-| `2`  | Setup/transport (bad/missing registry, unreadable input, --stage bridge error) | Fix the environment; not a quality signal.               |
+Once ready, `uxfactory batch` runs only the **binding gates** (the rubric at this scope). On exit `1`, read `.uxfactory/batch/report.json` findings and **revise the specs or artifacts**, then re-run. The rubric is stable for a fixed scope — the same gates re-run each iteration.
+
+Author specs so the gate can trace them:
+
+- story id in the **frame name** (`story-1-home`)
+- acceptance-criterion state keyword in a **node name** (`home-empty-state`, `home-success-view`)
+- registered token colors for every fill/stroke
+- reference existing registered specs instead of regenerating
+
+### Step 3 — Stop
+
+Stop when `uxfactory batch` exits `0` (every binding must-pass gate is green) **or** you have spent `maxIterations` total attempts (generate + revise combined). If the budget runs out, surface the **best-effort** batch with the open findings listed. **Never spin.**
+
+### Step 4 — Ratchet (optional)
+
+To promote the design, raise one dial:
+
+```bash
+uxfactory batch specs --visual medium   # raises visual; re-runs readiness
+```
+
+New binding gates may require new artifacts (e.g. `tokens` now required at `visual:medium`). Follow the readiness loop again for the new scope. Ratchet one dial at a time; each new scope is its own iteration budget.
+
+## Exit codes — the termination contract
+
+| Code | Meaning                                                            | What to do                                                       |
+| ---- | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `0`  | Every binding must-pass gate is green                              | **Stop.** Hand off for human approval.                           |
+| `1`  | A binding must-pass gate failed                                    | Read `report.json` findings; revise specs/artifacts; re-run.     |
+| `2`  | Scope unset, missing REQUESTED artifact, or registry/input problem | See the `missing` list; generate artifacts or fix setup; re-run. |
+
+`exit 2` is **never a quality signal** — it means setup. Do not revise specs for it.
 
 ## Outputs
 
-Everything the pass produces is ephemeral and lives under **`.uxfactory/batch/`** (gitignored): `report.json` (the gates + findings) and `previews/<spec>.svg` (one approximate offline preview per spec). The committed inputs (`uxfactory.batch.json`, `design/`) are never written to.
+Ephemeral under `.uxfactory/batch/` (gitignored): `report.json` (gates + findings + `scope` + `rubric`) and `previews/<spec>.png` (offline preview per spec; rendered by the `visual` dial — resvg at `low`, high-fidelity renderer at `medium/high` when available). Committed inputs are never written to.
 
-## Gotchas worth internalizing
+## Gotchas
 
-- **The engine does not loop or score.** One call = one deterministic pass. You iterate; the exit code stops you.
-- **Name for traceability.** Coverage and flow gates match on **names** — story ids in frame names, state keywords in node names, flow steps as node/frame names.
-- **Previews are approximate** (offline raster) — good for review, not for pixel sign-off.
-- **`exit 2` is never a quality signal** — it means a registry/input/bridge problem; fix the setup, do not "revise the spec."
-- **Don't spin.** Respect `maxIterations`; surface best-effort with the open findings when the budget is spent.
-- **Pure reusable components (no 1:1 story):** leave `stories` unregistered so requirement coverage skip-and-declares; story-less frames surface only as an advisory `coverage-orphans` finding and never gate the batch.
+- **One call = one deterministic pass.** You iterate; the exit code stops you.
+- **Non-binding gates are `not-owed`** — `token-conformance` at `wireframe` is not a skip, it is genuinely not owed.
+- **`coverage-orphans` is advisory** — story-less frames never gate the batch.
+- **Previews at `visual:low`** are approximate raster; `visual>=medium` uses the high-fidelity renderer (falls back to resvg with a declared note if unavailable — not a hard error).
+- **Name for traceability** — gates match on **names**: story ids in frame names, state keywords in node names, flow step names matching node/frame names.
+- **Respect `maxIterations`**; count both generate attempts (step 1) and revise attempts (step 2).
