@@ -1,8 +1,7 @@
 packages:
   - "packages/*"
-  # @uxfactory/agent (AWS AgentCore runtime) lives in the separate uxfactory-cloud
-  # project, not this engine repo. Exclude it so it never enters this workspace's
-  # install / lockfile / CI even when present on disk.
+  # packages/uxfactory-agent is not part of this engine build; exclude it so it
+  # never enters this workspace's install / lockfile / CI even when present on disk.
   - "!packages/uxfactory-agent"
   - "clients/*"
 # Dependency build scripts are blocked by pnpm 11 unless allowlisted here.

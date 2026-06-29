@@ -4,9 +4,8 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts", "packages/**/test/**/*.test.ts", "clients/**/test/**/*.test.ts"],
-    // packages/uxfactory-agent (the user's AgentCore runtime) is excluded from
-    // this workspace and lives in the separate uxfactory-cloud project; don't
-    // run its tests here (its deps aren't installed in this workspace).
+    // packages/uxfactory-agent is not part of this engine build and its deps
+    // aren't installed in this workspace; don't run its tests here.
     exclude: [...configDefaults.exclude, "packages/uxfactory-agent/**"],
     environment: "node",
   },
