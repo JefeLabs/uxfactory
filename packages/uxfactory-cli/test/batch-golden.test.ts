@@ -423,12 +423,13 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-async function writeRegistry(inputs: Record<string, unknown>): Promise<void> {
-  await writeFile(
-    path.join(root, "uxfactory.batch.json"),
-    JSON.stringify({ version: 1, inputs, maxIterations: 6 }),
-    "utf8",
-  );
+async function writeRegistry(
+  inputs: Record<string, unknown>,
+  extra?: { scope?: string | Record<string, unknown> },
+): Promise<void> {
+  const obj: Record<string, unknown> = { version: 1, inputs, maxIterations: 6 };
+  if (extra?.scope !== undefined) obj["scope"] = extra.scope;
+  await writeFile(path.join(root, "uxfactory.batch.json"), JSON.stringify(obj), "utf8");
 }
 
 async function writeSpec(name: string, spec: unknown): Promise<void> {
@@ -452,7 +453,12 @@ describe("scenario 1: clean multi-story + reusable-component batch → exit 0", 
   beforeEach(async () => {
     await writeFile(path.join(root, "design", "tokens.ds.json"), JSON.stringify(TOKENS), "utf8");
     await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(STORIES), "utf8");
-    await writeRegistry({ tokens: "design/tokens.ds.json", stories: "design/stories.json" });
+    // scope {visual:high, coverage:medium} — token-conformance + requirement-coverage bind;
+    // flow-reachability does NOT bind (flow:low) so no flow input is needed.
+    await writeRegistry(
+      { tokens: "design/tokens.ds.json", stories: "design/stories.json" },
+      { scope: { visual: "high", coverage: "medium" } },
+    );
     await writeSpec("checkout.uxfactory.json", CHECKOUT_SPEC);
     await writeSpec("cart.uxfactory.json", CART_SPEC);
     await writeSpec("button-primary.uxfactory.json", BUTTON_SPEC);
@@ -498,13 +504,14 @@ describe("scenario 1: clean multi-story + reusable-component batch → exit 0", 
     expect(ru!.severity).toBe("must");
   });
 
-  it("flowReachability: skip — no flow registered in batch.json", async () => {
+  it("flowReachability: not-owed — flow dial is low at the current scope", async () => {
+    // scope {visual:high, coverage:medium} → flow:low → flow-reachability does not bind
     const io = makeIO();
     await batchCmd(specsDir, { dataDir, cwd: root }, io, client);
     const report = await readReport();
     const fr = report.checks.find((c) => c.id === "flow-reachability");
     expect(fr).toBeDefined();
-    expect(fr!.status).toBe("skip");
+    expect(fr!.status).toBe("not-owed");
     expect(fr!.severity).toBe("advisory");
   });
 
@@ -548,7 +555,10 @@ describe("scenario 2: token-conformance revision loop (models SKILL.md gate-fail
   beforeEach(async () => {
     await writeFile(path.join(root, "design", "tokens.ds.json"), JSON.stringify(TOKENS), "utf8");
     await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(STORIES), "utf8");
-    await writeRegistry({ tokens: "design/tokens.ds.json", stories: "design/stories.json" });
+    await writeRegistry(
+      { tokens: "design/tokens.ds.json", stories: "design/stories.json" },
+      { scope: { visual: "high", coverage: "medium" } },
+    );
     await writeSpec("cart.uxfactory.json", CART_SPEC);
     await writeSpec("button-primary.uxfactory.json", BUTTON_SPEC);
   });
@@ -595,7 +605,10 @@ describe("scenario 3: requirement-coverage revision loop (missing AC-state → f
   beforeEach(async () => {
     await writeFile(path.join(root, "design", "tokens.ds.json"), JSON.stringify(TOKENS), "utf8");
     await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(STORIES), "utf8");
-    await writeRegistry({ tokens: "design/tokens.ds.json", stories: "design/stories.json" });
+    await writeRegistry(
+      { tokens: "design/tokens.ds.json", stories: "design/stories.json" },
+      { scope: { visual: "high", coverage: "medium" } },
+    );
     await writeSpec("cart.uxfactory.json", CART_SPEC);
     await writeSpec("button-primary.uxfactory.json", BUTTON_SPEC);
   });

@@ -207,10 +207,28 @@ export function buildProgram(): Command {
     .option("--stage", "on a clean batch, stage it to the bridge for approval")
     .option("--data-dir <path>", "data directory (default <cwd>/.uxfactory)")
     .option("--bridge <url>", "bridge base URL")
+    .option(
+      "--scope <preset>",
+      "render scope preset (wireframe|content|visual|interactive|production)",
+    )
+    .option("--visual <level>", "visual dial override (low|medium|high)")
+    .option("--editorial <level>", "editorial dial override (low|medium|high)")
+    .option("--coverage <level>", "coverage dial override (low|medium|high)")
+    .option("--flow <level>", "flow dial override (low|medium|high)")
     .action(
       async (
         dir: string,
-        opts: { json?: boolean; stage?: boolean; dataDir?: string; bridge?: string },
+        opts: {
+          json?: boolean;
+          stage?: boolean;
+          dataDir?: string;
+          bridge?: string;
+          scope?: string;
+          visual?: string;
+          editorial?: string;
+          coverage?: string;
+          flow?: string;
+        },
       ) => {
         const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
         lastCode = await batchCmd(
@@ -220,6 +238,11 @@ export function buildProgram(): Command {
             stage: opts.stage,
             dataDir: resolveDataDir(opts.dataDir),
             cwd: process.cwd(),
+            scope: opts.scope,
+            visual: opts.visual,
+            editorial: opts.editorial,
+            coverage: opts.coverage,
+            flow: opts.flow,
           },
           consoleIO,
           client,

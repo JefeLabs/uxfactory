@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { parseScope } from "./scope.js";
 
 /** The `inputs` block of `uxfactory.batch.json` — each entry is a path (relative to the manifest). */
 export interface BatchInputs {
@@ -19,6 +20,13 @@ export interface BatchRegistry {
   inputs: BatchInputs;
   /** Loop budget honored by the batch SKILL.md — the engine itself never loops. */
   maxIterations?: number;
+  /**
+   * Optional render scope committed in the registry: a preset name string (wireframe |
+   * content | visual | interactive | production) or a partial vector object
+   * { visual?, editorial?, coverage?, flow? } with each value low|medium|high.
+   * CLI flags `--scope` / `--visual` / … override this at runtime.
+   */
+  scope?: string | Record<string, unknown>;
 }
 
 /** Registry input paths resolved to absolute filesystem paths (null = not registered). */
@@ -62,6 +70,20 @@ export function validateRegistry(
     const n = raw["maxIterations"];
     if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
       return { ok: false, message: "registry.maxIterations must be a positive integer" };
+    }
+  }
+  if (raw["scope"] !== undefined) {
+    const s = raw["scope"];
+    if (typeof s !== "string" && !isPlainObject(s)) {
+      return {
+        ok: false,
+        message:
+          "registry.scope must be a preset name string or a partial vector object {visual?,editorial?,coverage?,flow?}",
+      };
+    }
+    const parsed = parseScope(s as string | Record<string, unknown>);
+    if (!parsed.ok) {
+      return { ok: false, message: `registry.scope: ${parsed.message}` };
     }
   }
   return { ok: true, registry: raw as unknown as BatchRegistry };

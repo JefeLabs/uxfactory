@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { validateRegistry, resolveInputs, readRegistry } from "../src/batch/registry.js";
+// (scope validation tested in the new "registry scope field" describe below)
 
 let dir: string;
 
@@ -100,5 +101,56 @@ describe("readRegistry", () => {
     await writeFile(file, JSON.stringify({ version: 9, inputs: {} }), "utf8");
     const res = await readRegistry(file);
     expect(res.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// registry.scope field (Task 3 — appended)
+// ---------------------------------------------------------------------------
+
+describe("validateRegistry — scope field", () => {
+  it("accepts a registry with scope as a valid preset name string", () => {
+    const res = validateRegistry({ version: 1, inputs: {}, scope: "wireframe" });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.registry.scope).toBe("wireframe");
+  });
+
+  it("accepts a registry with scope as a partial vector object", () => {
+    const res = validateRegistry({ version: 1, inputs: {}, scope: { visual: "high" } });
+    expect(res.ok).toBe(true);
+  });
+
+  it("accepts all preset names as scope values", () => {
+    for (const preset of ["wireframe", "content", "visual", "interactive", "production"]) {
+      const res = validateRegistry({ version: 1, inputs: {}, scope: preset });
+      expect(res.ok).toBe(true);
+    }
+  });
+
+  it("rejects an unknown preset name string as scope", () => {
+    const res = validateRegistry({ version: 1, inputs: {}, scope: "bogus-preset" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/scope/);
+  });
+
+  it("rejects a scope vector with an invalid dial level (none is threshold-only)", () => {
+    const res = validateRegistry({ version: 1, inputs: {}, scope: { visual: "none" } });
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects a scope vector with an unknown dial key", () => {
+    const res = validateRegistry({ version: 1, inputs: {}, scope: { bogus_dial: "low" } });
+    expect(res.ok).toBe(false);
+  });
+
+  it("rejects a scope value that is neither string nor object (e.g. number)", () => {
+    const res = validateRegistry({ version: 1, inputs: {}, scope: 42 });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.message).toMatch(/scope/);
+  });
+
+  it("accepts a registry with no scope field (scope is optional)", () => {
+    const res = validateRegistry({ version: 1, inputs: {} });
+    expect(res.ok).toBe(true);
   });
 });
