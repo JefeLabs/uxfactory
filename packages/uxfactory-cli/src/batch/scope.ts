@@ -83,7 +83,10 @@ function vectorFromObject(
   const scope: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "low" };
   for (const key of Object.keys(input)) {
     if (!VALID_DIALS.has(key)) {
-      return { ok: false, message: `Unknown dial key: "${key}". Valid dials: visual, editorial, coverage, flow.` };
+      return {
+        ok: false,
+        message: `Unknown dial key: "${key}". Valid dials: visual, editorial, coverage, flow.`,
+      };
     }
     const v = input[key];
     if (!isDialLevel(v)) {
@@ -116,7 +119,10 @@ export function parseScope(
     if (isPresetName(input)) {
       return { ok: true, scope: { ...PRESETS[input] } };
     }
-    return { ok: false, message: `Unknown preset name: "${input}". Valid presets: ${[...PRESET_NAMES].join(", ")}.` };
+    return {
+      ok: false,
+      message: `Unknown preset name: "${input}". Valid presets: ${[...PRESET_NAMES].join(", ")}.`,
+    };
   }
   return vectorFromObject(input);
 }
@@ -138,10 +144,7 @@ export function resolveScope(
 ): RenderScope | null {
   if (base === undefined) return null;
 
-  const input =
-    typeof base === "string"
-      ? base
-      : (base as Record<string, unknown>);
+  const input = typeof base === "string" ? base : (base as Record<string, unknown>);
 
   const parsed = parseScope(input as string | Record<string, unknown>);
   if (!parsed.ok) return null;
@@ -320,22 +323,42 @@ export function checkReadiness(
 
   // specs are always required (baseline for any batch)
   if (!present.specs) {
-    missing.push({ artifact: "specs", dial: "coverage", level: "low", action: "provide-or-generate" });
+    missing.push({
+      artifact: "specs",
+      dial: "coverage",
+      level: "low",
+      action: "provide-or-generate",
+    });
   }
 
   // stories required when coverage >= low (always in practice)
   if (LEVEL_ORD[s.coverage] >= LEVEL_ORD["low"] && !present.stories) {
-    missing.push({ artifact: "stories", dial: "coverage", level: "low", action: "provide-or-generate" });
+    missing.push({
+      artifact: "stories",
+      dial: "coverage",
+      level: "low",
+      action: "provide-or-generate",
+    });
   }
 
   // tokens required when visual >= medium
   if (LEVEL_ORD[s.visual] >= LEVEL_ORD["medium"] && !present.tokens) {
-    missing.push({ artifact: "tokens", dial: "visual", level: "medium", action: "provide-or-generate" });
+    missing.push({
+      artifact: "tokens",
+      dial: "visual",
+      level: "medium",
+      action: "provide-or-generate",
+    });
   }
 
   // flow required when flow >= medium
   if (LEVEL_ORD[s.flow] >= LEVEL_ORD["medium"] && !present.flow) {
-    missing.push({ artifact: "flow", dial: "flow", level: "medium", action: "provide-or-generate" });
+    missing.push({
+      artifact: "flow",
+      dial: "flow",
+      level: "medium",
+      action: "provide-or-generate",
+    });
   }
 
   return { ready: missing.length === 0, missing, declared: declaredFuture(s) };

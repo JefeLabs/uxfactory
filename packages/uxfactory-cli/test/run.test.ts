@@ -26,8 +26,18 @@ const adhoc: DesignSpec = {
 };
 
 const wireframe: RenderScope = PRESETS.wireframe; // { visual:low, editorial:low, coverage:low, flow:low }
-const visualMedScope: RenderScope = { visual: "medium", editorial: "low", coverage: "low", flow: "low" };
-const flowMedScope: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "medium" };
+const visualMedScope: RenderScope = {
+  visual: "medium",
+  editorial: "low",
+  coverage: "low",
+  flow: "low",
+};
+const flowMedScope: RenderScope = {
+  visual: "low",
+  editorial: "low",
+  coverage: "low",
+  flow: "medium",
+};
 
 // ---------------------------------------------------------------------------
 // Scope-scoped runBatch — Task 2 (TDD: these tests were written first, RED)
@@ -40,7 +50,14 @@ describe("runBatch — scope-scoped (Task 2)", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
     // wireframe has visual:low — token-conformance needs visual>=medium → does NOT bind
     // Even with a token register present and an ad-hoc color, it should be not-owed, not fail.
-    const report = runBatch({ specs, tokens, stories: null, reuseSpecs: null, flow: null, scope: wireframe });
+    const report = runBatch({
+      specs,
+      tokens,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: wireframe,
+    });
     const tc = report.checks.find((c) => c.id === "token-conformance");
     expect(tc).toBeDefined();
     expect(tc!.status).toBe("not-owed");
@@ -50,7 +67,14 @@ describe("runBatch — scope-scoped (Task 2)", () => {
 
   it("non-binding gate: not-owed entry has no findings and does not count as must-fail regardless of severity", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens, stories: null, reuseSpecs: null, flow: null, scope: wireframe });
+    const report = runBatch({
+      specs,
+      tokens,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: wireframe,
+    });
     const tc = report.checks.find((c) => c.id === "token-conformance");
     expect(tc!.findings).toHaveLength(0);
     // status is "not-owed", not "fail" — so even if severity were "must", it doesn't gate
@@ -61,7 +85,14 @@ describe("runBatch — scope-scoped (Task 2)", () => {
 
   it("token-conformance BINDING at visual:medium scope + ad-hoc color → mustPassFailed true", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens, stories: null, reuseSpecs: null, flow: null, scope: visualMedScope });
+    const report = runBatch({
+      specs,
+      tokens,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: visualMedScope,
+    });
     const tc = report.checks.find((c) => c.id === "token-conformance");
     expect(tc).toBeDefined();
     expect(tc!.status).toBe("fail");
@@ -145,7 +176,14 @@ describe("runBatch — scope-scoped (Task 2)", () => {
 
   it("declared entries at wireframe: a11y is always present", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null, scope: wireframe });
+    const report = runBatch({
+      specs,
+      tokens: null,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: wireframe,
+    });
     const declared = report.checks.filter((c) => c.status === "declared");
     expect(declared.some((c) => c.id === "a11y")).toBe(true);
   });
@@ -154,13 +192,27 @@ describe("runBatch — scope-scoped (Task 2)", () => {
 
   it("report carries scope matching the input scope", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null, scope: wireframe });
+    const report = runBatch({
+      specs,
+      tokens: null,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: wireframe,
+    });
     expect(report.scope).toEqual(wireframe);
   });
 
   it("report rubric contains only binding gate ids (wireframe: coverage trio, not token/flow)", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null, scope: wireframe });
+    const report = runBatch({
+      specs,
+      tokens: null,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: wireframe,
+    });
     expect(report.rubric).toContain("requirement-coverage");
     expect(report.rubric).toContain("reuse");
     expect(report.rubric).toContain("coverage-orphans");
@@ -170,13 +222,27 @@ describe("runBatch — scope-scoped (Task 2)", () => {
 
   it("report rubric at visual:medium includes token-conformance", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null, scope: visualMedScope });
+    const report = runBatch({
+      specs,
+      tokens: null,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: visualMedScope,
+    });
     expect(report.rubric).toContain("token-conformance");
   });
 
   it("report rubric at flow:medium includes flow-reachability", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null, scope: flowMedScope });
+    const report = runBatch({
+      specs,
+      tokens: null,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: flowMedScope,
+    });
     expect(report.rubric).toContain("flow-reachability");
   });
 
@@ -279,14 +345,23 @@ describe("runBatch — scope-scoped (Task 2)", () => {
 
   it("wireframe scope: all binding gates skip when inputs absent, not-owed for non-binding, clean=true", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
-    const report = runBatch({ specs, tokens: null, stories: null, reuseSpecs: null, flow: null, scope: wireframe });
+    const report = runBatch({
+      specs,
+      tokens: null,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: wireframe,
+    });
     // Binding gates (coverage trio) skip when stories/reuseSpecs null
     const bindingGates = report.checks.filter(
       (c) => c.id === "requirement-coverage" || c.id === "coverage-orphans" || c.id === "reuse",
     );
     expect(bindingGates.every((c) => c.status === "skip")).toBe(true);
     // Non-binding gates (token-conformance, flow-reachability) are not-owed
-    const notOwed = report.checks.filter((c) => c.id === "token-conformance" || c.id === "flow-reachability");
+    const notOwed = report.checks.filter(
+      (c) => c.id === "token-conformance" || c.id === "flow-reachability",
+    );
     expect(notOwed.every((c) => c.status === "not-owed")).toBe(true);
     expect(report.mustPassFailed).toBe(false);
     expect(report.clean).toBe(true);
@@ -318,7 +393,14 @@ describe("runBatch — legacy behavior preserved with scope", () => {
   it("mustPassFailed when a must gate fails (ad-hoc color with a token register at visual:medium scope)", () => {
     const specs: LoadedSpec[] = [{ file: "a.uxfactory.json", spec: adhoc }];
     // visual:medium → token-conformance binds; ad-hoc color #abcdef not in tokens
-    const report = runBatch({ specs, tokens, stories: null, reuseSpecs: null, flow: null, scope: visualMedScope });
+    const report = runBatch({
+      specs,
+      tokens,
+      stories: null,
+      reuseSpecs: null,
+      flow: null,
+      scope: visualMedScope,
+    });
     expect(report.mustPassFailed).toBe(true);
     expect(report.clean).toBe(false);
   });

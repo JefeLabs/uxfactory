@@ -118,7 +118,14 @@ export async function batchCmd(
   // 4. ONE deterministic pass
   // TODO(Task 3): resolve scope from registry + CLI flags; use interactive as a transitional
   // fallback so all gates bind (preserving existing gate behavior) until scope is wired.
-  const report: BatchReport = runBatch({ specs, tokens, stories, reuseSpecs, flow, scope: PRESETS.interactive });
+  const report: BatchReport = runBatch({
+    specs,
+    tokens,
+    stories,
+    reuseSpecs,
+    flow,
+    scope: PRESETS.interactive,
+  });
 
   // 5. offline previews per spec (§13.6)
   const batchDir = path.join(flags.dataDir, "batch");

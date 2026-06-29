@@ -35,19 +35,44 @@ describe("LEVEL_ORD ordinal", () => {
 
 describe("PRESETS (§4 table, verbatim)", () => {
   it("wireframe = (low,low,low,low)", () => {
-    expect(PRESETS.wireframe).toEqual({ visual: "low", editorial: "low", coverage: "low", flow: "low" });
+    expect(PRESETS.wireframe).toEqual({
+      visual: "low",
+      editorial: "low",
+      coverage: "low",
+      flow: "low",
+    });
   });
   it("content = (low,high,medium,low)", () => {
-    expect(PRESETS.content).toEqual({ visual: "low", editorial: "high", coverage: "medium", flow: "low" });
+    expect(PRESETS.content).toEqual({
+      visual: "low",
+      editorial: "high",
+      coverage: "medium",
+      flow: "low",
+    });
   });
   it("visual = (high,medium,medium,medium)", () => {
-    expect(PRESETS.visual).toEqual({ visual: "high", editorial: "medium", coverage: "medium", flow: "medium" });
+    expect(PRESETS.visual).toEqual({
+      visual: "high",
+      editorial: "medium",
+      coverage: "medium",
+      flow: "medium",
+    });
   });
   it("interactive = (high,high,high,high)", () => {
-    expect(PRESETS.interactive).toEqual({ visual: "high", editorial: "high", coverage: "high", flow: "high" });
+    expect(PRESETS.interactive).toEqual({
+      visual: "high",
+      editorial: "high",
+      coverage: "high",
+      flow: "high",
+    });
   });
   it("production = (high,high,high,high)", () => {
-    expect(PRESETS.production).toEqual({ visual: "high", editorial: "high", coverage: "high", flow: "high" });
+    expect(PRESETS.production).toEqual({
+      visual: "high",
+      editorial: "high",
+      coverage: "high",
+      flow: "high",
+    });
   });
 });
 
@@ -67,7 +92,12 @@ describe("parseScope", () => {
   });
 
   it("accepts a full explicit vector", () => {
-    const result = parseScope({ visual: "high", editorial: "medium", coverage: "low", flow: "high" });
+    const result = parseScope({
+      visual: "high",
+      editorial: "medium",
+      coverage: "low",
+      flow: "high",
+    });
     expect(result).toEqual({
       ok: true,
       scope: { visual: "high", editorial: "medium", coverage: "low", flow: "high" },
@@ -209,7 +239,12 @@ describe("GATE_THRESHOLDS (§3 table)", () => {
 
 describe("binds (all four dials, LEVEL_ORD comparison)", () => {
   const wireframe: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "low" };
-  const visualMed: RenderScope = { visual: "medium", editorial: "low", coverage: "low", flow: "low" };
+  const visualMed: RenderScope = {
+    visual: "medium",
+    editorial: "low",
+    coverage: "low",
+    flow: "low",
+  };
 
   it("token-conformance EXCLUDED at visual:low", () => {
     const t = GATE_THRESHOLDS["token-conformance"]!;
@@ -221,7 +256,12 @@ describe("binds (all four dials, LEVEL_ORD comparison)", () => {
   });
   it("flow-reachability INCLUDED at flow:medium, EXCLUDED at flow:low", () => {
     const t = GATE_THRESHOLDS["flow-reachability"]!;
-    const flowMed: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "medium" };
+    const flowMed: RenderScope = {
+      visual: "low",
+      editorial: "low",
+      coverage: "low",
+      flow: "medium",
+    };
     expect(binds(t, flowMed)).toBe(true);
     expect(binds(t, wireframe)).toBe(false);
   });
@@ -264,7 +304,13 @@ describe("bindingGateIds", () => {
   it("all five gates bind at interactive/production scope", () => {
     const ids = bindingGateIds(PRESETS.interactive);
     expect(ids.sort()).toEqual(
-      ["coverage-orphans", "flow-reachability", "requirement-coverage", "reuse", "token-conformance"].sort(),
+      [
+        "coverage-orphans",
+        "flow-reachability",
+        "requirement-coverage",
+        "reuse",
+        "token-conformance",
+      ].sort(),
     );
   });
 });
@@ -418,7 +464,12 @@ describe("checkReadiness", () => {
 
   it("not ready at visual preset when tokens missing (token-conformance at visual:high>=medium)", () => {
     // Use a scope with visual:medium, flow:low so only tokens can be the blocker
-    const scopeVisualMed: RenderScope = { visual: "medium", editorial: "low", coverage: "low", flow: "low" };
+    const scopeVisualMed: RenderScope = {
+      visual: "medium",
+      editorial: "low",
+      coverage: "low",
+      flow: "low",
+    };
     const r = checkReadiness(scopeVisualMed, {
       stories: true,
       tokens: false,

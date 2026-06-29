@@ -13,12 +13,12 @@ Not every render owes every gate. A render's **scope** selects which gates bind 
 
 Two **fidelity** dials (depth of one rendered ViewState) and two **completeness** dials (traversal of the spec graph). The pairs are independent — any dial moves without the others.
 
-| Dial | Pair | Measures | low | medium | high |
-| --- | --- | --- | --- | --- | --- |
-| `visual` | fidelity | how it *looks* | greybox/wireframe | tokens/type/color applied | full visual, production-styled |
-| `editorial` | fidelity | what it *says* | placeholder/lorem | draft real copy | final, on-voice, i18n |
-| `coverage` | completeness | states *within* a view (AC→ViewState) | success only | + empty·loading·error | + all AC edge states |
-| `flow` | completeness | paths *across* views (View→View) | single screen / happy snapshot | primary flow end-to-end | all branches, back/cancel, deep-link |
+| Dial        | Pair         | Measures                              | low                            | medium                    | high                                 |
+| ----------- | ------------ | ------------------------------------- | ------------------------------ | ------------------------- | ------------------------------------ |
+| `visual`    | fidelity     | how it _looks_                        | greybox/wireframe              | tokens/type/color applied | full visual, production-styled       |
+| `editorial` | fidelity     | what it _says_                        | placeholder/lorem              | draft real copy           | final, on-voice, i18n                |
+| `coverage`  | completeness | states _within_ a view (AC→ViewState) | success only                   | + empty·loading·error     | + all AC edge states                 |
+| `flow`      | completeness | paths _across_ views (View→View)      | single screen / happy snapshot | primary flow end-to-end   | all branches, back/cancel, deep-link |
 
 **Levels are an ordinal `none < low < medium < high`.** A scope dial is set to `low|medium|high` (the user never sets `none`). `none` exists only as a **check threshold** meaning "this check does not gate on this dial."
 
@@ -42,13 +42,13 @@ Most checks key off one dial (the others `none`); a few are multi-dial. This rep
 
 ### v1 gate → thresholds (mapping the 4 implemented gates onto the tier dials)
 
-| Gate (existing id) | Binds on | Threshold | Required input |
-| --- | --- | --- | --- |
-| `requirement-coverage` | coverage (Tier 0·1) | `min_coverage = low` | `stories` |
-| `reuse` | coverage | `min_coverage = low` | — (optional; skip-and-declare) |
-| `coverage-orphans` (advisory) | coverage | `min_coverage = low` | — |
-| `token-conformance` | visual (Tier 3) | `min_visual = medium` | `tokens` |
-| `flow-reachability` | flow (Tier 2) | `min_flow = medium` | `flow` |
+| Gate (existing id)            | Binds on            | Threshold             | Required input                 |
+| ----------------------------- | ------------------- | --------------------- | ------------------------------ |
+| `requirement-coverage`        | coverage (Tier 0·1) | `min_coverage = low`  | `stories`                      |
+| `reuse`                       | coverage            | `min_coverage = low`  | — (optional; skip-and-declare) |
+| `coverage-orphans` (advisory) | coverage            | `min_coverage = low`  | —                              |
+| `token-conformance`           | visual (Tier 3)     | `min_visual = medium` | `tokens`                       |
+| `flow-reachability`           | flow (Tier 2)       | `min_flow = medium`   | `flow`                         |
 
 (Thresholds align to §6.5: Visual `medium` = tokens applied; Flow `medium` = primary flow end-to-end; Coverage `low` = success/populated baseline.)
 
@@ -56,27 +56,27 @@ Most checks key off one dial (the others `none`); a few are multi-dial. This rep
 
 Named presets are convenient `(visual, editorial, coverage, flow)` coordinates; the dials move independently, so any off-preset combo is first-class (e.g. `(visual:high, editorial:low, coverage:low, flow:low)` = the "hero vibe": one pixel-complete screen, lorem copy, happy state — gated for craft, with error-state/navigation checks dormant).
 
-| Preset | visual | editorial | coverage | flow |
-| --- | --- | --- | --- | --- |
-| `wireframe` | low | low | low | low |
-| `content` | low | high | medium | low |
-| `visual` | high | medium | medium | medium |
-| `interactive` | high | high | high | high |
-| `production` | high | high | high | high |
+| Preset        | visual | editorial | coverage | flow   |
+| ------------- | ------ | --------- | -------- | ------ |
+| `wireframe`   | low    | low       | low      | low    |
+| `content`     | low    | high      | medium   | low    |
+| `visual`      | high   | medium    | medium   | medium |
+| `interactive` | high   | high      | high     | high   |
+| `production`  | high   | high      | high     | high   |
 
-(`interactive`/`production` coincide on the *implemented* dials; their real difference is the deferred a11y/i18n/code tiers.) **Resolution:** start from the preset (or a raw partial vector; missing dials → their preset/low default), then apply per-dial overrides.
+(`interactive`/`production` coincide on the _implemented_ dials; their real difference is the deferred a11y/i18n/code tiers.) **Resolution:** start from the preset (or a raw partial vector; missing dials → their preset/low default), then apply per-dial overrides.
 
 ## 5. Engine vs. agent split (self-contained; loop in the SKILL.md; no in-engine LLM)
 
-| Concern | Owner |
-| --- | --- |
-| Dials, levels, presets, per-check `min_<dial>` thresholds, required-input manifest | Engine |
+| Concern                                                                                                                                 | Owner                            |
+| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Dials, levels, presets, per-check `min_<dial>` thresholds, required-input manifest                                                      | Engine                           |
 | Resolve scope (preset + overrides → vector); **readiness** (REQUESTED artifacts present vs missing-to-generate); rubric (binding gates) | Engine (deterministic, `--json`) |
-| The deterministic gates | Engine |
-| Renderer by the `visual` dial (resvg at `visual:low`; Playwright at `visual ≥ medium`) | Engine |
-| **Generating** missing artifacts; judging soft residue; iterating/ratcheting per dial | Agent, via `SKILL.md` |
+| The deterministic gates                                                                                                                 | Engine                           |
+| Renderer by the `visual` dial (resvg at `visual:low`; Playwright at `visual ≥ medium`)                                                  | Engine                           |
+| **Generating** missing artifacts; judging soft residue; iterating/ratcheting per dial                                                   | Agent, via `SKILL.md`            |
 
-**Confirmed decisions:** engine *reports* missing REQUESTED artifacts (skill drives generation, no `--generate`); unimplemented tiers are *declared* (never silently passed, never blocking). The §5.8/§6.6 ProjectClassification → conditioning-function → Confirm-gate pipeline is a **deferred follow-on** that will *derive* the scope + the REQUESTED/GENERATABLE/SUPPRESSED manifest; this phase ships the render-scope selector it builds on.
+**Confirmed decisions:** engine _reports_ missing REQUESTED artifacts (skill drives generation, no `--generate`); unimplemented tiers are _declared_ (never silently passed, never blocking). The §5.8/§6.6 ProjectClassification → conditioning-function → Confirm-gate pipeline is a **deferred follow-on** that will _derive_ the scope + the REQUESTED/GENERATABLE/SUPPRESSED manifest; this phase ships the render-scope selector it builds on.
 
 ## 6. Surfaces
 

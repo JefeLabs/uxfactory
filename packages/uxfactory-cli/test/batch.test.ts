@@ -152,7 +152,9 @@ describe("batchCmd", () => {
     const gateChecks = printed.checks.filter((c: { status: string }) => c.status !== "declared");
     expect(gateChecks.every((c: { status: string }) => c.status === "skip")).toBe(true);
     // Declared future tiers are informational and non-blocking (at least a11y is always present)
-    const declaredEntries = printed.checks.filter((c: { status: string }) => c.status === "declared");
+    const declaredEntries = printed.checks.filter(
+      (c: { status: string }) => c.status === "declared",
+    );
     expect(declaredEntries.length).toBeGreaterThan(0);
   });
 
