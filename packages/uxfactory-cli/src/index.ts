@@ -58,3 +58,25 @@ export { runBatch } from "./batch/run.js";
 export type { RunBatchInput, BatchReport } from "./batch/run.js";
 export { batchCmd } from "./commands/batch.js";
 export type { BatchFlags } from "./commands/batch.js";
+export {
+  parseLevel,
+  parseFidelity,
+  resolveFidelity,
+  bindingGateIds,
+  requiredInputs,
+  declaredFuture,
+  checkReadiness,
+  PRESETS,
+  PRESET_NAMES,
+  DIMENSIONS,
+  GATE_DIMENSION,
+  GATE_MIN_LEVEL,
+} from "./batch/fidelity.js";
+export type {
+  Fidelity,
+  Dimension,
+  PresetName,
+  DeclaredFuture,
+  ReadinessReport,
+  ReadinessMissing,
+} from "./batch/fidelity.js";
