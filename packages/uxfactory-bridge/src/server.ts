@@ -7,7 +7,7 @@ import { gate } from "@uxfactory/gate";
 import type { Spec } from "@uxfactory/spec";
 import { validate } from "@uxfactory/spec";
 import { BridgeStore } from "./store.js";
-import type { ReviewReportPayload } from "./store.js";
+import type { ReviewReportPayload, CanvasRequest } from "./store.js";
 
 /** Options for building a bridge. */
 export interface BridgeOptions {
@@ -104,6 +104,34 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     const report = await store.getReviewReport();
     if (report === null) return reply.code(404).send({ error: "no review report yet" });
     return report;
+  });
+
+  // --- canvas request relay (§14.2) ---
+
+  app.post("/canvas", async (req, reply) => {
+    const body = req.body as Record<string, unknown>;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return reply.code(400).send({ error: "body must be an object with a snapshot" });
+    }
+    const snapshot = body["snapshot"];
+    if (snapshot === null || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+      return reply.code(400).send({ error: "snapshot must be an object" });
+    }
+    const snap = snapshot as Record<string, unknown>;
+    if (snap["source"] !== "canvas-inferred") {
+      return reply.code(400).send({ error: 'snapshot.source must be "canvas-inferred"' });
+    }
+    if (!Array.isArray(snap["frames"])) {
+      return reply.code(400).send({ error: "snapshot.frames must be an array" });
+    }
+    const stored = await store.saveCanvasRequest(body as CanvasRequest);
+    return stored;
+  });
+
+  app.get("/canvas", async (_req, reply) => {
+    const request = await store.getCanvasRequest();
+    if (request === null) return reply.code(404).send({ error: "no canvas request yet" });
+    return request;
   });
 
   // --- selection ---

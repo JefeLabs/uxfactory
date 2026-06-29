@@ -33,6 +33,16 @@ export interface ReviewReportPayload {
 }
 
 /**
+ * Opaque canvas review request posted by the plugin (§14.2).
+ * The bridge does NOT import @uxfactory/cli — treat payload as opaque.
+ */
+export interface CanvasRequest {
+  snapshot: { source: string; frames: unknown[]; [k: string]: unknown };
+  screenshot?: string;
+  [k: string]: unknown;
+}
+
+/**
  * File-backed persistence for the bridge. Everything lives under `dataDir`
  * (PRD §19/NF2: nothing is ever written outside it). All ids are generated
  * from a clock plus an internal monotonic counter so concurrent calls in the
@@ -47,6 +57,7 @@ export class BridgeStore {
   private readonly verifyDir: string;
   private readonly batchDir: string;
   private readonly reviewDir: string;
+  private readonly canvasDir: string;
   private readonly selectionFile: string;
   private counter = 0;
   private latestRenderId: string | null = null;
@@ -61,6 +72,7 @@ export class BridgeStore {
     this.verifyDir = path.join(this.rendersDir, "verify");
     this.batchDir = path.join(dataDir, "batch");
     this.reviewDir = path.join(dataDir, "review");
+    this.canvasDir = path.join(dataDir, "canvas");
     this.selectionFile = path.join(dataDir, "selection.json");
   }
 
@@ -71,6 +83,7 @@ export class BridgeStore {
     await mkdir(this.verifyDir, { recursive: true });
     await mkdir(this.batchDir, { recursive: true });
     await mkdir(this.reviewDir, { recursive: true });
+    await mkdir(this.canvasDir, { recursive: true });
   }
 
   /** True once a plugin has hit one of the plugin-facing routes this process. */
@@ -243,6 +256,28 @@ export class BridgeStore {
     try {
       const raw = await readFile(path.join(this.reviewDir, "latest.json"), "utf8");
       return JSON.parse(raw) as ReviewReportPayload;
+    } catch {
+      return null;
+    }
+  }
+
+  // --- canvas request relay (§14.2) ---
+
+  /** Persist the latest canvas review request to <canvasDir>/latest.json (atomic overwrite). */
+  async saveCanvasRequest(r: CanvasRequest): Promise<CanvasRequest> {
+    await writeFile(
+      path.join(this.canvasDir, "latest.json"),
+      JSON.stringify(r, null, 2),
+      "utf8",
+    );
+    return r;
+  }
+
+  /** Read the latest canvas review request, or null if none has been stored. */
+  async getCanvasRequest(): Promise<CanvasRequest | null> {
+    try {
+      const raw = await readFile(path.join(this.canvasDir, "latest.json"), "utf8");
+      return JSON.parse(raw) as CanvasRequest;
     } catch {
       return null;
     }
