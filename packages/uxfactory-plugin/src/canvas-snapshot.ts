@@ -36,28 +36,45 @@ export interface SnapshotChild {
   characters?: string;
 }
 
-/** Map a raw Figma node type to the spec vocabulary. */
+/**
+ * Map a raw Figma node type to the spec vocabulary.
+ *
+ * Fix I2: INSTANCE/COMPONENT → "shape" (not "instance") because instanceNode
+ * requires an `asset` key we cannot supply from the canvas tree. A shape is a
+ * valid stand-in for best-effort review — no asset key required, so the snapshot
+ * passes `validate()` even when the selection contains component instances.
+ */
 function mapType(rawType: string | undefined): string {
   if (rawType === "TEXT") return "text";
-  if (rawType === "INSTANCE" || rawType === "COMPONENT") return "instance";
+  // INSTANCE/COMPONENT used to map to "instance", but instanceNode requires
+  // asset (which we don't have), causing validate() to fail. Map to "shape" instead.
   return "shape";
 }
 
 /**
  * Walks a frame-like node tree and emits a DesignSpec-shaped CanvasSnapshot.
  * PURE: takes a structural node-tree input, not Figma globals. Unit-testable.
+ *
+ * Fix I2 (text characters): textNode schema requires `characters`. Always emit
+ * characters on text children, defaulting to "" when the canvas node has none.
  */
 export function snapshotNode(node: FrameLike, page?: string): CanvasSnapshot {
   const children: SnapshotChild[] = (node.children ?? []).map((child) => {
+    const type = mapType(child.type);
     const mapped: SnapshotChild = {
-      type: mapType(child.type),
+      type,
       name: child.name,
       x: child.x,
       y: child.y,
       width: child.width,
       height: child.height,
     };
-    if (child.characters !== undefined) mapped.characters = child.characters;
+    if (type === "text") {
+      // textNode schema requires characters — always emit, default "".
+      mapped.characters = child.characters ?? "";
+    } else if (child.characters !== undefined) {
+      mapped.characters = child.characters;
+    }
     return mapped;
   });
 

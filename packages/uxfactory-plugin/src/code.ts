@@ -554,6 +554,11 @@ async function drawReview(report: ReviewReportLike): Promise<void> {
 
     const lines: string[] = [];
     lines.push(`Verdict: ${plan.conformant ? "CONFORMANT" : "NON-CONFORMANT"}`);
+    // Fix I1: show reliability label when best-effort so the reviewer knows the
+    // annotation is canvas-inferred (not an exact UXFactory-rendered review).
+    if (report.reliability === "best-effort") {
+      lines.push("Reliability: best-effort (inferred from canvas)");
+    }
 
     // Fix I2b + Fix C1: "Element flags" section — lists every ElementFlag (found or
     // unmatched) so badge N ↔ note N and no flag is invisible to the reviewer.

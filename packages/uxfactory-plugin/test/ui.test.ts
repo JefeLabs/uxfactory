@@ -271,3 +271,63 @@ describe("ui review-selection", () => {
     expect(document.getElementById("errors")!.textContent).toMatch(/Select a frame first/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fix M3 — review-selection-ready: /canvas POST error handling
+// ---------------------------------------------------------------------------
+
+describe("ui review-selection-ready — /canvas POST error handling (Fix M3)", () => {
+  it("shows an error message when the /canvas POST throws (network down)", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    const ui = createUi({ fetchImpl, postToMain: vi.fn() });
+
+    const snapshot = {
+      source: "canvas-inferred" as const,
+      page: "Page 1",
+      frames: [{ name: "Screen", x: 0, y: 0, width: 375, height: 812, children: [] }],
+    };
+    await ui.onMainMessage({ type: "review-selection-ready", snapshot, screenshot: [0, 1, 2] });
+
+    // Error must surface to the user (not silently swallowed).
+    const errors = document.getElementById("errors")!.textContent ?? "";
+    expect(errors).toMatch(/Could not reach bridge/i);
+  });
+
+  it("shows an error message when the /canvas POST returns a non-ok status", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "internal error" }),
+    } as unknown as Response);
+    const ui = createUi({ fetchImpl, postToMain: vi.fn() });
+
+    const snapshot = {
+      source: "canvas-inferred" as const,
+      page: "Page 1",
+      frames: [{ name: "Screen", x: 0, y: 0, width: 375, height: 812, children: [] }],
+    };
+    await ui.onMainMessage({ type: "review-selection-ready", snapshot, screenshot: [] });
+
+    const errors = document.getElementById("errors")!.textContent ?? "";
+    expect(errors).toMatch(/500/);
+  });
+
+  it("does NOT show an error when the /canvas POST succeeds", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as unknown as Response);
+    const ui = createUi({ fetchImpl, postToMain: vi.fn() });
+
+    const snapshot = {
+      source: "canvas-inferred" as const,
+      page: "Page 1",
+      frames: [{ name: "Screen", x: 0, y: 0, width: 375, height: 812, children: [] }],
+    };
+    await ui.onMainMessage({ type: "review-selection-ready", snapshot, screenshot: [1, 2, 3] });
+
+    const errors = document.getElementById("errors")!.textContent ?? "";
+    expect(errors).toBe("");
+  });
+});

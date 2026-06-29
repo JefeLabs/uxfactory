@@ -32,6 +32,12 @@ export interface ReviewReportLike {
   conformant: boolean;
   findings: { requirement?: string; property?: string; status: string; detail: string }[];
   skipped?: unknown[];
+  /**
+   * Fix I1: reliability label from the CLI review. "best-effort" means the snapshot
+   * was inferred from the canvas (not rendered by UXFactory). Rendered by `drawReview`
+   * so it is visible on the canvas annotation panel.
+   */
+  reliability?: "exact" | "best-effort";
 }
 
 /**

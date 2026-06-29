@@ -313,6 +313,99 @@ describe("Fix I2 — badge number text node + element flags section", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Fix I1 — reliability: "best-effort" shows in the notes panel header
+// ---------------------------------------------------------------------------
+describe("Fix I1 — reliability label in notes panel", () => {
+  it("notes panel includes 'Reliability: best-effort' when report.reliability is best-effort", async () => {
+    const fig = makeFigma();
+
+    const buttonNode = fig.createRectangle();
+    buttonNode.name = "ButtonNode";
+    buttonNode.x = 50;
+    buttonNode.y = 100;
+    buttonNode.resize(200, 40);
+    fig.currentPage.appendChild(buttonNode);
+
+    await loadCode(fig);
+
+    const bestEffortReport: ReviewReportLike = {
+      conformant: false,
+      reliability: "best-effort",
+      findings: [{ property: "ButtonNode", status: "unmet", detail: "Button is too small" }],
+    };
+
+    await fig.__send({ type: "review", report: bestEffortReport });
+
+    expect(lastOfType(fig, "review-error")).toBeUndefined();
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    expect(group).toBeDefined();
+
+    const notes = group!.children.find((n) => n.name === "Review notes");
+    expect(notes).toBeDefined();
+    const notesText = notes!.children.find((n) => n.name === "notes-content");
+    expect(notesText).toBeDefined();
+
+    // Fix I1: reliability label must be visible in the notes panel.
+    expect(notesText!.characters).toContain("best-effort");
+    expect(notesText!.characters).toContain("Reliability:");
+    expect(notesText!.characters).toContain("inferred from canvas");
+  });
+
+  it("notes panel does NOT include reliability line when report.reliability is exact", async () => {
+    const fig = makeFigma();
+
+    const buttonNode = fig.createRectangle();
+    buttonNode.name = "ButtonNode";
+    buttonNode.x = 50;
+    buttonNode.y = 100;
+    buttonNode.resize(200, 40);
+    fig.currentPage.appendChild(buttonNode);
+
+    await loadCode(fig);
+
+    const exactReport: ReviewReportLike = {
+      conformant: false,
+      reliability: "exact",
+      findings: [{ property: "ButtonNode", status: "unmet", detail: "Button is too small" }],
+    };
+
+    await fig.__send({ type: "review", report: exactReport });
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const notes = group!.children.find((n) => n.name === "Review notes");
+    const notesText = notes!.children.find((n) => n.name === "notes-content");
+
+    // For exact reviews, the reliability line should not appear.
+    expect(notesText!.characters).not.toContain("Reliability:");
+  });
+
+  it("notes panel does NOT include reliability line when reliability is omitted", async () => {
+    const fig = makeFigma();
+
+    const buttonNode = fig.createRectangle();
+    buttonNode.name = "ButtonNode";
+    buttonNode.resize(200, 40);
+    fig.currentPage.appendChild(buttonNode);
+
+    await loadCode(fig);
+
+    // No reliability field — old-format report.
+    const noReliabilityReport: ReviewReportLike = {
+      conformant: true,
+      findings: [],
+    };
+
+    await fig.__send({ type: "review", report: noReliabilityReport });
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const notes = group!.children.find((n) => n.name === "Review notes");
+    const notesText = notes!.children.find((n) => n.name === "notes-content");
+    expect(notesText!.characters).not.toContain("Reliability:");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fix I3 — clipsContent=false + no orphan on forced failure
 // ---------------------------------------------------------------------------
 describe("Fix I3 — no-clip container + orphan-clear on draw failure", () => {

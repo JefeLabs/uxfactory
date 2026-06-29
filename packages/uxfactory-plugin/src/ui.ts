@@ -100,10 +100,18 @@ export function createUi(options: UiOptions = {}): UiController {
     } else if (msg.type === "review-error") {
       showErrors([`Review error: ${msg.message}`]);
     } else if (msg.type === "review-selection-ready") {
-      await doFetch(
-        `${BRIDGE}/canvas`,
-        postInit({ snapshot: msg.snapshot, screenshot: msg.screenshot }),
-      );
+      // Fix M3: wrap POST /canvas in try/catch so a down bridge gives user feedback.
+      try {
+        const canvasRes = await doFetch(
+          `${BRIDGE}/canvas`,
+          postInit({ snapshot: msg.snapshot, screenshot: msg.screenshot }),
+        );
+        if (!canvasRes.ok) {
+          showErrors([`Could not post canvas request (bridge returned ${canvasRes.status})`]);
+        }
+      } catch (err) {
+        showErrors([`Could not reach bridge: ${String(err)}`]);
+      }
     } else if (msg.type === "review-selection-error") {
       showErrors([`Review selection error: ${msg.message}`]);
     }

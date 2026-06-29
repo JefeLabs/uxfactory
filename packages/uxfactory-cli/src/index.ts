@@ -63,6 +63,8 @@ export { batchCmd } from "./commands/batch.js";
 export type { BatchFlags } from "./commands/batch.js";
 export { reviewCmd } from "./commands/review.js";
 export type { ReviewFlags } from "./commands/review.js";
+export { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
+export type { CanvasFetchFlags } from "./commands/canvas.js";
 export { classifyCmd } from "./commands/classify.js";
 export type { ClassifyFlags } from "./commands/classify.js";
 export { validateClassification, readClassification } from "./classify/classification.js";

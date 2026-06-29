@@ -16,6 +16,7 @@ import { driftCmd } from "./commands/drift.js";
 import { batchCmd } from "./commands/batch.js";
 import { reviewCmd } from "./commands/review.js";
 import { classifyCmd } from "./commands/classify.js";
+import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
 // renderCmd and bridgeCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call)
@@ -330,6 +331,34 @@ export function buildProgram(): Command {
         );
       },
     );
+
+  // ---- canvas command group (§14.2 best-effort vision review) ----
+  const canvas = program
+    .command("canvas")
+    .description("Canvas review relay commands (fetch pending request / post report)");
+
+  canvas
+    .command("fetch")
+    .description(
+      "Fetch the pending canvas review request from the bridge and write snapshot.json + screenshot.png",
+    )
+    .option("--bridge <url>", "bridge base URL")
+    .option("--out <dir>", "output directory (default: cwd)")
+    .action(async (opts: { bridge?: string; out?: string }) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await canvasFetchCmd({ out: opts.out }, consoleIO, client);
+    });
+
+  canvas
+    .command("post <report>")
+    .description(
+      "Post a ReviewReport JSON file to the bridge /review endpoint (plugin annotates canvas)",
+    )
+    .option("--bridge <url>", "bridge base URL")
+    .action(async (report: string, opts: { bridge?: string }) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await canvasPostCmd(report, consoleIO, client);
+    });
 
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [
     ["snapshot", "roadmap", "Pull current canvas state back into a spec"],
