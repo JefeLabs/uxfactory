@@ -18,6 +18,10 @@ const SKILLS = [
     src: path.join(repoRoot, "skill", "batch", "SKILL.md"),
     dest: path.join(pkgRoot, "skills", "uxfactory-batch", "SKILL.md"),
   },
+  {
+    src: path.join(repoRoot, "skill", "intake", "SKILL.md"),
+    dest: path.join(pkgRoot, "skills", "uxfactory-intake", "SKILL.md"),
+  },
 ];
 
 export async function vendorSkill() {
