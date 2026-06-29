@@ -1,9 +1,4 @@
-import type {
-  Spec,
-  Connector,
-  FrameChild,
-  SectionChild,
-} from "@uxfactory/spec";
+import type { Spec, Connector, FrameChild, SectionChild } from "@uxfactory/spec";
 
 /** Geometry of a positioned, sized box. */
 interface Geom {
@@ -221,9 +216,14 @@ function drawDrawable(d: Drawable): string[] {
       ];
       if (d.characters !== undefined && d.characters !== "") {
         out.push(
-          textTag(d.geom.x + d.geom.width / 2, d.geom.y + d.geom.height / 2 + FONT / 3, d.characters, {
-            anchor: "middle",
-          }),
+          textTag(
+            d.geom.x + d.geom.width / 2,
+            d.geom.y + d.geom.height / 2 + FONT / 3,
+            d.characters,
+            {
+              anchor: "middle",
+            },
+          ),
         );
       }
       return out;

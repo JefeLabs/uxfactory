@@ -25,7 +25,15 @@ const design: DesignSpec = {
           cornerRadius: 4,
           characters: "Hi & <ok>",
         },
-        { type: "text", name: "label", x: 10, y: 100, width: 80, height: 20, characters: "Caption" },
+        {
+          type: "text",
+          name: "label",
+          x: 10,
+          y: 100,
+          width: 80,
+          height: 20,
+          characters: "Caption",
+        },
         { type: "instance", name: "fn", asset: "aws:lambda", x: 120, y: 20, width: 48, height: 48 },
       ],
     },
@@ -41,7 +49,9 @@ const figjam: FigjamSpec = {
       y: 0,
       width: 300,
       height: 300,
-      children: [{ type: "sticky", name: "note", x: 20, y: 20, characters: "Idea", fill: "#FFD966" }],
+      children: [
+        { type: "sticky", name: "note", x: 20, y: 20, characters: "Idea", fill: "#FFD966" },
+      ],
     },
   ],
 };
@@ -67,7 +77,10 @@ const connSpec: DesignSpec = {
   ],
 };
 
-const editOnly: EditOnlySpec = { editor: "figma", edits: [{ name: "x", set: { fill: "#ffffff" } }] };
+const editOnly: EditOnlySpec = {
+  editor: "figma",
+  edits: [{ name: "x", set: { fill: "#ffffff" } }],
+};
 
 describe("specToSvg", () => {
   it("is deterministic — same spec renders to a byte-identical string", () => {
