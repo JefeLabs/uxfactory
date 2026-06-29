@@ -47,7 +47,19 @@ export function planAnnotations(report: ReviewReportLike): AnnotationPlan {
     const { status, property, detail, requirement } = finding;
 
     if (status === "unmet") {
-      if (property !== undefined && property !== "") {
+      // Fix C1: a finding with a non-empty `requirement` is a requirement-coverage AC
+      // finding — its `property` is a state token, not a node name — so it MUST become
+      // a CoverageGap. Only a finding with `property` and NO `requirement` is an ElementFlag.
+      if (requirement !== undefined && requirement !== "") {
+        const gap: CoverageGap = {
+          index: 0,
+          kind: "conformance",
+          severity: "violation",
+          reason: detail,
+          requirement,
+        };
+        coverageGaps.push(gap);
+      } else if (property !== undefined && property !== "") {
         elementFlags.push({
           index: 0, // placeholder; renumbered below
           nodeName: property,
@@ -62,11 +74,20 @@ export function planAnnotations(report: ReviewReportLike): AnnotationPlan {
           severity: "violation",
           reason: detail,
         };
-        if (requirement !== undefined) gap.requirement = requirement;
         coverageGaps.push(gap);
       }
     } else if (status === "advisory") {
-      if (property !== undefined && property !== "") {
+      // Same rule: requirement set → CoverageGap; property only → ElementFlag; neither → gap.
+      if (requirement !== undefined && requirement !== "") {
+        const gap: CoverageGap = {
+          index: 0,
+          kind: "advisory",
+          severity: "suggestion",
+          reason: detail,
+          requirement,
+        };
+        coverageGaps.push(gap);
+      } else if (property !== undefined && property !== "") {
         elementFlags.push({
           index: 0, // placeholder; renumbered below
           nodeName: property,
@@ -81,7 +102,6 @@ export function planAnnotations(report: ReviewReportLike): AnnotationPlan {
           severity: "suggestion",
           reason: detail,
         };
-        if (requirement !== undefined) gap.requirement = requirement;
         coverageGaps.push(gap);
       }
     }

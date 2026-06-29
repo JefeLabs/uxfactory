@@ -121,8 +121,14 @@ function mapCheckResult(
     case "fail": {
       const isAdvisory = ADVISORY_GATE_IDS.has(check.id) || check.severity === "advisory";
       if (isAdvisory) {
+        // Fix I1: keep `property` (= the finding's ref) on advisory findings when a ref
+        // is present (e.g. `coverage-orphans` carries ref = frame name). This lets
+        // `planAnnotations` produce an amber ElementFlag so code.ts draws an amber badge
+        // on the named frame.
         for (const f of check.findings) {
-          findings.push({ status: "advisory", detail: f.detail });
+          const finding: ReviewFinding = { status: "advisory", detail: f.detail };
+          if (f.ref !== undefined) finding.property = f.ref;
+          findings.push(finding);
         }
       } else {
         // Must-gate failure → unmet findings, with requirement/property where available.

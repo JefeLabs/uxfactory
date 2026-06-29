@@ -17,6 +17,8 @@ export class FakeNode {
   characters: string | undefined = undefined;
   connectorStart: unknown = undefined;
   connectorEnd: unknown = undefined;
+  /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
+  clipsContent: boolean | undefined = undefined;
   children: FakeNode[] = [];
   /** Tracks which parent this node was appended to — used by remove(). */
   _parent: FakeNode | null = null;

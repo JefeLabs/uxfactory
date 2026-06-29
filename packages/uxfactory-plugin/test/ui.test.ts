@@ -189,6 +189,28 @@ describe("ui Cmd/Ctrl+Z shortcut (Fix 4)", () => {
   });
 });
 
+describe("ui clickReview — network-error resets status (Fix M3)", () => {
+  it("status is reset to Connected after a network error (not stuck at Reviewing…)", async () => {
+    const postToMain = vi.fn();
+    // fetchImpl rejects immediately (network unreachable)
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    const ui = createUi({ fetchImpl, postToMain });
+
+    // Prime the status element to a known value
+    const statusEl = document.getElementById("status")!;
+    statusEl.textContent = "Connected";
+
+    await ui.clickReview();
+
+    // Error must be shown
+    expect(document.getElementById("errors")!.textContent).toMatch(/Could not reach bridge/);
+    // Status must NOT be stuck at "Reviewing…"
+    expect(statusEl.textContent).not.toBe("Reviewing…");
+    // Status is reset to "Connected" (same text checkHealth sets on a successful connect)
+    expect(statusEl.textContent).toBe("Connected");
+  });
+});
+
 describe("ui selection main-message", () => {
   it("POSTs the selection payload to /selection", async () => {
     const fetchImpl = okFetch({});

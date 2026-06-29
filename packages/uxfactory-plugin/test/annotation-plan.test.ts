@@ -3,7 +3,7 @@ import { planAnnotations } from "../src/annotation-plan.js";
 import type { ReviewReportLike, AnnotationPlan } from "../src/annotation-plan.js";
 
 describe("planAnnotations", () => {
-  it("maps an unmet finding with a property to a conformance ElementFlag", () => {
+  it("maps an unmet finding with a property (and NO requirement) to a conformance ElementFlag", () => {
     const report: ReviewReportLike = {
       conformant: false,
       findings: [
@@ -11,7 +11,7 @@ describe("planAnnotations", () => {
           status: "unmet",
           property: "SubmitButton",
           detail: "Button must have a visible label",
-          requirement: "REQ-01",
+          // No requirement — so this is a node-level flag (token-conformance, reuse, etc.)
         },
       ],
     };
@@ -24,6 +24,32 @@ describe("planAnnotations", () => {
     expect(flag.severity).toBe("violation");
     expect(flag.reason).toBe("Button must have a visible label");
     expect(flag.index).toBe(0);
+  });
+
+  it("maps an unmet finding with BOTH property AND requirement to a CoverageGap (Fix C1)", () => {
+    // requirement-coverage findings carry requirement (story id) AND property (state token).
+    // The property is NOT a node name — it's a state keyword like "loading".
+    // Fix C1: when requirement is set, always produce a CoverageGap.
+    const report: ReviewReportLike = {
+      conformant: false,
+      findings: [
+        {
+          status: "unmet",
+          property: "loading", // state token, not a real node name
+          detail: "story story-2 AC implies a loading state with no matching node",
+          requirement: "story-2",
+        },
+      ],
+    };
+    const plan = planAnnotations(report);
+    expect(plan.elementFlags).toHaveLength(0);
+    expect(plan.coverageGaps).toHaveLength(1);
+    const gap = plan.coverageGaps[0]!;
+    expect(gap.kind).toBe("conformance");
+    expect(gap.severity).toBe("violation");
+    expect(gap.requirement).toBe("story-2");
+    expect(gap.reason).toBe("story story-2 AC implies a loading state with no matching node");
+    expect(gap.index).toBe(0);
   });
 
   it("maps an advisory finding with a property to an advisory ElementFlag", () => {

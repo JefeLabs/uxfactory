@@ -110,6 +110,8 @@ export function createUi(options: UiOptions = {}): UiController {
       res = await doFetch(`${BRIDGE}/review`);
     } catch (err) {
       showErrors([`Could not reach bridge: ${String(err)}`]);
+      // Fix M3: reset status so it is not stuck at "Reviewing…" after a network error.
+      setStatus("Connected");
       return;
     }
     if (!res.ok) {

@@ -466,35 +466,58 @@ const BADGE_SIZE = 20;
 /**
  * Draws conformance-review annotations on the current page from a ReviewReport.
  * §7.8: one removable "UXFactory Review" group; numbered badges (red=conformance,
- * amber=advisory) at found nodes; "Review notes" panel with coverage gaps, legend,
- * and verdict.
+ * amber=advisory) at found nodes; "Review notes" panel with element flags, coverage
+ * gaps, legend, and verdict.
+ *
+ * Fix C1: unmatched ElementFlags (node not on canvas) are added to the notes panel
+ *   instead of being silently dropped.
+ * Fix I2: each badge has a visible number text node; notes panel lists all ElementFlags.
+ * Fix I3: clipsContent=false on the group; group is appended early so the catch path
+ *   can remove any partial orphan before posting review-error.
+ * Fix M4: ALL prior "UXFactory Review" groups are cleared (no break).
  */
 async function drawReview(report: ReviewReportLike): Promise<void> {
+  let group: EditableNode | null = null;
   try {
     const plan = planAnnotations(report);
     const page = fig.currentPage;
 
-    // Clear any prior annotation group (idempotent re-review — §7.1 concern).
+    // Fix M4: Remove ALL top-level groups named "UXFactory Review" (no break so
+    // duplicates from a prior partial run are also cleared).
     for (const child of [...page.children]) {
       if (child.name === REVIEW_GROUP_NAME) {
         child.remove();
-        break;
+        // no break — remove all duplicates
       }
     }
 
     // Create the single removable group.
-    const group = fig.createFrame();
+    group = fig.createFrame();
     group.name = REVIEW_GROUP_NAME;
     group.x = 0;
     group.y = 0;
-    group.resize(1, 1); // position/size is structural; live placement noted below
+    group.resize(1, 1);
+    // Fix I3a: do NOT clip annotations — badges + notes extend beyond the 1×1 frame.
+    (group as unknown as { clipsContent: boolean }).clipsContent = false;
 
+    // Fix I3b: append group BEFORE any drawing so the catch path can remove a
+    // partial group if a draw step throws (e.g. font unavailable).
+    page.appendChild(group);
+
+    // Load font ONCE before any text-character assignment (required by real Figma
+    // and enforced by the mock's TEXT node setter).
+    await fig.loadFontAsync({ family: "Inter", style: "Regular" });
+
+    // Track unmatched flags for Fix C1 notes-panel fallback.
+    const unmatchedFlags = new Set<(typeof plan.elementFlags)[number]>();
     let skipped = 0;
 
     // Draw a numbered badge for each element flag.
     for (const flag of plan.elementFlags) {
       const target = findByName(page, flag.nodeName);
       if (!target) {
+        // Fix C1: unmatched flag goes to notes panel — not silently dropped.
+        unmatchedFlags.add(flag);
         skipped++;
         continue;
       }
@@ -506,6 +529,15 @@ async function drawReview(report: ReviewReportLike): Promise<void> {
       badge.resize(BADGE_SIZE, BADGE_SIZE);
       badge.fills = solidPaint(flag.kind === "conformance" ? RED_FILL : AMBER_FILL);
       group.appendChild(badge);
+
+      // Fix I2a: render badge NUMBER as a visible text node (named differently from
+      // "Badge N" so badge-count filters still work: "badge-num-N" is lowercase).
+      const badgeLabel = fig.createText();
+      badgeLabel.name = `badge-num-${flag.index + 1}`;
+      badgeLabel.x = badge.x;
+      badgeLabel.y = badge.y;
+      badgeLabel.characters = String(flag.index + 1);
+      group.appendChild(badgeLabel);
     }
 
     // Build the "Review notes" panel (frame + text child).
@@ -516,11 +548,21 @@ async function drawReview(report: ReviewReportLike): Promise<void> {
     notesFrame.resize(400, 120);
     group.appendChild(notesFrame);
 
-    // Load font before creating any text node.
-    await fig.loadFontAsync({ family: "Inter", style: "Regular" });
-
     const lines: string[] = [];
     lines.push(`Verdict: ${plan.conformant ? "CONFORMANT" : "NON-CONFORMANT"}`);
+
+    // Fix I2b + Fix C1: "Element flags" section — lists every ElementFlag (found or
+    // unmatched) so badge N ↔ note N and no flag is invisible to the reviewer.
+    if (plan.elementFlags.length > 0) {
+      lines.push("Element flags:");
+      for (const flag of plan.elementFlags) {
+        const suffix = unmatchedFlags.has(flag) ? " [not on canvas]" : "";
+        lines.push(
+          `  ${flag.index + 1}. [${flag.severity}] ${flag.reason} (${flag.nodeName})${suffix}`,
+        );
+      }
+    }
+
     if (plan.coverageGaps.length > 0) {
       lines.push("Coverage gaps:");
       for (const gap of plan.coverageGaps) {
@@ -538,11 +580,11 @@ async function drawReview(report: ReviewReportLike): Promise<void> {
     notesText.characters = lines.join("\n");
     notesFrame.appendChild(notesText);
 
-    // Append the whole group to the page as one removable layer.
-    page.appendChild(group);
-
     post({ type: "review-done", skipped });
   } catch (err) {
+    // Fix I3b: remove any partial group from the page before posting review-error
+    // so a mid-draw throw leaves no orphan layer.
+    if (group !== null) group.remove();
     post({ type: "review-error", message: String(err) });
   }
 }

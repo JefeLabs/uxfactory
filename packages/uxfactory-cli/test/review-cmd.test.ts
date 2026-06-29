@@ -554,11 +554,7 @@ describe("reviewCmd — --annotate posts report to bridge", () => {
   ): Promise<void> {
     const obj: Record<string, unknown> = { version: 1, inputs };
     if (extra?.scope !== undefined) obj["scope"] = extra.scope;
-    await writeFile(
-      path.join(annotateRoot, "uxfactory.batch.json"),
-      JSON.stringify(obj),
-      "utf8",
-    );
+    await writeFile(path.join(annotateRoot, "uxfactory.batch.json"), JSON.stringify(obj), "utf8");
   }
 
   beforeEach(async () => {
@@ -581,12 +577,7 @@ describe("reviewCmd — --annotate posts report to bridge", () => {
     await writeAnnotateRegistry({ stories: "stories.json" }, { scope: "wireframe" });
 
     const io = makeIO();
-    const code = await reviewCmd(
-      specFile,
-      { cwd: annotateRoot, annotate: true },
-      io,
-      bridgeClient,
-    );
+    const code = await reviewCmd(specFile, { cwd: annotateRoot, annotate: true }, io, bridgeClient);
     expect(code).toBe(EXIT.OK);
 
     // Assert the bridge received the report via GET /review
@@ -603,12 +594,7 @@ describe("reviewCmd — --annotate posts report to bridge", () => {
     await writeAnnotateRegistry({ stories: "stories.json" }, { scope: "wireframe" });
 
     const io = makeIO();
-    const code = await reviewCmd(
-      specFile,
-      { cwd: annotateRoot, annotate: true },
-      io,
-      bridgeClient,
-    );
+    const code = await reviewCmd(specFile, { cwd: annotateRoot, annotate: true }, io, bridgeClient);
     // Conformance exit code is preserved on a successful post
     expect(code).toBe(EXIT.GATE_FAIL);
 
@@ -627,12 +613,7 @@ describe("reviewCmd — --annotate posts report to bridge", () => {
     // Client pointing to a dead port
     const deadClient = new BridgeClient("http://127.0.0.1:19997");
     const io = makeIO();
-    const code = await reviewCmd(
-      specFile,
-      { cwd: annotateRoot, annotate: true },
-      io,
-      deadClient,
-    );
+    const code = await reviewCmd(specFile, { cwd: annotateRoot, annotate: true }, io, deadClient);
     expect(code).toBe(EXIT.TRANSPORT);
   });
 

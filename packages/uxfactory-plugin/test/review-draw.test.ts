@@ -133,10 +133,225 @@ describe("review drawing (Task 4)", () => {
     expect(done).toBeDefined();
     expect(done!.skipped).toBe(1);
 
-    // Only 1 badge for HeaderNode
+    // Only 1 badge rectangle for HeaderNode (badge-num labels use lowercase prefix)
     const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
     expect(group).toBeDefined();
     const badges = group!.children.filter((n) => n.name.startsWith("Badge"));
     expect(badges).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix C1 — notes panel fallback: nothing vanishes
+// ---------------------------------------------------------------------------
+describe("Fix C1 — unmatched ElementFlag appears in notes panel (not silently dropped)", () => {
+  it("token-conformance ElementFlag with no matching node appears in notes panel [not on canvas]", async () => {
+    const fig = makeFigma();
+    // No nodes on canvas — "#FF0000" will never be found by findByName.
+    await loadCode(fig);
+
+    const report: ReviewReportLike = {
+      conformant: false,
+      findings: [
+        {
+          property: "#FF0000",
+          status: "unmet",
+          detail: "ad-hoc color #FF0000 is not a registered token",
+        },
+      ],
+    };
+
+    await fig.__send({ type: "review", report });
+
+    // review-done posted with skipped=1 (no badge drawn — node absent)
+    const done = lastOfType(fig, "review-done");
+    expect(done).toBeDefined();
+    expect(done!.skipped).toBe(1);
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    expect(group).toBeDefined();
+
+    // No badge rectangle (node not on canvas)
+    const badges = group!.children.filter((n) => n.name.startsWith("Badge"));
+    expect(badges).toHaveLength(0);
+
+    // But the flag IS surfaced in the notes panel — not vanished, not only a skip count
+    const notes = group!.children.find((n) => n.name === "Review notes");
+    expect(notes).toBeDefined();
+    const notesText = notes!.children.find((n) => n.name === "notes-content");
+    expect(notesText).toBeDefined();
+    expect(notesText!.characters).toContain("ad-hoc color #FF0000 is not a registered token");
+    expect(notesText!.characters).toContain("[not on canvas]");
+    expect(notesText!.characters).toContain("Element flags:");
+  });
+
+  it("requirement-coverage finding (requirement set) becomes a CoverageGap in the panel", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const report: ReviewReportLike = {
+      conformant: false,
+      findings: [
+        {
+          property: "loading", // state token, not a node name
+          status: "unmet",
+          detail: "story story-2 AC implies a loading state with no matching node",
+          requirement: "story-2",
+        },
+      ],
+    };
+
+    await fig.__send({ type: "review", report });
+
+    // No ElementFlags → skipped=0
+    const done = lastOfType(fig, "review-done");
+    expect(done!.skipped).toBe(0);
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const notes = group!.children.find((n) => n.name === "Review notes");
+    const notesText = notes!.children.find((n) => n.name === "notes-content");
+
+    // Requirement-coverage finding → CoverageGap section (NOT Element flags)
+    expect(notesText!.characters).toContain("Coverage gaps:");
+    expect(notesText!.characters).toContain("implies a loading state with no matching node");
+    // No Element flags section since the plan has 0 ElementFlags
+    expect(notesText!.characters).not.toContain("Element flags:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix I1 — amber (advisory) badges fire when property is set
+// ---------------------------------------------------------------------------
+describe("Fix I1 — advisory finding with property produces amber badge", () => {
+  it("advisory finding with property draws an AMBER badge on the found frame", async () => {
+    const fig = makeFigma();
+
+    const orphanFrame = fig.createRectangle();
+    orphanFrame.name = "orphan-screen";
+    orphanFrame.x = 100;
+    orphanFrame.y = 50;
+    orphanFrame.resize(375, 812);
+    fig.currentPage.appendChild(orphanFrame);
+
+    await loadCode(fig);
+
+    const advisoryReport: ReviewReportLike = {
+      conformant: true,
+      findings: [
+        // Advisory finding WITH property — simulates coverage-orphans after Fix I1
+        { status: "advisory", property: "orphan-screen", detail: "Frame has no story basis" },
+      ],
+    };
+
+    await fig.__send({ type: "review", report: advisoryReport });
+
+    expect(lastOfType(fig, "review-error")).toBeUndefined();
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    expect(group).toBeDefined();
+
+    const badges = group!.children.filter((n) => n.name.startsWith("Badge"));
+    expect(badges).toHaveLength(1);
+
+    // Must be AMBER fill (~#FB8C00): high red, moderate green, near-zero blue
+    const fills = badges[0]!.fills as Array<{
+      type: string;
+      color: { r: number; g: number; b: number };
+    }>;
+    expect(fills[0]!.type).toBe("SOLID");
+    expect(fills[0]!.color.r).toBeGreaterThan(0.9); // orange-red channel high
+    expect(fills[0]!.color.g).toBeGreaterThan(0.4); // green channel (makes it amber)
+    expect(fills[0]!.color.b).toBeLessThan(0.1); // blue near zero
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix I2 — badge number text + element flags section in notes
+// ---------------------------------------------------------------------------
+describe("Fix I2 — badge number text node + element flags section", () => {
+  it("found-node badge has a visible badge-num text AND an element flags entry in notes", async () => {
+    const fig = makeFigma();
+
+    const buttonNode = fig.createRectangle();
+    buttonNode.name = "ButtonNode";
+    buttonNode.x = 50;
+    buttonNode.y = 100;
+    buttonNode.resize(200, 40);
+    fig.currentPage.appendChild(buttonNode);
+
+    await loadCode(fig);
+
+    const simpleReport: ReviewReportLike = {
+      conformant: false,
+      findings: [{ property: "ButtonNode", status: "unmet", detail: "Must have 44px min height" }],
+    };
+
+    await fig.__send({ type: "review", report: simpleReport });
+
+    expect(lastOfType(fig, "review-error")).toBeUndefined();
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    expect(group).toBeDefined();
+
+    // Badge rectangle (found node)
+    const badge = group!.children.find((n) => n.name === "Badge 1");
+    expect(badge).toBeDefined();
+
+    // Fix I2a: badge number visible as a text node (named "badge-num-1")
+    const badgeLabel = group!.children.find((n) => n.name === "badge-num-1");
+    expect(badgeLabel).toBeDefined();
+    expect(badgeLabel!.characters).toBe("1");
+
+    // Fix I2b: notes panel includes "Element flags" section
+    const notes = group!.children.find((n) => n.name === "Review notes");
+    const notesText = notes!.children.find((n) => n.name === "notes-content");
+    expect(notesText!.characters).toContain("Element flags:");
+    expect(notesText!.characters).toContain("[violation]");
+    expect(notesText!.characters).toContain("Must have 44px min height");
+    expect(notesText!.characters).toContain("(ButtonNode)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix I3 — clipsContent=false + no orphan on forced failure
+// ---------------------------------------------------------------------------
+describe("Fix I3 — no-clip container + orphan-clear on draw failure", () => {
+  it("UXFactory Review container has clipsContent === false", async () => {
+    const fig = makeFigma();
+
+    const buttonNode = fig.createRectangle();
+    buttonNode.name = "ButtonNode";
+    buttonNode.resize(200, 40);
+    fig.currentPage.appendChild(buttonNode);
+
+    await loadCode(fig);
+    await fig.__send({ type: "review", report: sampleReport });
+
+    expect(lastOfType(fig, "review-error")).toBeUndefined();
+
+    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    expect(group).toBeDefined();
+    // clipsContent must be false so badges outside the 1×1 frame are visible on real Figma
+    expect((group as unknown as { clipsContent: boolean }).clipsContent).toBe(false);
+  });
+
+  it("forced draw failure (font load throws) leaves no orphan group and posts review-error", async () => {
+    const fig = makeFigma();
+    // Override loadFontAsync to reject — this fires AFTER page.appendChild(group),
+    // so the group IS on the page when the catch runs and must be removed.
+    (fig as unknown as Record<string, unknown>).loadFontAsync = () =>
+      Promise.reject(new Error("font unavailable in test"));
+
+    await loadCode(fig);
+    await fig.__send({ type: "review", report: sampleReport });
+
+    // review-error was posted with the font failure message
+    const err = lastOfType(fig, "review-error");
+    expect(err).toBeDefined();
+    expect(err!.message).toContain("font unavailable in test");
+
+    // No "UXFactory Review" group may remain as an orphan on the page
+    const orphan = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    expect(orphan).toBeUndefined();
   });
 });

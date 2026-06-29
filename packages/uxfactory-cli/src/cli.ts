@@ -285,7 +285,10 @@ export function buildProgram(): Command {
     .option("--coverage <level>", "coverage dial override (low|medium|high)")
     .option("--flow <level>", "flow dial override (low|medium|high)")
     .option("--data-dir <path>", "data directory (unused; kept for flag parity with batch)")
-    .option("--annotate", "post the conformance report to the bridge for in-Figma annotation (§7.8)")
+    .option(
+      "--annotate",
+      "post the conformance report to the bridge for in-Figma annotation (§7.8)",
+    )
     .option("--bridge <url>", "bridge base URL")
     .action(
       async (

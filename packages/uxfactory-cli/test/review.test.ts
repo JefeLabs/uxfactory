@@ -547,3 +547,66 @@ describe("reviewDesign — declared tiers in report (Fix 4)", () => {
     expect(report.declared).toContain("a11y");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test 11 (Fix I1): advisory findings carry property when a ref is available
+// ---------------------------------------------------------------------------
+
+describe("reviewDesign — advisory findings carry property when ref exists (Fix I1)", () => {
+  it("coverage-orphans advisory finding carries property = orphan frame name", () => {
+    const storiesWithOrphan: StorySet = {
+      stories: [
+        {
+          id: "known",
+          role: "u",
+          goal: "see known screen",
+          benefit: "b",
+          acceptanceCriteria: [],
+        },
+      ],
+    };
+    const specWithOrphan: DesignSpec = {
+      editor: "figma",
+      frames: [
+        { name: "known-screen", x: 0, y: 0, width: 375, height: 812, children: [] },
+        // orphan-screen has no matching story id
+        { name: "orphan-screen", x: 0, y: 0, width: 375, height: 812, children: [] },
+      ],
+    };
+    const report = reviewDesign({
+      specs: [{ file: "orphan.uxfactory.json", spec: specWithOrphan }],
+      stories: storiesWithOrphan,
+      flow: null,
+      tokens: null,
+      reuseSpecs: null,
+      scope: wireframe,
+    });
+    const advisoryFindings = report.findings.filter((f) => f.status === "advisory");
+    // coverage-orphans produces a finding with ref = "orphan-screen";
+    // after Fix I1 that ref becomes property on the advisory finding.
+    expect(advisoryFindings.some((f) => f.property === "orphan-screen")).toBe(true);
+  });
+
+  it("flow-reachability advisory finding carries property = 'from->to' ref", () => {
+    const specWithFrames: DesignSpec = {
+      editor: "figma",
+      frames: [
+        { name: "screen-a", x: 0, y: 0, width: 375, height: 812, children: [] },
+        { name: "screen-b", x: 0, y: 0, width: 375, height: 812, children: [] },
+      ],
+      connectors: [], // no connectors → unreachable
+    };
+    const flow: Flow = { steps: ["screen-a", "screen-b"] };
+    const report = reviewDesign({
+      specs: [{ file: "flow.uxfactory.json", spec: specWithFrames }],
+      stories: null,
+      flow,
+      tokens: null,
+      reuseSpecs: null,
+      scope: flowMedScope,
+    });
+    const advisoryFindings = report.findings.filter((f) => f.status === "advisory");
+    // flow-reachability produces ref = "screen-a->screen-b"; Fix I1 surfaces it as property.
+    expect(advisoryFindings.some((f) => f.property === "screen-a->screen-b")).toBe(true);
+  });
+});
