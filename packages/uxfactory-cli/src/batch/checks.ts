@@ -1,0 +1,172 @@
+import type { Spec } from "@uxfactory/spec";
+
+// --- result + input-data types ---------------------------------------------
+
+/** Outcome of a single gate. */
+export type CheckStatus = "pass" | "fail" | "skip";
+/** Whether a gate blocks the loop (`must`) or only advises (`advisory`). */
+export type Severity = "must" | "advisory";
+
+/** One actionable problem a gate found, with reason and the thing it points at. */
+export interface BatchFinding {
+  detail: string;
+  ref?: string;
+}
+
+/** The deterministic result of one gate over the batch (skip-and-declare via status:"skip"). */
+export interface CheckResult {
+  id: string;
+  status: CheckStatus;
+  severity: Severity;
+  findings: BatchFinding[];
+  reason?: string;
+}
+
+/** A validated batch spec paired with the file it came from. */
+export interface LoadedSpec {
+  file: string;
+  spec: Spec;
+}
+
+/** tokens.ds.json (v1): a flat name → hex color register. */
+export interface TokenSet {
+  colors: Record<string, string>;
+}
+
+/** The view-state an acceptance criterion implies. */
+export type ImpliedState = "empty" | "loading" | "error" | "success" | "edge";
+
+/** One acceptance criterion: a statement plus the state it implies must exist. */
+export interface AcceptanceCriterion {
+  statement: string;
+  impliedState: ImpliedState;
+}
+
+/** One user story with its acceptance criteria. */
+export interface Story {
+  id: string;
+  role: string;
+  goal: string;
+  benefit: string;
+  acceptanceCriteria: AcceptanceCriterion[];
+}
+
+/** stories.json (v1). */
+export interface StorySet {
+  stories: Story[];
+}
+
+/** flow.json (v1): an ordered sequence of node/frame names. */
+export interface Flow {
+  steps: string[];
+}
+
+// --- shared spec walkers (pure) --------------------------------------------
+
+/** A spec child reduced to the fields the checks read. */
+interface AnyChild {
+  type: string;
+  name: string;
+  fill?: unknown;
+  stroke?: unknown;
+}
+
+/** Each container's (frame/section) children, regardless of editor. */
+function containers(spec: Spec): { name: string; children: AnyChild[] }[] {
+  if ("frames" in spec) {
+    return spec.frames.map((f) => ({ name: f.name, children: (f.children ?? []) as unknown as AnyChild[] }));
+  }
+  if ("sections" in spec) {
+    return spec.sections.map((s) => ({ name: s.name, children: (s.children ?? []) as unknown as AnyChild[] }));
+  }
+  return [];
+}
+
+/** Normalize a hex color to 6-digit lowercase (`#rrggbb`), or null if not a hex color. */
+function normalizeColor(hex: string): string | null {
+  const h = hex.trim().toLowerCase();
+  if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/.test(h)) return null;
+  const digits = h.slice(1);
+  const full =
+    digits.length === 3
+      ? digits
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : digits;
+  return `#${full}`;
+}
+
+/** Every fill/stroke color used in a spec, with a human-readable location. */
+function specColors(loaded: LoadedSpec): { value: string; where: string }[] {
+  const out: { value: string; where: string }[] = [];
+  for (const c of containers(loaded.spec)) {
+    for (const child of c.children) {
+      if (typeof child.fill === "string") out.push({ value: child.fill, where: `${loaded.file}:${c.name}/${child.name}.fill` });
+      if (typeof child.stroke === "string") out.push({ value: child.stroke, where: `${loaded.file}:${c.name}/${child.name}.stroke` });
+    }
+  }
+  return out;
+}
+
+/** A name+shape signature for each container, used to detect duplicates against reuse specs. */
+function containerSignatures(spec: Spec): { name: string; sig: string }[] {
+  return containers(spec).map((c) => {
+    const parts = c.children.map((ch) => `${ch.type}:${ch.name}`).sort();
+    return { name: c.name, sig: `${c.name}::${parts.join(",")}` };
+  });
+}
+
+// --- gates (Task 2) ---------------------------------------------------------
+
+/**
+ * token conformance (must) — every fill/stroke must reference a registered color.
+ * Skip-and-declare when no token register is provided. A value that is ad-hoc
+ * (or not even a hex color) becomes a finding. Pure + deterministic.
+ */
+export function tokenConformance(specs: LoadedSpec[], tokens: TokenSet | null): CheckResult {
+  const id = "token-conformance";
+  if (tokens === null) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "no token register registered" };
+  }
+  const registered = new Set<string>();
+  for (const value of Object.values(tokens.colors ?? {})) {
+    const n = normalizeColor(value);
+    if (n !== null) registered.add(n);
+  }
+  const findings: BatchFinding[] = [];
+  for (const loaded of specs) {
+    for (const used of specColors(loaded)) {
+      const n = normalizeColor(used.value);
+      if (n === null || !registered.has(n)) {
+        findings.push({ detail: `ad-hoc color ${used.value} at ${used.where} is not a registered token`, ref: used.value });
+      }
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+}
+
+/**
+ * reuse (must) — a batch container that duplicates one already present in a
+ * registered existing spec (same name + child shape) should be referenced, not
+ * regenerated. Skip-and-declare when no reuse specs are provided. Pure + deterministic.
+ */
+export function reuse(specs: LoadedSpec[], reuseSpecs: Spec[] | null): CheckResult {
+  const id = "reuse";
+  if (reuseSpecs === null) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "no existing specs registered for reuse" };
+  }
+  const existing = new Map<string, string>(); // sig -> container name
+  for (const spec of reuseSpecs) {
+    for (const { name, sig } of containerSignatures(spec)) existing.set(sig, name);
+  }
+  const findings: BatchFinding[] = [];
+  for (const loaded of specs) {
+    for (const { name, sig } of containerSignatures(loaded.spec)) {
+      if (existing.has(sig)) {
+        findings.push({ detail: `${loaded.file}:${name} duplicates an existing spec — reference it instead of regenerating`, ref: name });
+      }
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+}

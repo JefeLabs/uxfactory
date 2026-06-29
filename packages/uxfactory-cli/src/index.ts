@@ -35,3 +35,17 @@ export { renderCmd } from "./commands/render.js";
 export type { RenderFlags } from "./commands/render.js";
 export { readRegistry, validateRegistry, resolveInputs } from "./batch/registry.js";
 export type { BatchRegistry, BatchInputs, ResolvedInputs, ReadRegistryResult } from "./batch/registry.js";
+export { tokenConformance, reuse } from "./batch/checks.js";
+export type {
+  CheckResult,
+  CheckStatus,
+  Severity,
+  BatchFinding,
+  LoadedSpec,
+  TokenSet,
+  StorySet,
+  Story,
+  AcceptanceCriterion,
+  ImpliedState,
+  Flow,
+} from "./batch/checks.js";
