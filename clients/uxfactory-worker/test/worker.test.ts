@@ -510,7 +510,7 @@ describe('runGenerative', () => {
 
   const ctx = (): DispatchCtx => ({ projectRoot, cliBin: 'uxfactory' });
 
-  it('generate-artifact: builds AgentInput from the generate skill + kind/path, forwards masked chunks', async () => {
+  it('generate-artifact: builds AgentInput from the generate skill + target/path, forwards masked chunks', async () => {
     const adapter = new FakeAdapter(projectRoot, [
       { type: 'text-delta', text: 'drafting (key=sk-ant-api03-TESTSECRET00000) done' },
       { type: 'message-stop', finishReason: 'stop' },
@@ -522,7 +522,7 @@ describe('runGenerative', () => {
         id: 'pr_gen',
         kind: 'generate-artifact',
         payload: {
-          kind: 'AcceptanceCriterion',
+          target: 'user-story',
           path: 'design/stories.json',
           classification: { category: 'web_app' },
           constraints: ['FERPA', 'COPPA'],
@@ -534,10 +534,10 @@ describe('runGenerative', () => {
       ctx(),
     );
 
-    // systemPrompt is the generate skill body; user carries the kind + path.
+    // systemPrompt is the generate skill body; user carries the target + path override.
     expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('generate'));
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('AcceptanceCriterion');
+    expect(user).toContain('user-story');
     expect(user).toContain('design/stories.json');
     expect(user).toContain('FERPA');
 
@@ -550,10 +550,126 @@ describe('runGenerative', () => {
     expect(text).not.toContain('TESTSECRET');
     expect(text).toContain('sk-[redacted]');
 
-    // success outcome echoes the artifact path; accumulated content is masked too.
+    // success outcome echoes the (overridden) artifact path; accumulated content masked too.
     expect(out.status).toBe(0);
     expect(out.result).toMatchObject({ artifactPath: 'design/stories.json' });
     expect((out.result as { content: string }).content).not.toContain('TESTSECRET');
+  });
+
+  it('generate-artifact target:acceptance-criteria threads emphasis + seedRefs + the AcceptanceCriterion path', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_ac',
+        kind: 'generate-artifact',
+        payload: {
+          target: 'acceptance-criteria',
+          seedRefs: ['S-1', 'S-2'],
+          classification: { category: 'ecommerce' },
+        },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('generate'));
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    // the target discriminator + the seed refs + the resolved AcceptanceCriterion artifact/path.
+    expect(user).toContain('acceptance-criteria');
+    expect(user).toContain('S-1');
+    expect(user).toContain('S-2');
+    expect(user).toContain('AcceptanceCriterion');
+    expect(user).toContain('testable acceptance criteria for the seeded stories');
+    expect(out.status).toBe(0);
+    // user-story / acceptance-criteria both resolve the AcceptanceCriterion default path.
+    expect((out.result as { artifactPath: string }).artifactPath).toBe(
+      'design/acceptance-criteria.json',
+    );
+  });
+
+  it('generate-artifact target:user-journey resolves the UserFlow path', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_uj',
+        kind: 'generate-artifact',
+        payload: { target: 'user-journey', seedRefs: ['S-1', 'S-2'] },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('user-journey');
+    expect(user).toContain('UserFlow');
+    expect(user).toContain('S-1');
+    expect(out.status).toBe(0);
+    expect((out.result as { artifactPath: string }).artifactPath).toBe('design/user-flow.json');
+  });
+
+  it('generate-artifact target:user-story resolves the AcceptanceCriterion path', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_us', kind: 'generate-artifact', payload: { target: 'user-story' }, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('user-story');
+    expect(user).toContain('AcceptanceCriterion');
+    expect(user).toContain('the user-story narratives');
+    expect(out.status).toBe(0);
+    expect((out.result as { artifactPath: string }).artifactPath).toBe(
+      'design/acceptance-criteria.json',
+    );
+  });
+
+  it('generate-artifact with an invalid target → status 2 (never invokes the adapter)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_bad',
+        kind: 'generate-artifact',
+        payload: { target: 'token-set' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    // a bad target is rejected before the adapter is ever streamed.
+    expect(adapter.lastInput).toBeNull();
+  });
+
+  it('generate-artifact with a missing target → status 2', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_miss', kind: 'generate-artifact', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect(adapter.lastInput).toBeNull();
   });
 
   it('a thrown RateLimitError (AdapterError) → status 2', async () => {
@@ -564,7 +680,7 @@ describe('runGenerative', () => {
       {
         id: 'pr_rl',
         kind: 'generate-artifact',
-        payload: { kind: 'TokenSet', path: 'design/tokens.ds.json' },
+        payload: { target: 'user-journey', path: 'design/flow.json' },
         createdAt: 1,
       },
       adapter,
@@ -780,7 +896,7 @@ describe('runWorker (end-to-end)', () => {
     fake.state.queue.push({
       id: 'pr_gen_e2e',
       kind: 'generate-artifact',
-      payload: { kind: 'UserFlow', path: 'design/flow.json' },
+      payload: { target: 'user-journey', path: 'design/flow.json' },
       createdAt: 1,
     });
 

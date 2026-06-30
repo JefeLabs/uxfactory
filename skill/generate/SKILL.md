@@ -8,7 +8,19 @@ compatibility: "Requires uxfactory-cli (Node 20+). Runs fully offline against th
 
 You draft **a single UX input artifact** for an already-classified project and write it to the exact path the registry expects, so the deterministic `uxfactory batch` gate can read it. You author the content; the engine stays LLM-free and only gates.
 
-You will be told the **artifact kind**, the **target path**, and the **constraints** to honor. Produce exactly that one artifact — do not generate others, do not run the batch, do not pin the profile.
+You will be told a **target**, the **target path**, optional **seed refs**, and the **constraints** to honor. Produce exactly that one artifact — do not generate others, do not run the batch, do not pin the profile.
+
+## Targets — pick the one you were told
+
+The pipeline panel drives three seeded workstreams via a `target`. Draft **exactly one**, matching the target you were handed:
+
+| Target                 | Draft                                                  | Underlying artifact            | Seeds (honor the given `seedRefs`)            |
+| ---------------------- | ------------------------------------------------------ | ------------------------------ | --------------------------------------------- |
+| `user-story`           | the user-story narratives                              | `AcceptanceCriterion` (stories) | the project classification                    |
+| `acceptance-criteria`  | testable acceptance criteria for the **seeded stories** | `AcceptanceCriterion`          | the upstream **story** refs in `seedRefs`     |
+| `user-journey`         | a user journey / `UserFlow` spanning the **seeded stories** | `UserFlow`                  | the upstream **story** refs in `seedRefs`     |
+
+When `seedRefs` are given (e.g. story ids `S-1`, `S-2`), every criterion or journey step you draft must **trace back to one of them by name** — acceptance criteria reference their story; a journey's steps span the seeded stories. If `seedRefs` is empty, you are the upstream/seed job: draft from the classification alone.
 
 ## Step 1 — Read the pinned context
 
@@ -29,17 +41,22 @@ The `constraints` array on the profile (e.g. accessibility targets, reading-leve
 
 Match the artifact kind to its shape and the depth implied by the scope dials:
 
-### AcceptanceCriterion (stories) — `inputs.stories`
+### AcceptanceCriterion — `inputs.stories` — serves `user-story` and `acceptance-criteria`
 
 A JSON array of stories. Each story has an `id` and acceptance criteria naming the view-states it owns. Cover the states the `coverage` dial demands (success only at `low`; add empty / loading / error at `medium`; all edge states at `high`). Keep story ids stable and filename-safe — the gate traces them by name.
+
+- For `target: user-story`, draft the **story narratives** (stable ids + a clear narrative per story), seeded by the classification.
+- For `target: acceptance-criteria`, draft the **testable criteria for the stories named in `seedRefs`** — each criterion references its seed story id so `coverage-orphans` can trace it. Do not invent stories that are not in `seedRefs`.
 
 ### TokenSet (design tokens) — `inputs.tokens`
 
 A JSON token set: color, type, spacing, radius. Every color a spec fills or strokes must exist here — `token-conformance` binds at `visual >= medium` and matches by registered token. Honor any contrast obligation in the constraints.
 
-### UserFlow — `inputs.flow`
+### UserFlow — `inputs.flow` — serves `user-journey`
 
 A JSON flow: named steps and the transitions between them. Each step name should match the frame/node it refers to. Cover the paths the `flow` dial demands (single screen at `low`; the primary end-to-end path at `medium`; branches, back/cancel, and deep-links at `high`). `flow-reachability` binds at `flow >= medium`.
+
+For `target: user-journey`, the journey must **span the stories named in `seedRefs`** — name the steps after the seed stories' screens/states so the flow stays traceable to them.
 
 Author for **traceability**: story ids in frame names, state keywords in node names, registered token colors, real step names. The gate matches on names.
 
@@ -59,10 +76,11 @@ Draft **one** artifact, honestly. If the classification or constraints are ambig
 
 ## Quick reference
 
-| Step | Command / action                                                        |
-| ---- | ----------------------------------------------------------------------- |
-| 1    | `uxfactory classify --json` — read scope + manifest + constraints       |
-| 1    | Read `uxfactory.batch.json` → `inputs.<kind>` for the expected path     |
-| 2    | Draft ONE artifact (AcceptanceCriterion / TokenSet / UserFlow) at scope |
-| 3    | Write the JSON to the registered path                                   |
-| 4    | Report kind + path + provenance + honored constraints                   |
+| Step | Command / action                                                                        |
+| ---- | --------------------------------------------------------------------------------------- |
+| 0    | Read the **target** (`user-story` / `acceptance-criteria` / `user-journey`) + `seedRefs` |
+| 1    | `uxfactory classify --json` — read scope + manifest + constraints                       |
+| 1    | Read `uxfactory.batch.json` → `inputs.<kind>` for the expected path                     |
+| 2    | Draft ONE artifact for the target (AcceptanceCriterion / UserFlow) at scope, honoring seeds |
+| 3    | Write the JSON to the registered path                                                   |
+| 4    | Report target + path + provenance + honored constraints                                 |

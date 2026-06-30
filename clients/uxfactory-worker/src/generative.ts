@@ -96,6 +96,74 @@ function classificationText(v: unknown): string {
   return 'the pinned classification in uxfactory.classification.json';
 }
 
+/** Render the `seedRefs` payload field (upstream artifact refs) for the prompt. */
+function seedRefsText(v: unknown): string {
+  if (Array.isArray(v)) {
+    const refs = v.filter((x): x is string => typeof x === 'string' && x.trim() !== '');
+    if (refs.length > 0) return refs.join(', ');
+  }
+  return 'none (this is an upstream/seed job — there are no prior artifacts to honor)';
+}
+
+// ---------------------------------------------------------------------------
+// generate-artifact targets — the 3 panel jobs (Stories → ACs → Journeys)
+// ---------------------------------------------------------------------------
+
+/**
+ * The 3 requirement-artifact workstreams the pipeline panel drives. Each maps to
+ * an underlying registry artifact (2 files: stories + ACs persist into
+ * `AcceptanceCriterion`; journeys into `UserFlow`) plus a per-target emphasis.
+ */
+export type GenerateTarget = 'user-story' | 'acceptance-criteria' | 'user-journey';
+
+interface TargetPlan {
+  /** The underlying registry artifact the draft persists into. */
+  artifact: 'AcceptanceCriterion' | 'UserFlow';
+  /** The default registry path used when the payload omits an explicit `path`. */
+  pathHint: string;
+  /** The per-target skill emphasis threaded into the user instruction. */
+  emphasis: string;
+}
+
+/** Maps a `target` discriminator → its artifact, default path, and skill emphasis. */
+const TARGET_MAP: Record<GenerateTarget, TargetPlan> = {
+  'user-story': {
+    artifact: 'AcceptanceCriterion',
+    pathHint: 'design/acceptance-criteria.json',
+    emphasis: 'draft the user-story narratives',
+  },
+  'acceptance-criteria': {
+    artifact: 'AcceptanceCriterion',
+    pathHint: 'design/acceptance-criteria.json',
+    emphasis: 'draft testable acceptance criteria for the seeded stories',
+  },
+  'user-journey': {
+    artifact: 'UserFlow',
+    pathHint: 'design/user-flow.json',
+    emphasis: 'draft the user journey / UserFlow spanning the seeded stories',
+  },
+};
+
+/** Narrow an opaque payload field to a known `GenerateTarget`. */
+function isTarget(v: unknown): v is GenerateTarget {
+  return Object.prototype.hasOwnProperty.call(TARGET_MAP, v as string) && typeof v === 'string';
+}
+
+/**
+ * Thrown when a `generate-artifact` request carries an absent or unrecognized
+ * `target`. `runGenerative`'s catch maps it to `status 2` (a setup error) — the
+ * adapter is never streamed for a request we can't route.
+ */
+export class InvalidTargetError extends Error {
+  constructor(public readonly target: unknown) {
+    super(
+      `generate-artifact: invalid or missing 'target' (got ${JSON.stringify(target)}); ` +
+        `expected one of: user-story | acceptance-criteria | user-journey`,
+    );
+    this.name = 'InvalidTargetError';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // permission grant (approach A) — least tools a headless skill needs
 // ---------------------------------------------------------------------------
@@ -167,16 +235,25 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
   const p = asObject(req.payload);
 
   if (req.kind === 'generate-artifact') {
-    const kind = str(p, 'kind') ?? 'artifact';
-    const artifactPath = str(p, 'path');
+    // The panel drives 3 seeded workstreams via a `target` discriminator; an
+    // absent/unknown target is a setup error (caught → status 2), never streamed.
+    const target = p['target'];
+    if (!isTarget(target)) throw new InvalidTargetError(target);
+
+    const plan = TARGET_MAP[target];
+    // An explicit `path` overrides the per-artifact default (the skill ultimately
+    // writes to the registry's `inputs.<kind>` entry, but we hint a concrete path).
+    const artifactPath = str(p, 'path') ?? plan.pathHint;
     const user =
-      `Draft a ${kind} artifact for this classification (${classificationText(p['classification'])}); ` +
-      `write it to ${artifactPath ?? 'the registered path'} in ${ctx.projectRoot}. ` +
+      `Target: ${target} — ${plan.emphasis}. ` +
+      `The underlying artifact is ${plan.artifact}; write it as JSON to ${artifactPath} in ${ctx.projectRoot}. ` +
+      `Seed refs (upstream stories/artifacts this draft must honor): ${seedRefsText(p['seedRefs'])}. ` +
+      `Classification: ${classificationText(p['classification'])}. ` +
       `Honor: ${constraintsText(p['constraints'])}.`;
     return {
       systemPrompt: loadSkill('generate'),
       user,
-      ...(artifactPath !== undefined ? { artifactPath } : {}),
+      artifactPath,
     };
   }
 
