@@ -23,6 +23,12 @@ export interface WorkerConfig {
   /** Path to the agent-auth credentials file (mode 0600). */
   authPath: string;
   /**
+   * Explicit `uxfactory` CLI binary for deterministic dispatch (Task 3). When
+   * unset, `resolveCliBin` discovers `<projectRoot>/node_modules/.bin/uxfactory`,
+   * falling back to the bare name on PATH.
+   */
+  cliBin?: string;
+  /**
    * Autonomous adapter type used to run SKILLs. Must be a skill-runner — one of
    * `listAdapterTypes({ toolUseMode: 'autonomous' })`. Default `claude-code-cli`.
    */
@@ -55,5 +61,6 @@ export function loadConfig(
     authPath: env.UXFACTORY_WORKER_AUTH ?? join(homedir(), '.agentx', 'auth.json'),
     runtime: (env.UXFACTORY_WORKER_RUNTIME ?? DEFAULT_RUNTIME) as AgentSpecType,
     model: env.UXFACTORY_WORKER_MODEL ?? DEFAULT_MODEL,
+    ...(env.UXFACTORY_CLI_BIN !== undefined ? { cliBin: env.UXFACTORY_CLI_BIN } : {}),
   };
 }
