@@ -368,11 +368,16 @@ describe("wirePanel — SSE routing by requestId → pendingId", () => {
     expect(store.getState().jobs["user-journey"].streamLine).toBeUndefined();
   });
 
-  it("dispatches jobResult when the polled result for the routed request is done", async () => {
+  it("appends the artifact via poll-until-done — no SSE frame needed (3a)", async () => {
+    // The completion/append is owned by Generate's own awaitResult poll loop,
+    // NOT by an SSE-frame nudge. Proven here by emitting NO frame at all: the
+    // artifact still lands once pollResult reports done. This is the 3a fix —
+    // the real worker stores the result after the terminal frame, so a
+    // frame-triggered single poll would race ahead of the store and strand it.
     const root = document.createElement("div");
     const store = makeStore(definedState({ activeJob: "user-story" }));
     const artifact = { ref: "S-1", content: "story body" };
-    const { client, emit } = makeClient({
+    const { client } = makeClient({
       pollResult: vi.fn(async (): Promise<PollResult> => ({
         status: "done",
         result: { status: 0, result: artifact },
@@ -381,9 +386,6 @@ describe("wirePanel — SSE routing by requestId → pendingId", () => {
     wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
 
     root.querySelector<HTMLElement>('[data-action="generate"]')!.click();
-    await vi.waitFor(() => expect(store.getState().jobs["user-story"].pendingId).toBe("req-1"));
-
-    emit({ requestId: "req-1", event: { type: "result" }, seq: 1 });
 
     await vi.waitFor(() =>
       expect(store.getState().jobs["user-story"].artifacts).toHaveLength(1),

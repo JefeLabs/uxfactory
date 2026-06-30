@@ -485,12 +485,19 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
     if (result) dispatchAndRender(setManifest(result.result as Manifest));
   }
 
-  // --- per-job generate (result arrives via the SSE-nudge below) -----------
+  // --- per-job generate: poll-until-done owns the artifact append ----------
+  // The SSE frames update the live streamLine (subscription below); the
+  // completion/append comes from awaitResult, NOT a single SSE-nudge poll. The
+  // real worker streams every frame (incl. the terminal one) DURING the run and
+  // stores the result only AFTER, so a single poll fired on the terminal frame
+  // can race ahead of the store and strand the job. Poll-until-done can't.
   async function generate(): Promise<void> {
     const s = getState();
     const job = s.activeJob;
     const id = await client.enqueue("generate-artifact", buildGeneratePayload(s, job));
     dispatchAndRender(jobEnqueued(job, id));
+    const result = await awaitResult(id);
+    if (result) dispatchAndRender(jobResult(job, result));
   }
 
   // --- per-job gates (await the result, then set the strip) ----------------
@@ -502,12 +509,15 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
     if (result) dispatchAndRender(gateResult(job, toGateResults(result)));
   }
 
-  // --- the single SSE subscription: route each event by requestId ----------
+  // --- the single SSE subscription: live progress only ---------------------
+  // Each frame updates the owning job's streamLine. Completion/append is owned
+  // by each action's awaitResult (poll-until-done), so a frame whose result is
+  // not stored yet cannot strand the job. A late frame arriving after
+  // completion finds no owner (jobResult cleared pendingId) and is ignored.
   const unsubscribe = client.subscribe((frame) => {
     const job = jobForRequest(frame.requestId);
     if (job === undefined) return; // no in-flight job owns this id → ignore
     dispatchAndRender(jobEvent(job, frame.event));
-    void resolveJob(frame.requestId);
   });
 
   /** Find the job whose pendingId matches the request id (from live state). */
@@ -515,17 +525,6 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
     const s = getState();
     for (const id of JOB_IDS) if (s.jobs[id].pendingId === requestId) return id;
     return undefined;
-  }
-
-  /** On the completion nudge, poll once; if done, append the artifact result. */
-  async function resolveJob(requestId: string): Promise<void> {
-    const poll = await client.pollResult(requestId);
-    if (poll.status !== "done") return;
-    // Re-find synchronously: jobResult clears pendingId, so a concurrent nudge
-    // that resolves later finds no owner and cannot double-append.
-    const job = jobForRequest(requestId);
-    if (job === undefined) return;
-    dispatchAndRender(jobResult(job, poll.result));
   }
 
   /** Poll until the bridge has a stored result (or the request is unknown). */

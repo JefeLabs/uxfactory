@@ -85,10 +85,11 @@ function startFakeWorker(baseUrl: string): { seen: SeenRequest[]; stop: () => vo
     if (kind === "generate-artifact") {
       const target = (payload?.target ?? "user-story") as keyof typeof CANNED;
       const artifacts = CANNED[target] ?? [];
-      // Save the terminal result first, then nudge the panel via one event so
-      // its SSE-driven resolveJob polls and finds the result done.
-      await post("/pipeline/result", { id, status: 0, result: artifacts });
+      // Real-worker ordering: stream the event(s) DURING the run, then store the
+      // result AFTER. The panel's poll-until-done must still append the artifact
+      // even though the frame precedes the stored result (the 3a race).
       await post("/pipeline/event", { requestId: id, event: { text: `drafting ${target}…` } });
+      await post("/pipeline/result", { id, status: 0, result: artifacts });
       return;
     }
     if (kind === "gate") {
