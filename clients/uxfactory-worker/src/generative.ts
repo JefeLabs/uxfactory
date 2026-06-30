@@ -165,6 +165,164 @@ export class InvalidTargetError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// per-item refs — lift `{ ref, title?, seedRef? }` from the written artifact
+// ---------------------------------------------------------------------------
+
+/**
+ * A per-item artifact ref the panel seeds downstream jobs from. The panel's
+ * `toArtifacts(result)` reads `result.artifacts: ArtifactRef[]` and seeds the
+ * next job (ACs / Journeys) from `jobs['user-story'].artifacts[].ref` — so a
+ * generate-artifact run MUST surface these or downstream jobs can't seed.
+ */
+export interface ArtifactRef {
+  ref: string;
+  title?: string;
+  seedRef?: string;
+}
+
+/** Narrow to a plain (non-array) object, else `undefined`. */
+function rec(v: unknown): Record<string, unknown> | undefined {
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : undefined;
+}
+
+/** A required ref-ish value: a non-empty string or a finite number, else `undefined`. */
+function idStr(v: unknown): string | undefined {
+  if (typeof v === 'string' && v.trim() !== '') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return undefined;
+}
+
+/** First non-empty string among `vals` (a human label), else `undefined`. */
+function labelStr(...vals: unknown[]): string | undefined {
+  for (const v of vals) if (typeof v === 'string' && v.trim() !== '') return v;
+  return undefined;
+}
+
+/** Build a ref, omitting absent optional fields (the panel reads them verbatim). */
+function makeRef(ref: string, title?: string, seedRef?: string): ArtifactRef {
+  const out: ArtifactRef = { ref };
+  if (title !== undefined) out.title = title;
+  if (seedRef !== undefined) out.seedRef = seedRef;
+  return out;
+}
+
+/** The story objects from `parsed.stories` (or a top-level array). */
+function storyList(parsed: unknown): Record<string, unknown>[] {
+  const arr = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(rec(parsed)?.['stories'])
+      ? (rec(parsed)!['stories'] as unknown[])
+      : [];
+  return arr.map(rec).filter((x): x is Record<string, unknown> => x !== undefined);
+}
+
+/** One UserFlow step (a node-name string, or a tolerant `{ id?, name?, story? }`). */
+function stepRef(s: unknown, i: number): ArtifactRef {
+  if (typeof s === 'string' || typeof s === 'number') {
+    return makeRef(idStr(s) ?? `step-${i + 1}`);
+  }
+  const so = rec(s) ?? {};
+  const ref = idStr(so['id']) ?? labelStr(so['name']) ?? `step-${i + 1}`;
+  return makeRef(ref, labelStr(so['name'], so['label']), labelStr(so['story'], so['storyRef']));
+}
+
+/** user-story: each story with an `id` → `{ ref, title: goal ?? title ?? name }`. */
+function extractStories(parsed: unknown): ArtifactRef[] {
+  const out: ArtifactRef[] = [];
+  for (const st of storyList(parsed)) {
+    const ref = idStr(st['id']);
+    if (ref === undefined) continue;
+    out.push(makeRef(ref, labelStr(st['goal'], st['title'], st['name'])));
+  }
+  return out;
+}
+
+/**
+ * acceptance-criteria: ACs are NESTED per story (no own id), so flatMap each
+ * `st.acceptanceCriteria[i]` → `{ ref: `${st.id}#ac-${i+1}`, title, seedRef: st.id }`.
+ * A story with no criteria yields one self-seeded `{ ref: st.id, …, seedRef: st.id }`.
+ */
+function extractCriteria(parsed: unknown): ArtifactRef[] {
+  const out: ArtifactRef[] = [];
+  for (const st of storyList(parsed)) {
+    const ref = idStr(st['id']);
+    if (ref === undefined) continue;
+    const criteria = Array.isArray(st['acceptanceCriteria'])
+      ? (st['acceptanceCriteria'] as unknown[])
+      : [];
+    if (criteria.length === 0) {
+      out.push(makeRef(ref, labelStr(st['goal'], st['title'], st['name']), ref));
+      continue;
+    }
+    criteria.forEach((c, i) => {
+      const cr = rec(c) ?? {};
+      out.push(makeRef(`${ref}#ac-${i + 1}`, labelStr(cr['statement'], cr['text']), ref));
+    });
+  }
+  return out;
+}
+
+/**
+ * user-journey: items = `parsed.steps` (canonical `string[]`, tolerant of objects).
+ * With no steps, a recognizable flow doc yields ONE artifact from its id/name;
+ * a genuinely empty/malformed doc yields `[]`.
+ */
+function extractJourney(parsed: unknown): ArtifactRef[] {
+  if (Array.isArray(parsed)) return parsed.map(stepRef);
+  const p = rec(parsed);
+  if (p === undefined) return [];
+  const hasSteps = Array.isArray(p['steps']);
+  const steps = hasSteps ? (p['steps'] as unknown[]) : [];
+  if (steps.length > 0) return steps.map(stepRef);
+  const ref = idStr(p['id']) ?? labelStr(p['name']);
+  const title = labelStr(p['name'], p['title']);
+  // Only emit a flow fallback for a flow-shaped doc (declares steps, or names itself).
+  if (!hasSteps && ref === undefined && title === undefined) return [];
+  return [makeRef(ref ?? 'user-flow', title)];
+}
+
+/**
+ * Lift per-item refs from a PARSED artifact file for a given target. Pure and
+ * tolerant: any missing/malformed/empty input yields `[]` and it NEVER throws.
+ */
+export function extractArtifacts(parsed: unknown, target: GenerateTarget): ArtifactRef[] {
+  try {
+    switch (target) {
+      case 'user-story':
+        return extractStories(parsed);
+      case 'acceptance-criteria':
+        return extractCriteria(parsed);
+      case 'user-journey':
+        return extractJourney(parsed);
+      default:
+        return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Best-effort read + parse + extract of the written artifact file. Returns the
+ * per-item refs on success, or `undefined` when the file is missing/unreadable/
+ * unparseable — the caller then OMITS `artifacts` (a graceful fallback that never
+ * fails the generation).
+ */
+async function readArtifactRefs(
+  filePath: string,
+  target: GenerateTarget,
+): Promise<ArtifactRef[] | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+    return extractArtifacts(parsed, target);
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // permission grant (approach A) — least tools a headless skill needs
 // ---------------------------------------------------------------------------
 
@@ -229,6 +387,8 @@ interface GenerativePlan {
   user: string;
   /** Echoed in the result for `generate-artifact` (the registry path written). */
   artifactPath?: string;
+  /** The resolved target (drives which per-item refs we lift from the written file). */
+  target?: GenerateTarget;
 }
 
 function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan {
@@ -254,6 +414,7 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
       systemPrompt: loadSkill('generate'),
       user,
       artifactPath,
+      target,
     };
   }
 
@@ -304,11 +465,21 @@ export async function runGenerative(
       }
     }
 
+    // The skill wrote the artifact during the stream — READ it back (best-effort)
+    // and attach per-item `{ ref, title?, seedRef? }` so the panel can seed the
+    // downstream jobs (Stories → ACs / Journeys). A missing/unreadable/unparseable
+    // file OMITS `artifacts` (graceful) — it never fails an otherwise-clean run.
+    const artifacts =
+      plan.target !== undefined && plan.artifactPath !== undefined
+        ? await readArtifactRefs(path.join(ctx.projectRoot, plan.artifactPath), plan.target)
+        : undefined;
+
     return {
       status: 0,
       result: {
         content,
         ...(plan.artifactPath !== undefined ? { artifactPath: plan.artifactPath } : {}),
+        ...(artifacts !== undefined ? { artifacts } : {}),
       },
     };
   } catch (err) {

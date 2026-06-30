@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, chmod, readFile, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, chmod, readFile, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -28,7 +28,7 @@ import type { BridgeLike, PipelineRequest } from '../src/bridge-client.js';
 import { runCli, resolveCliBin } from '../src/run-cli.js';
 import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.js';
 import type { DispatchCtx } from '../src/dispatch.js';
-import { ensureSkillPermissions } from '../src/generative.js';
+import { ensureSkillPermissions, extractArtifacts } from '../src/generative.js';
 import { loadSkill } from '../src/skills.js';
 import { drain, handleRequest, runWorker } from '../src/main.js';
 
@@ -496,6 +496,110 @@ describe('loadSkill', () => {
 });
 
 // ---------------------------------------------------------------------------
+// extractArtifacts — per-item refs lifted from a written artifact file
+// ---------------------------------------------------------------------------
+
+describe('extractArtifacts', () => {
+  it('user-story: maps each story id → { ref, title: goal } (real stories.json shape)', () => {
+    const parsed = {
+      stories: [
+        { id: 'story-1', role: 'user', goal: 'see home', benefit: 'fast' },
+        { id: 'story-2', goal: 'check out' },
+      ],
+    };
+    expect(extractArtifacts(parsed, 'user-story')).toEqual([
+      { ref: 'story-1', title: 'see home' },
+      { ref: 'story-2', title: 'check out' },
+    ]);
+  });
+
+  it('user-story: accepts a top-level array and falls title back to title ?? name', () => {
+    const parsed = [
+      { id: 'S-1', title: 'Login' },
+      { id: 'S-2', name: 'Browse' },
+    ];
+    expect(extractArtifacts(parsed, 'user-story')).toEqual([
+      { ref: 'S-1', title: 'Login' },
+      { ref: 'S-2', title: 'Browse' },
+    ]);
+  });
+
+  it('user-story: skips stories without an id', () => {
+    const parsed = { stories: [{ goal: 'no id' }, { id: 'story-9', goal: 'ok' }] };
+    expect(extractArtifacts(parsed, 'user-story')).toEqual([{ ref: 'story-9', title: 'ok' }]);
+  });
+
+  it('acceptance-criteria: flattens nested criteria, seedRef = the owning story id', () => {
+    const parsed = {
+      stories: [
+        {
+          id: 'story-1',
+          goal: 'see home',
+          acceptanceCriteria: [
+            { statement: 'no data', impliedState: 'empty' },
+            { statement: 'loaded', impliedState: 'success' },
+          ],
+        },
+        {
+          id: 'story-2',
+          goal: 'check out',
+          acceptanceCriteria: [{ statement: 'pays', impliedState: 'success' }],
+        },
+      ],
+    };
+    expect(extractArtifacts(parsed, 'acceptance-criteria')).toEqual([
+      { ref: 'story-1#ac-1', title: 'no data', seedRef: 'story-1' },
+      { ref: 'story-1#ac-2', title: 'loaded', seedRef: 'story-1' },
+      { ref: 'story-2#ac-1', title: 'pays', seedRef: 'story-2' },
+    ]);
+  });
+
+  it('acceptance-criteria: a story with no criteria emits one self-seeded artifact', () => {
+    const parsed = { stories: [{ id: 'story-3', goal: 'orphan' }] };
+    expect(extractArtifacts(parsed, 'acceptance-criteria')).toEqual([
+      { ref: 'story-3', title: 'orphan', seedRef: 'story-3' },
+    ]);
+  });
+
+  it('user-journey: canonical string steps → the step names as refs', () => {
+    const parsed = { steps: ['story-1-home', 'story-1-detail'] };
+    expect(extractArtifacts(parsed, 'user-journey')).toEqual([
+      { ref: 'story-1-home' },
+      { ref: 'story-1-detail' },
+    ]);
+  });
+
+  it('user-journey: tolerant object steps → id/name refs + seedRef from story', () => {
+    const parsed = {
+      steps: [
+        { id: 'step-a', name: 'Home', story: 'story-1' },
+        { name: 'Detail', storyRef: 'story-2' },
+      ],
+    };
+    expect(extractArtifacts(parsed, 'user-journey')).toEqual([
+      { ref: 'step-a', title: 'Home', seedRef: 'story-1' },
+      { ref: 'Detail', title: 'Detail', seedRef: 'story-2' },
+    ]);
+  });
+
+  it('user-journey: no steps → a single flow artifact from id/name', () => {
+    expect(extractArtifacts({ id: 'flow-1', name: 'Checkout' }, 'user-journey')).toEqual([
+      { ref: 'flow-1', title: 'Checkout' },
+    ]);
+  });
+
+  it('malformed / empty input → [] for every target (never throws)', () => {
+    for (const t of ['user-story', 'acceptance-criteria', 'user-journey'] as const) {
+      expect(extractArtifacts(null, t)).toEqual([]);
+      expect(extractArtifacts(42, t)).toEqual([]);
+      expect(extractArtifacts('nope', t)).toEqual([]);
+      expect(extractArtifacts({}, t)).toEqual([]);
+      expect(extractArtifacts({ stories: 'not-an-array' }, t)).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runGenerative (FAKE AgentAdapter — no real LLM)
 // ---------------------------------------------------------------------------
 
@@ -707,6 +811,67 @@ describe('runGenerative', () => {
     expect(out.status).toBe(0);
     // canvas-review has no artifact path.
     expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
+  });
+
+  it('reads the written artifact file and attaches per-item refs (2 stories → 2 artifacts)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+    // The skill would WRITE this file during the run; simulate it landing at the
+    // resolved path (the read happens after the stream completes).
+    await mkdir(path.join(projectRoot, 'design'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, 'design', 'stories.json'),
+      JSON.stringify({
+        stories: [
+          { id: 'story-1', goal: 'see home' },
+          { id: 'story-2', goal: 'check out' },
+        ],
+      }),
+      'utf8',
+    );
+
+    const out = await runGenerative(
+      {
+        id: 'pr_seed',
+        kind: 'generate-artifact',
+        payload: { target: 'user-story', path: 'design/stories.json' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    expect(out.result).toMatchObject({ artifactPath: 'design/stories.json' });
+    // per-item refs the panel seeds downstream jobs from.
+    expect((out.result as { artifacts: unknown }).artifacts).toEqual([
+      { ref: 'story-1', title: 'see home' },
+      { ref: 'story-2', title: 'check out' },
+    ]);
+  });
+
+  it('an ABSENT artifact file omits `artifacts` gracefully but keeps { content, artifactPath }', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+    // No file is written at the resolved path → the post-stream read fails.
+
+    const out = await runGenerative(
+      {
+        id: 'pr_absent',
+        kind: 'generate-artifact',
+        payload: { target: 'user-story', path: 'design/stories.json' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    expect(out.result).toMatchObject({ content: '', artifactPath: 'design/stories.json' });
+    // graceful: a missing/unreadable file omits `artifacts` entirely (no throw).
+    expect(Object.prototype.hasOwnProperty.call(out.result, 'artifacts')).toBe(false);
   });
 });
 
