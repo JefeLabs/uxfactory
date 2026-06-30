@@ -138,6 +138,16 @@ function classificationOf(s: PanelState): Partial<Classification> {
   return s.project?.classification ?? {};
 }
 
+/**
+ * Build the wire classification for the `classify` request. The engine schema
+ * requires `version: 1` and a `flow_refs` string[] that the chip UI does not
+ * collect — supply them here so live intake isn't rejected (status 2).
+ */
+function toWireClassification(c: Partial<Classification>): Record<string, unknown> {
+  const flowRefs = (c as { flow_refs?: unknown }).flow_refs;
+  return { version: 1, ...c, flow_refs: Array.isArray(flowRefs) ? flowRefs : [] };
+}
+
 function scopeOf(s: PanelState): ScopeDials {
   return classificationOf(s).scope ?? DEFAULT_SCOPE;
 }
@@ -479,7 +489,7 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
 
   // --- intake → classify → manifest ----------------------------------------
   async function define(): Promise<void> {
-    const classification = classificationOf(getState());
+    const classification = toWireClassification(classificationOf(getState()));
     const id = await client.enqueue("classify", { classification });
     const result = await awaitResult(id);
     if (result) dispatchAndRender(setManifest(result.result as Manifest));

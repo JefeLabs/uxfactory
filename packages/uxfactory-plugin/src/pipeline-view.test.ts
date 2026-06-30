@@ -294,7 +294,11 @@ describe("wirePanel — Define project", () => {
 
     await vi.waitFor(() => expect(store.getState().project?.manifest).toBeDefined());
     expect(enqueued[0]!.kind).toBe("classify");
-    expect(enqueued[0]!.payload).toMatchObject({ classification: { category: "ecommerce" } });
+    // version + flow_refs are required by the engine schema but not collected by
+    // the chips — the view must add them, else live intake is rejected (status 2).
+    expect(enqueued[0]!.payload).toMatchObject({
+      classification: { version: 1, category: "ecommerce", flow_refs: [] },
+    });
     expect(store.getState().project?.manifest).toEqual(manifest);
   });
 });
