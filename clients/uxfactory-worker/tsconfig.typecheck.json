@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"],
+    // The helmsmith libs are source-first (`@helmsmith/*` resolve to their
+    // `src/index.ts`). They are symlinked (pnpm `link:`) to a sibling checkout
+    // OUTSIDE our node_modules, so tsc pulls their `.ts` sources into the
+    // program and reports their internal `.ts`-extension import specifiers
+    // (TS5097). Allowed here because this config is `--noEmit` only — it does
+    // NOT change our own emit (we have none) and our own imports stay `.js`.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src"]
+}

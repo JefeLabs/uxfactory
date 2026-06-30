@@ -1,0 +1,8 @@
+node_modules/
+# Spike artifact written by `pnpm spike` into the worker's cwd.
+SPIKE_OK.txt
+# claude-code-cli sandboxes $HOME -> workdir, so the `claude` binary drops its
+# own state/config here when the spike (or worker) runs. Never commit these.
+.claude.json
+.claude/
+.config/
