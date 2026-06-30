@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
@@ -401,7 +402,19 @@ export async function run(argv: string[]): Promise<number | "foreground"> {
 }
 
 // Guard: only auto-run when this file is the entry-point, not when imported in tests.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Canonicalize argv[1] via realpath first: when invoked through a bin symlink
+// (npm/pnpm `.bin/uxfactory`, or the worker's resolveCliBin), process.argv[1] is
+// the *symlink* path while import.meta.url is the realpath — a naive compare would
+// make the CLI a silent no-op. realpathSync resolves the symlink so they match.
+export function entryUrlMatches(argv1: string | undefined, moduleUrl: string): boolean {
+  if (!argv1) return false;
+  try {
+    return moduleUrl === pathToFileURL(realpathSync(argv1)).href;
+  } catch {
+    return moduleUrl === pathToFileURL(argv1).href;
+  }
+}
+if (entryUrlMatches(process.argv[1], import.meta.url)) {
   void run(process.argv).then((r) => {
     if (r !== "foreground") process.exit(r);
   });

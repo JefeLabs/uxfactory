@@ -5,9 +5,11 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { run } from "../src/cli.js";
+import { pathToFileURL } from "node:url";
+import { run, entryUrlMatches } from "../src/cli.js";
 import { EXIT } from "../src/exit.js";
 import { matchingSpec } from "./helpers.js";
 
@@ -59,5 +61,31 @@ describe("bin wiring — exit code contract (§5.3)", () => {
 
   it("--help → 0", async () => {
     expect(await run(["node", "uxfactory", "--help"])).toBe(EXIT.OK);
+  });
+});
+
+describe("entryUrlMatches — bin-symlink entry-point detection", () => {
+  it("resolves a bin symlink to the real module (the .bin/uxfactory case)", () => {
+    const d = mkdtempSync(path.join(os.tmpdir(), "uxf-entry-"));
+    try {
+      const real = path.join(d, "cli.js");
+      writeFileSync(real, "// real\n");
+      const link = path.join(d, "uxfactory");
+      symlinkSync(real, link);
+      const moduleUrl = pathToFileURL(real).href;
+
+      // Invoked via the symlink → matches (the realpath fix).
+      expect(entryUrlMatches(link, moduleUrl)).toBe(true);
+      // The naive compare (no realpath) does NOT match — this is the bug the live
+      // e2e caught: run through .bin/uxfactory, the CLI was a silent no-op.
+      expect(pathToFileURL(link).href === moduleUrl).toBe(false);
+      // A direct (non-symlink) invocation still matches.
+      expect(entryUrlMatches(real, moduleUrl)).toBe(true);
+      // Unrelated / undefined argv[1] → no match (so import-in-tests never auto-runs).
+      expect(entryUrlMatches(path.join(d, "other.js"), moduleUrl)).toBe(false);
+      expect(entryUrlMatches(undefined, moduleUrl)).toBe(false);
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });
