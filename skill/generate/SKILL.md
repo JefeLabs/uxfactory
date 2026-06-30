@@ -47,6 +47,7 @@ A JSON array of stories. Each story has an `id` and acceptance criteria naming t
 
 - For `target: user-story`, draft the **story narratives** (stable ids + a clear narrative per story), seeded by the classification.
 - For `target: acceptance-criteria`, draft the **testable criteria for the stories named in `seedRefs`** — each criterion references its seed story id so `coverage-orphans` can trace it. Do not invent stories that are not in `seedRefs`.
+  - **Merge, never replace.** `user-story` and `acceptance-criteria` write the **same** `inputs.stories` file. The `user-story` job ran first and authored the story narratives. So for `acceptance-criteria` you MUST first **Read** the existing `AcceptanceCriterion` JSON, then **attach** your criteria to the matching seeded stories *in place* — preserve every existing story's `id` and narrative verbatim, and keep stories you were not asked about untouched. Never overwrite the stories array wholesale; doing so destroys the upstream job's work.
 
 ### TokenSet (design tokens) — `inputs.tokens`
 
@@ -63,6 +64,8 @@ Author for **traceability**: story ids in frame names, state keywords in node na
 ## Step 3 — Write it to the registered path
 
 Write the drafted artifact as JSON to the path you were given (the registry's `inputs.<kind>` entry). Create parent directories if needed. Do not overwrite a different artifact kind, and do not touch committed inputs you were not asked to draft.
+
+**When your target shares a file with an upstream target** — `acceptance-criteria` writes the same `AcceptanceCriterion` file as `user-story` — **Read the existing file first and merge into it**: add your content to the existing entries, preserving everything already there. Only when the file is absent (you are the first/seed job) do you write it fresh.
 
 ## Step 4 — Report
 
