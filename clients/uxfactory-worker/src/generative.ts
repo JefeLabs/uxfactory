@@ -85,21 +85,47 @@ function toEvent(chunk: AgentChunk): unknown {
 // progress markers — the `design` loop narrates `UXF::PROGRESS <json>` lines
 // ---------------------------------------------------------------------------
 
-/** A complete narration line carrying a compact progress payload. */
-const PROGRESS_RE = /^UXF::PROGRESS\s+(.+)$/;
+/** The progress marker prefix. The agent often prefixes narration before it. */
+const PROGRESS_MARKER = 'UXF::PROGRESS';
+
+/** Extract the balanced `{…}` object starting at `s[start]` (`{`), string-aware. */
+function balancedObject(s: string, start: number): string | null {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}
 
 /**
- * Parse one (already-newline-delimited) narration line into a structured progress
- * event payload, or `null` when it is not a `UXF::PROGRESS <json>` marker or its
- * JSON is malformed (best-effort — a partial/garbled marker is silently ignored).
- * A `note` field is secret-masked before it can reach the panel.
+ * Parse a narration line into a structured progress event payload, or `null` when
+ * it carries no `UXF::PROGRESS <json>` marker or its JSON is malformed (best-effort).
+ * The marker may appear MID-LINE — the agent often emits prose then the marker on
+ * the same line — so we find it ANYWHERE and extract the balanced JSON object that
+ * follows (string-aware, tolerant of trailing text). A `note` field is secret-masked.
  */
 export function parseProgressLine(line: string): Record<string, unknown> | null {
-  const m = PROGRESS_RE.exec(line.trim());
-  if (m === null) return null;
+  const at = line.indexOf(PROGRESS_MARKER);
+  if (at < 0) return null;
+  const brace = line.indexOf('{', at + PROGRESS_MARKER.length);
+  if (brace < 0) return null;
+  const json = balancedObject(line, brace);
+  if (json === null) return null;
   let payload: unknown;
   try {
-    payload = JSON.parse(m[1] as string) as unknown;
+    payload = JSON.parse(json) as unknown;
   } catch {
     return null;
   }

@@ -71,7 +71,7 @@ Rules the deterministic gate enforces — author so it can trace your specs by *
 `token-conformance` binds at `visual >= medium`: **every** `fill`/`stroke` hex used anywhere in your specs must be a registered token color. When the profile's `visual` dial is `medium` or `high`:
 
 - Write `design/tokens.ds.json` = `{ "colors": { "<name>": "#RRGGBB", … } }` registering EVERY color your specs use (background, surface, border, text, brand, state colors — success/error/etc.), and use those exact hexes in the specs.
-- Register it: ensure `uxfactory.batch.json` `inputs.tokens` points at your tokens file (the gate's registry handler also auto-registers a conventional tokens path). Keep the spec hexes and the registered hexes identical (the check normalizes 3- and 6-digit hex, case-insensitively).
+- Register it: ensure `uxfactory.batch.json` `inputs.tokens` points at your tokens file. You MUST do this yourself — there is no auto-registration inside this loop, so an unregistered tokens file at `visual >= medium` makes `batch` exit 2 (missing required input). Keep the spec hexes and the registered hexes identical (the check normalizes 3- and 6-digit hex, case-insensitively).
 
 At `visual: low` tokens are **not owed** — skip them; a greybox/wireframe with no color is fine.
 

@@ -586,6 +586,21 @@ describe('parseProgressLine', () => {
     expect(parseProgressLine('UXF::PROGRESS [1,2,3]')).toBeNull();
     expect(parseProgressLine('UXF::PROGRESS 42')).toBeNull();
   });
+
+  it('finds the marker MID-LINE (prefixed by narration) + tolerates trailing text', () => {
+    // The live run showed the agent emits e.g. "…authoring the specs.`UXF::PROGRESS {…}".
+    expect(
+      parseProgressLine(
+        'Now authoring the specs.`UXF::PROGRESS {"iter":2,"phase":"gate","status":"pass"} continuing',
+      ),
+    ).toMatchObject({ iter: 2, phase: 'gate', status: 'pass' });
+  });
+
+  it('handles a brace inside a string value (balanced, string-aware extraction)', () => {
+    expect(parseProgressLine('x UXF::PROGRESS {"note":"fix {checkout}"} y')?.['note']).toBe(
+      'fix {checkout}',
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
