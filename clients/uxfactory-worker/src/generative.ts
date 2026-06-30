@@ -1,11 +1,15 @@
 /**
  * Generative dispatch — run a SKILL through the autonomous `AgentAdapter`.
  *
- * The two generative request kinds run a SKILL verbatim as the adapter's
+ * The generative request kinds run a SKILL verbatim as the adapter's
  * `systemPrompt` and a short kind-specific user instruction:
  *   - `generate-artifact` → the `generate` skill: draft ONE UX artifact for a
  *     classification + project and write it to the registry's expected path.
  *   - `canvas-review`      → the `vision-review` skill: review the pending canvas.
+ *   - `generate-design`    → the `design` skill: author REAL *.uxfactory.json UI
+ *     specs covering the stories and iterate `uxfactory batch` to a green gate.
+ *     Its narration carries `UXF::PROGRESS <json>` lines that we forward as
+ *     structured `progress` events so the panel can render live loop progress.
  *
  * The adapter is INJECTED (the worker depends on the interface, not a concrete
  * backend) and this module imports ONLY types from `@helmsmith/*`, so importing
@@ -16,8 +20,10 @@
  *
  * Live events: we iterate `adapter.stream(input)` and forward every `AgentChunk`
  * to the bridge (→ SSE → panel), masking any `sk-…`-shaped secret in streamed
- * text first. Any thrown `AdapterError` (Auth/Billing/RateLimit/Network/…) — or
- * an in-band `error` chunk — is a setup/transport failure → `status 2`.
+ * text first. A `usage` chunk is flattened + forwarded (and its latest cumulative
+ * total returned in the result) so the panel can show token cost climbing through
+ * the multi-turn loop. Any thrown `AdapterError` (Auth/Billing/RateLimit/Network/…)
+ * — or an in-band `error` chunk — is a setup/transport failure → `status 2`.
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -49,7 +55,9 @@ function errMessage(e: unknown): string {
  * Project a raw `AgentChunk` into the (masked, JSON-serializable) event posted to
  * the bridge. `text-delta`/`thinking-delta` text is masked; an `error` chunk's
  * `AdapterError` is reduced to `{ name, message }` (an Error serializes to `{}`),
- * with its message masked too. Everything else passes through verbatim.
+ * with its message masked too; a `usage` chunk is flattened to
+ * `{ type:'usage', inputTokens, outputTokens }` so the panel can show tokens
+ * climbing live. Everything else passes through verbatim.
  */
 function toEvent(chunk: AgentChunk): unknown {
   switch (chunk.type) {
@@ -62,9 +70,43 @@ function toEvent(chunk: AgentChunk): unknown {
         type: 'error',
         error: { name: chunk.error.name, message: maskText(chunk.error.message) },
       };
+    case 'usage':
+      return {
+        type: 'usage',
+        inputTokens: chunk.usage.inputTokens,
+        outputTokens: chunk.usage.outputTokens,
+      };
     default:
       return chunk;
   }
+}
+
+// ---------------------------------------------------------------------------
+// progress markers — the `design` loop narrates `UXF::PROGRESS <json>` lines
+// ---------------------------------------------------------------------------
+
+/** A complete narration line carrying a compact progress payload. */
+const PROGRESS_RE = /^UXF::PROGRESS\s+(.+)$/;
+
+/**
+ * Parse one (already-newline-delimited) narration line into a structured progress
+ * event payload, or `null` when it is not a `UXF::PROGRESS <json>` marker or its
+ * JSON is malformed (best-effort — a partial/garbled marker is silently ignored).
+ * A `note` field is secret-masked before it can reach the panel.
+ */
+export function parseProgressLine(line: string): Record<string, unknown> | null {
+  const m = PROGRESS_RE.exec(line.trim());
+  if (m === null) return null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(m[1] as string) as unknown;
+  } catch {
+    return null;
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const obj = { ...(payload as Record<string, unknown>) };
+  if (typeof obj['note'] === 'string') obj['note'] = maskText(obj['note']);
+  return obj;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +374,11 @@ async function readArtifactRefs(
 
 /**
  * The minimal Claude Code permission grant a HEADLESS autonomous skill needs to
- * do its job: shell the `uxfactory` CLI and write/edit artifact files. (Read is
- * a safe, non-prompting tool and is intentionally NOT granted.)
+ * do its job: shell the `uxfactory` CLI, write/edit artifact files, and READ its
+ * inputs + the gate's `.uxfactory/batch/report.json`. The `design` skill drives a
+ * full author→gate→read-report→revise loop, so `Read` is required (it reads the
+ * stories/profile/registry and the report each iteration); it is a safe,
+ * non-prompting tool and the other skills only benefit from it.
  *
  * SECURITY: the `claude-code-cli` adapter sandboxes `HOME → workdir`, so
  * `<projectRoot>/.claude/settings.json` IS the agent's home config FOR THIS RUN.
@@ -342,7 +387,7 @@ async function readArtifactRefs(
  * gitignored by the consuming project (the worker's own `.gitignore` already is).
  * The exact least-privilege set for a real run is a live-only check (see notes).
  */
-export const SKILL_TOOL_GRANTS = ['Bash(uxfactory:*)', 'Write', 'Edit'] as const;
+export const SKILL_TOOL_GRANTS = ['Bash(uxfactory:*)', 'Write', 'Edit', 'Read'] as const;
 
 /**
  * Idempotently ensure `<projectRoot>/.claude/settings.json` grants the skill the
@@ -393,6 +438,12 @@ interface GenerativePlan {
   artifactPath?: string;
   /** The resolved target (drives which per-item refs we lift from the written file). */
   target?: GenerateTarget;
+  /**
+   * When true (the `generate-design` loop), the stream is scanned for
+   * `UXF::PROGRESS <json>` lines and each is forwarded as a structured
+   * `{ type: "progress", … }` event so the panel can render live loop progress.
+   */
+  progress?: boolean;
 }
 
 function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan {
@@ -429,6 +480,27 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
     };
   }
 
+  if (req.kind === 'generate-design') {
+    // The agentic high-fidelity loop: author REAL *.uxfactory.json specs covering
+    // the stories, author matching tokens when visual>=medium, and iterate the
+    // deterministic `uxfactory batch` gate to a green bar — falling back to
+    // `generate-specs --force` to cover any gap. The skill owns the whole loop;
+    // we only hand it the task + the working tree (the CLI is on PATH).
+    const user =
+      'Author real UI design specs covering the stories in design/acceptance-criteria.json; ' +
+      'author a matching design/tokens.ds.json if the profile visual dial is medium or higher; ' +
+      'iterate `uxfactory batch --json -- design` to a green gate (exit 0), reading ' +
+      '.uxfactory/batch/report.json after each run and revising the specs/tokens to clear ' +
+      'every must-check finding; use `uxfactory generate-specs --force` to cover any gap. ' +
+      `Work in ${ctx.projectRoot}; the uxfactory CLI is on PATH. ` +
+      'Emit a UXF::PROGRESS line at every loop step.';
+    return {
+      systemPrompt: loadSkill('design'),
+      user,
+      progress: true,
+    };
+  }
+
   throw new Error(`runGenerative: unsupported generative kind '${req.kind}'`);
 }
 
@@ -439,7 +511,9 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
 /**
  * Run the SKILL for a generative request. NEVER rejects: every failure (a bad
  * kind, an `AdapterError`, an in-band `error` chunk) returns `{ status: 2 }`, and
- * a clean run returns `{ status: 0, result: { content, artifactPath? } }`.
+ * a clean run returns `{ status: 0, result: { content, artifactPath?, artifacts?,
+ * usage? } }`. `usage` (cumulative `inputTokens`/`outputTokens`) is attached only
+ * when the runtime reported it; absent runtimes omit it gracefully.
  */
 export async function runGenerative(
   req: PipelineRequest,
@@ -460,14 +534,42 @@ export async function runGenerative(
     };
 
     let content = '';
+    // The latest CUMULATIVE token usage the adapter reported (a `usage` chunk is
+    // cumulative — `reduceStream` keeps the last one, so we mirror that and overwrite).
+    // Omitted entirely when the runtime never reports usage (graceful, never throws).
+    let usage: { inputTokens: number; outputTokens: number } | undefined;
+    // Buffer raw text across chunks so a `UXF::PROGRESS` marker that spans reads is
+    // only parsed once newline-terminated (the loop narrates progress for the panel).
+    let progressBuf = '';
+    const emitProgress = async (line: string): Promise<void> => {
+      const parsed = parseProgressLine(line);
+      if (parsed !== null) await bridge.postEvent(req.id, { type: 'progress', ...parsed });
+    };
+
     for await (const chunk of adapter.stream(input)) {
+      // toEvent forwards every chunk masked/normalized — incl. flattening `usage`
+      // to `{ type:'usage', inputTokens, outputTokens }` for the live panel feed.
       await bridge.postEvent(req.id, toEvent(chunk));
-      if (chunk.type === 'text-delta') content += maskText(chunk.text);
+      if (chunk.type === 'text-delta') {
+        content += maskText(chunk.text);
+        // Forward structured progress IN ADDITION to the raw (masked) narration.
+        if (plan.progress === true) {
+          progressBuf += chunk.text;
+          const segments = progressBuf.split('\n');
+          progressBuf = segments.pop() ?? ''; // last segment may be incomplete — keep it
+          for (const line of segments) await emitProgress(line);
+        }
+      }
+      if (chunk.type === 'usage') {
+        usage = { inputTokens: chunk.usage.inputTokens, outputTokens: chunk.usage.outputTokens };
+      }
       if (chunk.type === 'error') {
         // An in-band terminal error chunk — setup/transport failure.
         return { status: 2, result: { error: maskText(chunk.error.message), content } };
       }
     }
+    // Flush a trailing complete marker that arrived without a closing newline.
+    if (plan.progress === true && progressBuf !== '') await emitProgress(progressBuf);
 
     // The skill wrote the artifact during the stream — READ it back (best-effort)
     // and attach per-item `{ ref, title?, seedRef? }` so the panel can seed the
@@ -484,6 +586,7 @@ export async function runGenerative(
         content,
         ...(plan.artifactPath !== undefined ? { artifactPath: plan.artifactPath } : {}),
         ...(artifacts !== undefined ? { artifacts } : {}),
+        ...(usage !== undefined ? { usage } : {}),
       },
     };
   } catch (err) {

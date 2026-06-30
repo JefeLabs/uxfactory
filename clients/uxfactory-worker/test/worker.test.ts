@@ -28,7 +28,7 @@ import type { BridgeLike, PipelineRequest } from '../src/bridge-client.js';
 import { runCli, resolveCliBin } from '../src/run-cli.js';
 import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.js';
 import type { DispatchCtx } from '../src/dispatch.js';
-import { ensureSkillPermissions, extractArtifacts } from '../src/generative.js';
+import { ensureSkillPermissions, extractArtifacts, parseProgressLine } from '../src/generative.js';
 import { loadSkill } from '../src/skills.js';
 import { drain, handleRequest, runWorker } from '../src/main.js';
 
@@ -453,7 +453,11 @@ describe('deterministic dispatch', () => {
 
   it('generate-specs: runs the CLI in projectRoot with a `--` sentinel and relays its JSON + status', async () => {
     const bin = path.join(binDir, 'uxfactory.cjs');
-    await writeStubCli(bin, 0, JSON.stringify({ written: ['checkout.uxfactory.json'], skipped: [] }));
+    await writeStubCli(
+      bin,
+      0,
+      JSON.stringify({ written: ['checkout.uxfactory.json'], skipped: [] }),
+    );
 
     const bridge = new FakeBridge();
     bridge.queue.push({
@@ -510,6 +514,8 @@ describe('generative branch routing', () => {
     }
     expect(isDeterministic('generate-artifact')).toBe(false);
     expect(isDeterministic('canvas-review')).toBe(false);
+    // generate-design is a generative kind (skill-driven), NOT a deterministic CLI handler.
+    expect(isDeterministic('generate-design')).toBe(false);
   });
 
   it('a throwing generative handler is caught → result status 2 (loop stays alive)', async () => {
@@ -539,6 +545,46 @@ describe('loadSkill', () => {
     expect(body.startsWith('---')).toBe(false); // YAML frontmatter dropped
     expect(body).toContain('# UXFactory — Draft One UX Artifact');
     expect(body).toContain('uxfactory classify --json');
+  });
+
+  it('resolves the design skill body (frontmatter stripped) for the generate-design path', () => {
+    const body = loadSkill('design');
+    expect(body.startsWith('---')).toBe(false); // YAML frontmatter dropped
+    // the design skill drives the author -> gate -> revise loop
+    expect(body).toContain('uxfactory batch --json -- design');
+    expect(body).toContain('.uxfactory/batch/report.json');
+    expect(body).toContain('uxfactory generate-specs --force');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseProgressLine — the design loop's UXF::PROGRESS narration markers
+// ---------------------------------------------------------------------------
+
+describe('parseProgressLine', () => {
+  it('parses a well-formed marker and masks any sk-… in its note', () => {
+    const parsed = parseProgressLine(
+      'UXF::PROGRESS {"iter":1,"phase":"gate","status":"fail","findings":2,"note":"oops sk-ant-api03-XYZ00000"}',
+    );
+    expect(parsed).toMatchObject({ iter: 1, phase: 'gate', status: 'fail', findings: 2 });
+    expect(parsed?.['note']).toBe('oops sk-[redacted]');
+  });
+
+  it('tolerates surrounding whitespace on the line', () => {
+    expect(parseProgressLine('  UXF::PROGRESS {"phase":"draft"}  ')).toEqual({ phase: 'draft' });
+  });
+
+  it('returns null for a non-marker line', () => {
+    expect(parseProgressLine('just some narration')).toBeNull();
+  });
+
+  it('returns null (never throws) for a malformed JSON payload', () => {
+    expect(parseProgressLine('UXF::PROGRESS {not json')).toBeNull();
+  });
+
+  it('returns null for a non-object JSON payload (array/scalar)', () => {
+    expect(parseProgressLine('UXF::PROGRESS [1,2,3]')).toBeNull();
+    expect(parseProgressLine('UXF::PROGRESS 42')).toBeNull();
   });
 });
 
@@ -860,6 +906,223 @@ describe('runGenerative', () => {
     expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
   });
 
+  it('generate-design: builds AgentInput from the design skill + the loop task, forwards masked chunks', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'text-delta', text: 'planning (key=sk-ant-api03-TESTSECRET00000)\n' },
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_design', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    // systemPrompt is the design skill body verbatim.
+    expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('design'));
+    // the task names the loop, the specs dir, the tokens, and the generate-specs fallback.
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('uxfactory batch --json -- design');
+    expect(user).toContain('design/acceptance-criteria.json');
+    expect(user).toContain('design/tokens.ds.json');
+    expect(user).toContain('uxfactory generate-specs --force');
+    expect(user).toContain(projectRoot); // works in the project root; CLI on PATH
+    expect(user).toContain('PATH');
+
+    // the text-delta reached the bridge with its sk-… masked.
+    const textEvent = bridge.events
+      .map((e) => e.event as { type: string; text?: string })
+      .find((e) => e.type === 'text-delta');
+    expect(textEvent?.text).not.toContain('TESTSECRET');
+    expect(textEvent?.text).toContain('sk-[redacted]');
+
+    expect(out.status).toBe(0);
+    // generate-design is a multi-spec loop — no single artifactPath/artifacts echoed.
+    expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(out.result, 'artifacts')).toBe(false);
+    expect((out.result as { content: string }).content).not.toContain('TESTSECRET');
+  });
+
+  it('generate-design: ensures the skill grant covers Read (the loop reads report.json + inputs)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      { id: 'pr_grant', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const settings = JSON.parse(
+      await readFile(path.join(projectRoot, '.claude', 'settings.json'), 'utf8'),
+    ) as { permissions: { allow: string[] } };
+    expect(settings.permissions.allow).toEqual(
+      expect.arrayContaining(['Bash(uxfactory:*)', 'Write', 'Edit', 'Read']),
+    );
+  });
+
+  it('generate-design: forwards a UXF::PROGRESS line as a structured progress event (note masked)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'text-delta', text: 'starting work\n' },
+      {
+        type: 'text-delta',
+        text:
+          'UXF::PROGRESS {"iter":1,"phase":"gate","gate":"requirement-coverage","status":"fail",' +
+          '"findings":2,"note":"2 stories uncovered sk-ant-api03-LEAK00000000"}\n',
+      },
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_prog', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    // the raw narration is still forwarded (we don't drop it) …
+    const types = bridge.events.map((e) => (e.event as { type: string }).type);
+    expect(types).toContain('text-delta');
+    // … AND a structured progress event is forwarded with the parsed payload.
+    const progress = bridge.events
+      .map((e) => e.event as Record<string, unknown>)
+      .find((e) => e['type'] === 'progress');
+    expect(progress).toMatchObject({
+      type: 'progress',
+      iter: 1,
+      phase: 'gate',
+      gate: 'requirement-coverage',
+      status: 'fail',
+      findings: 2,
+    });
+    // the note is secret-masked before it reaches the panel.
+    expect(progress?.['note']).not.toContain('LEAK');
+    expect(progress?.['note']).toContain('sk-[redacted]');
+  });
+
+  it('generate-design: a UXF::PROGRESS marker spanning two chunks is parsed once whole', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'text-delta', text: 'UXF::PROGRESS {"iter":2,"phase":"done",' },
+      { type: 'text-delta', text: '"status":"pass","findings":0,"note":"gate green"}\n' },
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      { id: 'pr_span', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const progressEvents = bridge.events
+      .map((e) => e.event as Record<string, unknown>)
+      .filter((e) => e['type'] === 'progress');
+    expect(progressEvents).toHaveLength(1);
+    expect(progressEvents[0]).toMatchObject({ iter: 2, phase: 'done', status: 'pass' });
+  });
+
+  it('a thrown RateLimitError on generate-design → status 2 (AdapterError mapped)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [], new RateLimitError('429 slow down'));
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_dl', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+  });
+
+  it('shared path: a usage chunk is forwarded (flattened) AND returned in the result (generate-design)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'text-delta', text: 'working\n' },
+      { type: 'usage', usage: { inputTokens: 1200, outputTokens: 340 } },
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_usage_d', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    // a live, flattened usage event reaches the panel feed …
+    const usageEvent = bridge.events
+      .map((e) => e.event as Record<string, unknown>)
+      .find((e) => e['type'] === 'usage');
+    expect(usageEvent).toEqual({ type: 'usage', inputTokens: 1200, outputTokens: 340 });
+    // … and the final result carries the cumulative usage.
+    expect(out.status).toBe(0);
+    expect((out.result as { usage?: unknown }).usage).toEqual({
+      inputTokens: 1200,
+      outputTokens: 340,
+    });
+  });
+
+  it('shared path: usage is captured for generate-artifact too (not design-specific)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'usage', usage: { inputTokens: 50, outputTokens: 10 } },
+      { type: 'usage', usage: { inputTokens: 80, outputTokens: 25 } }, // cumulative → latest wins
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_usage_a',
+        kind: 'generate-artifact',
+        payload: { target: 'user-story' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    // the latest cumulative usage wins (mirrors reduceStream semantics).
+    expect((out.result as { usage?: unknown }).usage).toEqual({
+      inputTokens: 80,
+      outputTokens: 25,
+    });
+    const usageEvents = bridge.events
+      .map((e) => e.event as Record<string, unknown>)
+      .filter((e) => e['type'] === 'usage');
+    expect(usageEvents).toEqual([
+      { type: 'usage', inputTokens: 50, outputTokens: 10 },
+      { type: 'usage', inputTokens: 80, outputTokens: 25 },
+    ]);
+  });
+
+  it('omits usage gracefully when the runtime reports none', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'text-delta', text: 'no usage here' },
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_no_usage', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(out.result, 'usage')).toBe(false);
+    expect(bridge.events.some((e) => (e.event as { type: string }).type === 'usage')).toBe(false);
+  });
+
   it('reads the written artifact file and attaches per-item refs (2 stories → 2 artifacts)', async () => {
     const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
     const bridge = new FakeBridge();
@@ -945,7 +1208,7 @@ describe('ensureSkillPermissions', () => {
       permissions: { allow: string[] };
     };
     expect(s1.permissions.allow).toEqual(
-      expect.arrayContaining(['Bash(uxfactory:*)', 'Write', 'Edit']),
+      expect.arrayContaining(['Bash(uxfactory:*)', 'Write', 'Edit', 'Read']),
     );
     const len = s1.permissions.allow.length;
 

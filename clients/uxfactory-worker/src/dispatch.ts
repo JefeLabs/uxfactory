@@ -6,10 +6,12 @@
  * The engine stays self-contained: dispatch knows the CLI's *command surface*, not
  * its internals — it never imports `@uxfactory/cli`.
  *
- * Generative kinds (`generate-artifact` / `canvas-review`) are NOT handled here —
- * they run a SKILL through the autonomous `AgentAdapter`. `runGenerative` lives in
- * `./generative.ts` and is re-exported from this module so the loop keeps a single
- * dispatch import surface; importing it pulls in no runtime `@helmsmith/*` code.
+ * Generative kinds (`generate-artifact` / `canvas-review` / `generate-design`) are
+ * NOT handled here — they run a SKILL through the autonomous `AgentAdapter`. Routing
+ * is by absence: `isDeterministic(kind)` is false for them, so the loop hands them to
+ * `runGenerative`. It lives in `./generative.ts` and is re-exported from this module
+ * so the loop keeps a single dispatch import surface; importing it pulls in no runtime
+ * `@helmsmith/*` code.
  */
 
 import { writeFile } from 'node:fs/promises';
@@ -217,8 +219,9 @@ export function isDeterministic(kind: string): boolean {
 
 /**
  * Generative dispatch — runs a SKILL through the autonomous adapter
- * (`generate-artifact` / `canvas-review`). Implemented in `./generative.ts` and
- * re-exported here so `main.ts` keeps a single dispatch import surface.
+ * (`generate-artifact` / `canvas-review` / `generate-design`). Implemented in
+ * `./generative.ts` and re-exported here so `main.ts` keeps a single dispatch
+ * import surface.
  *
  * Re-exporting a *type-only* dependency keeps `generative.ts` (and thus this
  * module) free of any runtime `@helmsmith/*` import — importing the loop never
