@@ -95,3 +95,37 @@ export function renderCoverage(snapshots: RenderSnapshot[], stories: StorySet | 
   }
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
 }
+
+const CONTRAST_RULE = "color-contrast";
+
+/** a11y (must) — all non-contrast axe violations across views. */
+export function a11y(snapshots: RenderSnapshot[]): CheckResult {
+  const id = "a11y";
+  const findings: BatchFinding[] = [];
+  for (const s of snapshots) {
+    for (const v of s.axe) {
+      if (v.id === CONTRAST_RULE) continue;
+      findings.push({
+        detail: `${s.page} › ${s.view}: ${v.help ?? v.id} (${v.id})`,
+        ref: v.targets[0] ?? `${s.page} › ${s.view}`,
+      });
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+}
+
+/** contrast (must) — the color-contrast axe violations (partition of the same run). */
+export function contrast(snapshots: RenderSnapshot[]): CheckResult {
+  const id = "contrast";
+  const findings: BatchFinding[] = [];
+  for (const s of snapshots) {
+    for (const v of s.axe) {
+      if (v.id !== CONTRAST_RULE) continue;
+      findings.push({
+        detail: `${s.page} › ${s.view}: ${v.help ?? "insufficient color contrast"}`,
+        ref: v.targets[0] ?? `${s.page} › ${s.view}`,
+      });
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
+}

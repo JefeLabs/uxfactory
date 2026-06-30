@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderCoverage, type RenderSnapshot } from "../src/batch/html-checks.js";
+import { a11y, contrast } from "../src/batch/html-checks.js";
 import type { StorySet } from "../src/batch/checks.js";
 
 function snap(p: Partial<RenderSnapshot>): RenderSnapshot {
@@ -56,5 +57,36 @@ describe("renderCoverage", () => {
     const snaps = [snap({ ok: false, error: "load timeout", coverChecks: [] })];
     const r = renderCoverage(snaps, stories);
     expect(r.findings.some((f) => f.detail.includes("failed to render: load timeout"))).toBe(true);
+  });
+});
+
+describe("a11y / contrast partition the axe findings", () => {
+  const snaps = [snap({
+    view: "success",
+    axe: [
+      { id: "image-alt", impact: "critical", targets: ["img.hero"], help: "Images must have alt text" },
+      { id: "color-contrast", impact: "serious", targets: ["p.muted"], help: "Elements must have sufficient contrast" },
+    ],
+  })];
+
+  it("a11y reports non-contrast violations only", () => {
+    const r = a11y(snaps);
+    expect(r.status).toBe("fail");
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0]!.detail).toContain("image-alt");
+    expect(r.findings[0]!.ref).toBe("img.hero");
+  });
+
+  it("contrast reports color-contrast violations only", () => {
+    const r = contrast(snaps);
+    expect(r.status).toBe("fail");
+    expect(r.findings).toHaveLength(1);
+    expect(r.findings[0]!.ref).toBe("p.muted");
+  });
+
+  it("both pass on a clean snapshot", () => {
+    const clean = [snap({ axe: [] })];
+    expect(a11y(clean).status).toBe("pass");
+    expect(contrast(clean).status).toBe("pass");
   });
 });
