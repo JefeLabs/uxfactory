@@ -43,11 +43,31 @@ Match the artifact kind to its shape and the depth implied by the scope dials:
 
 ### AcceptanceCriterion — `inputs.stories` — serves `user-story` and `acceptance-criteria`
 
-A JSON array of stories. Each story has an `id` and acceptance criteria naming the view-states it owns. Cover the states the `coverage` dial demands (success only at `low`; add empty / loading / error at `medium`; all edge states at `high`). Keep story ids stable and filename-safe — the gate traces them by name.
+The file is a JSON **object** `{ "stories": [ … ] }` — NOT a bare array. The deterministic gate parses this exact schema and rejects anything else, so every field below is mandatory and the field names must match verbatim:
 
-- For `target: user-story`, draft the **story narratives** (stable ids + a clear narrative per story), seeded by the classification.
-- For `target: acceptance-criteria`, draft the **testable criteria for the stories named in `seedRefs`** — each criterion references its seed story id so `coverage-orphans` can trace it. Do not invent stories that are not in `seedRefs`.
-  - **Merge, never replace.** `user-story` and `acceptance-criteria` write the **same** `inputs.stories` file. The `user-story` job ran first and authored the story narratives. So for `acceptance-criteria` you MUST first **Read** the existing `AcceptanceCriterion` JSON, then **attach** your criteria to the matching seeded stories *in place* — preserve every existing story's `id` and narrative verbatim, and keep stories you were not asked about untouched. Never overwrite the stories array wholesale; doing so destroys the upstream job's work.
+```json
+{
+  "stories": [
+    {
+      "id": "checkout",
+      "role": "returning customer",
+      "goal": "complete a purchase",
+      "benefit": "receive my order",
+      "acceptanceCriteria": [
+        { "statement": "payment is accepted and the order is confirmed", "impliedState": "success" },
+        { "statement": "a declined card shows a recoverable error", "impliedState": "error" }
+      ]
+    }
+  ]
+}
+```
+
+- Each **story** has exactly: `id` (stable, name-safe — letters/digits/hyphens; the gate traces frames by it), `role` (who), `goal` (what), `benefit` (why), and `acceptanceCriteria` (a non-empty array). Do NOT use `title`/`narrative` — the gate ignores them and validation fails.
+- Each **acceptance criterion** has exactly: `statement` (a testable string) and `impliedState`, which MUST be one of exactly `"empty"`, `"loading"`, `"error"`, `"success"`, `"edge"` (no other values). Cover the states the `coverage` dial demands: `success` only at `low`; add `empty` / `loading` / `error` at `medium`; add `edge` at `high`.
+
+- For `target: user-story`, author the stories (each with `id`/`role`/`goal`/`benefit` and at least one `acceptanceCriteria`), seeded by the classification.
+- For `target: acceptance-criteria`, add/refine the `acceptanceCriteria` of the stories named in `seedRefs` (each criterion's `impliedState` from the allowed set). Do not invent stories not in `seedRefs`.
+  - **Merge, never replace.** `user-story` and `acceptance-criteria` write the **same** `inputs.stories` file. So for `acceptance-criteria` you MUST first **Read** the existing `{ "stories": [ … ] }`, then **attach** your criteria to the matching seeded stories *in place* — preserve every existing story's `id`/`role`/`goal`/`benefit` verbatim, and keep stories you were not asked about untouched. Never overwrite the stories array wholesale; doing so destroys the upstream job's work.
 
 ### TokenSet (design tokens) — `inputs.tokens`
 
