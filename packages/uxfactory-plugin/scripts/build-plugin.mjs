@@ -21,14 +21,20 @@ const common = {
   alias,
 };
 
-export async function buildPlugin() {
-  await mkdir(dist, { recursive: true });
+/**
+ * Build the plugin's two bundles into `outDir` (default `dist`). The out-dir is
+ * a parameter so the build-smoke test can build into a UNIQUE temp dir — without
+ * it, parallel Vitest workers would race on the shared `dist/` (one writing
+ * code.js/ui.html while another reads them), making the smoke test flaky.
+ */
+export async function buildPlugin(outDir = dist) {
+  await mkdir(outDir, { recursive: true });
 
-  // 1. main thread → dist/code.js
+  // 1. main thread → <outDir>/code.js
   await build({
     ...common,
     entryPoints: [path.join(root, "src/code.ts")],
-    outfile: path.join(dist, "code.js"),
+    outfile: path.join(outDir, "code.js"),
   });
 
   // 2. iframe UI → bundled JS string, inlined into ui.html
@@ -41,9 +47,11 @@ export async function buildPlugin() {
   const template = await readFile(path.join(root, "src/ui.html"), "utf8");
   // Function replacement avoids `$`-pattern expansion in the bundled JS.
   const html = template.replace("/*__UI_BUNDLE__*/", () => uiJs);
-  await writeFile(path.join(dist, "ui.html"), html, "utf8");
+  await writeFile(path.join(outDir, "ui.html"), html, "utf8");
 
-  console.log("plugin build complete: dist/code.js, dist/ui.html");
+  console.log(
+    `plugin build complete: ${path.join(outDir, "code.js")}, ${path.join(outDir, "ui.html")}`,
+  );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

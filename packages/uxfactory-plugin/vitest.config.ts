@@ -19,6 +19,11 @@ export default defineConfig({
       "@uxfactory/gate": fileURLToPath(
         new URL("../uxfactory-gate/src/index.ts", import.meta.url),
       ),
+      // The pipeline e2e (src/pipeline-e2e.test.ts) stands up an in-process
+      // bridge via startBridge; alias it to source like the root config does.
+      "@uxfactory/bridge": fileURLToPath(
+        new URL("../uxfactory-bridge/src/index.ts", import.meta.url),
+      ),
     },
   },
 });

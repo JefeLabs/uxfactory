@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createUi } from "../src/ui.js";
 import type { UiToMain } from "../src/messages.js";
+import type { PipelineClient } from "../src/pipeline-client.js";
 
 const DOM = `
   <div id="panel" data-state="COMPACT">
@@ -225,6 +226,108 @@ describe("ui selection main-message", () => {
     const [url, init] = fetchImpl.mock.calls.at(-1) as unknown as [string, RequestInit];
     expect(url).toBe("http://localhost:3779/selection");
     expect(JSON.parse(init.body as string)).toEqual(selection);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pipeline panel mount/teardown lifecycle (Task 6 integration)
+// ---------------------------------------------------------------------------
+
+/** A fake pipeline client whose subscribe returns a tracked unsubscribe spy. */
+function makeFakeClient(): {
+  client: PipelineClient;
+  subscribe: ReturnType<typeof vi.fn>;
+  unsubscribe: ReturnType<typeof vi.fn>;
+} {
+  const unsubscribe = vi.fn();
+  const subscribe = vi.fn(() => unsubscribe);
+  const client: PipelineClient = {
+    enqueue: vi.fn(async () => "req-1"),
+    pollResult: vi.fn(async () => ({ status: "pending" }) as const),
+    subscribe: subscribe as unknown as PipelineClient["subscribe"],
+  };
+  return { client, subscribe, unsubscribe };
+}
+
+describe("ui pipeline panel mount/teardown (Fix Task 6)", () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="panel" data-state="COMPACT"><div id="status"></div></div>
+      <div id="pipeline"></div>`;
+  });
+
+  it("mounts the panel on connect, sizes to PIPELINE, and renders into #pipeline", async () => {
+    const postToMain = vi.fn();
+    const { client, subscribe } = makeFakeClient();
+    const ui = createUi({
+      postToMain,
+      fetchImpl: okFetch({ ok: true }),
+      createClient: () => client,
+    });
+
+    await ui.checkHealth();
+
+    expect(subscribe).toHaveBeenCalledTimes(1); // one SSE subscription
+    expect(ui.panel).toBe("PIPELINE");
+    expect(postToMain).toHaveBeenCalledWith({ type: "resize", width: 600, height: 640 });
+    // the intake rendered into the container
+    expect(document.getElementById("pipeline")!.innerHTML).toContain('data-action="define"');
+  });
+
+  it("tears down the SSE subscription cleanly on disconnect (no leak)", async () => {
+    const postToMain = vi.fn();
+    const { client, unsubscribe } = makeFakeClient();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      } as unknown as Response);
+    const ui = createUi({ postToMain, fetchImpl, createClient: () => client });
+
+    await ui.checkHealth(); // connect → mount
+    expect(unsubscribe).not.toHaveBeenCalled();
+
+    await ui.checkHealth(); // disconnect → teardown
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(ui.panel).toBe("COMPACT");
+  });
+
+  it("re-subscribes cleanly on reconnect without leaking the prior subscription", async () => {
+    const postToMain = vi.fn();
+    const { client, subscribe, unsubscribe } = makeFakeClient();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as unknown as Response);
+    const ui = createUi({ postToMain, fetchImpl, createClient: () => client });
+
+    await ui.checkHealth(); // connect
+    await ui.checkHealth(); // disconnect (teardown #1)
+    await ui.checkHealth(); // reconnect (subscribe #2)
+
+    expect(subscribe).toHaveBeenCalledTimes(2);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(ui.panel).toBe("PIPELINE");
   });
 });
 

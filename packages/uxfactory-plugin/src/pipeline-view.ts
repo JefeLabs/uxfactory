@@ -395,7 +395,16 @@ const MAX_POLLS = 600; // ~5 min ceiling; tests resolve on the first poll
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-export function wirePanel(root: HTMLElement, opts: WirePanelOptions): void {
+/**
+ * Wire the panel's delegated click handler + the one SSE subscription to `root`.
+ *
+ * TEARDOWN (load-bearing): returns the `client.subscribe` unsubscribe so the
+ * caller (`ui.ts`) can close the SSE stream on disconnect/re-mount — re-mounting
+ * without it would leak one fetch-stream reader per reconnect. The delegated
+ * click handler lives on `root` and is discarded with the element, so the
+ * subscription is the only thing the caller must explicitly release.
+ */
+export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void {
   const { client, getState } = opts;
 
   const render = (): void => {
@@ -494,7 +503,7 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): void {
   }
 
   // --- the single SSE subscription: route each event by requestId ----------
-  client.subscribe((frame) => {
+  const unsubscribe = client.subscribe((frame) => {
     const job = jobForRequest(frame.requestId);
     if (job === undefined) return; // no in-flight job owns this id → ignore
     dispatchAndRender(jobEvent(job, frame.event));
@@ -534,6 +543,9 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): void {
 
   // initial paint
   render();
+
+  // Hand the caller the SSE teardown (the click handler dies with `root`).
+  return unsubscribe;
 }
 
 // ---------------------------------------------------------------------------

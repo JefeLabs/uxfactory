@@ -1,7 +1,16 @@
 import { validate } from "@uxfactory/spec";
 import type { MainToUi, UiToMain } from "./messages.js";
-import { nextPanel, type PanelState, type PanelView } from "./panel.js";
+import { nextPanel, pipelineView, type PanelState, type PanelView } from "./panel.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
+import {
+  initialState,
+  reduce,
+  setConnection,
+  type PanelState as PipelineState,
+  type PanelAction,
+} from "./panel-state.js";
+import { renderPanel, wirePanel } from "./pipeline-view.js";
+import { createPipelineClient, type PipelineClient } from "./pipeline-client.js";
 
 const BRIDGE = "http://localhost:3779";
 
@@ -9,6 +18,12 @@ export interface UiOptions {
   doc?: Document;
   fetchImpl?: typeof fetch;
   postToMain?: (msg: UiToMain) => void;
+  /**
+   * Factory for the pipeline client (the `/pipeline/*` + SSE wrapper). Defaults
+   * to the real `createPipelineClient` bound to the injected fetch; tests inject
+   * a fake to drive the mount/teardown lifecycle without a live bridge.
+   */
+  createClient?: (baseUrl: string) => PipelineClient;
 }
 
 export interface UiController {
@@ -29,13 +44,58 @@ export function createUi(options: UiOptions = {}): UiController {
   const doFetch = options.fetchImpl ?? fetch;
   const postToMain =
     options.postToMain ?? ((msg: UiToMain) => parent.postMessage({ pluginMessage: msg }, "*"));
+  const makeClient =
+    options.createClient ??
+    ((baseUrl: string) => createPipelineClient(baseUrl, { fetch: doFetch }));
 
   let panel: PanelState = "COMPACT";
   let connected = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   let keydownHandler: ((e: KeyboardEvent) => void) | undefined;
 
+  // --- pipeline panel (mounted only when its container is present) ---
+  // The store persists across reconnects; only the SSE subscription is torn
+  // down + rebuilt, so we never leak a fetch-stream reader per reconnect.
+  let pipelineState: PipelineState = initialState;
+  let pipelineTeardown: (() => void) | undefined;
+
+  const pipelineDispatch = (a: PanelAction): void => {
+    pipelineState = reduce(pipelineState, a);
+  };
+
   const el = (id: string): HTMLElement | null => doc.getElementById(id);
+
+  /**
+   * Mount the pipeline panel into `#pipeline` (real client → live bridge), size
+   * the iframe to PIPELINE, and capture the SSE teardown. Returns false (a no-op)
+   * when the container is absent — e.g. the legacy review-only UI / unit DOMs —
+   * so the caller falls back to the CONNECTED_MIN pill.
+   */
+  function mountPipeline(): boolean {
+    const root = el("pipeline");
+    if (!root) return false;
+    // Clean (re-)mount: release any prior subscription first.
+    pipelineTeardown?.();
+    pipelineTeardown = undefined;
+    pipelineState = reduce(pipelineState, setConnection("connected"));
+    const client = makeClient(BRIDGE);
+    pipelineTeardown = wirePanel(root, {
+      client,
+      getState: () => pipelineState,
+      dispatch: pipelineDispatch,
+    });
+    applyPanel(pipelineView());
+    return true;
+  }
+
+  /** Tear down the SSE subscription and re-render the panel as disconnected. */
+  function unmountPipeline(): void {
+    pipelineTeardown?.();
+    pipelineTeardown = undefined;
+    pipelineState = reduce(pipelineState, setConnection("disconnected"));
+    const root = el("pipeline");
+    if (root) root.innerHTML = renderPanel(pipelineState);
+  }
 
   const postInit = (body: unknown): RequestInit => ({
     method: "POST",
@@ -76,10 +136,13 @@ export function createUi(options: UiOptions = {}): UiController {
     }
     if (ok && !connected) {
       connected = true;
-      applyPanel(nextPanel(panel, "connect"));
+      // Prefer the live pipeline panel; fall back to the compact pill when the
+      // panel container isn't present (legacy/unit DOM).
+      if (!mountPipeline()) applyPanel(nextPanel(panel, "connect"));
       setStatus("Connected");
     } else if (!ok && connected) {
       connected = false;
+      unmountPipeline();
       applyPanel(nextPanel(panel, "disconnect"));
       setStatus("Disconnected");
     }
@@ -200,6 +263,9 @@ export function createUi(options: UiOptions = {}): UiController {
       doc.removeEventListener("keydown", keydownHandler);
       keydownHandler = undefined;
     }
+    // Release the SSE subscription so a stopped controller leaks nothing.
+    pipelineTeardown?.();
+    pipelineTeardown = undefined;
   }
 
   return {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderPanel, wirePanel } from "./pipeline-view.js";
 import {
@@ -58,6 +58,7 @@ function makeStore(start: PanelState) {
 function makeClient(over: Partial<PipelineClient> = {}) {
   const enqueued: { kind: string; payload?: unknown }[] = [];
   let onEvent: ((e: { requestId: string; event: unknown; seq: number }) => void) | null = null;
+  const unsubscribe = vi.fn();
   const client: PipelineClient = {
     enqueue: vi.fn(async (kind: string, payload?: unknown) => {
       enqueued.push({ kind, payload });
@@ -66,11 +67,16 @@ function makeClient(over: Partial<PipelineClient> = {}) {
     pollResult: vi.fn(async (): Promise<PollResult> => ({ status: "pending" })),
     subscribe: vi.fn((cb: (e: { requestId: string; event: unknown; seq: number }) => void) => {
       onEvent = cb;
-      return () => {};
+      return unsubscribe;
     }),
     ...over,
   };
-  return { client, enqueued, emit: (e: { requestId: string; event: unknown; seq: number }) => onEvent?.(e) };
+  return {
+    client,
+    enqueued,
+    unsubscribe,
+    emit: (e: { requestId: string; event: unknown; seq: number }) => onEvent?.(e),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -418,14 +424,40 @@ describe("wirePanel — Run gates", () => {
   });
 });
 
+describe("wirePanel — teardown (SSE lifecycle)", () => {
+  it("returns the client.subscribe unsubscribe so the caller can close the stream", () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState());
+    const { client, unsubscribe } = makeClient();
+    const teardown = wirePanel(root, {
+      client,
+      getState: store.getState,
+      dispatch: store.dispatch,
+    });
+    expect(client.subscribe).toHaveBeenCalledTimes(1);
+    expect(typeof teardown).toBe("function");
+    expect(unsubscribe).not.toHaveBeenCalled();
+    teardown();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Boundary (load-bearing): the module imports only sibling panel code + DOM.
 // ---------------------------------------------------------------------------
 
 describe("boundary — pipeline-view stays a pure relay + UI", () => {
   it("contains no forbidden runtime/orchestration tokens", () => {
-    // Resolve from the package root (cwd under `pnpm --filter @uxfactory/plugin test`).
-    const src = readFileSync(resolve(process.cwd(), "src/pipeline-view.ts"), "utf8");
+    // cwd is the plugin dir under `pnpm --filter`, but the repo root under the
+    // root vitest config — try both so the read is environment-agnostic (jsdom's
+    // import.meta.url is not a file URL, so we can't anchor on it here).
+    const candidates = [
+      resolve(process.cwd(), "src/pipeline-view.ts"),
+      resolve(process.cwd(), "packages/uxfactory-plugin/src/pipeline-view.ts"),
+    ];
+    const file = candidates.find((p) => existsSync(p));
+    expect(file, "pipeline-view.ts source must be locatable").toBeDefined();
+    const src = readFileSync(file!, "utf8");
     for (const forbidden of ["@helmsmith", "agentcore", "runpod", "cloud", "@uxfactory/cli", "LLM"]) {
       expect(src).not.toContain(forbidden);
     }

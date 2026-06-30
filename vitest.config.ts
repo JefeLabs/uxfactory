@@ -3,7 +3,14 @@ import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
-    include: ["test/**/*.test.ts", "packages/**/test/**/*.test.ts", "clients/**/test/**/*.test.ts"],
+    include: [
+      "test/**/*.test.ts",
+      "packages/**/test/**/*.test.ts",
+      // Co-located package src suites (the pipeline panel's Task 2–5 modules +
+      // the Task 6 e2e live next to their sources) must run under root too.
+      "packages/**/src/**/*.test.ts",
+      "clients/**/test/**/*.test.ts",
+    ],
     environment: "node",
   },
   resolve: {

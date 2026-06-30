@@ -23,6 +23,13 @@
         width: 100%;
         box-sizing: border-box;
       }
+      /* The pipeline panel only takes the layout once it has mounted content. */
+      #pipeline:empty {
+        display: none;
+      }
+      #pipeline {
+        margin-top: 12px;
+      }
     </style>
   </head>
   <body>
@@ -41,6 +48,8 @@
       </div>
       <button id="expand">Expand</button>
     </div>
+    <!-- The pipeline panel mounts here once the bridge health says connected. -->
+    <div id="pipeline"></div>
     <script>
       /*__UI_BUNDLE__*/
     </script>
