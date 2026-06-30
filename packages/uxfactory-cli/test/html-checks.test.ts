@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { renderCoverage, type RenderSnapshot } from "../src/batch/html-checks.js";
-import { a11y, contrast } from "../src/batch/html-checks.js";
-import type { StorySet } from "../src/batch/checks.js";
+import { a11y, contrast, htmlTokenConformance, runHtmlBatch } from "../src/batch/html-checks.js";
+import type { StorySet, TokenSet } from "../src/batch/checks.js";
+import type { RenderScope } from "../src/batch/scope.js";
 
 function snap(p: Partial<RenderSnapshot>): RenderSnapshot {
   return {
@@ -20,6 +21,8 @@ const stories: StorySet = {
     ],
   }],
 };
+
+const tokens: TokenSet = { colors: { brand: "#1E88E5", ink: "#111111" } };
 
 describe("renderCoverage", () => {
   it("skips when no stories", () => {
@@ -88,5 +91,55 @@ describe("a11y / contrast partition the axe findings", () => {
     const clean = [snap({ axe: [] })];
     expect(a11y(clean).status).toBe("pass");
     expect(contrast(clean).status).toBe("pass");
+  });
+});
+
+describe("htmlTokenConformance", () => {
+  it("skips with no token register", () => {
+    expect(htmlTokenConformance([snap({})], null).status).toBe("skip");
+  });
+  it("passes when every painted color is registered", () => {
+    const snaps = [snap({ paintedColors: [{ hex: "#1e88e5", exampleSelector: "button.cta" }, { hex: "#111111", exampleSelector: "h1" }] })];
+    expect(htmlTokenConformance(snaps, tokens).status).toBe("pass");
+  });
+  it("fails an unregistered painted color", () => {
+    const snaps = [snap({ paintedColors: [{ hex: "#ff00ff", exampleSelector: "div.x" }] })];
+    const r = htmlTokenConformance(snaps, tokens);
+    expect(r.status).toBe("fail");
+    expect(r.findings[0]!.detail).toContain("#ff00ff");
+  });
+});
+
+describe("runHtmlBatch", () => {
+  const VISUAL_MEDIUM: RenderScope = { visual: "medium", editorial: "low", coverage: "medium", flow: "low" };
+  const VISUAL_LOW: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "low" };
+  const goodSnap = snap({
+    coverChecks: [
+      { story: "checkout", impliedState: "success", selector: "#ok", found: true, visible: true },
+      { story: "checkout", impliedState: "error", selector: "#err", found: true, visible: true },
+    ],
+    paintedColors: [{ hex: "#1e88e5", exampleSelector: "button" }],
+    axe: [],
+  });
+
+  it("runs all four checks at visual:medium and is clean when all pass", () => {
+    const r = runHtmlBatch({ snapshots: [goodSnap], stories, tokens, scope: VISUAL_MEDIUM });
+    expect(r.clean).toBe(true);
+    expect(r.checks.map((c) => c.id).sort()).toEqual(["a11y", "contrast", "render-coverage", "token-conformance"]);
+    expect(r.checks.every((c) => c.status === "pass")).toBe(true);
+  });
+
+  it("marks a11y/contrast/token not-owed at visual:low; render-coverage still binds", () => {
+    const r = runHtmlBatch({ snapshots: [goodSnap], stories, tokens, scope: VISUAL_LOW });
+    const byId = Object.fromEntries(r.checks.map((c) => [c.id, c.status]));
+    expect(byId["render-coverage"]).toBe("pass");
+    expect(byId["a11y"]).toBe("not-owed");
+    expect(byId["token-conformance"]).toBe("not-owed");
+  });
+
+  it("mustPassFailed when a binding must check fails", () => {
+    const r = runHtmlBatch({ snapshots: [snap({ ok: false, error: "x" })], stories, tokens, scope: VISUAL_MEDIUM });
+    expect(r.clean).toBe(false);
+    expect(r.mustPassFailed).toBe(true);
   });
 });
