@@ -450,6 +450,53 @@ describe('deterministic dispatch', () => {
     };
     expect(call.argv).toEqual(['batch', '--json', '--scope', 'wireframe', '--', 'design']);
   });
+
+  it('generate-specs: runs the CLI in projectRoot with a `--` sentinel and relays its JSON + status', async () => {
+    const bin = path.join(binDir, 'uxfactory.cjs');
+    await writeStubCli(bin, 0, JSON.stringify({ written: ['checkout.uxfactory.json'], skipped: [] }));
+
+    const bridge = new FakeBridge();
+    bridge.queue.push({
+      id: 'pr_gs',
+      kind: 'generate-specs',
+      payload: { dir: 'design' },
+      createdAt: 1,
+    });
+
+    await drain(deps(bridge, bin));
+
+    expect(bridge.results).toHaveLength(1);
+    expect(bridge.results[0]).toMatchObject({ id: 'pr_gs', status: 0 });
+    expect(bridge.results[0]!.result).toEqual({
+      written: ['checkout.uxfactory.json'],
+      skipped: [],
+    });
+
+    const call = JSON.parse(await readFile(path.join(projectRoot, '.stub-call.json'), 'utf8')) as {
+      cwd: string;
+      argv: string[];
+    };
+    expect(call.cwd).toBe(await realpath(projectRoot));
+    expect(call.argv).toEqual(['generate-specs', '--json', '--', 'design']);
+  });
+
+  it('generate-specs: rejects a dir that smuggles a flag, WITHOUT spawning the CLI', async () => {
+    const bin = path.join(binDir, 'uxfactory.cjs');
+    await writeStubCli(bin, 0, JSON.stringify({ ok: true }));
+
+    const bridge = new FakeBridge();
+    bridge.queue.push({
+      id: 'pr_gs_inj',
+      kind: 'generate-specs',
+      payload: { dir: '--force' },
+      createdAt: 1,
+    });
+
+    await drain(deps(bridge, bin));
+
+    expect(bridge.results[0]).toMatchObject({ id: 'pr_gs_inj', status: 2 });
+    await expect(readFile(path.join(projectRoot, '.stub-call.json'), 'utf8')).rejects.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -457,8 +504,8 @@ describe('deterministic dispatch', () => {
 // ---------------------------------------------------------------------------
 
 describe('generative branch routing', () => {
-  it('isDeterministic recognizes the five deterministic kinds and rejects generative ones', () => {
-    for (const k of ['classify', 'gate', 'batch', 'review', 'render']) {
+  it('isDeterministic recognizes the six deterministic kinds and rejects generative ones', () => {
+    for (const k of ['classify', 'gate', 'batch', 'generate-specs', 'review', 'render']) {
       expect(isDeterministic(k)).toBe(true);
     }
     expect(isDeterministic('generate-artifact')).toBe(false);

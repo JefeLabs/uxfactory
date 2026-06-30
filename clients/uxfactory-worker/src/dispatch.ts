@@ -169,6 +169,16 @@ export const DETERMINISTIC: Record<string, Handler> = {
     );
   },
 
+  // Deterministically scaffold *.uxfactory.json specs from the registered stories.
+  // No registry provisioning needed — generate-specs reads the stories file itself.
+  'generate-specs': async (payload, ctx) => {
+    const p = asObject(payload);
+    const dir = assertSafePositional(str(p, 'dir') ?? 'design', ctx.projectRoot, 'dir');
+    return outcomeOf(
+      await runCli(ctx.cliBin, ['generate-specs', '--json', '--', dir], ctx.projectRoot),
+    );
+  },
+
   // Conformance review of a design (file or directory of specs).
   review: async (payload, ctx) => {
     const p = asObject(payload);

@@ -15,6 +15,7 @@ import { stubCmd } from "./commands/stub.js";
 import { mapScaffoldCmd, mapCheckCmd } from "./commands/map.js";
 import { driftCmd } from "./commands/drift.js";
 import { batchCmd } from "./commands/batch.js";
+import { generateSpecsCmd } from "./commands/generate-specs.js";
 import { reviewCmd } from "./commands/review.js";
 import { classifyCmd } from "./commands/classify.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
@@ -253,6 +254,21 @@ export function buildProgram(): Command {
         );
       },
     );
+
+  program
+    .command("generate-specs [dir]")
+    .description(
+      "Deterministically scaffold *.uxfactory.json specs from the registered stories (no LLM)",
+    )
+    .option("--json", "machine-readable output ({ written, skipped })")
+    .option("--force", "overwrite an existing same-named spec file instead of skipping it")
+    .action(async (dir: string | undefined, opts: { json?: boolean; force?: boolean }) => {
+      lastCode = await generateSpecsCmd(
+        dir ?? "design",
+        { json: opts.json, force: opts.force, cwd: process.cwd() },
+        consoleIO,
+      );
+    });
 
   program
     .command("classify")
