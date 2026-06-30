@@ -149,6 +149,45 @@ export interface Screens {
   written: string[];
 }
 
+/**
+ * One loop-step marker from the high-fidelity `generate-design` run. Mirrors the
+ * worker's `progress` event (draft → gate → revise → done); LOOSE on purpose —
+ * the panel relays it verbatim and the optional fields are present only on the
+ * steps that carry them (a `gate` step adds `gate`/`status`/`findings`).
+ */
+export interface DesignProgress {
+  iter: number;
+  phase: string;
+  gate?: string;
+  status?: string;
+  findings?: number;
+  note?: string;
+}
+
+/** Cumulative token usage from the `generate-design` run (updates live). */
+export interface DesignUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * The PROJECT-level high-fidelity design-generation block. One run at a time:
+ * `pendingId` is the in-flight request, `progress` is the latest loop marker,
+ * `log` is a capped scroll of recent notes/narration, `usage` is the live token
+ * tally, and `done` flips true on completion. Lives on the shared project block
+ * (like `screens`) because `generate-design` is PROJECT-level, not a job.
+ */
+export interface DesignState {
+  pendingId?: string;
+  progress?: DesignProgress;
+  log: string[];
+  usage?: DesignUsage;
+  done?: boolean;
+}
+
+/** The recent-line cap for the design log (keeps the most recent entries). */
+const DESIGN_LOG_CAP = 50;
+
 export interface PanelState {
   connection: "connected" | "disconnected";
   project: {
@@ -156,6 +195,8 @@ export interface PanelState {
     manifest?: Manifest;
     /** PROJECT-level scaffolded design specs (shared across all jobs). */
     screens?: Screens;
+    /** PROJECT-level high-fidelity design-generation run (shared, one at a time). */
+    design?: DesignState;
   } | null;
   jobs: Record<JobId, JobState>;
   activeJob: JobId;
@@ -198,7 +239,12 @@ export type PanelAction =
   | { type: "jobEvent"; job: JobId; event: unknown }
   | { type: "jobResult"; job: JobId; result: { status: number; result: unknown } }
   | { type: "gateResult"; job: JobId; gates: GateResult[] }
-  | { type: "screensScaffolded"; written: string[] };
+  | { type: "screensScaffolded"; written: string[] }
+  | { type: "designStarted"; id: string }
+  | { type: "designProgress"; marker: DesignProgress }
+  | { type: "designUsage"; usage: DesignUsage }
+  | { type: "designLog"; text: string }
+  | { type: "designDone"; result: { status: number; result: unknown } };
 
 // ---------------------------------------------------------------------------
 // Action creators
@@ -245,6 +291,31 @@ export function gateResult(job: JobId, gates: GateResult[]): PanelAction {
 /** Record the PROJECT-level set of scaffolded design specs the worker wrote. */
 export function screensScaffolded(written: string[]): PanelAction {
   return { type: "screensScaffolded", written };
+}
+
+/** Begin a high-fidelity design run: records the request id, resets the block. */
+export function designStarted(id: string): PanelAction {
+  return { type: "designStarted", id };
+}
+
+/** Set the latest loop marker and append its note (if any) to the log. */
+export function designProgress(marker: DesignProgress): PanelAction {
+  return { type: "designProgress", marker };
+}
+
+/** Update the live cumulative token usage for the design run. */
+export function designUsage(usage: DesignUsage): PanelAction {
+  return { type: "designUsage", usage };
+}
+
+/** Append one raw narration line to the design log. */
+export function designLog(text: string): PanelAction {
+  return { type: "designLog", text };
+}
+
+/** Mark the design run complete (keeps the final progress/usage). */
+export function designDone(result: { status: number; result: unknown }): PanelAction {
+  return { type: "designDone", result };
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +374,27 @@ function updateJob(s: PanelState, job: JobId, patch: Partial<JobState>): PanelSt
   return { ...s, jobs };
 }
 
+/** A fresh, empty design block. */
+function emptyDesign(): DesignState {
+  return { log: [] };
+}
+
+/** Append a line to the design log, keeping only the most recent `DESIGN_LOG_CAP`. */
+function appendDesignLog(log: string[], line: string): string[] {
+  const next = [...log, line];
+  return next.length > DESIGN_LOG_CAP ? next.slice(next.length - DESIGN_LOG_CAP) : next;
+}
+
+/**
+ * Patch the PROJECT-level design block immutably. No-op when no project exists
+ * (a design run is always scoped to a defined project) — returns `s` unchanged.
+ */
+function updateDesign(s: PanelState, patch: Partial<DesignState>): PanelState {
+  if (s.project === null) return s;
+  const design: DesignState = { ...(s.project.design ?? emptyDesign()), ...patch };
+  return { ...s, project: { ...s.project, design } };
+}
+
 // ---------------------------------------------------------------------------
 // reduce — pure, immutable
 // ---------------------------------------------------------------------------
@@ -357,6 +449,33 @@ export function reduce(s: PanelState, a: PanelAction): PanelState {
       if (s.project === null) return s;
       return { ...s, project: { ...s.project, screens: { written: a.written } } };
     }
+
+    case "designStarted":
+      // Reset the block for a fresh run: a new pendingId, an empty log, and the
+      // prior progress/usage cleared (omitted from the new design object).
+      return updateDesign(s, { pendingId: a.id, progress: undefined, usage: undefined, log: [], done: false });
+
+    case "designProgress": {
+      if (s.project === null) return s;
+      const prev = s.project.design ?? emptyDesign();
+      const log =
+        typeof a.marker.note === "string" ? appendDesignLog(prev.log, a.marker.note) : prev.log;
+      return updateDesign(s, { progress: a.marker, log });
+    }
+
+    case "designUsage":
+      return updateDesign(s, { usage: a.usage });
+
+    case "designLog": {
+      if (s.project === null) return s;
+      const prev = s.project.design ?? emptyDesign();
+      return updateDesign(s, { log: appendDesignLog(prev.log, a.text) });
+    }
+
+    case "designDone":
+      // Keep the final progress/usage; flip done and release the pendingId so a
+      // late SSE frame finds no in-flight design and is ignored (like jobs).
+      return updateDesign(s, { done: true, pendingId: undefined });
 
     default:
       // Forward-compatible: an unrecognized runtime action leaves state as-is.

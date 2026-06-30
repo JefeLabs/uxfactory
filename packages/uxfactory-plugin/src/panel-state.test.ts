@@ -11,6 +11,11 @@ import {
   jobResult,
   gateResult,
   screensScaffolded,
+  designStarted,
+  designProgress,
+  designUsage,
+  designLog,
+  designDone,
   type PanelState,
   type Manifest,
   type GateResult,
@@ -210,6 +215,119 @@ describe("reduce — screensScaffolded (PROJECT-level)", () => {
     const next = reduce(initialState, screensScaffolded(["a.uxfactory.json"]));
     expect(next.project).toBeNull();
     expect(next).toBe(initialState);
+  });
+});
+
+describe("reduce — generate-design (PROJECT-level design block)", () => {
+  /** A project state (so the design actions are not no-ops). */
+  function withProject(): PanelState {
+    return reduce(initialState, setClassification("category", "ecommerce"));
+  }
+
+  it("designStarted sets pendingId and clears progress/log/usage with done:false", () => {
+    let s = withProject();
+    // seed some stale design content first
+    s = reduce(s, designProgress({ iter: 9, phase: "revise", note: "old" }));
+    s = reduce(s, designUsage({ inputTokens: 7, outputTokens: 3 }));
+    s = reduce(s, designStarted("req-d1"));
+    const d = s.project?.design;
+    expect(d?.pendingId).toBe("req-d1");
+    expect(d?.progress).toBeUndefined();
+    expect(d?.usage).toBeUndefined();
+    expect(d?.log).toEqual([]);
+    expect(d?.done).toBe(false);
+  });
+
+  it("designProgress sets progress and appends the note to the log", () => {
+    let s = withProject();
+    s = reduce(s, designStarted("req-d1"));
+    s = reduce(s, designProgress({ iter: 1, phase: "draft", note: "drafting screen 1" }));
+    expect(s.project?.design?.progress).toEqual({ iter: 1, phase: "draft", note: "drafting screen 1" });
+    expect(s.project?.design?.log).toEqual(["drafting screen 1"]);
+    // a second progress with a gate/status/findings updates the header marker + appends
+    s = reduce(s, designProgress({ iter: 2, phase: "gate", gate: "flow-reachability", status: "fail", findings: 3, note: "gate failed" }));
+    expect(s.project?.design?.progress).toMatchObject({ iter: 2, phase: "gate", gate: "flow-reachability", status: "fail", findings: 3 });
+    expect(s.project?.design?.log).toEqual(["drafting screen 1", "gate failed"]);
+  });
+
+  it("designProgress without a note leaves the log unchanged", () => {
+    let s = withProject();
+    s = reduce(s, designStarted("req-d1"));
+    s = reduce(s, designProgress({ iter: 2, phase: "gate", status: "fail", findings: 3 }));
+    expect(s.project?.design?.progress).toMatchObject({ iter: 2, phase: "gate", findings: 3 });
+    expect(s.project?.design?.log).toEqual([]);
+  });
+
+  it("designUsage sets the cumulative token usage", () => {
+    let s = withProject();
+    s = reduce(s, designStarted("req-d1"));
+    s = reduce(s, designUsage({ inputTokens: 100, outputTokens: 50 }));
+    expect(s.project?.design?.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    // a later usage event replaces it (cumulative)
+    s = reduce(s, designUsage({ inputTokens: 220, outputTokens: 130 }));
+    expect(s.project?.design?.usage).toEqual({ inputTokens: 220, outputTokens: 130 });
+  });
+
+  it("designLog appends a raw narration line", () => {
+    let s = withProject();
+    s = reduce(s, designStarted("req-d1"));
+    s = reduce(s, designLog("narration A"));
+    s = reduce(s, designLog("narration B"));
+    expect(s.project?.design?.log).toEqual(["narration A", "narration B"]);
+  });
+
+  it("caps the log at ~50 lines (keeps the most recent)", () => {
+    let s = withProject();
+    s = reduce(s, designStarted("req-d1"));
+    for (let i = 0; i < 70; i++) s = reduce(s, designLog(`line ${i}`));
+    const log = s.project?.design?.log ?? [];
+    expect(log.length).toBeLessThanOrEqual(50);
+    // the most recent line is retained; the oldest are dropped
+    expect(log[log.length - 1]).toBe("line 69");
+    expect(log).not.toContain("line 0");
+  });
+
+  it("designDone sets done:true, clears pendingId, and keeps the final usage/progress", () => {
+    let s = withProject();
+    s = reduce(s, designStarted("req-d1"));
+    s = reduce(s, designProgress({ iter: 3, phase: "done", note: "complete" }));
+    s = reduce(s, designUsage({ inputTokens: 300, outputTokens: 200 }));
+    s = reduce(s, designDone({ status: 0, result: { content: "html" } }));
+    const d = s.project?.design;
+    expect(d?.done).toBe(true);
+    expect(d?.pendingId).toBeUndefined();
+    expect(d?.usage).toEqual({ inputTokens: 300, outputTokens: 200 });
+    expect(d?.progress).toMatchObject({ iter: 3, phase: "done" });
+  });
+
+  it("is pure / immutable (new object, input untouched)", () => {
+    const start = reduce(withProject(), designStarted("req-d1"));
+    const before = snapshot(start);
+    const next = reduce(start, designProgress({ iter: 1, phase: "draft", note: "x" }));
+    expect(next).not.toBe(start);
+    expect(start).toEqual(before); // input deep-unchanged
+    expect(next.project?.design?.progress).toEqual({ iter: 1, phase: "draft", note: "x" });
+  });
+
+  it("preserves classification / manifest / screens alongside the design block", () => {
+    let s = withProject();
+    s = reduce(s, setManifest(MANIFEST));
+    s = reduce(s, screensScaffolded(["a.uxfactory.json"]));
+    s = reduce(s, designStarted("req-d1"));
+    s = reduce(s, designProgress({ iter: 1, phase: "draft", note: "x" }));
+    expect(s.project?.classification).toEqual({ category: "ecommerce" });
+    expect(s.project?.manifest).toBe(MANIFEST);
+    expect(s.project?.screens?.written).toEqual(["a.uxfactory.json"]);
+    expect(s.project?.design?.pendingId).toBe("req-d1");
+  });
+
+  it("every design action is a no-op when the project is null (same state ref)", () => {
+    expect(reduce(initialState, designStarted("req-d1"))).toBe(initialState);
+    expect(reduce(initialState, designProgress({ iter: 1, phase: "draft" }))).toBe(initialState);
+    expect(reduce(initialState, designUsage({ inputTokens: 1, outputTokens: 2 }))).toBe(initialState);
+    expect(reduce(initialState, designLog("x"))).toBe(initialState);
+    expect(reduce(initialState, designDone({ status: 0, result: {} }))).toBe(initialState);
+    expect(initialState.project).toBeNull();
   });
 });
 

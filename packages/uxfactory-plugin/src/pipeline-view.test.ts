@@ -248,6 +248,88 @@ describe("renderPanel — screens indicator + Generate screens button (gate sect
 });
 
 // ---------------------------------------------------------------------------
+// renderPanel — generate-design button + loop-progress feed (HD tier)
+// ---------------------------------------------------------------------------
+
+describe("renderPanel — Generate design (HD) button + loop-progress feed", () => {
+  it("renders the Generate design (HD) button in the gate section", () => {
+    const html = renderPanel(definedState());
+    expect(html).toContain('data-action="generate-design"');
+    expect(html).toContain("Generate design (HD)");
+  });
+
+  it("renders the loop-progress header, the token-usage line, and the log from project.design", () => {
+    const html = renderPanel(
+      definedState({
+        project: {
+          classification: { category: "ecommerce" },
+          manifest: { manifest: [] },
+          design: {
+            pendingId: "req-d1",
+            progress: { iter: 2, phase: "gate", gate: "flow-reachability", status: "fail", findings: 3 },
+            usage: { inputTokens: 100, outputTokens: 50 },
+            log: ["drafting screen 1", "running gates"],
+          },
+        },
+      }),
+    );
+    // header: iteration / phase / gate: status / (findings)
+    expect(html).toContain("iteration 2");
+    expect(html).toContain("gate");
+    expect(html).toContain("flow-reachability");
+    expect(html).toContain("fail");
+    expect(html).toContain("(3)");
+    // usage line
+    expect(html).toContain("in: 100");
+    expect(html).toContain("out: 50");
+    // log lines
+    expect(html).toContain("drafting screen 1");
+    expect(html).toContain("running gates");
+  });
+
+  it("omits the usage line when no usage is present, and shows a done marker when done", () => {
+    const html = renderPanel(
+      definedState({
+        project: {
+          classification: { category: "ecommerce" },
+          manifest: { manifest: [] },
+          design: {
+            progress: { iter: 1, phase: "done" },
+            log: ["finished"],
+            done: true,
+          },
+        },
+      }),
+    );
+    expect(html).not.toContain("tokens —");
+    expect(html).toContain("done");
+  });
+
+  it("does NOT render the feed when project.design is absent", () => {
+    const html = renderPanel(definedState());
+    expect(html).not.toContain('data-design="true"');
+  });
+
+  it("escapes dynamic text in the header and log (no raw markup leaks)", () => {
+    const html = renderPanel(
+      definedState({
+        project: {
+          classification: { category: "ecommerce" },
+          manifest: { manifest: [] },
+          design: {
+            progress: { iter: 1, phase: "<b>x</b>", note: "n" },
+            log: ["<script>boom</script>"],
+          },
+        },
+      }),
+    );
+    expect(html).not.toContain("<b>x</b>");
+    expect(html).not.toContain("<script>boom</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // wirePanel
 // ---------------------------------------------------------------------------
 
@@ -520,6 +602,131 @@ describe("wirePanel — Generate screens", () => {
     const html = renderPanel(store.getState());
     expect(html).toContain("screens: 2 ✓");
     expect(html).not.toContain("no screens");
+  });
+});
+
+describe("wirePanel — Generate design (HD)", () => {
+  it("enqueues generate-design (NOT gate/generate-artifact/generate-specs) and dispatches designStarted", async () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState({ activeJob: "acceptance-criteria" }));
+    const { client, enqueued } = makeClient({
+      pollResult: vi.fn(async (): Promise<PollResult> => ({ status: "pending" })),
+    });
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    root.querySelector<HTMLElement>('[data-action="generate-design"]')!.click();
+
+    await vi.waitFor(() => expect(client.enqueue).toHaveBeenCalled());
+    expect(enqueued[0]!.kind).toBe("generate-design");
+    // it carries the gate dir + the wire classification (version+flow_refs) + scope
+    expect(enqueued[0]!.payload).toMatchObject({
+      dir: "design",
+      classification: { version: 1, category: "ecommerce", flow_refs: [] },
+      scope: { flow: "medium" },
+    });
+    // and NEVER the per-job/gate/specs kinds
+    expect(enqueued.some((e) => e.kind === "gate")).toBe(false);
+    expect(enqueued.some((e) => e.kind === "generate-artifact")).toBe(false);
+    expect(enqueued.some((e) => e.kind === "generate-specs")).toBe(false);
+    // designStarted recorded the pendingId on the project design block
+    await vi.waitFor(() => expect(store.getState().project?.design?.pendingId).toBe("req-1"));
+    expect(store.dispatch).toHaveBeenCalledWith({ type: "designStarted", id: "req-1" });
+  });
+
+  it("dispatches designDone from the completion result (done marker rendered)", async () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState());
+    const { client } = makeClient({
+      pollResult: vi.fn(async (): Promise<PollResult> => ({
+        status: "done",
+        result: { status: 0, result: { content: "<html/>" } },
+      })),
+    });
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    root.querySelector<HTMLElement>('[data-action="generate-design"]')!.click();
+
+    await vi.waitFor(() => expect(store.getState().project?.design?.done).toBe(true));
+    expect(store.getState().project?.design?.pendingId).toBeUndefined();
+  });
+});
+
+describe("wirePanel — SSE routing for design requests (progress/usage/log by pendingId)", () => {
+  it("routes progress/usage to the design block and a raw event to the design log; jobs untouched", async () => {
+    const root = document.createElement("div");
+    // a job is also enqueued first so we can prove a design event does not leak.
+    const store = makeStore(definedState({ activeJob: "user-story" }));
+    const { client, emit } = makeClient({
+      pollResult: vi.fn(async (): Promise<PollResult> => ({ status: "pending" })),
+    });
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    // start a generate-design → design.pendingId = req-1
+    root.querySelector<HTMLElement>('[data-action="generate-design"]')!.click();
+    await vi.waitFor(() => expect(store.getState().project?.design?.pendingId).toBe("req-1"));
+
+    // a progress event updates the header marker
+    emit({ requestId: "req-1", event: { type: "progress", iter: 2, phase: "gate", status: "fail", findings: 3 }, seq: 1 });
+    expect(store.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "designProgress" }),
+    );
+    expect(store.getState().project?.design?.progress).toMatchObject({ iter: 2, phase: "gate", status: "fail", findings: 3 });
+    // and the rendered header reflects it
+    const html = renderPanel(store.getState());
+    expect(html).toContain("iteration 2");
+    expect(html).toContain("(3)");
+
+    // a usage event updates the tokens line
+    emit({ requestId: "req-1", event: { type: "usage", inputTokens: 100, outputTokens: 50 }, seq: 2 });
+    expect(store.getState().project?.design?.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    expect(renderPanel(store.getState())).toContain("in: 100");
+    expect(renderPanel(store.getState())).toContain("out: 50");
+
+    // a raw narration (text-delta) appends to the log
+    emit({ requestId: "req-1", event: { type: "text-delta", text: "narrating…" }, seq: 3 });
+    expect(store.getState().project?.design?.log).toContain("narrating…");
+
+    // a design event NEVER leaks into a job's streamLine
+    expect(store.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "jobEvent" }),
+    );
+    expect(store.getState().jobs["user-story"].streamLine).toBeUndefined();
+  });
+
+  it("ignores a design event whose requestId matches no in-flight design (no dispatch)", async () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState());
+    const { client, emit } = makeClient();
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    // no design enqueued → pendingId undefined; an arbitrary event is ignored
+    emit({ requestId: "ghost", event: { type: "progress", iter: 1, phase: "draft" }, seq: 1 });
+    expect(store.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "designProgress" }),
+    );
+  });
+
+  it("does not route a generate-artifact (job) request into the design block", async () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState({ activeJob: "user-story" }));
+    const { client, emit } = makeClient({
+      pollResult: vi.fn(async (): Promise<PollResult> => ({ status: "pending" })),
+    });
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    // start a per-job Generate → jobs.user-story.pendingId = req-1
+    root.querySelector<HTMLElement>('[data-action="generate"]')!.click();
+    await vi.waitFor(() => expect(store.getState().jobs["user-story"].pendingId).toBe("req-1"));
+
+    // a job SSE frame still routes to the JOB (jobEvent), not the design block
+    emit({ requestId: "req-1", event: { type: "text-delta", text: "story line" }, seq: 1 });
+    expect(store.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "jobEvent", job: "user-story" }),
+    );
+    expect(store.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "designProgress" }),
+    );
+    expect(store.getState().project?.design).toBeUndefined();
   });
 });
 

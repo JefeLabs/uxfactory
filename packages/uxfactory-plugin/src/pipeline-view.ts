@@ -29,6 +29,11 @@ import {
   jobResult,
   gateResult,
   screensScaffolded,
+  designStarted,
+  designProgress,
+  designUsage,
+  designLog,
+  designDone,
   type PanelState,
   type PanelAction,
   type JobId,
@@ -37,6 +42,8 @@ import {
   type Manifest,
   type GateResult,
   type Artifact,
+  type DesignProgress,
+  type DesignUsage,
 } from "./panel-state.js";
 import type { PipelineClient } from "./pipeline-client.js";
 
@@ -357,10 +364,53 @@ function artifactFailure(a: Artifact): string | null {
 function renderGateSection(s: PanelState, disabled: boolean): string {
   const n = s.project?.screens?.written?.length ?? 0;
   const gatesHint = n > 0 ? "" : ' title="generate screens first so requirement-coverage can pass"';
+  const designBusy = s.project?.design?.pendingId !== undefined;
   return `  <div class="gate-section" data-section="gate">
     <span class="screens-indicator" data-screens="${n}">${esc(screensIndicator(s))}</span>
     <button type="button" data-action="generate-screens"${disabledAttr(disabled)}>Generate screens</button>
+    <button type="button" data-action="generate-design"${disabledAttr(disabled || designBusy)}>[ Generate design (HD) ]</button>
     <button type="button" data-action="run-gates"${disabledAttr(disabled)}${gatesHint}>Run gates</button>
+  </div>
+${renderDesignFeed(s)}`;
+}
+
+/**
+ * The PROJECT-level high-fidelity design loop feed (a PURE selector off
+ * `project.design`): a header line for the current loop step, the live token
+ * usage, and a scrolling log of recent notes/narration. Renders nothing until a
+ * run starts. All dynamic text is escaped — the relayed events are opaque.
+ */
+function renderDesignFeed(s: PanelState): string {
+  const design = s.project?.design;
+  if (design === undefined) return "";
+
+  const p = design.progress;
+  const header = p
+    ? `iteration ${p.iter} · ${esc(p.phase)}` +
+      (p.gate !== undefined ? ` · ${esc(p.gate)}: ${esc(p.status ?? "")}` : "") +
+      (p.findings ? ` (${p.findings})` : "")
+    : "starting…";
+
+  const usage =
+    design.usage !== undefined
+      ? `<div class="design-usage" data-usage="true">tokens — in: ${design.usage.inputTokens} · out: ${design.usage.outputTokens}</div>`
+      : "";
+
+  const log = design.log
+    .map((line) => `<div class="design-log-line">${esc(line)}</div>`)
+    .join("");
+
+  // `done?: boolean` is the only completion flag in state; ✗ when the final loop
+  // marker reports a failing gate, else ✓.
+  const doneMarker = design.done
+    ? `<div class="design-done" data-done="true">done ${design.progress?.status === "fail" ? "✗" : "✓"}</div>`
+    : "";
+
+  return `  <div class="design-feed" data-design="true">
+    <div class="design-header" data-progress="${p ? "true" : "false"}">${header}</div>
+    ${usage}
+    <div class="design-log" data-log="${design.log.length}">${log}</div>
+    ${doneMarker}
   </div>`;
 }
 
@@ -437,6 +487,54 @@ function specsPresentOf(result: unknown): string[] {
     }
   }
   return [...out];
+}
+
+// ---------------------------------------------------------------------------
+// Opaque-event coercion (generate-design SSE)
+// ---------------------------------------------------------------------------
+
+/** Read an opaque event's discriminant `type` (or "" when absent). */
+function designEventType(event: unknown): string {
+  if (event !== null && typeof event === "object") {
+    const t = (event as Record<string, unknown>)["type"];
+    if (typeof t === "string") return t;
+  }
+  return "";
+}
+
+/** Defensively coerce an opaque `progress` event into a DesignProgress. */
+function coerceProgress(event: unknown): DesignProgress {
+  const o = event !== null && typeof event === "object" ? (event as Record<string, unknown>) : {};
+  const marker: DesignProgress = {
+    iter: typeof o["iter"] === "number" ? o["iter"] : 0,
+    phase: typeof o["phase"] === "string" ? o["phase"] : "",
+  };
+  if (typeof o["gate"] === "string") marker.gate = o["gate"];
+  if (typeof o["status"] === "string") marker.status = o["status"];
+  if (typeof o["findings"] === "number") marker.findings = o["findings"];
+  if (typeof o["note"] === "string") marker.note = o["note"];
+  return marker;
+}
+
+/** Defensively coerce an opaque `usage` event into a DesignUsage (0 defaults). */
+function coerceUsage(event: unknown): DesignUsage {
+  const o = event !== null && typeof event === "object" ? (event as Record<string, unknown>) : {};
+  return {
+    inputTokens: typeof o["inputTokens"] === "number" ? o["inputTokens"] : 0,
+    outputTokens: typeof o["outputTokens"] === "number" ? o["outputTokens"] : 0,
+  };
+}
+
+/** Extract a raw narration line from an opaque event (text → message → type → JSON). */
+function textOf(event: unknown): string {
+  if (event !== null && typeof event === "object") {
+    const e = event as Record<string, unknown>;
+    if (typeof e["text"] === "string") return e["text"];
+    if (typeof e["message"] === "string") return e["message"];
+    if (typeof e["type"] === "string") return e["type"];
+  }
+  if (typeof event === "string") return event;
+  return JSON.stringify(event);
 }
 
 // ---------------------------------------------------------------------------
@@ -531,6 +629,9 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
       case "generate-screens":
         void generateScreens();
         return;
+      case "generate-design":
+        void generateDesign();
+        return;
       case "run-gates":
         void runGates();
         return;
@@ -573,6 +674,23 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
     if (result) dispatchAndRender(screensScaffolded(specsPresentOf(result.result)));
   }
 
+  // --- PROJECT-level high-fidelity design: enqueue → stream → done ----------
+  // Enqueues the worker's `generate-design` kind against the gate dir (with the
+  // wire classification + scope), records the run on the project design block,
+  // then awaits the stored result. The loop progress / token usage stream in
+  // over SSE (routed below by the design block's pendingId) while we poll.
+  async function generateDesign(): Promise<void> {
+    const s = getState();
+    const id = await client.enqueue("generate-design", {
+      dir: gateDir(s),
+      classification: toWireClassification(classificationOf(s)),
+      scope: scopeOf(s),
+    });
+    dispatchAndRender(designStarted(id));
+    const result = await awaitResult(id);
+    if (result) dispatchAndRender(designDone(result));
+  }
+
   // --- per-job gates (await the result, then set the strip) ----------------
   async function runGates(): Promise<void> {
     const s = getState();
@@ -588,10 +706,35 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
   // not stored yet cannot strand the job. A late frame arriving after
   // completion finds no owner (jobResult cleared pendingId) and is ignored.
   const unsubscribe = client.subscribe((frame) => {
+    // PROJECT-level design run first: route by the design block's pendingId so a
+    // generate-design frame lands on the design block, never a job streamLine.
+    if (frame.requestId === getState().project?.design?.pendingId) {
+      routeDesignEvent(frame.event);
+      return;
+    }
     const job = jobForRequest(frame.requestId);
     if (job === undefined) return; // no in-flight job owns this id → ignore
     dispatchAndRender(jobEvent(job, frame.event));
   });
+
+  /**
+   * Branch one opaque design SSE event by its `type`: `progress` → the loop
+   * marker, `usage` → the token tally, anything else (`text-delta`/unknown) →
+   * a raw narration log line. The coercers read fields defensively (never throw).
+   */
+  function routeDesignEvent(event: unknown): void {
+    switch (designEventType(event)) {
+      case "progress":
+        dispatchAndRender(designProgress(coerceProgress(event)));
+        return;
+      case "usage":
+        dispatchAndRender(designUsage(coerceUsage(event)));
+        return;
+      default:
+        dispatchAndRender(designLog(textOf(event)));
+        return;
+    }
+  }
 
   /** Find the job whose pendingId matches the request id (from live state). */
   function jobForRequest(requestId: string): JobId | undefined {
