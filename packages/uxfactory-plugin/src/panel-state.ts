@@ -139,9 +139,24 @@ export interface JobState {
   pendingId?: string;
 }
 
+/**
+ * The PROJECT-level screens scaffold (one set covers ALL jobs/stories, so it
+ * lives on the shared project block, not a per-job slice). `written` is the list
+ * of `<story>.uxfactory.json` spec files the worker's deterministic
+ * `generate-specs` kind wrote — the thing that makes requirement-coverage pass.
+ */
+export interface Screens {
+  written: string[];
+}
+
 export interface PanelState {
   connection: "connected" | "disconnected";
-  project: { classification: Partial<Classification>; manifest?: Manifest } | null;
+  project: {
+    classification: Partial<Classification>;
+    manifest?: Manifest;
+    /** PROJECT-level scaffolded design specs (shared across all jobs). */
+    screens?: Screens;
+  } | null;
   jobs: Record<JobId, JobState>;
   activeJob: JobId;
 }
@@ -182,7 +197,8 @@ export type PanelAction =
   | { type: "jobEnqueued"; job: JobId; id: string }
   | { type: "jobEvent"; job: JobId; event: unknown }
   | { type: "jobResult"; job: JobId; result: { status: number; result: unknown } }
-  | { type: "gateResult"; job: JobId; gates: GateResult[] };
+  | { type: "gateResult"; job: JobId; gates: GateResult[] }
+  | { type: "screensScaffolded"; written: string[] };
 
 // ---------------------------------------------------------------------------
 // Action creators
@@ -224,6 +240,11 @@ export function jobResult(
 
 export function gateResult(job: JobId, gates: GateResult[]): PanelAction {
   return { type: "gateResult", job, gates };
+}
+
+/** Record the PROJECT-level set of scaffolded design specs the worker wrote. */
+export function screensScaffolded(written: string[]): PanelAction {
+  return { type: "screensScaffolded", written };
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +350,13 @@ export function reduce(s: PanelState, a: PanelAction): PanelState {
 
     case "gateResult":
       return updateJob(s, a.job, { gates: a.gates });
+
+    case "screensScaffolded": {
+      // PROJECT-level: screens are scaffolded only against a defined project, so
+      // there is nothing to record when no project exists yet — no-op.
+      if (s.project === null) return s;
+      return { ...s, project: { ...s.project, screens: { written: a.written } } };
+    }
 
     default:
       // Forward-compatible: an unrecognized runtime action leaves state as-is.

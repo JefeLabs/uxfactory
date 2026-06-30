@@ -213,6 +213,41 @@ describe("renderPanel — job view when the project is defined", () => {
 });
 
 // ---------------------------------------------------------------------------
+// renderPanel — Generate screens indicator + button (the gate section)
+// ---------------------------------------------------------------------------
+
+describe("renderPanel — screens indicator + Generate screens button (gate section)", () => {
+  it("shows 'no screens — generate to gate' and the Generate screens button when no screens are scaffolded", () => {
+    const html = renderPanel(definedState({ activeJob: "acceptance-criteria" }));
+    expect(html).toContain("no screens");
+    expect(html).toContain('data-action="generate-screens"');
+    expect(html).toContain("Generate screens");
+  });
+
+  it("shows 'screens: 2 ✓' when project.screens.written has length 2", () => {
+    const html = renderPanel(
+      definedState({
+        project: {
+          classification: { category: "ecommerce" },
+          manifest: { manifest: [] },
+          screens: { written: ["a.uxfactory.json", "b.uxfactory.json"] },
+        },
+      }),
+    );
+    expect(html).toContain("screens: 2 ✓");
+    expect(html).not.toContain("no screens");
+  });
+
+  it("places the Generate screens button before Run gates", () => {
+    const html = renderPanel(definedState());
+    expect(html.indexOf('data-action="generate-screens"')).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf('data-action="generate-screens"')).toBeLessThan(
+      html.indexOf('data-action="run-gates"'),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // wirePanel
 // ---------------------------------------------------------------------------
 
@@ -427,6 +462,34 @@ describe("wirePanel — Run gates", () => {
     expect(gates).toEqual([{ gate: "requirement-coverage", status: "fail" }]);
     // the strip renders the hard-fail marker
     expect(renderPanel(store.getState())).toContain("✗");
+  });
+});
+
+describe("wirePanel — Generate screens", () => {
+  it("enqueues generate-specs {dir:'design'} and dispatches screensScaffolded from the result", async () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState({ activeJob: "acceptance-criteria" }));
+    const { client, enqueued } = makeClient({
+      pollResult: vi.fn(async (): Promise<PollResult> => ({
+        status: "done",
+        result: { status: 0, result: { written: ["x.uxfactory.json"], skipped: [] } },
+      })),
+    });
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    root.querySelector<HTMLElement>('[data-action="generate-screens"]')!.click();
+
+    await vi.waitFor(() =>
+      expect(store.getState().project?.screens?.written).toEqual(["x.uxfactory.json"]),
+    );
+    // it enqueues the deterministic generate-specs kind against the gate dir
+    expect(enqueued[0]!.kind).toBe("generate-specs");
+    expect(enqueued[0]!.payload).toMatchObject({ dir: "design" });
+    // and NEVER the gate / generate-artifact kinds (screens is its own step)
+    expect(enqueued.some((e) => e.kind === "gate")).toBe(false);
+    expect(enqueued.some((e) => e.kind === "generate-artifact")).toBe(false);
+    // the indicator updates after the dispatch
+    expect(renderPanel(store.getState())).toContain("screens: 1 ✓");
   });
 });
 

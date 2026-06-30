@@ -28,6 +28,7 @@ import {
   jobEvent,
   jobResult,
   gateResult,
+  screensScaffolded,
   type PanelState,
   type PanelAction,
   type JobId,
@@ -164,6 +165,16 @@ function seedIndicator(s: PanelState): string {
   return n > 0 ? `Stories: ${n} ✓` : "needs Stories";
 }
 
+/**
+ * SELECTOR: the PROJECT-level screens indicator, computed PURELY from the count
+ * of scaffolded specs (`project.screens.written`). N>0 → "screens: N ✓"; else a
+ * call to action — screens must be scaffolded for requirement-coverage to gate.
+ */
+function screensIndicator(s: PanelState): string {
+  const n = s.project?.screens?.written?.length ?? 0;
+  return n > 0 ? `screens: ${n} ✓` : "no screens — generate to gate";
+}
+
 /** The upstream user-story refs that seed a downstream generation. */
 function storyRefs(s: PanelState): string[] {
   return s.jobs["user-story"].artifacts
@@ -286,8 +297,8 @@ function renderBody(s: PanelState): string {
   <div class="actions">
     <button type="button" class="primary" data-action="generate"${disabledAttr(disabled || busy)}>Generate</button>
     <button type="button" data-action="provide"${disabledAttr(disabled)}>Provide my own</button>
-    <button type="button" data-action="run-gates"${disabledAttr(disabled)}>Run gates</button>
   </div>
+${renderGateSection(s, disabled)}
   ${renderGateReport(slice.gates)}
 </div>`;
 }
@@ -333,6 +344,24 @@ function artifactFailure(a: Artifact): string | null {
     if (typeof m === "string") return m;
   }
   return null;
+}
+
+/**
+ * The gate section: the PROJECT-level screens indicator + `Generate screens`
+ * (which scaffolds the covering specs via the worker's deterministic
+ * `generate-specs` kind) placed BEFORE `Run gates`. The screens are what make
+ * requirement-coverage pass; `Run gates` is never disabled by their absence
+ * (the gate's own result is the source of truth) — when unset it just carries a
+ * hint that screens are needed.
+ */
+function renderGateSection(s: PanelState, disabled: boolean): string {
+  const n = s.project?.screens?.written?.length ?? 0;
+  const gatesHint = n > 0 ? "" : ' title="generate screens first so requirement-coverage can pass"';
+  return `  <div class="gate-section" data-section="gate">
+    <span class="screens-indicator" data-screens="${n}">${esc(screensIndicator(s))}</span>
+    <button type="button" data-action="generate-screens"${disabledAttr(disabled)}>Generate screens</button>
+    <button type="button" data-action="run-gates"${disabledAttr(disabled)}${gatesHint}>Run gates</button>
+  </div>`;
 }
 
 function renderGateReport(gates: GateResult[]): string {
@@ -387,6 +416,18 @@ function toGateResults(r: { status: number; result: unknown }): GateResult[] {
   // (0 ok / 1 gate-fail / 2 setup).
   const status: GateResult["status"] = r.status === 0 ? "pass" : r.status === 1 ? "fail" : "not-run";
   return [{ gate: "gate", status, report: inner }];
+}
+
+/**
+ * Coerce a `generate-specs` opaque result `{ written, skipped }` into the
+ * written-spec list (defensive: any non-string-array shape → []).
+ */
+function writtenOf(result: unknown): string[] {
+  if (result !== null && typeof result === "object") {
+    const w = (result as { written?: unknown }).written;
+    if (Array.isArray(w)) return w.filter((x): x is string => typeof x === "string");
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +519,9 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
       case "generate":
         void generate();
         return;
+      case "generate-screens":
+        void generateScreens();
+        return;
       case "run-gates":
         void runGates();
         return;
@@ -508,6 +552,16 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
     dispatchAndRender(jobEnqueued(job, id));
     const result = await awaitResult(id);
     if (result) dispatchAndRender(jobResult(job, result));
+  }
+
+  // --- PROJECT-level screens: scaffold the covering specs that gate green ---
+  // Enqueues the worker's deterministic `generate-specs` kind (NOT a model run)
+  // against the gate dir, then records the written specs on the project block.
+  // Reuses the same awaitResult + gateDir convention as runGates.
+  async function generateScreens(): Promise<void> {
+    const id = await client.enqueue("generate-specs", { dir: gateDir(getState()) });
+    const result = await awaitResult(id);
+    if (result) dispatchAndRender(screensScaffolded(writtenOf(result.result)));
   }
 
   // --- per-job gates (await the result, then set the strip) ----------------

@@ -10,6 +10,7 @@ import {
   jobEvent,
   jobResult,
   gateResult,
+  screensScaffolded,
   type PanelState,
   type Manifest,
   type GateResult,
@@ -176,6 +177,39 @@ describe("reduce — gateResult", () => {
     expect(next.jobs["acceptance-criteria"].gates).toEqual(gates);
     expect(next.jobs["user-story"].gates).toEqual([]);
     expect(next.jobs["user-story"]).toBe(initialState.jobs["user-story"]); // sibling ref kept
+  });
+});
+
+describe("reduce — screensScaffolded (PROJECT-level)", () => {
+  it("sets project.screens.written from the scaffolded list", () => {
+    let s = reduce(initialState, setClassification("category", "ecommerce"));
+    s = reduce(s, screensScaffolded(["a.uxfactory.json", "b.uxfactory.json"]));
+    expect(s.project?.screens?.written).toEqual(["a.uxfactory.json", "b.uxfactory.json"]);
+    expect(s.project?.screens?.written).toHaveLength(2);
+  });
+
+  it("is pure / immutable (new object, input untouched)", () => {
+    const start = reduce(initialState, setClassification("category", "ecommerce"));
+    const before = snapshot(start);
+    const next = reduce(start, screensScaffolded(["x.uxfactory.json"]));
+    expect(next).not.toBe(start);
+    expect(start).toEqual(before); // input deep-unchanged
+    expect(next.project?.screens?.written).toEqual(["x.uxfactory.json"]);
+  });
+
+  it("preserves the existing classification and manifest", () => {
+    let s = reduce(initialState, setClassification("category", "ecommerce"));
+    s = reduce(s, setManifest(MANIFEST));
+    s = reduce(s, screensScaffolded(["a.uxfactory.json", "b.uxfactory.json"]));
+    expect(s.project?.classification).toEqual({ category: "ecommerce" });
+    expect(s.project?.manifest).toBe(MANIFEST);
+    expect(s.project?.screens?.written).toHaveLength(2);
+  });
+
+  it("is a no-op when the project is null (state returned unchanged)", () => {
+    const next = reduce(initialState, screensScaffolded(["a.uxfactory.json"]));
+    expect(next.project).toBeNull();
+    expect(next).toBe(initialState);
   });
 });
 
