@@ -203,7 +203,11 @@ function labelStr(...vals: unknown[]): string | undefined {
 /** Build a ref, omitting absent optional fields (the panel reads them verbatim). */
 function makeRef(ref: string, title?: string, seedRef?: string): ArtifactRef {
   const out: ArtifactRef = { ref };
-  if (title !== undefined) out.title = title;
+  // `title` is free text read back from the agent-written file; mask any
+  // `sk-…`-shaped secret before it reaches the panel (the module's invariant).
+  // `ref`/`seedRef` are ids that must round-trip exactly for downstream seeding,
+  // so they are NOT masked (a story id will never contain a secret).
+  if (title !== undefined) out.title = maskText(title);
   if (seedRef !== undefined) out.seedRef = seedRef;
   return out;
 }
