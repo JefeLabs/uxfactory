@@ -47,7 +47,9 @@ async function main(): Promise<void> {
   });
 
   console.log('[spike] --- adapter result ---');
-  console.log(`[spike] finishReason=${result.finishReason ?? 'n/a'} durationMs=${result.durationMs}`);
+  console.log(
+    `[spike] finishReason=${result.finishReason ?? 'n/a'} durationMs=${result.durationMs}`,
+  );
   console.log(`[spike] content: ${result.content}`);
 
   if (!existsSync(marker)) {

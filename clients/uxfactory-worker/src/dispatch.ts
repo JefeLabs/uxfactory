@@ -7,17 +7,15 @@
  * its internals — it never imports `@uxfactory/cli`.
  *
  * Generative kinds (`generate-artifact` / `canvas-review`) are NOT handled here —
- * they run a SKILL through the autonomous `AgentAdapter`. `runGenerative` is a typed
- * stub until Task 4 lands, so the loop compiles and fails loudly (status 2) if a
- * generative request arrives early.
+ * they run a SKILL through the autonomous `AgentAdapter`. `runGenerative` lives in
+ * `./generative.ts` and is re-exported from this module so the loop keeps a single
+ * dispatch import surface; importing it pulls in no runtime `@helmsmith/*` code.
  */
 
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { runCli } from './run-cli.js';
 import type { CliResult } from './run-cli.js';
-import type { PipelineRequest, BridgeLike } from './bridge-client.js';
-import type { AgentAdapter } from './adapter.js';
 
 /** Execution context shared by every handler. */
 export interface DispatchCtx {
@@ -61,6 +59,58 @@ function scopeArgs(p: Record<string, unknown>): string[] {
 }
 
 /**
+ * Thrown when an untrusted path-like positional fails validation. The loop
+ * (`handleRequest`) maps any thrown handler error to a status-2 result, so a
+ * smuggled flag or an escape attempt degrades to a clean setup error — the CLI
+ * is never spawned with the hostile value.
+ */
+export class UnsafePositionalError extends Error {
+  constructor(
+    public readonly field: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'UnsafePositionalError';
+  }
+}
+
+/**
+ * Validate an untrusted path-like positional (`dir`/`design`/`spec`/`out`)
+ * BEFORE it reaches the CLI. The panel-supplied payload is untrusted input, so:
+ *   1. reject `undefined`/empty — a path positional is required;
+ *   2. reject a leading `-` — defeats argv flag smuggling (`dir:'--malicious'`),
+ *      a real risk because these flow to `runCli` as positionals;
+ *   3. resolve against `projectRoot` and assert the result stays INSIDE it —
+ *      defeats path traversal (`design:'../../etc/passwd'`).
+ * A `--` end-of-options sentinel (added at each call site) is belt-and-suspenders
+ * for (2); this guard is the authoritative gate and also covers (1) and (3).
+ */
+function assertSafePositional(
+  value: string | undefined,
+  projectRoot: string,
+  field: string,
+): string {
+  if (value === undefined || value.trim() === '') {
+    throw new UnsafePositionalError(field, `dispatch: '${field}' is required (got empty)`);
+  }
+  if (/^-/.test(value)) {
+    throw new UnsafePositionalError(
+      field,
+      `dispatch: '${field}' must not start with '-' (argv flag smuggling): ${value}`,
+    );
+  }
+  const root = path.resolve(projectRoot);
+  const resolved = path.resolve(root, value);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new UnsafePositionalError(
+      field,
+      `dispatch: '${field}' resolves outside the project root: ${value}`,
+    );
+  }
+  return value;
+}
+
+/**
  * If the payload carries a `classification`, write it to
  * `<projectRoot>/uxfactory.classification.json` BEFORE the CLI reads it — the
  * panel ships the classification with the request; the CLI reads it from disk.
@@ -94,39 +144,48 @@ export const DETERMINISTIC: Record<string, Handler> = {
   // The compute→commit boundary: pin the profile, then run the batch gate.
   gate: async (payload, ctx) => {
     const p = asObject(payload);
+    // Validate the untrusted `dir` up-front — before any CLI spawn.
+    const dir = assertSafePositional(str(p, 'dir') ?? 'design', ctx.projectRoot, 'dir');
     await writeClassification(p, ctx);
     const confirm = await runCli(ctx.cliBin, ['classify', '--confirm'], ctx.projectRoot);
     if (confirm.status !== 0) return outcomeOf(confirm);
-    const dir = str(p, 'dir') ?? 'design';
+    // `--` ends options: `dir` can never be reinterpreted as a flag.
     return outcomeOf(
-      await runCli(ctx.cliBin, ['batch', dir, '--json', ...scopeArgs(p)], ctx.projectRoot),
+      await runCli(ctx.cliBin, ['batch', '--json', ...scopeArgs(p), '--', dir], ctx.projectRoot),
     );
   },
 
   // One deterministic offline batch pass over a spec directory.
   batch: async (payload, ctx) => {
     const p = asObject(payload);
-    const dir = str(p, 'dir') ?? 'design';
+    const dir = assertSafePositional(str(p, 'dir') ?? 'design', ctx.projectRoot, 'dir');
     return outcomeOf(
-      await runCli(ctx.cliBin, ['batch', dir, '--json', ...scopeArgs(p)], ctx.projectRoot),
+      await runCli(ctx.cliBin, ['batch', '--json', ...scopeArgs(p), '--', dir], ctx.projectRoot),
     );
   },
 
   // Conformance review of a design (file or directory of specs).
   review: async (payload, ctx) => {
     const p = asObject(payload);
-    const design = str(p, 'design') ?? '.';
+    const design = assertSafePositional(str(p, 'design') ?? '.', ctx.projectRoot, 'design');
     return outcomeOf(
-      await runCli(ctx.cliBin, ['review', design, '--json', ...scopeArgs(p)], ctx.projectRoot),
+      await runCli(
+        ctx.cliBin,
+        ['review', '--json', ...scopeArgs(p), '--', design],
+        ctx.projectRoot,
+      ),
     );
   },
 
   // Approximate offline raster of one spec to `out`.
   render: async (payload, ctx) => {
     const p = asObject(payload);
-    const spec = str(p, 'spec') ?? '';
+    const spec = assertSafePositional(str(p, 'spec'), ctx.projectRoot, 'spec');
+    // `out` is bound via its explicit `--out` option; still guard its value so it
+    // can neither smuggle a flag nor escape the project root.
     const out = str(p, 'out');
-    const args = ['render', spec, ...(out !== undefined ? ['--out', out] : [])];
+    if (out !== undefined) assertSafePositional(out, ctx.projectRoot, 'out');
+    const args = ['render', ...(out !== undefined ? ['--out', out] : []), '--', spec];
     const cli = await runCli(ctx.cliBin, args, ctx.projectRoot);
     // `render` prints the output path, not JSON — surface a small structured result.
     return {
@@ -142,18 +201,12 @@ export function isDeterministic(kind: string): boolean {
 }
 
 /**
- * Generative dispatch — runs a SKILL through the autonomous adapter.
+ * Generative dispatch — runs a SKILL through the autonomous adapter
+ * (`generate-artifact` / `canvas-review`). Implemented in `./generative.ts` and
+ * re-exported here so `main.ts` keeps a single dispatch import surface.
  *
- * STUB until Task 4. The signature is the one Task 4 implements
- * (`generate-artifact` / `canvas-review`: stream chunks → `bridge.postEvent`,
- * accumulate → result). Throwing here is caught by the loop and posted as
- * status 2, so an early generative request degrades gracefully.
+ * Re-exporting a *type-only* dependency keeps `generative.ts` (and thus this
+ * module) free of any runtime `@helmsmith/*` import — importing the loop never
+ * pulls in the LLM stack; the concrete adapter is built lazily in `main()`.
  */
-export async function runGenerative(
-  _req: PipelineRequest,
-  _adapter: AgentAdapter,
-  _bridge: BridgeLike,
-  _ctx: DispatchCtx,
-): Promise<DispatchOutcome> {
-  throw new Error('generative dispatch not implemented (Task 4)');
-}
+export { runGenerative } from './generative.js';
