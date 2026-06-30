@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -72,7 +72,9 @@ describe("entryUrlMatches — bin-symlink entry-point detection", () => {
       writeFileSync(real, "// real\n");
       const link = path.join(d, "uxfactory");
       symlinkSync(real, link);
-      const moduleUrl = pathToFileURL(real).href;
+      // Canonicalize via realpath so the test is robust when $TMPDIR is itself a
+      // symlink (macOS /var → /private/var) — matching what entryUrlMatches does.
+      const moduleUrl = pathToFileURL(realpathSync(real)).href;
 
       // Invoked via the symlink → matches (the realpath fix).
       expect(entryUrlMatches(link, moduleUrl)).toBe(true);
