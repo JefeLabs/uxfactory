@@ -262,6 +262,29 @@ describe("GET /pipeline/events SSE stream", () => {
     expect(frame.seq).toBe(1);
   });
 
+  it("delivers a wake frame to a connected client after POST /pipeline/request", async () => {
+    // A request enqueued while a worker is IDLE has no other wake signal
+    // (deterministic dispatch emits no events), so POST /pipeline/request must
+    // broadcast a lightweight wake frame to every connected SSE client.
+    const res = await fetch(`${handle.url}/pipeline/events`);
+    expect(res.status).toBe(200);
+
+    const enqueued = await fetch(`${handle.url}/pipeline/request`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: "classify", payload: { project: "demo" } }),
+    });
+    const { id } = (await enqueued.json()) as { id: string };
+
+    const frame = await readUntil(res, (d) => {
+      const e = d as { requestId?: string; event?: { type?: string; id?: string }; seq?: number };
+      return e.event?.type === "pipeline-request" ? e : null;
+    });
+    expect(frame.requestId).toBe(id);
+    expect(frame.event?.id).toBe(id);
+    expect(frame.seq).toBe(1);
+  });
+
   it("replays missed events via Last-Event-ID", async () => {
     // Post two events with no client connected.
     for (const n of [1, 2]) {

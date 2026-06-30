@@ -160,6 +160,24 @@ async function startFakeBridge(): Promise<FakeServer> {
       res.end(JSON.stringify(next));
       return;
     }
+    if (req.method === 'POST' && url === '/pipeline/request') {
+      void readBody(req).then((b) => {
+        const body = b as { kind: string; payload: unknown };
+        state.seq += 1;
+        const id = `pr_${state.seq}`;
+        state.queue.push({ id, kind: body.kind, payload: body.payload, createdAt: state.seq });
+        // Mirror the real bridge: enqueue ALSO broadcasts a wake frame so a request
+        // enqueued while the worker is idle has a `data:` frame to wake on (the
+        // worker then FIFO-drains via GET /pipeline/request/next).
+        const frame =
+          `id: ${state.seq}\n` +
+          `data: ${JSON.stringify({ requestId: id, event: { type: 'pipeline-request', id }, seq: state.seq })}\n\n`;
+        for (const client of state.sse) client.write(frame);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ id }));
+      });
+      return;
+    }
     if (req.method === 'POST' && url === '/pipeline/result') {
       void readBody(req).then((b) => {
         const body = b as { id: string; status: number; result: unknown };
@@ -717,6 +735,40 @@ describe('runWorker (end-to-end)', () => {
     stop();
 
     expect(fake.state.results[0]).toMatchObject({ id: 'pr_e2e', status: 0 });
+    expect(fake.state.results[0]!.result).toEqual({ confirm_status: 'draft' });
+  });
+
+  it('wakes via SSE on a request enqueued while IDLE and drains it', async () => {
+    const bin = path.join(binDir, 'uxfactory.cjs');
+    await writeStubCli(bin, 0, JSON.stringify({ confirm_status: 'draft' }));
+
+    // Start with an EMPTY queue: the initial tick drains to 204 and the worker
+    // goes idle, leaving the SSE wake frame as the only way to pick up new work.
+    const bridge = new WorkerBridgeClient(fake.url);
+    const stop = runWorker({
+      bridge,
+      ctx: { projectRoot, cliBin: bin },
+      generative: async () => ({ status: 2, result: {} }),
+    });
+
+    // Wait until the worker's SSE stream is connected (so the wake frame can land)
+    // and confirm the initial drain found nothing.
+    await waitFor(() => fake.state.sse.length >= 1);
+    expect(fake.state.results).toHaveLength(0);
+
+    // Enqueue AFTER the worker is idle — only the broadcast wake frame can trigger
+    // the drain that picks this up.
+    const enqueued = await fetch(`${fake.url}/pipeline/request`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'classify', payload: {} }),
+    });
+    const { id } = (await enqueued.json()) as { id: string };
+
+    await waitFor(() => fake.state.results.length >= 1);
+    stop();
+
+    expect(fake.state.results[0]).toMatchObject({ id, status: 0 });
     expect(fake.state.results[0]!.result).toEqual({ confirm_status: 'draft' });
   });
 

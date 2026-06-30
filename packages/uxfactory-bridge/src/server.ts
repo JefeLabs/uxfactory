@@ -68,6 +68,11 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     }
   };
 
+  /** Fan one event frame out to every connected SSE client. */
+  const broadcastPipelineFrame = (frame: PipelineEvent): void => {
+    for (const client of sseClients.keys()) writePipelineFrame(client, frame);
+  };
+
   // --- health & queue ---
 
   app.get("/health", async () => {
@@ -167,6 +172,13 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     // Date.now() lives here (the server), not in the store.
     const request = await store.enqueuePipelineRequest(body.kind, body.payload, Date.now());
     pipelineRequestIds.add(request.id);
+    // Wake any idle worker. A request enqueued while the worker is IDLE has no
+    // other wake signal (deterministic dispatch emits no events), so broadcast a
+    // lightweight wake frame — seq'd and landed in the replay ring like any event.
+    // The worker just needs a `data:` frame; it then FIFO-drains via
+    // GET /pipeline/request/next. Payload stays opaque (no @uxfactory/cli import).
+    const wake = store.appendPipelineEvent(request.id, { type: "pipeline-request", id: request.id });
+    broadcastPipelineFrame(wake);
     return { id: request.id };
   });
 
@@ -206,7 +218,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
       return reply.code(400).send({ error: "requestId must be a non-empty string" });
     }
     const pe = store.appendPipelineEvent(body.requestId, body.event);
-    for (const client of sseClients.keys()) writePipelineFrame(client, pe);
+    broadcastPipelineFrame(pe);
     return { ok: true };
   });
 
