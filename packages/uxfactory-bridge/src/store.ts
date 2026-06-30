@@ -43,6 +43,34 @@ export interface CanvasRequest {
 }
 
 /**
+ * One queued pipeline request relayed from the plugin to the worker (Phase 11B).
+ * `payload` is OPAQUE — the bridge never imports @uxfactory/cli nor inspects it.
+ */
+export interface PipelineRequest {
+  id: string;
+  kind: string;
+  payload: unknown;
+  createdAt: number;
+}
+
+/** A worker-posted result for a pipeline request. `result` is opaque. */
+export interface PipelineResult {
+  id: string;
+  status: number;
+  result: unknown;
+}
+
+/** A relayed pipeline event (a worker AgentChunk). `event` is opaque; `seq` is monotonic. */
+export interface PipelineEvent {
+  requestId: string;
+  event: unknown;
+  seq: number;
+}
+
+/** How many recent pipeline events the in-memory ring retains for SSE replay. */
+const PIPELINE_EVENT_RING = 1000;
+
+/**
  * File-backed persistence for the bridge. Everything lives under `dataDir`
  * (PRD §19/NF2: nothing is ever written outside it). All ids are generated
  * from a clock plus an internal monotonic counter so concurrent calls in the
@@ -62,6 +90,15 @@ export class BridgeStore {
   private counter = 0;
   private latestRenderId: string | null = null;
   private _pluginSeen = false;
+
+  // --- pipeline relay (Phase 11B): a live broker, kept in memory ---
+  // The pipeline is a transient plugin↔worker channel (no restart-survival is
+  // required, unlike the file-backed edit queue), so the queue, result store and
+  // event ring all live in memory. Payloads stay opaque.
+  private readonly pipelineQueue: PipelineRequest[] = [];
+  private readonly pipelineResults = new Map<string, PipelineResult>();
+  private readonly pipelineEvents: PipelineEvent[] = [];
+  private pipelineSeq = 0;
 
   constructor(dataDir: string) {
     this.dataDir = dataDir;
@@ -118,6 +155,11 @@ export class BridgeStore {
 
   private newRenderId(): string {
     return `r_${this.stamp()}_${this.nextCount()}`;
+  }
+
+  // `createdAt` is supplied by the server (Date.now() lives there, not the store).
+  private newPipelineRequestId(createdAt: number): string {
+    return `pr_${createdAt}_${this.nextCount()}`;
   }
 
   // --- queue ---
@@ -384,5 +426,56 @@ export class BridgeStore {
       "utf8",
     );
     return batch;
+  }
+
+  // --- pipeline relay (Phase 11B) ---
+
+  /** Append a request to the FIFO pipeline queue; the store assigns the id. */
+  async enqueuePipelineRequest(
+    kind: string,
+    payload: unknown,
+    createdAt: number,
+  ): Promise<PipelineRequest> {
+    const request: PipelineRequest = {
+      id: this.newPipelineRequestId(createdAt),
+      kind,
+      payload,
+      createdAt,
+    };
+    this.pipelineQueue.push(request);
+    return request;
+  }
+
+  /** Pop the oldest queued pipeline request (FIFO), or null when the queue is empty. */
+  async dequeuePipelineRequest(): Promise<PipelineRequest | null> {
+    return this.pipelineQueue.shift() ?? null;
+  }
+
+  /** Store the worker's result for a request id (latest write wins). */
+  async savePipelineResult(id: string, status: number, result: unknown): Promise<PipelineResult> {
+    const stored: PipelineResult = { id, status, result };
+    this.pipelineResults.set(id, stored);
+    return stored;
+  }
+
+  /** Read a stored result by id, or null if the worker has not posted one yet. */
+  async getPipelineResult(id: string): Promise<PipelineResult | null> {
+    return this.pipelineResults.get(id) ?? null;
+  }
+
+  /** Append an event to the in-memory ring, assigning the next monotonic seq. */
+  appendPipelineEvent(requestId: string, event: unknown): PipelineEvent {
+    this.pipelineSeq += 1;
+    const pe: PipelineEvent = { requestId, event, seq: this.pipelineSeq };
+    this.pipelineEvents.push(pe);
+    if (this.pipelineEvents.length > PIPELINE_EVENT_RING) {
+      this.pipelineEvents.splice(0, this.pipelineEvents.length - PIPELINE_EVENT_RING);
+    }
+    return pe;
+  }
+
+  /** Events with `seq > afterSeq`, in order — used to replay an SSE reconnect. */
+  recentPipelineEvents(afterSeq: number): PipelineEvent[] {
+    return this.pipelineEvents.filter((e) => e.seq > afterSeq);
   }
 }

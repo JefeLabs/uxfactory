@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { ServerResponse } from "node:http";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
@@ -7,7 +8,7 @@ import { gate } from "@uxfactory/gate";
 import type { Spec } from "@uxfactory/spec";
 import { validate } from "@uxfactory/spec";
 import { BridgeStore } from "./store.js";
-import type { ReviewReportPayload, CanvasRequest } from "./store.js";
+import type { ReviewReportPayload, CanvasRequest, PipelineEvent } from "./store.js";
 
 /** Options for building a bridge. */
 export interface BridgeOptions {
@@ -20,6 +21,8 @@ export interface BridgeOptions {
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
 const DEFAULT_TOLERANCE_PX = 0.5;
 const DEFAULT_PORT = 3779;
+/** SSE keep-alive comment cadence — keeps idle proxies/sockets from dropping the stream. */
+const SSE_KEEPALIVE_MS = 25_000;
 
 /** A POST /edits caller awaiting the render keyed by the enqueued jobId. */
 interface EditWaiter {
@@ -45,6 +48,24 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   const nextVerifyId = (): string => {
     verifyCounter += 1;
     return `v_${Date.now()}_${verifyCounter}`;
+  };
+
+  // --- pipeline relay state (Phase 11B) ---
+  // Every enqueued request id, kept so GET /pipeline/result/:id can tell a
+  // known-but-pending id (202) from an entirely unknown one (404).
+  const pipelineRequestIds = new Set<string>();
+  // Connected SSE clients → their keep-alive interval (cleared when the socket closes).
+  const sseClients = new Map<ServerResponse, ReturnType<typeof setInterval>>();
+
+  /** Write one event frame to a raw SSE socket; drop the client if the write fails. */
+  const writePipelineFrame = (res: ServerResponse, frame: PipelineEvent): void => {
+    try {
+      res.write(`id: ${frame.seq}\ndata: ${JSON.stringify(frame)}\n\n`);
+    } catch {
+      const timer = sseClients.get(res);
+      if (timer !== undefined) clearInterval(timer);
+      sseClients.delete(res);
+    }
   };
 
   // --- health & queue ---
@@ -132,6 +153,106 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     const request = await store.getCanvasRequest();
     if (request === null) return reply.code(404).send({ error: "no canvas request yet" });
     return request;
+  });
+
+  // --- pipeline relay (Phase 11B): a pure plugin↔worker broker ---
+  // No @uxfactory/cli import; kind/payload/result/event are all opaque to the bridge.
+
+  // Plugin enqueues a request for the worker to fulfil.
+  app.post("/pipeline/request", async (req, reply) => {
+    const body = req.body as { kind?: unknown; payload?: unknown };
+    if (typeof body?.kind !== "string" || body.kind.trim() === "") {
+      return reply.code(400).send({ error: "kind must be a non-empty string" });
+    }
+    // Date.now() lives here (the server), not in the store.
+    const request = await store.enqueuePipelineRequest(body.kind, body.payload, Date.now());
+    pipelineRequestIds.add(request.id);
+    return { id: request.id };
+  });
+
+  // Worker pulls the next queued request (FIFO); 204 when the queue is empty.
+  app.get("/pipeline/request/next", async (_req, reply) => {
+    const request = await store.dequeuePipelineRequest();
+    if (request === null) return reply.code(204).send();
+    return request;
+  });
+
+  // Worker posts the terminal result (CLI/adapter exit code as `status`).
+  app.post("/pipeline/result", async (req, reply) => {
+    const body = req.body as { id?: unknown; status?: unknown; result?: unknown };
+    if (typeof body?.id !== "string" || body.id === "") {
+      return reply.code(400).send({ error: "id must be a non-empty string" });
+    }
+    if (typeof body.status !== "number") {
+      return reply.code(400).send({ error: "status must be a number" });
+    }
+    await store.savePipelineResult(body.id, body.status, body.result);
+    return { ok: true };
+  });
+
+  // Plugin polls for a result. 404 unknown id / 202 known-but-pending / 200 the result.
+  // (202 lets the panel distinguish "still running" from "never existed" without a body schema.)
+  app.get<{ Params: { id: string } }>("/pipeline/result/:id", async (req, reply) => {
+    const result = await store.getPipelineResult(req.params.id);
+    if (result !== null) return result;
+    if (pipelineRequestIds.has(req.params.id)) return reply.code(202).send({ pending: true });
+    return reply.code(404).send({ error: "unknown pipeline request" });
+  });
+
+  // Worker streams events; we persist to the ring and fan out to every SSE client.
+  app.post("/pipeline/event", async (req, reply) => {
+    const body = req.body as { requestId?: unknown; event?: unknown };
+    if (typeof body?.requestId !== "string" || body.requestId === "") {
+      return reply.code(400).send({ error: "requestId must be a non-empty string" });
+    }
+    const pe = store.appendPipelineEvent(body.requestId, body.event);
+    for (const client of sseClients.keys()) writePipelineFrame(client, pe);
+    return { ok: true };
+  });
+
+  // Panel subscribes to the live event stream (SSE). Raw socket via reply.hijack().
+  app.get("/pipeline/events", (req, reply) => {
+    const raw = reply.raw;
+    reply.hijack();
+    raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    // Push headers out now — without a body write a client (e.g. fetch) would otherwise
+    // block waiting for the response to begin.
+    raw.flushHeaders();
+
+    // Replay anything the client missed since its Last-Event-ID.
+    const header = req.headers["last-event-id"];
+    const lastSeqRaw = Number(Array.isArray(header) ? header[0] : (header ?? 0));
+    const afterSeq = Number.isFinite(lastSeqRaw) ? lastSeqRaw : 0;
+    for (const event of store.recentPipelineEvents(afterSeq)) writePipelineFrame(raw, event);
+
+    // Keep-alive comments so idle connections survive; unref so tests/process can exit.
+    const keepAlive = setInterval(() => {
+      try {
+        raw.write(": keep-alive\n\n");
+      } catch {
+        /* socket gone; the close handler will clean up */
+      }
+    }, SSE_KEEPALIVE_MS);
+    keepAlive.unref?.();
+
+    sseClients.set(raw, keepAlive);
+    raw.on("close", () => {
+      clearInterval(keepAlive);
+      sseClients.delete(raw);
+    });
+  });
+
+  // On shutdown, end every open SSE socket so Fastify.close() doesn't hang.
+  app.addHook("onClose", async () => {
+    for (const [client, timer] of sseClients) {
+      clearInterval(timer);
+      client.end();
+    }
+    sseClients.clear();
   });
 
   // --- selection ---
