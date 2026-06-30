@@ -14,6 +14,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { ensureBatchRegistry } from './batch-registry.js';
 import { runCli } from './run-cli.js';
 import type { CliResult } from './run-cli.js';
 
@@ -147,6 +148,9 @@ export const DETERMINISTIC: Record<string, Handler> = {
     // Validate the untrusted `dir` up-front — before any CLI spawn.
     const dir = assertSafePositional(str(p, 'dir') ?? 'design', ctx.projectRoot, 'dir');
     await writeClassification(p, ctx);
+    // Provision uxfactory.batch.json so `batch` can read its inputs registry — a
+    // panel-driven project never hand-authors it (else: transport "cannot read …").
+    await ensureBatchRegistry(ctx.projectRoot);
     const confirm = await runCli(ctx.cliBin, ['classify', '--confirm'], ctx.projectRoot);
     if (confirm.status !== 0) return outcomeOf(confirm);
     // `--` ends options: `dir` can never be reinterpreted as a flag.
@@ -159,6 +163,7 @@ export const DETERMINISTIC: Record<string, Handler> = {
   batch: async (payload, ctx) => {
     const p = asObject(payload);
     const dir = assertSafePositional(str(p, 'dir') ?? 'design', ctx.projectRoot, 'dir');
+    await ensureBatchRegistry(ctx.projectRoot);
     return outcomeOf(
       await runCli(ctx.cliBin, ['batch', '--json', ...scopeArgs(p), '--', dir], ctx.projectRoot),
     );
