@@ -154,3 +154,33 @@ describe("validateRegistry — scope field", () => {
     expect(res.ok).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// registry screens/trace inputs (HTML tier — Task 5, appended)
+// ---------------------------------------------------------------------------
+
+describe("registry screens/trace inputs (HTML tier)", () => {
+  it("accepts string screens + trace paths", () => {
+    const r = validateRegistry({ version: 1, inputs: { screens: "design/screens", trace: "design/trace.json" } });
+    expect(r.ok).toBe(true);
+  });
+  it("rejects non-string screens", () => {
+    const r = validateRegistry({ version: 1, inputs: { screens: 5 } });
+    expect(r.ok).toBe(false);
+  });
+  it("resolveInputs resolves screens + trace to absolute paths, null when absent", () => {
+    const reg = validateRegistry({ version: 1, inputs: { screens: "design/screens", trace: "design/trace.json" } });
+    if (!reg.ok) throw new Error("expected ok");
+    const resolved = resolveInputs(reg.registry, "/repo");
+    expect(resolved.screens).toBe("/repo/design/screens");
+    expect(resolved.trace).toBe("/repo/design/trace.json");
+  });
+
+  it("resolveInputs yields null screens/trace when absent", () => {
+    const reg = validateRegistry({ version: 1, inputs: {} });
+    if (!reg.ok) throw new Error("expected ok");
+    const resolved = resolveInputs(reg.registry, "/repo");
+    expect(resolved.screens).toBeNull();
+    expect(resolved.trace).toBeNull();
+  });
+});
