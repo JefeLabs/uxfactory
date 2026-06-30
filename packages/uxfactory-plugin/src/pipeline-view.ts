@@ -422,12 +422,21 @@ function toGateResults(r: { status: number; result: unknown }): GateResult[] {
  * Coerce a `generate-specs` opaque result `{ written, skipped }` into the
  * written-spec list (defensive: any non-string-array shape → []).
  */
-function writtenOf(result: unknown): string[] {
+/**
+ * The specs that EXIST after `generate-specs` = newly `written` ∪ already-present
+ * `skipped`. Counting the union (not just `written`) keeps the screens indicator
+ * correct across re-runs: a second run returns `written:[]` / `skipped:[…all]`
+ * because the scaffolds already exist on disk, but the specs ARE present.
+ */
+function specsPresentOf(result: unknown): string[] {
+  const out = new Set<string>();
   if (result !== null && typeof result === "object") {
-    const w = (result as { written?: unknown }).written;
-    if (Array.isArray(w)) return w.filter((x): x is string => typeof x === "string");
+    for (const key of ["written", "skipped"] as const) {
+      const v = (result as Record<string, unknown>)[key];
+      if (Array.isArray(v)) for (const x of v) if (typeof x === "string") out.add(x);
+    }
   }
-  return [];
+  return [...out];
 }
 
 // ---------------------------------------------------------------------------
@@ -561,7 +570,7 @@ export function wirePanel(root: HTMLElement, opts: WirePanelOptions): () => void
   async function generateScreens(): Promise<void> {
     const id = await client.enqueue("generate-specs", { dir: gateDir(getState()) });
     const result = await awaitResult(id);
-    if (result) dispatchAndRender(screensScaffolded(writtenOf(result.result)));
+    if (result) dispatchAndRender(screensScaffolded(specsPresentOf(result.result)));
   }
 
   // --- per-job gates (await the result, then set the strip) ----------------

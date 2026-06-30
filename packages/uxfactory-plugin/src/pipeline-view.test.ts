@@ -491,6 +491,36 @@ describe("wirePanel — Generate screens", () => {
     // the indicator updates after the dispatch
     expect(renderPanel(store.getState())).toContain("screens: 1 ✓");
   });
+
+  it("keeps the indicator correct on a re-run (counts written ∪ skipped)", async () => {
+    const root = document.createElement("div");
+    const store = makeStore(definedState({ activeJob: "acceptance-criteria" }));
+    // A re-run: the deterministic worker skips already-present specs, so it
+    // returns written:[] / skipped:[…] — the specs still EXIST on disk.
+    const { client } = makeClient({
+      pollResult: vi.fn(async (): Promise<PollResult> => ({
+        status: "done",
+        result: {
+          status: 0,
+          result: { written: [], skipped: ["x.uxfactory.json", "y.uxfactory.json"] },
+        },
+      })),
+    });
+    wirePanel(root, { client, getState: store.getState, dispatch: store.dispatch });
+
+    root.querySelector<HTMLElement>('[data-action="generate-screens"]')!.click();
+
+    await vi.waitFor(() =>
+      expect(store.getState().project?.screens?.written).toEqual([
+        "x.uxfactory.json",
+        "y.uxfactory.json",
+      ]),
+    );
+    // the indicator reflects the present specs, NOT "no screens"
+    const html = renderPanel(store.getState());
+    expect(html).toContain("screens: 2 ✓");
+    expect(html).not.toContain("no screens");
+  });
 });
 
 describe("wirePanel — teardown (SSE lifecycle)", () => {
