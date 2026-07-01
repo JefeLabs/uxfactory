@@ -25,7 +25,7 @@ Open every screenshot in `.uxfactory/batch/previews/` (use the Read tool — you
 | **brand-fit** | matches the category/industry/age/style | generic, off-brand |
 | **production-readiness** | would ship in a real product | a demo |
 
-A `5` is rare; a plain-but-correct screen is a `2`. Hold the bar high.
+Calibrate FAIRLY so the design loop can converge: **4 = solid, shippable** (the target bar); **3 = decent but with clear gaps**; **2 = weak / wireframe-ish**; **5 = exceptional** (rare). A plain-but-correct screen is a `2`. A genuine improvement between reviews SHOULD raise the score — do not anchor low or re-litigate resolved issues. Give your most detailed, actionable `fix`es for the **1–2 lowest-scoring dimensions** — that is where the design most needs to move; a smaller design lifts fastest by attacking its weakest axis first.
 
 ## Step 3 — Emit `craft-report.json` (write it to the project root)
 

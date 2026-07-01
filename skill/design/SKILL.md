@@ -98,8 +98,8 @@ On **exit 1**, act on each `must` check with `status:"fail"`:
 Once `uxfactory batch` is green (exit 0), get an **independent** craft verdict — do NOT grade your own work:
 
 1. **Dispatch a fresh judge subagent** (the Task tool). Its brief: **read `.uxfactory/craft-rubric.md`** (an independent craft judge) and give it ONLY the screenshot paths (`.uxfactory/batch/previews/*.png`) + `uxfactory.classification.json`. It writes `craft-report.json` to the project root.
-2. **Read `craft-report.json`.** Compute the real pass yourself: every dimension `score >= 4` AND `overall >= 4`. (Do NOT trust the report's own `pass`.)
-3. **If below the bar:** act on the findings — revise the HTML/tokens to fix each specific `issue` (hierarchy, typography, components, depth, spacing, …). Re-run `uxfactory batch` (it must stay green) and re-dispatch the judge. Each pass counts against `maxIterations`.
+2. **Read `craft-report.json`.** Compute the real pass yourself: **`overall >= 4` AND no dimension below `3`** — a strong design with no glaring weakness, NOT perfection on every axis. (Do NOT trust the report's own `pass`.)
+3. **If below the bar:** attack the **lowest-scoring dimensions first** (biggest overall lift) — revise the HTML/tokens to fix their specific `issue`s (e.g. depth via elevation/shadow tokens, typography via the type scale, hierarchy via emphasis, brand-fit via the classification's style). Re-run `uxfactory batch` (it must stay green) and re-dispatch the judge. If a dimension does not improve after 2 revisions, accept it (as long as it is `>= 3`) and move to the next weakest — do NOT thrash one axis. Each pass counts against `maxIterations`.
 4. **Stop** when green AND craft-pass, OR when `maxIterations` is spent — then surface honestly: "green; craft best-effort `overall:N/5`, M open findings." NEVER claim craft you didn't reach.
 
 Emit `UXF::PROGRESS {"iter":<n>,"phase":"craft","gate":null,"status":"pass"|"fail"|null,"findings":<count>,"note":"craft overall N/5"}` at each craft step.

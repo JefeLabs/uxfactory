@@ -47,17 +47,24 @@ describe('validateCraftReport', () => {
   });
 });
 
-describe('craftPasses (consumer computes pass from scores + the pinned bar, ignoring self-reported pass)', () => {
-  it('passes only when every dimension >= 4 and overall >= 4', () => {
-    const r = validateCraftReport({ ...VALID, dimensions: fullDims(4), overall: 4, pass: false });
+describe('craftPasses (overall >= CRAFT_BAR AND no dim below CRAFT_DIM_FLOOR; ignores self-reported pass)', () => {
+  it('passes at overall 4 with one dimension at the 3 floor (a good design, not perfection on every axis)', () => {
+    const dims = fullDims(4);
+    dims[2]!.score = 3; // a single dimension at the floor is acceptable
+    const r = validateCraftReport({ ...VALID, dimensions: dims, overall: 4, pass: false });
     expect(r.ok).toBe(true);
     if (r.ok) expect(craftPasses(r.report)).toBe(true); // self-reported pass:false is IGNORED
   });
-  it('fails when any dimension is below the bar even if overall is high', () => {
+  it('fails when overall is below the bar even if every dimension is at/above the floor', () => {
+    const r = validateCraftReport({ ...VALID, dimensions: fullDims(3), overall: 3, pass: true });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(craftPasses(r.report)).toBe(false); // overall 3 < 4
+  });
+  it('fails on a glaring weakness (a dimension below the floor) even with a high overall', () => {
     const dims = fullDims(5);
-    dims[2]!.score = 3;
+    dims[2]!.score = 2; // below the floor
     const r = validateCraftReport({ ...VALID, dimensions: dims, overall: 5, pass: true });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(craftPasses(r.report)).toBe(false); // self-reported pass:true is IGNORED
+    if (r.ok) expect(craftPasses(r.report)).toBe(false); // dim 2 < 3
   });
 });

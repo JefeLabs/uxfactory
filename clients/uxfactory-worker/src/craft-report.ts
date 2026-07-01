@@ -22,8 +22,15 @@ export const CRAFT_DIMENSIONS = [
 ] as const;
 export type CraftDimensionName = (typeof CRAFT_DIMENSIONS)[number];
 
-/** The pinned craft bar: a dimension/overall at or above this is "good enough". */
+/** The pinned overall craft bar: a design at or above this is "good enough" (shippable). */
 export const CRAFT_BAR = 4;
+/**
+ * The per-dimension FLOOR: no single dimension may sit below this. A convergeable
+ * "good design" bar is a strong OVERALL with no glaring weakness — NOT perfection on
+ * every axis (requiring every dimension >= CRAFT_BAR never converges, since even
+ * excellent real designs carry a 3 somewhere).
+ */
+export const CRAFT_DIM_FLOOR = 3;
 
 /** One actionable craft issue, pinned to a screen, with a concrete fix. */
 export interface CraftFinding {
@@ -52,9 +59,11 @@ export interface CraftReport {
 /**
  * Whether the design clears the pinned bar — computed from the SCORES, not the
  * judge's self-reported `pass` (rigor: the bar is the consumer's, not the judge's).
+ * A convergeable "good design": strong OVERALL (>= CRAFT_BAR) with NO glaring
+ * weakness (every dimension >= CRAFT_DIM_FLOOR) — not perfection on every axis.
  */
 export function craftPasses(report: CraftReport): boolean {
-  return report.overall >= CRAFT_BAR && report.dimensions.every((d) => d.score >= CRAFT_BAR);
+  return report.overall >= CRAFT_BAR && report.dimensions.every((d) => d.score >= CRAFT_DIM_FLOOR);
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
