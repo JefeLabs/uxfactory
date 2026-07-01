@@ -1,6 +1,7 @@
 import type {
   Spec,
   Connector,
+  Frame,
   FrameChild,
   SectionChild,
   ShapeNode,
@@ -19,7 +20,7 @@ interface Geom {
 
 /** A normalized drawable, discriminated by kind, emitted in document order. */
 type Drawable =
-  | { kind: "frame" | "section"; name: string; geom: Geom }
+  | { kind: "frame" | "section"; name: string; geom: Geom; fill?: string }
   | {
       kind: "shape";
       name: string;
@@ -156,22 +157,28 @@ function leaf(child: LeafChild, ox = 0, oy = 0): Drawable {
   }
 }
 
+/** Push a frame and its descendants as drawables, recursing into nested frames.
+ * `ox`/`oy` are the parent's absolute origin; a frame's own x/y are parent-relative. */
+function pushFrame(frame: Frame, ox: number, oy: number, out: Drawable[]): void {
+  const ax = ox + frame.x;
+  const ay = oy + frame.y;
+  out.push({
+    kind: "frame",
+    name: frame.name,
+    geom: { x: ax, y: ay, width: frame.width, height: frame.height },
+    fill: frame.fill,
+  });
+  for (const child of frame.children ?? []) {
+    if ("type" in child) out.push(leaf(child, ax, ay));
+    else pushFrame(child, ax, ay, out);
+  }
+}
+
 /** Walk a spec into an ordered list of drawables (container, then its children). */
 function normalize(spec: Spec): Drawable[] {
   const out: Drawable[] = [];
   if ("frames" in spec) {
-    for (const frame of spec.frames) {
-      out.push({
-        kind: "frame",
-        name: frame.name,
-        geom: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
-      });
-      // Children carry frame-relative coordinates; resolve to canvas-absolute.
-      // Nested Frame children are containers — skip in the approximate renderer.
-      for (const child of frame.children ?? []) {
-        if ("type" in child) out.push(leaf(child, frame.x, frame.y));
-      }
-    }
+    for (const frame of spec.frames) pushFrame(frame, 0, 0, out);
   } else if ("sections" in spec) {
     for (const section of spec.sections) {
       out.push({
@@ -218,7 +225,7 @@ function drawDrawable(d: Drawable): string[] {
   switch (d.kind) {
     case "frame":
     case "section": {
-      const fill = d.kind === "frame" ? FRAME_FILL : SECTION_FILL;
+      const fill = d.kind === "frame" ? (d.fill ?? FRAME_FILL) : SECTION_FILL;
       const stroke = d.kind === "frame" ? FRAME_STROKE : SECTION_STROKE;
       return [
         rectTag(d.geom, { fill, stroke, strokeWidth: 1 }),

@@ -181,6 +181,23 @@ describe("specToSvg", () => {
     expect(childRect![0]).not.toContain('x="20"');
   });
 
+  it("recurses into nested frames (nested frame + its descendant both render)", () => {
+    const nested = {
+      frames: [
+        { name: "outer", x: 0, y: 0, width: 400, height: 400, children: [
+          { name: "inner", x: 40, y: 40, width: 120, height: 80, fill: "#eef2ff", children: [
+            { type: "shape", name: "chip", x: 10, y: 10, width: 40, height: 20, fill: "#1E88E5" },
+          ] },
+        ] },
+      ],
+    } satisfies DesignSpec;
+    const svg = specToSvg(nested);
+    expect(svg).toContain(">inner<");        // nested frame label rendered
+    expect(svg).toContain('fill="#eef2ff"'); // nested frame fill honored
+    expect(svg).toContain('fill="#1E88E5"'); // descendant shape reached via recursion
+    expect(svg).toBe(specToSvg(nested));     // still deterministic
+  });
+
   // Regression: Fix 1 — connector endpoints resolve to offset-corrected centers.
   // Two shapes in non-origin frames: centers must include the frame offset.
   it("[Fix-1] connector endpoints in non-origin frames use offset-resolved centers", () => {
