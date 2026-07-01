@@ -57,6 +57,8 @@ Map every required `(story, impliedState)` to a `(page, view, selector)`. One st
 
 Activation forms (exactly one per view, all eval-free): omit it (page as-loaded), `{ "hash": "view=error" }`, `{ "query": "state=error" }`, or `{ "click": ["#pay", ".retry"] }`.
 
+**Ensure `uxfactory.batch.json` registers `inputs.screens` (`design/screens`) and `inputs.trace` (`design/trace.json`)** — the gate only runs the HTML tier when BOTH are registered. If either is missing, add it (the same way `inputs.tokens` must point at `design/tokens.ds.json`).
+
 ## Step 4 — The loop: gate → read report → revise
 
 ```bash

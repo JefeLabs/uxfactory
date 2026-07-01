@@ -550,10 +550,12 @@ describe('loadSkill', () => {
   it('resolves the design skill body (frontmatter stripped) for the generate-design path', () => {
     const body = loadSkill('design');
     expect(body.startsWith('---')).toBe(false); // YAML frontmatter dropped
-    // the design skill drives the author -> gate -> revise loop
+    // the design skill drives the HTML author -> gate -> revise loop
     expect(body).toContain('uxfactory batch --json -- design');
     expect(body).toContain('.uxfactory/batch/report.json');
-    expect(body).toContain('uxfactory generate-specs --force');
+    // HTML tier: author screens + trace, not *.uxfactory.json specs
+    expect(body).toContain('design/screens/<page>.html');
+    expect(body).toContain('design/trace.json');
   });
 });
 
@@ -937,12 +939,15 @@ describe('runGenerative', () => {
 
     // systemPrompt is the design skill body verbatim.
     expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('design'));
-    // the task names the loop, the specs dir, the tokens, and the generate-specs fallback.
+    // the task names the HTML loop, the screens, the tokens, the trace, and the gate.
     const user = adapter.lastInput?.messages[0]?.content as string;
     expect(user).toContain('uxfactory batch --json -- design');
     expect(user).toContain('design/acceptance-criteria.json');
+    expect(user).toContain('design/screens/<page>.html');
     expect(user).toContain('design/tokens.ds.json');
-    expect(user).toContain('uxfactory generate-specs --force');
+    expect(user).toContain('design/trace.json');
+    // the OLD spec-mode fallback must be gone (HTML workflow has no generate-specs)
+    expect(user).not.toContain('generate-specs');
     expect(user).toContain(projectRoot); // works in the project root; CLI on PATH
     expect(user).toContain('PATH');
 
@@ -977,6 +982,26 @@ describe('runGenerative', () => {
     expect(settings.permissions.allow).toEqual(
       expect.arrayContaining(['Bash(uxfactory:*)', 'Write', 'Edit', 'Read']),
     );
+  });
+
+  it('generate-design: provisions inputs.screens + inputs.trace so the agent batch selects HTML mode', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    // No screens/ dir and no trace.json exist yet — the loop authors them AFTER
+    // this call. The registration must be unconditional (bypass the existence gate).
+    await runGenerative(
+      { id: 'pr_reg', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { inputs: Record<string, unknown> };
+    expect(reg.inputs.screens).toBe('design/screens');
+    expect(reg.inputs.trace).toBe('design/trace.json');
   });
 
   it('generate-design: forwards a UXF::PROGRESS line as a structured progress event (note masked)', async () => {

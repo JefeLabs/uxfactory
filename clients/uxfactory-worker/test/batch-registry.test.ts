@@ -103,4 +103,51 @@ describe('ensureBatchRegistry', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('unconditional: registers screens/trace even when the files do NOT exist (HTML design loop)', async () => {
+    const root = await mkProject();
+    try {
+      // No design/screens dir and no design/trace.json — the generate-design loop
+      // authors them AFTER provisioning, so the registration must bypass the gate.
+      await ensureBatchRegistry(root, { unconditional: ['screens', 'trace'] });
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.screens).toBe('design/screens');
+      expect(inputs.trace).toBe('design/trace.json');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('unconditional: forces ONLY the named keys — other inputs stay existence-gated', async () => {
+    const root = await mkProject();
+    try {
+      // Only screens/trace are forced; flow/tokens have no files, so they must NOT
+      // register (existence gate intact — a spec-mode project is never widened).
+      await ensureBatchRegistry(root, { unconditional: ['screens', 'trace'] });
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.screens).toBe('design/screens');
+      expect(inputs.trace).toBe('design/trace.json');
+      expect(inputs.flow).toBeUndefined();
+      expect(inputs.tokens).toBeUndefined();
+      expect(inputs.stories).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('unconditional: is still non-clobbering — an already-registered key is preserved', async () => {
+    const root = await mkProject();
+    try {
+      await writeFile(
+        path.join(root, 'uxfactory.batch.json'),
+        JSON.stringify({ version: 1, inputs: { trace: 'custom/trace.json' } }),
+      );
+      await ensureBatchRegistry(root, { unconditional: ['screens', 'trace'] });
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.trace).toBe('custom/trace.json'); // user path NOT overwritten
+      expect(inputs.screens).toBe('design/screens'); // newly forced
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

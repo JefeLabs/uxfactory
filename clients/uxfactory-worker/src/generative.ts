@@ -6,10 +6,12 @@
  *   - `generate-artifact` → the `generate` skill: draft ONE UX artifact for a
  *     classification + project and write it to the registry's expected path.
  *   - `canvas-review`      → the `vision-review` skill: review the pending canvas.
- *   - `generate-design`    → the `design` skill: author REAL *.uxfactory.json UI
- *     specs covering the stories and iterate `uxfactory batch` to a green gate.
- *     Its narration carries `UXF::PROGRESS <json>` lines that we forward as
- *     structured `progress` events so the panel can render live loop progress.
+ *   - `generate-design`    → the `design` skill: author self-contained
+ *     `design/screens/<page>.html` screens + a `design/trace.json` coverage
+ *     manifest covering the stories, then iterate the deterministic
+ *     `uxfactory batch` HTML gate to a green bar. Its narration carries
+ *     `UXF::PROGRESS <json>` lines that we forward as structured `progress`
+ *     events so the panel can render live loop progress.
  *
  * The adapter is INJECTED (the worker depends on the interface, not a concrete
  * backend) and this module imports ONLY types from `@helmsmith/*`, so importing
@@ -32,6 +34,7 @@ import type { AgentInput, AgentChunk } from '@helmsmith/agent-adapter';
 import type { AgentAdapter } from './adapter.js';
 import type { PipelineRequest, BridgeLike } from './bridge-client.js';
 import type { DispatchCtx, DispatchOutcome } from './dispatch.js';
+import { ensureBatchRegistry } from './batch-registry.js';
 import { loadSkill } from './skills.js';
 
 // ---------------------------------------------------------------------------
@@ -507,17 +510,27 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
   }
 
   if (req.kind === 'generate-design') {
-    // The agentic high-fidelity loop: author REAL *.uxfactory.json specs covering
-    // the stories, author matching tokens when visual>=medium, and iterate the
-    // deterministic `uxfactory batch` gate to a green bar — falling back to
-    // `generate-specs --force` to cover any gap. The skill owns the whole loop;
-    // we only hand it the task + the working tree (the CLI is on PATH).
+    // The agentic high-fidelity HTML loop (matches skill/design/SKILL.md): author
+    // self-contained `design/screens/<page>.html` screens (inline CSS + JS) that
+    // cover the stories, author `design/tokens.ds.json` when the visual dial is
+    // medium+, author a `design/trace.json` mapping every (story, impliedState) to
+    // a (page, view, selector), then iterate the deterministic `uxfactory batch`
+    // HTML gate to a green bar. The registry is provisioned with `inputs.screens`
+    // + `inputs.trace` in `runGenerative` (before the agent's first `batch`) so
+    // HTML mode is selected. The skill owns the whole loop; we hand it the task +
+    // the working tree (the CLI is on PATH).
     const user =
-      'Author real UI design specs covering the stories in design/acceptance-criteria.json; ' +
-      'author a matching design/tokens.ds.json if the profile visual dial is medium or higher; ' +
-      'iterate `uxfactory batch --json -- design` to a green gate (exit 0), reading ' +
-      '.uxfactory/batch/report.json after each run and revising the specs/tokens to clear ' +
-      'every must-check finding; use `uxfactory generate-specs --force` to cover any gap. ' +
+      'Author REAL, self-contained UI screens as `design/screens/<page>.html` files ' +
+      '(inline <style> + <script>, no external assets) that cover the stories and ' +
+      'acceptance criteria in design/acceptance-criteria.json — one file per page, each ' +
+      'hosting its view-states (empty/loading/error/success/edge) reachable via the ' +
+      'activation contract (location.hash, a query param, or a click sequence; expose ' +
+      'window.uxfReady for async states). Author design/tokens.ds.json registering every ' +
+      'painted color when the profile visual dial is medium or higher. Author ' +
+      'design/trace.json mapping every (story, impliedState) to a (page, view, selector). ' +
+      'Then iterate `uxfactory batch --json -- design` to a green gate (exit 0), reading ' +
+      '.uxfactory/batch/report.json after each run and revising the HTML/tokens/trace to ' +
+      'clear every must-check finding (render-coverage · a11y · contrast · token-conformance). ' +
       `Work in ${ctx.projectRoot}; the uxfactory CLI is on PATH. ` +
       'Emit a UXF::PROGRESS line at every loop step.';
     return {
@@ -553,6 +566,15 @@ export async function runGenerative(
     // Grant the headless skill the least tools it needs (shell uxfactory + write
     // files) inside the sandboxed project tree before invoking the adapter.
     await ensureSkillPermissions(ctx.projectRoot);
+
+    // For the HTML design loop, register `inputs.screens` + `inputs.trace` in
+    // `uxfactory.batch.json` UP FRONT (deterministically — not via the LLM) so the
+    // agent's `uxfactory batch` selects HTML mode. These files don't exist yet at
+    // provisioning time, so we bypass the existence gate for exactly these two keys;
+    // every other input/kind keeps the existence-gated, non-clobbering behavior.
+    if (req.kind === 'generate-design') {
+      await ensureBatchRegistry(ctx.projectRoot, { unconditional: ['screens', 'trace'] });
+    }
 
     const input: AgentInput = {
       messages: [{ role: 'user', content: plan.user }],
