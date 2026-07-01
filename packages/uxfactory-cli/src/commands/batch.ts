@@ -175,6 +175,14 @@ export async function batchCmd(
     return EXIT.TRANSPORT;
   }
 
+  // 1a. HTML mode — when screens + trace are registered, gate the rendering instead of specs.
+  //     Branch BEFORE the *.uxfactory.json readdir below: an HTML project has no spec files,
+  //     so step 2 would otherwise error out ("no *.uxfactory.json specs found") before reaching here.
+  if (reg.inputs.screens !== null && reg.inputs.trace !== null) {
+    const { batchHtmlMode } = await import("./batch-html.js");
+    return batchHtmlMode(specsDir, flags, io, reg.inputs, profileScope);
+  }
+
   // 2. load + validate the batch specs (invalid/unreadable → 2)
   let entries: string[];
   try {
