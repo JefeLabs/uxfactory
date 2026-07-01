@@ -19,6 +19,31 @@ export class FakeNode {
   connectorEnd: unknown = undefined;
   /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
   clipsContent: boolean | undefined = undefined;
+  layoutMode: string | undefined = undefined;
+  itemSpacing: number | undefined = undefined;
+  paddingTop: number | undefined = undefined;
+  paddingRight: number | undefined = undefined;
+  paddingBottom: number | undefined = undefined;
+  paddingLeft: number | undefined = undefined;
+  primaryAxisAlignItems: string | undefined = undefined;
+  counterAxisAlignItems: string | undefined = undefined;
+  _layoutSizingHorizontal: string | undefined = undefined;
+  _layoutSizingVertical: string | undefined = undefined;
+  /** Test probe: children length captured when layoutSizingHorizontal was set. */
+  __childCountAtSizing: number | undefined = undefined;
+  get layoutSizingHorizontal(): string | undefined {
+    return this._layoutSizingHorizontal;
+  }
+  set layoutSizingHorizontal(v: string | undefined) {
+    this.__childCountAtSizing = this.children.length;
+    this._layoutSizingHorizontal = v;
+  }
+  get layoutSizingVertical(): string | undefined {
+    return this._layoutSizingVertical;
+  }
+  set layoutSizingVertical(v: string | undefined) {
+    this._layoutSizingVertical = v;
+  }
   children: FakeNode[] = [];
   /** Tracks which parent this node was appended to — used by remove(). */
   _parent: FakeNode | null = null;

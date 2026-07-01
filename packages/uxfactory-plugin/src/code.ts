@@ -29,6 +29,16 @@ interface EditableNode {
   rotation: number | undefined;
   visible: boolean | undefined;
   characters: string | undefined;
+  layoutMode?: string;
+  itemSpacing?: number;
+  paddingTop?: number;
+  paddingRight?: number;
+  paddingBottom?: number;
+  paddingLeft?: number;
+  primaryAxisAlignItems?: string;
+  counterAxisAlignItems?: string;
+  layoutSizingHorizontal?: string;
+  layoutSizingVertical?: string;
   /** Optional font descriptor; present on TEXT nodes. */
   fontName?: { family: string; style: string };
   /** Text sublayer; present on STICKY and CONNECTOR nodes. */
@@ -251,16 +261,85 @@ function findTarget(edit: Edit, byName: Map<string, EditableNode>): EditableNode
 
 // ---- rendering ----
 
+type PlannedFrameLike = {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill?: string;
+  layout?: PlannedChild["layout"];
+  sizing?: PlannedChild["sizing"];
+  children: PlannedChild[];
+};
+
+interface RenderCtx {
+  byName: Map<string, EditableNode>;
+  reportNodes: Map<string, ReportNode>;
+  editDiffs: ReportEditDiff[];
+}
+
+const PRIMARY_ALIGN: Record<string, string> = {
+  start: "MIN", center: "CENTER", end: "MAX", "space-between": "SPACE_BETWEEN",
+};
+const COUNTER_ALIGN: Record<string, string> = { start: "MIN", center: "CENTER", end: "MAX" };
+const SIZING: Record<string, string> = { fixed: "FIXED", hug: "HUG", fill: "FILL" };
+
+function applyAutoLayout(node: EditableNode, layout: PlannedChild["layout"], sizing: PlannedChild["sizing"]): void {
+  if (!layout) return;
+  node.layoutMode = layout.mode === "vertical" ? "VERTICAL" : "HORIZONTAL";
+  if (layout.gap !== undefined) node.itemSpacing = layout.gap;
+  if (layout.padding !== undefined) {
+    const p = layout.padding;
+    const box = typeof p === "number" ? { top: p, right: p, bottom: p, left: p } : p;
+    node.paddingTop = box.top;
+    node.paddingRight = box.right;
+    node.paddingBottom = box.bottom;
+    node.paddingLeft = box.left;
+  }
+  if (layout.primaryAlign !== undefined) node.primaryAxisAlignItems = PRIMARY_ALIGN[layout.primaryAlign];
+  if (layout.counterAlign !== undefined) node.counterAxisAlignItems = COUNTER_ALIGN[layout.counterAlign];
+  // sizing AFTER children are appended (see renderContainer)
+  if (sizing?.horizontal !== undefined) node.layoutSizingHorizontal = SIZING[sizing.horizontal];
+  if (sizing?.vertical !== undefined) node.layoutSizingVertical = SIZING[sizing.vertical];
+}
+
+async function renderContainer(
+  frame: PlannedFrameLike,
+  parent: EditableNode,
+  ctx: RenderCtx,
+): Promise<EditableNode> {
+  const node = fig.createFrame();
+  node.name = frame.name;
+  node.x = frame.x;
+  node.y = frame.y;
+  node.resize(frame.width, frame.height);
+  if (frame.fill !== undefined) node.fills = solidPaint(frame.fill);
+  parent.appendChild(node);
+  ctx.byName.set(frame.name, node);
+  for (const child of frame.children) {
+    const childNode = await renderChild(child, node, ctx);
+    if (childNode) {
+      ctx.byName.set(child.name, childNode);
+      ctx.reportNodes.set(childNode.id, toReportNode(childNode));
+    }
+  }
+  applyAutoLayout(node, frame.layout, frame.sizing);
+  return node;
+}
+
 /**
  * Creates a single child node inside `parent`.
  * Returns `null` when an instance import fails (Fix 5 — graceful skip).
- * Calls `onSkip` with a human-readable reason so the caller can add a note.
  */
 async function renderChild(
   child: PlannedChild,
   parent: EditableNode,
-  onSkip?: (reason: string) => void,
+  ctx: RenderCtx,
 ): Promise<EditableNode | null> {
+  if (child.kind === "frame") {
+    return renderContainer(child as PlannedFrameLike, parent, ctx);
+  }
   let node: EditableNode;
 
   if (child.kind === "instance") {
@@ -269,7 +348,7 @@ async function renderChild(
       const component = await fig.importComponentByKeyAsync(child.asset ?? "");
       node = component.createInstance();
     } catch (err) {
-      onSkip?.(`instance "${child.name}" import failed: ${String(err)}`);
+      ctx.editDiffs.push({ name: child.name, diff: `skipped: instance "${child.name}" import failed: ${String(err)}` });
       return null;
     }
   } else if (child.kind === "text") {
@@ -289,7 +368,7 @@ async function renderChild(
   if (child.fill !== undefined) node.fills = solidPaint(child.fill);
   if (child.stroke !== undefined) node.strokes = solidPaint(child.stroke);
   if (child.strokeWidth !== undefined) node.strokeWeight = child.strokeWidth;
-  if (child.cornerRadius !== undefined) node.cornerRadius = child.cornerRadius;
+  if (child.cornerRadius !== undefined && typeof child.cornerRadius === "number") node.cornerRadius = child.cornerRadius;
   if (child.rotation !== undefined) node.rotation = child.rotation;
   if (child.opacity !== undefined) node.opacity = child.opacity;
 
@@ -340,25 +419,10 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
     const reportNodes = new Map<string, ReportNode>();
     const byName = new Map<string, EditableNode>();
     const editDiffs: ReportEditDiff[] = [];
+    const ctx: RenderCtx = { byName, reportNodes, editDiffs };
 
     for (const frame of plan.frames) {
-      const node = fig.createFrame();
-      node.name = frame.name;
-      node.x = frame.x;
-      node.y = frame.y;
-      node.resize(frame.width, frame.height);
-      page.appendChild(node);
-      byName.set(frame.name, node);
-      for (const child of frame.children) {
-        // Fix 5: skip failing instances; record a note in editDiffs.
-        const childNode = await renderChild(child, node, (reason) => {
-          editDiffs.push({ name: child.name, diff: `skipped: ${reason}` });
-        });
-        if (childNode) {
-          byName.set(child.name, childNode);
-          reportNodes.set(childNode.id, toReportNode(childNode));
-        }
-      }
+      await renderContainer(frame, page as unknown as EditableNode, ctx);
     }
 
     for (const section of plan.sections) {
@@ -370,9 +434,7 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
       page.appendChild(node);
       byName.set(section.name, node);
       for (const child of section.children) {
-        const childNode = await renderChild(child, node, (reason) => {
-          editDiffs.push({ name: child.name, diff: `skipped: ${reason}` });
-        });
+        const childNode = await renderChild(child, node, ctx);
         if (childNode) {
           byName.set(child.name, childNode);
           reportNodes.set(childNode.id, toReportNode(childNode));

@@ -150,6 +150,52 @@ describe("code.ts render", () => {
     };
     expect(strip(posts[0]!)).toEqual(strip(posts[1]!));
   });
+
+  it("applies auto-layout to a frame and nests child frames", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      frames: [
+        {
+          name: "col", x: 0, y: 0, width: 320, height: 480,
+          layout: { mode: "vertical", gap: 16, padding: { top: 24, right: 8, bottom: 24, left: 8 }, primaryAlign: "space-between", counterAlign: "center" },
+          sizing: { horizontal: "fill", vertical: "hug" },
+          children: [
+            { name: "row", x: 0, y: 0, width: 100, height: 40, layout: { mode: "horizontal", gap: 4 }, children: [] },
+          ],
+        },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j1" });
+
+    const col = fig.currentPage.children.find((n) => n.name === "col")!;
+    expect(col.layoutMode).toBe("VERTICAL");
+    expect(col.itemSpacing).toBe(16);
+    expect(col.paddingTop).toBe(24);
+    expect(col.paddingLeft).toBe(8);
+    expect(col.primaryAxisAlignItems).toBe("SPACE_BETWEEN");
+    expect(col.counterAxisAlignItems).toBe("CENTER");
+    expect(col.layoutSizingHorizontal).toBe("FILL");
+    expect(col.layoutSizingVertical).toBe("HUG");
+    const row = col.children.find((n) => n.name === "row")!;
+    expect(row.type).toBe("FRAME");
+    expect(row.layoutMode).toBe("HORIZONTAL");
+  });
+
+  it("sets layoutSizing only after children are appended", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      frames: [
+        { name: "col", x: 0, y: 0, width: 200, height: 200, layout: { mode: "vertical" }, sizing: { horizontal: "fill" },
+          children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10 }] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j2" });
+    const col = fig.currentPage.children.find((n) => n.name === "col")!;
+    // sizing recorded the child count present at the moment it was set
+    expect(col.__childCountAtSizing).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
