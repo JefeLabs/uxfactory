@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const skillPath = fileURLToPath(new URL("../skill/design/SKILL.md", import.meta.url));
 
-describe("skill/design/SKILL.md (the high-fidelity spec-authoring + gate-loop skill)", () => {
+describe("skill/design/SKILL.md (the high-fidelity HTML-authoring + rendering gate-loop skill)", () => {
   it("carries the triggering frontmatter and stays under 500 lines", async () => {
     const content = await readFile(skillPath, "utf8");
     const fm = content.match(/^---\n([\s\S]*?)\n---/);
@@ -26,20 +26,24 @@ describe("skill/design/SKILL.md (the high-fidelity spec-authoring + gate-loop sk
     expect(content).toContain("design/acceptance-criteria.json");
     expect(content).toContain("uxfactory.profile.json");
     expect(content).toContain("uxfactory.batch.json");
-    // it authors REAL specs at the registered path convention
-    expect(content).toContain(".uxfactory.json");
-    // the must-checks it acts on (real gate ids)
-    expect(content).toContain("requirement-coverage");
+    // it authors REAL HTML screens + a coverage manifest at the registered path convention
+    expect(content).toContain("design/screens");
+    expect(content).toContain(".html");
+    expect(content).toContain("trace.json");
+    // the must-checks it acts on (real gate ids over the rendering)
+    expect(content).toContain("render-coverage");
     expect(content).toContain("token-conformance");
-    // impliedState keywords that must appear in node names
+    expect(content).toContain("a11y");
+    expect(content).toContain("contrast");
+    // impliedState view-states the screens must cover
     for (const kw of ["empty", "loading", "error", "success", "edge"]) {
       expect(content).toContain(kw);
     }
     // tokens authored only at visual >= medium
     expect(content).toContain("tokens.ds.json");
     expect(content).toContain("visual");
-    // the deterministic coverage fallback
-    expect(content).toContain("uxfactory generate-specs --force");
+    // the async-settle hook for loading (async) view-states
+    expect(content).toContain("window.uxfReady");
   });
 
   it("is cc-invariant: no external cloud-deploy mentions", async () => {
