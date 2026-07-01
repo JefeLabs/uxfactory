@@ -57,6 +57,14 @@ describe("skill/design/SKILL.md (the high-fidelity HTML-authoring + rendering ga
     expect(content).toContain(".uxfactory/batch/previews");
   });
 
+  it("dispatches an independent craft judge after the gate is green (SP2)", async () => {
+    const content = await readFile(skillPath, "utf8");
+    expect(content).toContain("craft-report.json");
+    expect(content).toContain(".uxfactory/craft-rubric.md");
+    expect(content).toMatch(/independent|subagent|judge/i);
+    expect(content).toContain('"phase":"craft"');
+  });
+
   it("is cc-invariant: no external cloud-deploy mentions", async () => {
     const content = await readFile(skillPath, "utf8");
     expect(content).not.toMatch(/agentcore/i);

@@ -93,6 +93,17 @@ On **exit 1**, act on each `must` check with `status:"fail"`:
 - **contrast** — raise the contrast of the offending text/background (and keep the colors registered tokens).
 - **token-conformance** — the page painted a color that isn't a registered token: add it to `design/tokens.ds.json` or change the style to a registered hex.
 
+## Step 4b — Craft judge (independent, after the gate is green)
+
+Once `uxfactory batch` is green (exit 0), get an **independent** craft verdict — do NOT grade your own work:
+
+1. **Dispatch a fresh judge subagent** (the Task tool). Its brief: **read `.uxfactory/craft-rubric.md`** (an independent craft judge) and give it ONLY the screenshot paths (`.uxfactory/batch/previews/*.png`) + `uxfactory.classification.json`. It writes `craft-report.json` to the project root.
+2. **Read `craft-report.json`.** Compute the real pass yourself: every dimension `score >= 4` AND `overall >= 4`. (Do NOT trust the report's own `pass`.)
+3. **If below the bar:** act on the findings — revise the HTML/tokens to fix each specific `issue` (hierarchy, typography, components, depth, spacing, …). Re-run `uxfactory batch` (it must stay green) and re-dispatch the judge. Each pass counts against `maxIterations`.
+4. **Stop** when green AND craft-pass, OR when `maxIterations` is spent — then surface honestly: "green; craft best-effort `overall:N/5`, M open findings." NEVER claim craft you didn't reach.
+
+Emit `UXF::PROGRESS {"iter":<n>,"phase":"craft","gate":null,"status":"pass"|"fail"|null,"findings":<count>,"note":"craft overall N/5"}` at each craft step.
+
 ## Step 5 — Stop
 
 Stop at **exit 0** (clean) or when `maxIterations` is spent (surface best-effort screens + open findings). **Never spin** — never re-run the gate without changing anything.

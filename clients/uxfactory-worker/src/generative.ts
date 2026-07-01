@@ -416,7 +416,7 @@ async function readArtifactRefs(
  * gitignored by the consuming project (the worker's own `.gitignore` already is).
  * The exact least-privilege set for a real run is a live-only check (see notes).
  */
-export const SKILL_TOOL_GRANTS = ['Bash(uxfactory:*)', 'Write', 'Edit', 'Read'] as const;
+export const SKILL_TOOL_GRANTS = ['Bash(uxfactory:*)', 'Write', 'Edit', 'Read', 'Task'] as const;
 
 /**
  * Idempotently ensure `<projectRoot>/.claude/settings.json` grants the skill the
@@ -453,6 +453,20 @@ export async function ensureSkillPermissions(projectRoot: string): Promise<strin
 
   settings.permissions = { ...perms, allow };
   await writeFile(file, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  return file;
+}
+
+/**
+ * SP2: write the craft-judge rubric to `<projectRoot>/.uxfactory/craft-rubric.md` so
+ * the in-session craft-judge SUBAGENT (dispatched by the design agent once the gate is
+ * green) can read it — the engine's `skill/` dir is NOT in the agent's workspace.
+ * Idempotent; the single source is `skill/craft-review/SKILL.md` (via loadSkill).
+ */
+export async function provisionCraftRubric(projectRoot: string): Promise<string> {
+  const dir = path.join(projectRoot, '.uxfactory');
+  const file = path.join(dir, 'craft-rubric.md');
+  await mkdir(dir, { recursive: true });
+  await writeFile(file, loadSkill('craft-review'), 'utf8');
   return file;
 }
 
@@ -532,6 +546,9 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
       '.uxfactory/batch/report.json after each run and revising the HTML/tokens/trace to ' +
       'clear every must-check finding (render-coverage · a11y · contrast · token-conformance). ' +
       `Work in ${ctx.projectRoot}; the uxfactory CLI is on PATH. ` +
+      'Once the deterministic gate is green, run the independent craft-judge step (skill Step 4b): ' +
+      'dispatch a fresh subagent following .uxfactory/craft-rubric.md to score the rendered ' +
+      'screenshots and write craft-report.json, then revise for craft to the bar before finishing. ' +
       'Emit a UXF::PROGRESS line at every loop step.';
     return {
       systemPrompt: loadSkill('design'),
@@ -574,6 +591,8 @@ export async function runGenerative(
     // every other input/kind keeps the existence-gated, non-clobbering behavior.
     if (req.kind === 'generate-design') {
       await ensureBatchRegistry(ctx.projectRoot, { unconditional: ['screens', 'trace'] });
+      // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
+      await provisionCraftRubric(ctx.projectRoot);
     }
 
     const input: AgentInput = {
