@@ -77,4 +77,30 @@ describe('ensureBatchRegistry', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('registers screens + trace when present', async () => {
+    const root = await mkProject();
+    try {
+      await mkdir(path.join(root, 'design/screens'), { recursive: true }); // HTML tier: directory of authored pages
+      await writeFile(path.join(root, 'design/trace.json'), '{}');
+      await ensureBatchRegistry(root);
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.screens).toBe('design/screens');
+      expect(inputs.trace).toBe('design/trace.json');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not register screens/trace when absent', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root);
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.screens).toBeUndefined();
+      expect(inputs.trace).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

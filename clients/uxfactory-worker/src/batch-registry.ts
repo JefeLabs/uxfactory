@@ -18,10 +18,15 @@ import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /** Conventional generation paths — keep in sync with generative.ts TARGET_MAP. */
-const CONVENTIONAL_INPUTS: ReadonlyArray<{ key: 'stories' | 'flow' | 'tokens'; rel: string }> = [
+const CONVENTIONAL_INPUTS: ReadonlyArray<{
+  key: 'stories' | 'flow' | 'tokens' | 'screens' | 'trace';
+  rel: string;
+}> = [
   { key: 'stories', rel: 'design/acceptance-criteria.json' }, // AcceptanceCriterion (user-story + acceptance-criteria targets)
   { key: 'flow', rel: 'design/user-flow.json' }, // UserFlow (user-journey target)
   { key: 'tokens', rel: 'design/token-set.json' }, // TokenSet (not worker-generated; honored if user-provided)
+  { key: 'screens', rel: 'design/screens' }, // HTML tier: directory of authored pages
+  { key: 'trace', rel: 'design/trace.json' }, // HTML tier: coverage manifest
 ];
 
 async function fileExists(p: string): Promise<boolean> {
