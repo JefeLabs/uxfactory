@@ -7,6 +7,7 @@ import type {
   ShapeNode,
   TextNode,
   InstanceNode,
+  ComponentInstanceNode,
   StickyNode,
 } from "@uxfactory/spec";
 
@@ -112,7 +113,7 @@ function textTag(
  * (as in Figma), so we add the parent origin to get absolute canvas coordinates.
  */
 /** Leaf-only subset of children — Frame is a container, not a leaf node. */
-type LeafChild = ShapeNode | TextNode | InstanceNode | StickyNode;
+type LeafChild = ShapeNode | TextNode | InstanceNode | ComponentInstanceNode | StickyNode;
 
 function leaf(child: LeafChild, ox = 0, oy = 0): Drawable {
   switch (child.type) {
@@ -145,6 +146,18 @@ function leaf(child: LeafChild, ox = 0, oy = 0): Drawable {
           height: child.height ?? INSTANCE_H,
         },
         asset: child.asset,
+      };
+    case "component-instance":
+      return {
+        kind: "instance",
+        name: child.name,
+        geom: {
+          x: ox + child.x,
+          y: oy + child.y,
+          width: child.width ?? INSTANCE_W,
+          height: child.height ?? INSTANCE_H,
+        },
+        asset: child.component,
       };
     case "sticky":
       return {

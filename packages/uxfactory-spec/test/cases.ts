@@ -162,4 +162,45 @@ export const cases: Case[] = [
       frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10, sizing: { horizontal: "stretch" } }],
     },
   },
+  {
+    name: "design spec with local component + two instances + overrides",
+    valid: true,
+    input: {
+      components: {
+        button: {
+          name: "Button", width: 120, height: 40,
+          layout: { mode: "horizontal", gap: 8, padding: 12 },
+          children: [{ type: "text", name: "label", x: 0, y: 0, width: 96, height: 16, characters: "OK" }],
+        },
+      },
+      frames: [
+        {
+          name: "screen", x: 0, y: 0, width: 400, height: 300,
+          children: [
+            { type: "component-instance", name: "primary", component: "button", x: 20, y: 20,
+              overrides: { label: { characters: "Pay now", fill: "#FFFFFF" } } },
+            { type: "component-instance", name: "secondary", component: "button", x: 20, y: 80,
+              overrides: { label: { characters: "Cancel", visible: true } } },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    name: "component-instance missing component id is rejected",
+    valid: false,
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10,
+        children: [{ type: "component-instance", name: "x", x: 0, y: 0 }] }],
+    },
+  },
+  {
+    name: "instance override with an unknown key is rejected",
+    valid: false,
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10,
+        children: [{ type: "component-instance", name: "x", component: "b", x: 0, y: 0,
+          overrides: { label: { color: "#fff" } } }] }],
+    },
+  },
 ];

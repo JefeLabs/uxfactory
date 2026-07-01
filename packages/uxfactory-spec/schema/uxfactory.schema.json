@@ -111,6 +111,61 @@
         "vertical": { "enum": ["fixed", "hug", "fill"] }
       }
     },
+    "instanceOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "characters": { "type": "string" },
+        "fill": { "$ref": "#/definitions/hexColor" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "componentInstanceNode": {
+      "type": "object",
+      "required": ["type", "name", "component", "x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "component-instance" },
+        "name": { "type": "string" },
+        "component": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/instanceOverride" }
+        }
+      }
+    },
+    "componentDef": {
+      "type": "object",
+      "required": ["name", "width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "layout": { "$ref": "#/definitions/autoLayout" },
+        "sizing": { "$ref": "#/definitions/sizingSpec" },
+        "fill": { "$ref": "#/definitions/hexColor" },
+        "children": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/shapeNode" },
+              { "$ref": "#/definitions/textNode" },
+              { "$ref": "#/definitions/instanceNode" },
+              { "$ref": "#/definitions/componentInstanceNode" },
+              { "$ref": "#/definitions/frame" }
+            ]
+          }
+        }
+      }
+    },
     "frame": {
       "type": "object",
       "required": ["name", "x", "y", "width", "height"],
@@ -131,6 +186,7 @@
               { "$ref": "#/definitions/shapeNode" },
               { "$ref": "#/definitions/textNode" },
               { "$ref": "#/definitions/instanceNode" },
+              { "$ref": "#/definitions/componentInstanceNode" },
               { "$ref": "#/definitions/frame" }
             ]
           }
@@ -207,6 +263,10 @@
       "properties": {
         "editor": { "const": "figma" },
         "page": { "type": "string" },
+        "components": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/componentDef" }
+        },
         "frames": { "type": "array", "items": { "$ref": "#/definitions/frame" } },
         "connectors": { "type": "array", "items": { "$ref": "#/definitions/connector" } },
         "edits": { "type": "array", "items": { "$ref": "#/definitions/edit" } }

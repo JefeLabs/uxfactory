@@ -48,6 +48,38 @@ export interface InstanceNode {
   opacity?: number;
 }
 
+/** Bounded per-descendant override alphabet for a component instance (v1). */
+export interface InstanceOverride {
+  characters?: string;
+  fill?: HexColor;
+  visible?: boolean;
+}
+
+/** An instance of a local ComponentDef, resolved by `component` id. */
+export interface ComponentInstanceNode {
+  type: "component-instance";
+  name: string;
+  component: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  opacity?: number;
+  overrides?: Record<string, InstanceOverride>;
+}
+
+/** A reusable master: a frame-like node tree turned into a Figma component. */
+export interface ComponentDef {
+  name: string;
+  width: number;
+  height: number;
+  layout?: AutoLayout;
+  sizing?: SizingSpec;
+  fill?: HexColor;
+  children?: FrameChild[];
+}
+
 /** A FigJam sticky note. */
 export interface StickyNode {
   type: "sticky";
@@ -89,7 +121,7 @@ export interface SizingSpec {
 }
 
 /** Children allowed inside a Figma frame. */
-export type FrameChild = ShapeNode | TextNode | InstanceNode | Frame;
+export type FrameChild = ShapeNode | TextNode | InstanceNode | ComponentInstanceNode | Frame;
 
 /** Children allowed inside a FigJam section. */
 export type SectionChild = ShapeNode | StickyNode | InstanceNode;
@@ -144,6 +176,7 @@ export interface Edit {
 export interface DesignSpec {
   editor?: "figma";
   page?: string;
+  components?: Record<string, ComponentDef>;
   frames: Frame[];
   connectors?: Connector[];
   edits?: Edit[];

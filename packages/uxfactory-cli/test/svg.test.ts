@@ -198,6 +198,38 @@ describe("specToSvg", () => {
     expect(svg).toBe(specToSvg(nested));     // still deterministic
   });
 
+  it("renders a component-instance as a dashed approximate box labelled with the component id", () => {
+    const spec: DesignSpec = {
+      editor: "figma",
+      components: {
+        card: { name: "Card", width: 100, height: 60 },
+      },
+      frames: [
+        {
+          name: "screen",
+          x: 0,
+          y: 0,
+          width: 400,
+          height: 300,
+          children: [
+            { type: "component-instance", name: "myCard", component: "card", x: 10, y: 10, width: 100, height: 60 },
+          ],
+        },
+      ],
+    };
+    const svg = specToSvg(spec);
+    // Must render a dashed placeholder box
+    expect(svg).toContain('stroke-dasharray="4 4"');
+    // Must be labelled with the component id
+    expect(svg).toContain(">card<");
+    // Geometry: x=10, y=10, width=100, height=60 (absolute, frame at 0,0)
+    const rects = [...svg.matchAll(/<rect [^/]*/g)];
+    const instanceRect = rects.find((m) => m[0].includes('width="100"') && m[0].includes('height="60"'));
+    expect(instanceRect).toBeDefined();
+    expect(instanceRect![0]).toContain('x="10"');
+    expect(instanceRect![0]).toContain('y="10"');
+  });
+
   // Regression: Fix 1 — connector endpoints resolve to offset-corrected centers.
   // Two shapes in non-origin frames: centers must include the frame offset.
   it("[Fix-1] connector endpoints in non-origin frames use offset-resolved centers", () => {
