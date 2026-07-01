@@ -127,12 +127,21 @@ async function main(): Promise<void> {
 
   // Self-provision the env the spawned agent inherits (uxfactory on PATH +
   // PLAYWRIGHT_BROWSERS_PATH) so a SKILL can always run the gate without any
-  // manual env shimming. MUTATES process.env in place; idempotent.
-  const sandbox = provisionAgentSandboxEnv(cfg);
-  console.error(
-    `[worker] agent sandbox env: uxfactory shim=${sandbox.shimDir ?? 'n/a'} ` +
-      `PLAYWRIGHT_BROWSERS_PATH=${sandbox.browsersPath}`,
-  );
+  // manual env shimming. MUTATES process.env in place; idempotent. A filesystem
+  // failure here (e.g. EACCES writing the shim) is a setup error — fail closed
+  // like preflight (exit 2), not an unhandled rejection.
+  try {
+    const sandbox = provisionAgentSandboxEnv(cfg);
+    console.error(
+      `[worker] agent sandbox env: uxfactory shim=${sandbox.shimDir ?? 'n/a'} ` +
+        `PLAYWRIGHT_BROWSERS_PATH=${sandbox.browsersPath}`,
+    );
+  } catch (err) {
+    console.error(
+      `[worker] agent sandbox env provisioning failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(2);
+  }
 
   const { createWorkerAdapter } = await import('./adapter.js');
   const bridge = new WorkerBridgeClient(cfg.bridgeUrl);
