@@ -21,4 +21,11 @@ describe("skill/design SKILL.md stays in sync with the engine", () => {
       expect(md, `SKILL.md must mention ${id}`).toContain(id);
     }
   });
+
+  it("carries the SP2 craft-quality authoring uplift", async () => {
+    const md = await readFile(SKILL, "utf8");
+    for (const s of ["type scale", "spacing", "elevation", "radi", "production-quality", "uxfactory.classification.json", ".uxfactory/batch/previews"]) {
+      expect(md, `SKILL.md must mention ${s}`).toContain(s);
+    }
+  });
 });

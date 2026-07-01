@@ -46,6 +46,17 @@ describe("skill/design/SKILL.md (the high-fidelity HTML-authoring + rendering ga
     expect(content).toContain("window.uxfReady");
   });
 
+  it("carries the craft-quality authoring uplift (design system + craft direction)", async () => {
+    const content = await readFile(skillPath, "utf8");
+    // a real design system, not just colors
+    for (const s of ["type scale", "spacing", "elevation", "radi"]) expect(content).toContain(s);
+    // craft direction + brand-fit + look-at-renders
+    expect(content).toContain("production-quality");
+    expect(content).toContain("uxfactory.classification.json");
+    expect(content).toMatch(/open|view|look at/i);
+    expect(content).toContain(".uxfactory/batch/previews");
+  });
+
   it("is cc-invariant: no external cloud-deploy mentions", async () => {
     const content = await readFile(skillPath, "utf8");
     expect(content).not.toMatch(/agentcore/i);

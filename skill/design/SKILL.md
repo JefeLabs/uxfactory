@@ -32,6 +32,20 @@ For each **page** write `design/screens/<page>.html` as a self-contained documen
 
 Write `design/tokens.ds.json` = `{ "colors": { "<name>": "#RRGGBB", … } }` registering EVERY color your screens paint, and use those exact hexes (the gate extracts colors from the **rendered** page). Ensure `uxfactory.batch.json` `inputs.tokens` points at it. At `visual: low` tokens are not owed.
 
+But design with a **full system**, not just swatches — the deterministic gate only checks colors, yet a flat, correct screen is not the goal:
+
+- **Type scale** — a display / heading / body / caption ladder with real size + weight + line-height contrast (not one system-font size everywhere).
+- **Spacing rhythm** — a consistent spacing scale (e.g. 4/8/12/16/24/32) used for all gaps and padding; intentional grouping, not arbitrary values.
+- **Elevation** — shadow tokens to layer surfaces where it aids structure (cards, sheets, summaries).
+- **Radii** — a small radius scale for surfaces and controls.
+- **Real components** — a primary action is a **filled button** (padding, radius, affordance), NOT an underlined text link; inputs look editable; cards read as surfaces.
+
+## Step 2b — Craft direction (author for production quality, not just green)
+
+The four deterministic gates prove your screens are *correct* (covered, accessible, on-contrast, on-token). They do **not** prove they are *good*. Author for **production-quality** craft: clear visual hierarchy, the type scale and spacing rhythm above, genuine component affordance, depth via elevation/whitespace, and **brand/style fit** — read `uxfactory.classification.json` (category · industry · age · style) and make the design *feel* like that product, not a generic demo.
+
+Before you consider the loop done, **open your own rendered screenshots** in `.uxfactory/batch/previews/*.png` (you are multimodal — use the Read tool) and honestly assess them against the craft direction above. Authoring blind is how screens end up plain.
+
 ## Step 3 — Author `design/trace.json` (the coverage manifest)
 
 Map every required `(story, impliedState)` to a `(page, view, selector)`. One story may span many pages; one page hosts many views. The gate verifies each `selector` is **present and visible** in that view's rendered DOM.
