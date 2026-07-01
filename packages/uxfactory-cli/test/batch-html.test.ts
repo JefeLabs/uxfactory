@@ -54,7 +54,7 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined,
+      io, inputsFor(), undefined, undefined,
       { renderViews: async () => [goodSnap] },
     );
     expect(code).toBe(EXIT.OK);
@@ -68,7 +68,7 @@ describe("batchHtmlMode", () => {
     const badSnap: RenderSnapshot = { ...goodSnap, coverChecks: [{ ...goodSnap.coverChecks[0]!, visible: false }] };
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, { renderViews: async () => [badSnap] },
+      io, inputsFor(), undefined, undefined, { renderViews: async () => [badSnap] },
     );
     expect(code).toBe(EXIT.GATE_FAIL);
   });
@@ -77,10 +77,23 @@ describe("batchHtmlMode", () => {
     const io = makeIO();
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined,
+      io, inputsFor(), undefined, undefined,
       { renderViews: async () => { throw new Error("playwright not installed"); } },
     );
     expect(code).toBe(EXIT.TRANSPORT);
+  });
+
+  it("honors the committed registry scope when no --scope flag or profile scope is set", async () => {
+    const io = makeIO();
+    // No flags.scope and no profileScope, but the registry committed scope "visual".
+    const code = await batchHtmlMode(
+      "design",
+      { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root },
+      io, inputsFor(), undefined, "visual",
+      { renderViews: async () => [goodSnap] },
+    );
+    // The committed registry scope is honored — no spurious "set a render scope" EXIT.TRANSPORT.
+    expect(code).toBe(EXIT.OK);
   });
 });
 

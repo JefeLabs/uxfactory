@@ -27,6 +27,7 @@ export async function batchHtmlMode(
   io: IO,
   inputs: ResolvedInputs,
   profileScope: RenderScope | undefined,
+  registryScope: string | Record<string, unknown> | undefined,
   deps?: HtmlRenderDeps,
 ): Promise<number> {
   void specsDir; // HTML mode reads the screens dir from the registry, not the positional arg
@@ -47,7 +48,8 @@ export async function batchHtmlMode(
   if (flags.editorial !== undefined) overrides.editorial = flags.editorial as DialLevel;
   if (flags.coverage !== undefined) overrides.coverage = flags.coverage as DialLevel;
   if (flags.flow !== undefined) overrides.flow = flags.flow as DialLevel;
-  const rawBase = flags.scope !== undefined ? flags.scope : profileScope;
+  const rawBase =
+    flags.scope !== undefined ? flags.scope : profileScope !== undefined ? profileScope : registryScope;
   const scope = resolveScope(rawBase, overrides);
   if (scope === null) {
     if (flags.json === true) io.out(JSON.stringify({ ok: false, reason: "scope-unset", missing: [], declared: [] }));
