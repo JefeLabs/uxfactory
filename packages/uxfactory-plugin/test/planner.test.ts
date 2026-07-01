@@ -84,4 +84,57 @@ describe("planRender", () => {
     expect(plan.sections).toEqual([]);
     expect(plan.edits).toEqual([{ id: "1:2", set: { x: 5 } }]);
   });
+
+  it("carries auto-layout, fill, and nested frames into the plan", () => {
+    const spec: DesignSpec = {
+      frames: [
+        {
+          name: "col", x: 0, y: 0, width: 320, height: 480, fill: "#FFFFFF",
+          layout: { mode: "vertical", gap: 16, padding: 24, primaryAlign: "start" },
+          sizing: { horizontal: "fill" },
+          children: [
+            { name: "inner", x: 0, y: 0, width: 100, height: 100, layout: { mode: "horizontal" }, children: [] },
+          ],
+        },
+      ],
+    };
+    const frame = planRender(spec).frames[0]!;
+    expect(frame.fill).toBe("#FFFFFF");
+    expect(frame.layout).toEqual({ mode: "vertical", gap: 16, padding: 24, primaryAlign: "start" });
+    expect(frame.sizing).toEqual({ horizontal: "fill" });
+    expect(frame.children[0]).toMatchObject({ kind: "frame", name: "inner", layout: { mode: "horizontal" }, children: [] });
+  });
+
+  it("plans components and component-instances with overrides", () => {
+    const spec: DesignSpec = {
+      components: {
+        button: { name: "Button", width: 120, height: 40,
+          children: [{ type: "text", name: "label", x: 0, y: 0, width: 96, height: 16, characters: "OK" }] },
+      },
+      frames: [
+        { name: "screen", x: 0, y: 0, width: 400, height: 300, children: [
+          { type: "component-instance", name: "primary", component: "button", x: 20, y: 20,
+            overrides: { label: { characters: "Pay", fill: "#FFFFFF" } } },
+        ] },
+      ],
+    };
+    const plan = planRender(spec);
+    expect(plan.components?.button).toMatchObject({ name: "Button", width: 120, height: 40 });
+    expect(plan.components!.button!.children[0]).toMatchObject({ kind: "text", name: "label" });
+    const inst = plan.frames[0]!.children[0];
+    expect(inst).toMatchObject({ kind: "component-instance", component: "button", overrides: { label: { characters: "Pay", fill: "#FFFFFF" } } });
+  });
+
+  it("carries effects and object corner radius", () => {
+    const spec: DesignSpec = {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10, children: [
+        { type: "shape", name: "card", x: 0, y: 0, width: 10, height: 10,
+          cornerRadius: { tl: 8, tr: 8, br: 0, bl: 0 },
+          effects: [{ type: "drop-shadow", color: "#000000", x: 0, y: 4, blur: 12 }] },
+      ] }],
+    };
+    const card = planRender(spec).frames[0]!.children[0]!;
+    expect(card.cornerRadius).toEqual({ tl: 8, tr: 8, br: 0, bl: 0 });
+    expect(card.effects).toEqual([{ type: "drop-shadow", color: "#000000", x: 0, y: 4, blur: 12 }]);
+  });
 });
