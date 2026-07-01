@@ -86,6 +86,8 @@ export interface FakeFigma {
   createSection(): FakeNode;
   createSticky(): FakeNode;
   createConnector(): FakeNode;
+  createComponent(): FakeNode;
+  createComponentCalls: number;
   createPage(): FakeNode & { selection: FakeNode[] };
   loadFontAsync(name: { family: string; style: string }): Promise<void>;
   /** Recorded keys of every loadFontAsync call, as "family/style". */
@@ -180,6 +182,28 @@ export function makeFigma(): FakeFigma {
     return node;
   };
 
+  // ---- component + instance (Task 6) ----
+  const cloneNode = (src: FakeNode): FakeNode => {
+    const copy = new FakeNode(src.type === "COMPONENT" ? "INSTANCE" : src.type, `${(counter += 1)}:1`);
+    copy.name = src.name;
+    copy.x = src.x;
+    copy.y = src.y;
+    copy.width = src.width;
+    copy.height = src.height;
+    copy.fills = src.fills;
+    copy.characters = src.characters;
+    copy.visible = src.visible;
+    for (const c of src.children) copy.appendChild(cloneNode(c));
+    return copy;
+  };
+  let createComponentCalls = 0;
+  const createComponent = (): FakeNode => {
+    createComponentCalls += 1;
+    const node = create("COMPONENT");
+    (node as unknown as Record<string, unknown>).createInstance = () => cloneNode(node);
+    return node;
+  };
+
   // ---- page management (Fix 3) ----
   const initialPage = Object.assign(create("PAGE"), { selection: [] as FakeNode[] });
   const pages: Array<FakeNode & { selection: FakeNode[] }> = [initialPage];
@@ -227,6 +251,10 @@ export function makeFigma(): FakeFigma {
     createSection: () => create("SECTION"),
     createSticky,
     createConnector,
+    createComponent,
+    get createComponentCalls() {
+      return createComponentCalls;
+    },
     createPage,
     loadFontAsync,
     loadFontAsyncCalls,

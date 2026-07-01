@@ -196,6 +196,55 @@ describe("code.ts render", () => {
     // sizing recorded the child count present at the moment it was set
     expect(col.__childCountAtSizing).toBe(1);
   });
+
+  it("builds a component once and instantiates it with per-instance overrides", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      components: {
+        button: { name: "Button", width: 120, height: 40, layout: { mode: "horizontal", gap: 8 },
+          children: [{ type: "text", name: "label", x: 0, y: 0, width: 96, height: 16, characters: "OK", fill: "#101828" }] },
+      },
+      frames: [
+        { name: "screen", x: 0, y: 0, width: 400, height: 300, children: [
+          { type: "component-instance", name: "primary", component: "button", x: 20, y: 20,
+            overrides: { label: { characters: "Pay now", fill: "#FFFFFF" } } },
+          { type: "component-instance", name: "secondary", component: "button", x: 20, y: 80,
+            overrides: { label: { characters: "Cancel" } } },
+        ] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j3" });
+
+    expect(fig.createComponentCalls).toBe(1);
+    const screen = fig.currentPage.children.find((n) => n.name === "screen")!;
+    const primary = screen.children.find((n) => n.name === "primary")!;
+    expect(primary.type).toBe("INSTANCE");
+    const primaryLabel = primary.children.find((n) => n.name === "label")!;
+    expect(primaryLabel.characters).toBe("Pay now");
+    const secondary = screen.children.find((n) => n.name === "secondary")!;
+    const secondaryLabel = secondary.children.find((n) => n.name === "label")!;
+    expect(secondaryLabel.characters).toBe("Cancel");
+  });
+
+  it("skips a component-instance with an unknown component id without aborting", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      frames: [
+        { name: "screen", x: 0, y: 0, width: 200, height: 200, children: [
+          { type: "component-instance", name: "ghost", component: "missing", x: 0, y: 0 },
+          { type: "shape", name: "ok", x: 0, y: 0, width: 10, height: 10, fill: "#1E88E5" },
+        ] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j4" });
+    const rendered = lastOfType(fig, "rendered");
+    expect(rendered).toBeDefined();
+    const screen = fig.currentPage.children.find((n) => n.name === "screen")!;
+    expect(screen.children.some((n) => n.name === "ok")).toBe(true);
+    expect(screen.children.some((n) => n.name === "ghost")).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

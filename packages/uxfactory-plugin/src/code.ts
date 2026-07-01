@@ -43,6 +43,8 @@ interface EditableNode {
   fontName?: { family: string; style: string };
   /** Text sublayer; present on STICKY and CONNECTOR nodes. */
   text?: { characters?: string };
+  /** Present on COMPONENT nodes; clones into an INSTANCE. */
+  createInstance?(): EditableNode;
   connectorStart: unknown;
   connectorEnd: unknown;
   children?: readonly EditableNode[];
@@ -70,6 +72,7 @@ interface FigmaApi {
   getNodeById(id: string): EditableNode | null;
   on(type: "selectionchange", cb: () => void): void;
   createFrame(): EditableNode;
+  createComponent(): EditableNode;
   createRectangle(): EditableNode;
   createText(): EditableNode;
   createSection(): EditableNode;
@@ -277,6 +280,7 @@ interface RenderCtx {
   byName: Map<string, EditableNode>;
   reportNodes: Map<string, ReportNode>;
   editDiffs: ReportEditDiff[];
+  components: Map<string, EditableNode>;
 }
 
 const PRIMARY_ALIGN: Record<string, string> = {
@@ -302,6 +306,16 @@ function applyAutoLayout(node: EditableNode, layout: PlannedChild["layout"], siz
   // sizing AFTER children are appended (see renderContainer)
   if (sizing?.horizontal !== undefined) node.layoutSizingHorizontal = SIZING[sizing.horizontal];
   if (sizing?.vertical !== undefined) node.layoutSizingVertical = SIZING[sizing.vertical];
+}
+
+function applyInstanceOverrides(inst: EditableNode, overrides: NonNullable<PlannedChild["overrides"]>): void {
+  for (const [descName, ov] of Object.entries(overrides)) {
+    const target = findByName(inst, descName);
+    if (!target) continue;
+    if (ov.characters !== undefined && target.characters !== undefined) target.characters = ov.characters;
+    if (ov.fill !== undefined) target.fills = solidPaint(ov.fill);
+    if (ov.visible !== undefined) target.visible = ov.visible;
+  }
 }
 
 async function renderContainer(
@@ -340,6 +354,33 @@ async function renderChild(
   if (child.kind === "frame") {
     return renderContainer(child as PlannedFrameLike, parent, ctx);
   }
+
+  if (child.kind === "component-instance") {
+    const master = child.component ? ctx.components.get(child.component) : undefined;
+    if (!master || typeof master.createInstance !== "function") {
+      ctx.editDiffs.push({ name: child.name, diff: `skipped: component "${child.component ?? "?"}" not found` });
+      return null;
+    }
+    let inst: EditableNode;
+    try {
+      inst = master.createInstance();
+    } catch (err) {
+      ctx.editDiffs.push({ name: child.name, diff: `skipped: instance "${child.name}" failed: ${String(err)}` });
+      return null;
+    }
+    inst.name = child.name;
+    inst.x = child.x;
+    inst.y = child.y;
+    if (child.width !== undefined || child.height !== undefined) {
+      inst.resize(child.width ?? inst.width, child.height ?? inst.height);
+    }
+    if (child.rotation !== undefined) inst.rotation = child.rotation;
+    if (child.opacity !== undefined) inst.opacity = child.opacity;
+    if (child.overrides) applyInstanceOverrides(inst, child.overrides);
+    parent.appendChild(inst);
+    return inst;
+  }
+
   let node: EditableNode;
 
   if (child.kind === "instance") {
@@ -419,7 +460,22 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
     const reportNodes = new Map<string, ReportNode>();
     const byName = new Map<string, EditableNode>();
     const editDiffs: ReportEditDiff[] = [];
-    const ctx: RenderCtx = { byName, reportNodes, editDiffs };
+    const ctx: RenderCtx = { byName, reportNodes, editDiffs, components: new Map() };
+
+    if (plan.components) {
+      for (const [id, def] of Object.entries(plan.components)) {
+        const master = fig.createComponent();
+        master.name = def.name;
+        master.resize(def.width, def.height);
+        if (def.fill !== undefined) master.fills = solidPaint(def.fill);
+        for (const child of def.children) {
+          await renderChild(child, master, ctx);
+        }
+        applyAutoLayout(master, def.layout, def.sizing);
+        page.appendChild(master);
+        ctx.components.set(id, master);
+      }
+    }
 
     for (const frame of plan.frames) {
       await renderContainer(frame, page as unknown as EditableNode, ctx);
