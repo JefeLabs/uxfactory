@@ -125,7 +125,7 @@ function leaf(child: LeafChild, ox = 0, oy = 0): Drawable {
         fill: child.fill ?? SHAPE_FILL,
         stroke: child.stroke,
         strokeWidth: child.strokeWidth,
-        cornerRadius: child.cornerRadius,
+        cornerRadius: typeof child.cornerRadius === "number" ? child.cornerRadius : child.cornerRadius?.tl,
         characters: child.characters,
       };
     case "text":

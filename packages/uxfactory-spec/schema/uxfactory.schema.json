@@ -12,6 +12,37 @@
       "type": "string",
       "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$"
     },
+    "effect": {
+      "type": "object",
+      "required": ["type", "color", "x", "y", "blur"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["drop-shadow", "inner-shadow"] },
+        "color": { "$ref": "#/definitions/hexColor" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "blur": { "type": "number", "minimum": 0 },
+        "spread": { "type": "number" }
+      }
+    },
+    "effectsArray": { "type": "array", "items": { "$ref": "#/definitions/effect" } },
+    "cornerRadius": {
+      "oneOf": [
+        { "type": "number", "minimum": 0 },
+        {
+          "type": "object",
+          "required": ["tl", "tr", "br", "bl"],
+          "additionalProperties": false,
+          "properties": {
+            "tl": { "type": "number", "minimum": 0 },
+            "tr": { "type": "number", "minimum": 0 },
+            "br": { "type": "number", "minimum": 0 },
+            "bl": { "type": "number", "minimum": 0 }
+          }
+        }
+      ]
+    },
     "shapeNode": {
       "type": "object",
       "required": ["type", "name", "x", "y", "width", "height"],
@@ -26,10 +57,11 @@
         "fill": { "$ref": "#/definitions/hexColor" },
         "stroke": { "$ref": "#/definitions/hexColor" },
         "strokeWidth": { "type": "number", "minimum": 0 },
-        "cornerRadius": { "type": "number", "minimum": 0 },
+        "cornerRadius": { "$ref": "#/definitions/cornerRadius" },
         "rotation": { "type": "number" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "characters": { "type": "string" }
+        "characters": { "type": "string" },
+        "effects": { "$ref": "#/definitions/effectsArray" }
       }
     },
     "textNode": {
@@ -46,7 +78,8 @@
         "characters": { "type": "string" },
         "fill": { "$ref": "#/definitions/hexColor" },
         "rotation": { "type": "number" },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "effects": { "$ref": "#/definitions/effectsArray" }
       }
     },
     "instanceNode": {
@@ -62,7 +95,8 @@
         "width": { "type": "number" },
         "height": { "type": "number" },
         "rotation": { "type": "number" },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "effects": { "$ref": "#/definitions/effectsArray" }
       }
     },
     "stickyNode": {
@@ -163,7 +197,9 @@
               { "$ref": "#/definitions/frame" }
             ]
           }
-        }
+        },
+        "effects": { "$ref": "#/definitions/effectsArray" },
+        "cornerRadius": { "$ref": "#/definitions/cornerRadius" }
       }
     },
     "frame": {
@@ -190,7 +226,9 @@
               { "$ref": "#/definitions/frame" }
             ]
           }
-        }
+        },
+        "effects": { "$ref": "#/definitions/effectsArray" },
+        "cornerRadius": { "$ref": "#/definitions/cornerRadius" }
       }
     },
     "section": {

@@ -203,4 +203,37 @@ export const cases: Case[] = [
           overrides: { label: { color: "#fff" } } }] }],
     },
   },
+  {
+    name: "shape with drop-shadow effect + per-corner radius",
+    valid: true,
+    input: {
+      frames: [
+        {
+          name: "f", x: 0, y: 0, width: 200, height: 200,
+          effects: [{ type: "drop-shadow", color: "#000000", opacity: 0.2, x: 0, y: 4, blur: 12, spread: 0 }],
+          children: [
+            { type: "shape", name: "card", x: 0, y: 0, width: 100, height: 60,
+              cornerRadius: { tl: 8, tr: 8, br: 0, bl: 0 },
+              effects: [{ type: "inner-shadow", color: "#101828", x: 0, y: 1, blur: 2 }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    name: "numeric cornerRadius still valid (backward-compat)",
+    valid: true,
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10,
+        children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10, cornerRadius: 4 }] }],
+    },
+  },
+  {
+    name: "invalid effect type is rejected",
+    valid: false,
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10,
+        effects: [{ type: "glow", color: "#000000", x: 0, y: 0, blur: 1 }] }],
+    },
+  },
 ];

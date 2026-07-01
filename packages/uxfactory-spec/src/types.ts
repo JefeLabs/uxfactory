@@ -4,6 +4,20 @@ export type Editor = "figma" | "figjam";
 /** A solid color as a 3- or 6-digit hex string, e.g. "#1E88E5". */
 export type HexColor = string;
 
+/** A drop or inner shadow effect. */
+export interface Effect {
+  type: "drop-shadow" | "inner-shadow";
+  color: HexColor;
+  opacity?: number;
+  x: number;
+  y: number;
+  blur: number;
+  spread?: number;
+}
+
+/** Uniform radius (number) or per-corner radii. */
+export type CornerRadius = number | { tl: number; tr: number; br: number; bl: number };
+
 /** Common geometry for a positioned, sized node. */
 export interface Box {
   x: number;
@@ -19,10 +33,11 @@ export interface ShapeNode extends Box {
   fill?: HexColor;
   stroke?: HexColor;
   strokeWidth?: number;
-  cornerRadius?: number;
+  cornerRadius?: CornerRadius;
   rotation?: number;
   opacity?: number;
   characters?: string;
+  effects?: Effect[];
 }
 
 /** A text node. */
@@ -33,6 +48,7 @@ export interface TextNode extends Box {
   fill?: HexColor;
   rotation?: number;
   opacity?: number;
+  effects?: Effect[];
 }
 
 /** A published-component instance resolved by friendly asset name (e.g. "aws:lambda"). */
@@ -46,6 +62,7 @@ export interface InstanceNode {
   height?: number;
   rotation?: number;
   opacity?: number;
+  effects?: Effect[];
 }
 
 /** Bounded per-descendant override alphabet for a component instance (v1). */
@@ -78,6 +95,8 @@ export interface ComponentDef {
   sizing?: SizingSpec;
   fill?: HexColor;
   children?: FrameChild[];
+  effects?: Effect[];
+  cornerRadius?: CornerRadius;
 }
 
 /** A FigJam sticky note. */
@@ -133,6 +152,8 @@ export interface Frame extends Box {
   sizing?: SizingSpec;
   fill?: HexColor;
   children?: FrameChild[];
+  effects?: Effect[];
+  cornerRadius?: CornerRadius;
 }
 
 /** A FigJam section containing children. */
