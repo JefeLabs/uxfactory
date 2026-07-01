@@ -78,6 +78,39 @@
         "fill": { "$ref": "#/definitions/hexColor" }
       }
     },
+    "padding": {
+      "type": "object",
+      "required": ["top", "right", "bottom", "left"],
+      "additionalProperties": false,
+      "properties": {
+        "top": { "type": "number" },
+        "right": { "type": "number" },
+        "bottom": { "type": "number" },
+        "left": { "type": "number" }
+      }
+    },
+    "autoLayout": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["horizontal", "vertical"] },
+        "gap": { "type": "number", "minimum": 0 },
+        "padding": {
+          "oneOf": [{ "type": "number", "minimum": 0 }, { "$ref": "#/definitions/padding" }]
+        },
+        "primaryAlign": { "enum": ["start", "center", "end", "space-between"] },
+        "counterAlign": { "enum": ["start", "center", "end"] }
+      }
+    },
+    "sizingSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "horizontal": { "enum": ["fixed", "hug", "fill"] },
+        "vertical": { "enum": ["fixed", "hug", "fill"] }
+      }
+    },
     "frame": {
       "type": "object",
       "required": ["name", "x", "y", "width", "height"],
@@ -88,13 +121,17 @@
         "y": { "type": "number" },
         "width": { "type": "number" },
         "height": { "type": "number" },
+        "layout": { "$ref": "#/definitions/autoLayout" },
+        "sizing": { "$ref": "#/definitions/sizingSpec" },
+        "fill": { "$ref": "#/definitions/hexColor" },
         "children": {
           "type": "array",
           "items": {
             "oneOf": [
               { "$ref": "#/definitions/shapeNode" },
               { "$ref": "#/definitions/textNode" },
-              { "$ref": "#/definitions/instanceNode" }
+              { "$ref": "#/definitions/instanceNode" },
+              { "$ref": "#/definitions/frame" }
             ]
           }
         }

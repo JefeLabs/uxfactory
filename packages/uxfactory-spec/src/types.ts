@@ -58,8 +58,38 @@ export interface StickyNode {
   fill?: HexColor;
 }
 
+/** Auto-layout alignment on either axis. */
+export type Align = "start" | "center" | "end";
+/** Main-axis distribution (adds space-between to Align). */
+export type PrimaryAlign = Align | "space-between";
+/** Auto-layout child sizing on one axis. */
+export type Sizing = "fixed" | "hug" | "fill";
+
+/** Explicit four-side padding for an auto-layout frame. */
+export interface Padding {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** Figma auto-layout on a frame. Absent ⇒ children are absolutely positioned. */
+export interface AutoLayout {
+  mode: "horizontal" | "vertical";
+  gap?: number;
+  padding?: number | Padding;
+  primaryAlign?: PrimaryAlign;
+  counterAlign?: Align;
+}
+
+/** Per-axis auto-layout sizing (FIXED | HUG | FILL). */
+export interface SizingSpec {
+  horizontal?: Sizing;
+  vertical?: Sizing;
+}
+
 /** Children allowed inside a Figma frame. */
-export type FrameChild = ShapeNode | TextNode | InstanceNode;
+export type FrameChild = ShapeNode | TextNode | InstanceNode | Frame;
 
 /** Children allowed inside a FigJam section. */
 export type SectionChild = ShapeNode | StickyNode | InstanceNode;
@@ -67,6 +97,9 @@ export type SectionChild = ShapeNode | StickyNode | InstanceNode;
 /** A Figma frame containing children. */
 export interface Frame extends Box {
   name: string;
+  layout?: AutoLayout;
+  sizing?: SizingSpec;
+  fill?: HexColor;
   children?: FrameChild[];
 }
 

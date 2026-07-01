@@ -1,4 +1,13 @@
-import type { Spec, Connector, FrameChild, SectionChild } from "@uxfactory/spec";
+import type {
+  Spec,
+  Connector,
+  FrameChild,
+  SectionChild,
+  ShapeNode,
+  TextNode,
+  InstanceNode,
+  StickyNode,
+} from "@uxfactory/spec";
 
 /** Geometry of a positioned, sized box. */
 interface Geom {
@@ -101,7 +110,10 @@ function textTag(
  * `ox`/`oy` are the parent frame/section origin — child x/y are frame-relative
  * (as in Figma), so we add the parent origin to get absolute canvas coordinates.
  */
-function leaf(child: FrameChild | SectionChild, ox = 0, oy = 0): Drawable {
+/** Leaf-only subset of children — Frame is a container, not a leaf node. */
+type LeafChild = ShapeNode | TextNode | InstanceNode | StickyNode;
+
+function leaf(child: LeafChild, ox = 0, oy = 0): Drawable {
   switch (child.type) {
     case "shape":
       return {
@@ -155,7 +167,10 @@ function normalize(spec: Spec): Drawable[] {
         geom: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
       });
       // Children carry frame-relative coordinates; resolve to canvas-absolute.
-      for (const child of frame.children ?? []) out.push(leaf(child, frame.x, frame.y));
+      // Nested Frame children are containers — skip in the approximate renderer.
+      for (const child of frame.children ?? []) {
+        if ("type" in child) out.push(leaf(child, frame.x, frame.y));
+      }
     }
   } else if ("sections" in spec) {
     for (const section of spec.sections) {

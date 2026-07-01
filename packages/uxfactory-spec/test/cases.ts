@@ -118,4 +118,48 @@ export const cases: Case[] = [
   { name: "array root", valid: false, input: [] },
   { name: "string root", valid: false, input: "nope" },
   { name: "number root", valid: false, input: 5 },
+  {
+    name: "frame with vertical auto-layout + sizing + fill",
+    valid: true,
+    input: {
+      frames: [
+        {
+          name: "col", x: 0, y: 0, width: 320, height: 480, fill: "#FFFFFF",
+          layout: { mode: "vertical", gap: 16, padding: 24, primaryAlign: "start", counterAlign: "center" },
+          sizing: { horizontal: "fill", vertical: "hug" },
+          children: [{ type: "text", name: "t", x: 0, y: 0, width: 100, height: 20, characters: "Hi" }],
+        },
+      ],
+    },
+  },
+  {
+    name: "frame with object padding + nested frame child",
+    valid: true,
+    input: {
+      frames: [
+        {
+          name: "outer", x: 0, y: 0, width: 400, height: 400,
+          layout: { mode: "horizontal", padding: { top: 8, right: 8, bottom: 8, left: 8 } },
+          children: [
+            { name: "inner", x: 0, y: 0, width: 100, height: 100,
+              layout: { mode: "vertical", gap: 4 }, children: [] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    name: "invalid auto-layout mode is rejected",
+    valid: false,
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10, layout: { mode: "diagonal" } }],
+    },
+  },
+  {
+    name: "invalid sizing value is rejected",
+    valid: false,
+    input: {
+      frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10, sizing: { horizontal: "stretch" } }],
+    },
+  },
 ];
