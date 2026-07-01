@@ -6,6 +6,8 @@
   "ui": "dist/ui.html",
   "editorType": ["figma", "figjam"],
   "networkAccess": {
-    "allowedDomains": ["http://localhost:3779"]
+    "allowedDomains": ["none"],
+    "devAllowedDomains": ["http://localhost:3779", "http://127.0.0.1:3779"],
+    "reasoning": "Connects only to the local UXFactory bridge relay (127.0.0.1:3779) to receive render/pipeline requests and post render reports. No data leaves the machine; there is no cloud backend."
   }
 }
