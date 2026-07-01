@@ -21,6 +21,7 @@ import { DETERMINISTIC, isDeterministic, runGenerative } from './dispatch.js';
 import type { DispatchCtx, DispatchOutcome } from './dispatch.js';
 import { loadConfig } from './config.js';
 import { resolveCliBin } from './run-cli.js';
+import { provisionAgentSandboxEnv } from './sandbox-env.js';
 
 /** Everything the loop needs: the bridge, the dispatch context, and the generative branch. */
 export interface WorkerDeps {
@@ -123,6 +124,15 @@ async function main(): Promise<void> {
     }
     throw err;
   }
+
+  // Self-provision the env the spawned agent inherits (uxfactory on PATH +
+  // PLAYWRIGHT_BROWSERS_PATH) so a SKILL can always run the gate without any
+  // manual env shimming. MUTATES process.env in place; idempotent.
+  const sandbox = provisionAgentSandboxEnv(cfg);
+  console.error(
+    `[worker] agent sandbox env: uxfactory shim=${sandbox.shimDir ?? 'n/a'} ` +
+      `PLAYWRIGHT_BROWSERS_PATH=${sandbox.browsersPath}`,
+  );
 
   const { createWorkerAdapter } = await import('./adapter.js');
   const bridge = new WorkerBridgeClient(cfg.bridgeUrl);
