@@ -23,7 +23,7 @@
  * throws an infinite-update error.
  */
 
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
@@ -44,6 +44,8 @@ interface WorkerPayload {
   /** Alternative status key some workers emit. */
   status?: string;
   warnings?: unknown;
+  /** Node ids from the landing report (when the worker provides them). */
+  nodeIds?: unknown;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -104,13 +106,11 @@ function toRunStatus(raw: string | undefined): Exclude<RunStatus, "generating"> 
  * Consistent with SetupClassification's NativeSelect pattern.
  */
 function ChipSelect({
-  id,
   value,
   onChange,
   options,
   ariaLabel,
 }: {
-  id: string;
   value: string;
   onChange: (v: string) => void;
   options: { label: string; value: string }[];
@@ -119,7 +119,6 @@ function ChipSelect({
   return (
     <div className="relative inline-flex items-center">
       <select
-        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={ariaLabel}
@@ -252,6 +251,8 @@ export function Prompt({
   const snapshotClassification = useAppStore((s) => s.snapshot?.classification ?? null);
   const snapshotArtifacts = useAppStore((s) => s.snapshot?.artifacts ?? null);
   const setTab = useAppStore((s) => s.setTab);
+  const setFocus = useAppStore((s) => s.setFocus);
+  const toast = useAppStore((s) => s.toast);
 
   const runs = useRunsStore((s) => s.runs);
   const composerUnitType = useRunsStore((s) => s.composerUnitType);
@@ -261,9 +262,6 @@ export function Prompt({
   // ── Local state ────────────────────────────────────────────────────────────
   const [promptText, setPromptText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const unitTypeId = useId();
-  const platformId = useId();
 
   // ── Derived: classification platforms ─────────────────────────────────────
   // Safe to derive here (not in a selector) — no new array literal in selectors.
@@ -331,7 +329,14 @@ export function Prompt({
         const warnings = Array.isArray(payload.warnings)
           ? (payload.warnings as string[])
           : undefined;
-        useRunsStore.getState().complete(ev.requestId, finalStatus, warnings);
+        // Node ids from the landing report — stored on the run entry so the
+        // View action can scope Checks (and later zoom the canvas).
+        const nodeIds = Array.isArray(payload.nodeIds)
+          ? (payload.nodeIds as unknown[]).filter(
+              (n): n is string => typeof n === "string",
+            )
+          : undefined;
+        useRunsStore.getState().complete(ev.requestId, finalStatus, warnings, nodeIds);
       }
     });
 
@@ -360,6 +365,8 @@ export function Prompt({
         payload: { prompt: trimmed, unitType, platforms },
       });
 
+      // Ordering matters: the run row is added only AFTER enqueue resolves
+      // with an id — a rejected enqueue must not leave a phantom row.
       useRunsStore.getState().add({
         id,
         prompt: trimmed,
@@ -369,16 +376,20 @@ export function Prompt({
       });
 
       setPromptText(""); // Clear textarea; chips stay via store.
+    } catch {
+      // Surface the failure; keep the composer text so the user can retry.
+      toast("Generation failed to enqueue — is the bridge running?");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   // ── Platform chip change ───────────────────────────────────────────────────
+  // "__all__" is stored as the [] sentinel — it expands to the classification
+  // platforms only at submit time, so a later classification edit is picked up.
   function handlePlatformChange(value: string) {
     const currentUnitType = useRunsStore.getState().composerUnitType;
-    const platforms =
-      value === "__all__" ? classificationPlatforms : [value];
+    const platforms = value === "__all__" ? [] : [value];
     setComposerState(currentUnitType, platforms);
   }
 
@@ -411,7 +422,6 @@ export function Prompt({
             {/* Chip row: unit type + platform */}
             <div className="flex items-center gap-2 flex-wrap">
               <ChipSelect
-                id={unitTypeId}
                 value={composerUnitType}
                 onChange={handleUnitTypeChange}
                 options={UNIT_OPTIONS}
@@ -419,7 +429,6 @@ export function Prompt({
               />
               {classificationPlatforms.length > 0 && (
                 <ChipSelect
-                  id={platformId}
                   value={platformSelectValue}
                   onChange={handlePlatformChange}
                   options={platformOptions}
@@ -456,7 +465,11 @@ export function Prompt({
                 key={key}
                 label={label}
                 artifactStatus={status}
-                onClick={() => setTab("artifacts")}
+                onClick={() => {
+                  // Anchor the Artifacts tab to this artifact (AC-4).
+                  setFocus({ artifactKey: key });
+                  setTab("artifacts");
+                }}
               />
             ))}
           </div>
@@ -495,13 +508,16 @@ export function Prompt({
                     <span className="flex-1 text-sm text-gray-800 truncate">
                       {run.prompt}
                     </span>
-                    {/* View → switches to Checks tab.
-                        Note: no ui-state field exists on the app store for run scoping;
-                        T9 (Checks screen) will implement run-history scoping independently.
-                        We simply switch to the checks tab here. */}
+                    {/* View → focus intent (consumed by Checks) + tab switch. */}
                     <button
                       type="button"
-                      onClick={() => setTab("checks")}
+                      onClick={() => {
+                        setFocus({ runId: run.id });
+                        setTab("checks");
+                        // run.nodeIds is available for canvas selection here, but
+                        // src/messages.ts has no select/zoom UiToMain variant yet.
+                        // zoom: pending main-thread select-nodes message (T14)
+                      }}
                       className="text-xs text-primary-600 hover:underline shrink-0"
                     >
                       View

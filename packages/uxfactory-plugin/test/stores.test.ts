@@ -165,6 +165,50 @@ describe("app store — misc actions", () => {
   });
 });
 
+describe("app store — focus intent", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      connection: { status: "none", endpoint: "http://localhost:3779", repoPath: "", mode: "local" },
+      fileInfo: null,
+      snapshot: null,
+      route: { screen: "connect", tab: "prompt" },
+      toasts: [],
+      focus: null,
+    });
+  });
+
+  it("focus starts null", () => {
+    expect(useAppStore.getState().focus).toBeNull();
+  });
+
+  it("setFocus stores a runId intent (consumed by Checks)", () => {
+    useAppStore.getState().setFocus({ runId: "run-42" });
+    expect(useAppStore.getState().focus).toEqual({ runId: "run-42" });
+  });
+
+  it("setFocus stores an artifactKey intent (consumed by Artifacts)", () => {
+    useAppStore.getState().setFocus({ artifactKey: "brand-colors" });
+    expect(useAppStore.getState().focus).toEqual({ artifactKey: "brand-colors" });
+  });
+
+  it("setFocus replaces a previous intent", () => {
+    useAppStore.getState().setFocus({ runId: "run-1" });
+    useAppStore.getState().setFocus({ artifactKey: "fonts" });
+    expect(useAppStore.getState().focus).toEqual({ artifactKey: "fonts" });
+  });
+
+  it("clearFocus resets focus to null", () => {
+    useAppStore.getState().setFocus({ runId: "run-1" });
+    useAppStore.getState().clearFocus();
+    expect(useAppStore.getState().focus).toBeNull();
+  });
+
+  it("setFocus does not change the active tab (setTab keeps its own behavior)", () => {
+    useAppStore.getState().setFocus({ runId: "run-1" });
+    expect(useAppStore.getState().route.tab).toBe("prompt");
+  });
+});
+
 describe("app store — cancelReconnect", () => {
   beforeEach(() => {
     useAppStore.setState({
@@ -434,6 +478,22 @@ describe("runs store — cap", () => {
     const run = useRunsStore.getState().runs.find((r: RunEntry) => r.id === "run-1");
     expect(run?.warnings).toContain("contrast.text-min");
   });
+
+  it("complete stores nodeIds from the landing report when provided", () => {
+    useRunsStore.getState().add({ id: "run-1", prompt: "foo", unitType: "page", platforms: [] });
+    useRunsStore.getState().complete("run-1", "checked", undefined, ["1:10", "1:11"]);
+    const run = useRunsStore.getState().runs.find((r: RunEntry) => r.id === "run-1");
+    expect(run?.nodeIds).toEqual(["1:10", "1:11"]);
+  });
+
+  it("complete without nodeIds preserves previously stored nodeIds", () => {
+    useRunsStore.getState().add({ id: "run-1", prompt: "foo", unitType: "page", platforms: [] });
+    useRunsStore.getState().complete("run-1", "checked", undefined, ["1:10"]);
+    // A later completion event (e.g. re-check) without nodeIds keeps them.
+    useRunsStore.getState().complete("run-1", "warnings", ["a11y.hit-target"]);
+    const run = useRunsStore.getState().runs.find((r: RunEntry) => r.id === "run-1");
+    expect(run?.nodeIds).toEqual(["1:10"]);
+  });
 });
 
 describe("runs store — hydrate + persist roundtrip", () => {
@@ -513,5 +573,50 @@ describe("runs store — hydrate + persist roundtrip", () => {
     const teardown = await useRunsStore.getState().hydrate(bus);
     teardown?.();
     expect(useRunsStore.getState().runs).toHaveLength(0);
+  });
+
+  it("RunEntry.nodeIds round-trips through persist (additive field)", async () => {
+    // Persist a completed run carrying landing-report node ids…
+    const { bus, storage } = makeFakeBus();
+    const teardown = await useRunsStore.getState().hydrate(bus);
+
+    useRunsStore.getState().add({
+      id: "run-nodes",
+      prompt: "run with node ids",
+      unitType: "page",
+      platforms: ["desktop"],
+    });
+    useRunsStore.getState().complete("run-nodes", "checked", undefined, ["7:1", "7:2"]);
+    await Promise.resolve();
+    teardown?.();
+
+    const stored = storage["runs:v1:file-abc123"] as RunEntry[];
+    expect(stored[0]?.nodeIds).toEqual(["7:1", "7:2"]);
+
+    // …then hydrate a fresh store from that storage and get them back.
+    useRunsStore.setState({ runs: [] });
+    const { bus: bus2 } = makeFakeBus({ "runs:v1:file-abc123": stored });
+    const teardown2 = await useRunsStore.getState().hydrate(bus2);
+    teardown2?.();
+
+    expect(useRunsStore.getState().runs[0]?.nodeIds).toEqual(["7:1", "7:2"]);
+  });
+
+  it("hydrates legacy entries without nodeIds cleanly (field is optional)", async () => {
+    const legacyRuns = [
+      {
+        id: "legacy-1",
+        prompt: "pre-nodeIds run",
+        unitType: "page",
+        platforms: ["desktop"],
+        status: "checked" as const,
+      },
+    ];
+    const { bus } = makeFakeBus({ "runs:v1:file-abc123": legacyRuns });
+    const teardown = await useRunsStore.getState().hydrate(bus);
+    teardown?.();
+
+    expect(useRunsStore.getState().runs[0]?.id).toBe("legacy-1");
+    expect(useRunsStore.getState().runs[0]?.nodeIds).toBeUndefined();
   });
 });

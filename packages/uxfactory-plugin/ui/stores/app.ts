@@ -47,12 +47,30 @@ export interface ToastItem {
   message: string;
 }
 
+/**
+ * Cross-tab focus intent — a one-shot "deep link" between tabs.
+ *
+ * Producers set it right before calling `setTab` (e.g. the Prompt screen's
+ * View action sets `runId` before switching to Checks; a grounding chip
+ * sets `artifactKey` before switching to Artifacts).
+ *
+ * Consumers read it on mount/focus — Checks consumes `runId`, Artifacts
+ * consumes `artifactKey` — and are responsible for clearing it via
+ * `clearFocus()` once applied.
+ */
+export interface FocusIntent {
+  runId?: string;
+  artifactKey?: string;
+}
+
 export interface AppState {
   connection: ConnectionState;
   fileInfo: { name: string; fileKey: string } | null;
   snapshot: ProjectSnapshot | null;
   route: RouteState;
   toasts: ToastItem[];
+  /** Pending cross-tab focus intent, or null when none. See {@link FocusIntent}. */
+  focus: FocusIntent | null;
 }
 
 // ─── Action types ─────────────────────────────────────────────────────────────
@@ -75,6 +93,14 @@ export interface AppActions {
   refreshSnapshot(bridge: Bridge): Promise<void>;
   goto(screen: Screen): void;
   setTab(tab: Tab): void;
+  /**
+   * Set the pending cross-tab focus intent (see {@link FocusIntent}).
+   * Consumed by Checks (`runId`) / Artifacts (`artifactKey`) on
+   * mount/focus; the consumer clears it via `clearFocus()`.
+   */
+  setFocus(focus: FocusIntent): void;
+  /** Clear the pending focus intent (called by the consuming tab). */
+  clearFocus(): void;
   toast(message: string): void;
   dismissToast(id: string): void;
   /**
@@ -112,6 +138,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   snapshot: null,
   route: INITIAL_ROUTE,
   toasts: [],
+  focus: null,
 
   // Actions
   setFileInfo(fi) {
@@ -165,6 +192,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setTab(tab) {
     set((s) => ({ route: { ...s.route, tab } }));
+  },
+
+  setFocus(focus) {
+    set({ focus });
+  },
+
+  clearFocus() {
+    set({ focus: null });
   },
 
   toast(message) {

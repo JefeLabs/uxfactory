@@ -69,6 +69,7 @@ const BASE_APP_STATE = {
   snapshot: makeSnapshot(),
   route: { screen: "tabs" as const, tab: "prompt" as const },
   toasts: [],
+  focus: null,
 };
 
 function resetStores(snapshotOverride?: Partial<ProjectSnapshot>) {
@@ -241,7 +242,7 @@ describe("AC-2: completion event flips row to checked; View → checks tab", () 
     );
   });
 
-  it("View button switches the active tab to checks", async () => {
+  it("View button sets focus.runId for run scoping and switches the active tab to checks", async () => {
     const user = userEvent.setup();
     const { bridge, fireEvent } = makeBridge();
     const bus = makeBus();
@@ -253,20 +254,26 @@ describe("AC-2: completion event flips row to checked; View → checks tab", () 
     await user.click(screen.getByRole("button", { name: "Generate design" }));
     await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
 
-    // Complete the run
+    // Complete the run (landing report carries node ids)
     act(() => {
       fireEvent({
         requestId: "run-001",
-        event: { type: "complete", outcome: "checked" },
+        event: { type: "complete", outcome: "checked", nodeIds: ["12:1", "12:2"] },
         seq: 1,
       });
     });
     await waitFor(() => expect(screen.getByLabelText("checked")).toBeInTheDocument());
 
+    // Completion event stored the landing-report node ids on the run entry
+    expect(
+      useRunsStore.getState().runs.find((r) => r.id === "run-001")?.nodeIds,
+    ).toEqual(["12:1", "12:2"]);
+
     // Click View
     await user.click(screen.getByRole("button", { name: "View" }));
 
-    // Tab switched to checks
+    // Focus intent set for the Checks screen + tab switched to checks
+    expect(useAppStore.getState().focus).toEqual({ runId: "run-001" });
     expect(useAppStore.getState().route.tab).toBe("checks");
   });
 });
@@ -418,7 +425,7 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
     ).toBeInTheDocument();
   });
 
-  it("clicking a grounding chip switches to the artifacts tab", async () => {
+  it("clicking a grounding chip sets focus.artifactKey and switches to the artifacts tab", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     const bus = makeBus();
@@ -428,6 +435,8 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
     );
 
+    // Focus intent anchors the Artifacts tab to the clicked artifact
+    expect(useAppStore.getState().focus).toEqual({ artifactKey: "requirements" });
     expect(useAppStore.getState().route.tab).toBe("artifacts");
   });
 });
@@ -589,6 +598,101 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     await user.selectOptions(unitSelect, "organism");
 
     expect(useRunsStore.getState().composerUnitType).toBe("organism");
+  });
+});
+
+// ─── Enqueue failure — toast + composer preserved + no phantom row ───────────
+
+describe("enqueue rejection: toast shown, composer preserved, no run row added", () => {
+  it("rejected enqueue shows the bridge toast and keeps the composer text", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge({
+      enqueue: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    });
+    const bus = makeBus();
+
+    render(<Prompt bridge={bridge} bus={bus} />);
+
+    const textarea = screen.getByRole("textbox", { name: "Prompt" });
+    await user.type(textarea, "A run that cannot be enqueued");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+
+    // Toast surfaces the failure
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .toasts.some(
+            (t) => t.message === "Generation failed to enqueue — is the bridge running?",
+          ),
+      ).toBe(true),
+    );
+
+    // Composer text is preserved for retry
+    expect(textarea).toHaveValue("A run that cannot be enqueued");
+
+    // No phantom run row was added
+    expect(useRunsStore.getState().runs).toHaveLength(0);
+    expect(screen.queryByLabelText("generating")).not.toBeInTheDocument();
+
+    // Submit is re-enabled after the failure
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Generate design" })).toBeEnabled(),
+    );
+  });
+});
+
+// ─── Platform sentinel — "__all__" stored as [] and expanded at submit ───────
+
+describe("platform sentinel: __all__ stores [] and expands at submit", () => {
+  it("selecting __all__ stores the [] sentinel in the runs store", async () => {
+    const user = userEvent.setup();
+    // Seed a concrete platform so switching back to __all__ is a real change.
+    useRunsStore.setState({
+      runs: [],
+      composerUnitType: "page",
+      composerPlatforms: ["mobile"],
+    });
+
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    render(<Prompt bridge={bridge} bus={bus} />);
+
+    const platformSelect = screen.getByLabelText("Platform target") as HTMLSelectElement;
+    expect(platformSelect.value).toBe("mobile");
+
+    await user.selectOptions(platformSelect, "__all__");
+
+    // Sentinel, NOT the expanded classification platform list
+    expect(useRunsStore.getState().composerPlatforms).toEqual([]);
+    // Select still renders as "all platforms"
+    expect(platformSelect.value).toBe("__all__");
+  });
+
+  it("submit expands the [] sentinel to the classification platforms", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    render(<Prompt bridge={bridge} bus={bus} />);
+
+    // Default composerPlatforms is [] (the __all__ sentinel)
+    expect(useRunsStore.getState().composerPlatforms).toEqual([]);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Prompt" }),
+      "All-platform run",
+    );
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-design",
+      payload: {
+        prompt: "All-platform run",
+        unitType: "page",
+        platforms: ["desktop", "mobile"],
+      },
+    });
   });
 });
 

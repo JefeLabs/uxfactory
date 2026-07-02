@@ -34,6 +34,17 @@ export interface RunEntry {
   status: RunStatus;
   warnings?: string[];
   progress?: RunProgress;
+  /**
+   * Node ids from the landing report — set by completion events when
+   * available. Consumed by the Prompt screen's View action for run
+   * scoping (and, once a main-thread select-nodes message exists, canvas
+   * zoom).
+   *
+   * Persistence note: this field is an ADDITIVE extension of the
+   * `runs:v1:<fileKey>` storage payload. Entries persisted before this
+   * field existed simply lack it and hydrate cleanly.
+   */
+  nodeIds?: string[];
 }
 
 const MAX_RUNS = 20;
@@ -60,8 +71,17 @@ export interface RunsActions {
   add(entry: Omit<RunEntry, "status"> & { status?: RunStatus }): void;
   /** Update live progress for a run. */
   progress(id: string, p: RunProgress): void;
-  /** Mark a run terminal. */
-  complete(id: string, status: Exclude<RunStatus, "generating">, warnings?: string[]): void;
+  /**
+   * Mark a run terminal. `nodeIds` (node ids from the landing report) is
+   * stored when the completion event provides it; otherwise any previously
+   * stored ids are preserved.
+   */
+  complete(
+    id: string,
+    status: Exclude<RunStatus, "generating">,
+    warnings?: string[],
+    nodeIds?: string[],
+  ): void;
   /**
    * Hydrate from plugin storage and wire auto-persist.
    * Returns a teardown function that removes the persist subscription.
@@ -97,11 +117,11 @@ export const useRunsStore = create<RunsStore>(
       }));
     },
 
-    complete(id, status, warnings) {
+    complete(id, status, warnings, nodeIds) {
       set((s) => ({
         runs: s.runs.map((r) =>
           r.id === id
-            ? { ...r, status, warnings, progress: undefined }
+            ? { ...r, status, warnings, nodeIds: nodeIds ?? r.nodeIds, progress: undefined }
             : r,
         ),
       }));
