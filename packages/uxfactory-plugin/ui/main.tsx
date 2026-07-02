@@ -67,6 +67,13 @@ async function boot(): Promise<void> {
       bridge.snapshot(),
     ]);
 
+    // Race guard: the user may have clicked Cancel while we were awaiting.
+    // If status is no longer "reconnecting", skip connectSucceeded to avoid
+    // yanking them off the Connect screen.
+    if (useAppStore.getState().connection.status !== "reconnecting") {
+      return;
+    }
+
     store.connectSucceeded(snapshot, stored.repoPath, (payload) => {
       bus.storageSet(connKey, payload).catch(() => { /* non-fatal */ });
     });

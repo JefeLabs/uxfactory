@@ -26,6 +26,10 @@ export interface RunEntry {
   id: string;
   prompt: string;
   unitType: string;
+  /**
+   * Target platforms for this run (e.g. `["desktop", "mobile"]`).
+   * Additive extension consumed by the Prompt screen's enqueue payload.
+   */
   platforms: string[];
   status: RunStatus;
   warnings?: string[];

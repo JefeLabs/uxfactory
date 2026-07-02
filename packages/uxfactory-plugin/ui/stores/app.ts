@@ -77,6 +77,12 @@ export interface AppActions {
   setTab(tab: Tab): void;
   toast(message: string): void;
   dismissToast(id: string): void;
+  /**
+   * Cancel an in-progress reconnect attempt.
+   * Resets both `route.screen` to `"connect"` AND `connection.status` to `"none"`
+   * so the reconnect ContextBar does not linger over the Connect screen.
+   */
+  cancelReconnect(): void;
 }
 
 export type AppStore = AppState & AppActions;
@@ -168,5 +174,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   dismissToast(id) {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+  },
+
+  cancelReconnect() {
+    set((s) => ({
+      connection: { ...s.connection, status: "none" },
+      route: { ...s.route, screen: "connect" },
+    }));
   },
 }));

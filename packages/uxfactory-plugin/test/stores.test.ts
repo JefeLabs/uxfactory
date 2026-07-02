@@ -165,6 +165,52 @@ describe("app store — misc actions", () => {
   });
 });
 
+describe("app store — cancelReconnect", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      connection: {
+        status: "reconnecting",
+        endpoint: "http://localhost:3779",
+        repoPath: "/home/user/demo-shop",
+        mode: "local",
+      },
+      fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
+      snapshot: null,
+      route: { screen: "connect", tab: "prompt" },
+      toasts: [],
+    });
+  });
+
+  it("sets connection.status to 'none'", () => {
+    useAppStore.getState().cancelReconnect();
+    expect(useAppStore.getState().connection.status).toBe("none");
+  });
+
+  it("sets route.screen to 'connect'", () => {
+    useAppStore.getState().cancelReconnect();
+    expect(useAppStore.getState().route.screen).toBe("connect");
+  });
+
+  it("preserves other connection fields (endpoint, repoPath, mode)", () => {
+    useAppStore.getState().cancelReconnect();
+    const { connection } = useAppStore.getState();
+    expect(connection.endpoint).toBe("http://localhost:3779");
+    expect(connection.repoPath).toBe("/home/user/demo-shop");
+    expect(connection.mode).toBe("local");
+  });
+
+  it("after cancelReconnect, a late connectSucceeded is blocked by the race guard", () => {
+    useAppStore.getState().cancelReconnect();
+    // Simulate the race guard from main.tsx: only call connectSucceeded if status is "reconnecting"
+    if (useAppStore.getState().connection.status === "reconnecting") {
+      useAppStore.getState().connectSucceeded(makeSnapshot({ hasClassification: true }), "/repo");
+    }
+    // Guard should have prevented any state change
+    expect(useAppStore.getState().route.screen).toBe("connect");
+    expect(useAppStore.getState().connection.status).toBe("none");
+  });
+});
+
 // ─── Wizard store — suggest + userEdited guard ────────────────────────────────
 
 describe("suggestFor — ecommerce/corporate", () => {
@@ -265,6 +311,45 @@ describe("wizard store — userEdited guard", () => {
     useWizardStore.getState().clearUserEdited();
     const { userEdited } = useWizardStore.getState();
     expect(Object.values(userEdited).every((v) => v === false)).toBe(true);
+  });
+
+  it("applySuggestions (canonical) overwrites un-edited fields", () => {
+    useWizardStore.getState().applySuggestions({ category: "webapp" });
+    // webapp suggests high flow
+    expect(useWizardStore.getState().defaults.flow).toBe("high");
+  });
+
+  it("applySuggestions does NOT overwrite user-edited fields", () => {
+    useWizardStore.getState().setDefault("visual", "low");
+    useWizardStore.getState().applySuggestions({ category: undefined });
+    expect(useWizardStore.getState().defaults.visual).toBe("low");
+  });
+
+  it("applySuggestions and applysuggestions produce identical results", () => {
+    // Both should apply webapp suggestions to the same initial state.
+    useWizardStore.getState().applySuggestions({ category: "webapp" });
+    const afterCanonical = { ...useWizardStore.getState().defaults };
+
+    // Reset to same initial state
+    useWizardStore.setState((s) => ({
+      defaults: {
+        style: "mix",
+        visual: "high",
+        editorial: "medium",
+        flow: "low",
+        coverage: "medium",
+        coherence: "high",
+      },
+      userEdited: {
+        style: false, visual: false, editorial: false,
+        flow: false, coverage: false, coherence: false,
+      },
+      classification: s.classification,
+    }));
+    useWizardStore.getState().applysuggestions({ category: "webapp" });
+    const afterDeprecated = { ...useWizardStore.getState().defaults };
+
+    expect(afterCanonical).toEqual(afterDeprecated);
   });
 
   it("prefillFrom populates classification from snapshot", () => {

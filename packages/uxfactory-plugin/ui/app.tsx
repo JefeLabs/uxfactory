@@ -73,7 +73,7 @@ function ContextBar() {
   // Select stable store slices individually to avoid new-object-literal pitfall.
   const connection = useAppStore((s) => s.connection);
   const snapshot = useAppStore((s) => s.snapshot);
-  const goto = useAppStore((s) => s.goto);
+  const cancelReconnect = useAppStore((s) => s.cancelReconnect);
   const [expanded, setExpanded] = useState(false);
 
   const pillStatus = connectionStatusToPill(connection.status);
@@ -104,7 +104,7 @@ function ContextBar() {
         <StatusPill status="reconnecting" />
         <button
           type="button"
-          onClick={() => goto("connect")}
+          onClick={cancelReconnect}
           className="ml-auto text-xs text-gray-500 hover:text-gray-700 underline"
           aria-label="Cancel reconnect"
         >

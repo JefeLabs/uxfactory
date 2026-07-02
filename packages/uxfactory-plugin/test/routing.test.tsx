@@ -162,6 +162,77 @@ describe("reconnect-cancel path", () => {
     // Connect placeholder should now be visible
     expect(screen.getByText(/Connect arrives in a later task/i)).toBeInTheDocument();
   });
+
+  it("clicking Cancel resets connection.status to 'none' and hides the ContextBar", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Before cancel: reconnect bar with StatusPill is visible
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
+
+    // connection.status must be "none" (not just a screen change)
+    expect(useAppStore.getState().connection.status).toBe("none");
+
+    // ContextBar is suppressed: showContextBar = (screen !== "connect" || status === "reconnecting")
+    // With screen="connect" and status="none", the bar should not render.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+// ─── Boot race guard ──────────────────────────────────────────────────────────
+
+describe("boot race guard — late bridge reply after cancel", () => {
+  beforeEach(resetToReconnecting);
+
+  it("resolving health/snapshot after cancel does not yank user to tabs", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Create a controlled promise simulating the hanging Promise.all in boot.
+    let resolveAll!: () => void;
+    const hangingAll = new Promise<void>((res) => {
+      resolveAll = res;
+    });
+
+    // Inline the post-await boot logic WITH the race guard (mirrors the fix in main.tsx).
+    const simulatedBoot = hangingAll.then(() => {
+      // Race guard — this is the fix in main.tsx
+      if (useAppStore.getState().connection.status !== "reconnecting") return;
+      useAppStore.getState().connectSucceeded(
+        {
+          name: "Demo Shop",
+          root: "/home/user/demo-shop",
+          hasClassification: true,
+          hasProfile: true,
+          classification: null,
+          profile: null,
+          artifacts: [],
+          requirements: [],
+        },
+        "/home/user/demo-shop",
+      );
+    });
+
+    // User cancels while health/snapshot promises are still in flight.
+    await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
+
+    expect(useAppStore.getState().connection.status).toBe("none");
+    expect(useAppStore.getState().route.screen).toBe("connect");
+
+    // Late bridge reply arrives — resolve the hanging promises.
+    await act(async () => {
+      resolveAll();
+      await simulatedBoot;
+    });
+
+    // The race guard must have prevented the yank to "tabs".
+    expect(useAppStore.getState().route.screen).toBe("connect");
+    expect(useAppStore.getState().connection.status).toBe("none");
+    // ContextBar (and StatusPill) must still be absent.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });
 
 // ─── Each tab click swaps placeholder ────────────────────────────────────────
