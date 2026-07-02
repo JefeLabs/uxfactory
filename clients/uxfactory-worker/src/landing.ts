@@ -111,7 +111,7 @@ export async function landDesign(
     try {
       const { code, stdout } = await deps.exec(
         'uxfactory',
-        ['publish', file, '--verify', '--json', '--data-dir', bridgeDataDir],
+        ['publish', file, '--verify', '--json', '--data-dir', bridgeDataDir, '--timeout', '60000'],
         70_000,
       );
 

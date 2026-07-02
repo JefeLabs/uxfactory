@@ -72,9 +72,9 @@ export async function extractCmd(
   let compStats: ComponentizeStats | null = null;
   let finalSpec = spec;
   if (flags.components !== false) {
-    const result = componentize(spec);
-    finalSpec = result.spec;
-    compStats = result.stats;
+    const compResult = componentize(spec);
+    finalSpec = compResult.spec;
+    compStats = compResult.stats;
   }
 
   const result = validate(finalSpec);

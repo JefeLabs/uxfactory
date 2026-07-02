@@ -23,6 +23,19 @@ describe("landDesign", () => {
     expect(res!.verdicts.every((v) => v.verify === "pass")).toBe(true);
     expect(calls[0]).toContain("--verify");
     expect(calls[0]).toContain("--data-dir");
+    expect(calls[0]).toContain("--timeout");
+  });
+
+  it("maps exit code 1 to fail verdict", async () => {
+    const root = await mkProject(["checkout-success.designspec.json"]);
+    const res = await landDesign(root, "/b", { exec: async () => ({ code: 1, stdout: "" }) });
+    expect(res!.verdicts[0]!.verify).toBe("fail");
+  });
+
+  it("maps exit code 2 to pending verdict", async () => {
+    const root = await mkProject(["checkout-success.designspec.json"]);
+    const res = await landDesign(root, "/b", { exec: async () => ({ code: 2, stdout: "" }) });
+    expect(res!.verdicts[0]!.verify).toBe("pending");
   });
 
   it("maps timeout/non-zero to pending and never throws", async () => {

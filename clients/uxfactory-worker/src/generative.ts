@@ -36,7 +36,7 @@ import type { PipelineRequest, BridgeLike } from './bridge-client.js';
 import type { DispatchCtx, DispatchOutcome } from './dispatch.js';
 import { ensureBatchRegistry } from './batch-registry.js';
 import { loadSkill } from './skills.js';
-import { landDesign, realLandingDeps } from './landing.js';
+import { landDesign, realLandingDeps, type LandingResult } from './landing.js';
 
 // ---------------------------------------------------------------------------
 // secret masking — never let an `sk-…`-shaped key reach the panel or the result
@@ -652,7 +652,7 @@ export async function runGenerative(
     // For generate-design: publish + bounded-verify each per-view designspec that
     // the skill's Step 4c `uxfactory extract` produced. A landing failure NEVER
     // changes the job status — the whole block is wrapped in try/catch.
-    let landing: import('./landing.js').LandingResult | undefined;
+    let landing: LandingResult | undefined;
     if (req.kind === 'generate-design') {
       try {
         const bridgeDataDir = ctx.bridgeDataDir ?? path.resolve('.uxfactory');

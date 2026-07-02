@@ -90,6 +90,7 @@ export function buildProgram(): Command {
     .option("--wait", "block until the render report lands")
     .option("--verify", "after the render lands, gate it PASS/FAIL")
     .option("--tolerance <px>", "geometry epsilon for --verify")
+    .option("--timeout <ms>", "render wait timeout for --wait/--verify (ms)")
     .option("--dry-run", "print what would be enqueued without writing")
     .option("--json", "machine-readable output")
     .option("--bridge <url>", "bridge base URL")
@@ -101,6 +102,7 @@ export function buildProgram(): Command {
           wait?: boolean;
           verify?: boolean;
           tolerance?: string;
+          timeout?: string;
           dryRun?: boolean;
           json?: boolean;
           bridge?: string;
@@ -114,6 +116,7 @@ export function buildProgram(): Command {
             wait: opts.wait,
             verify: opts.verify,
             tolerance: opts.tolerance,
+            timeoutMs: opts.timeout !== undefined ? Number(opts.timeout) : undefined,
             dryRun: opts.dryRun,
             json: opts.json,
             dataDir: resolveDataDir(opts.dataDir),
