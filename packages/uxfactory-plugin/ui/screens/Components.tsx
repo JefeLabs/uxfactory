@@ -1,0 +1,450 @@
+/**
+ * Components.tsx — Design-unit ↔ requirement linking workspace.
+ *
+ * PRD: .plans/panel/05-components-PRD.md
+ *
+ * Contract: export function Components({bridge, bus}: {bridge: Bridge, bus: PluginBus})
+ *
+ * Key behaviors:
+ * - Selection card: live canvas selection via bus.onSelection
+ * - Link composer: creates unit↔AC pairs via bridge.putLinks (whole-set write)
+ * - Linked components list: green/hollow dots, rollup, unlink on hover
+ * - Zero-ACs callout when snapshot.requirements is empty → links to Artifacts
+ * - Sticky footer "Check my design" → enqueue check-design job → setFocus + setTab
+ *
+ * V1 seams (documented per spec honesty table):
+ * - Sync badge is always "not mapped" (no bridge read for drift state in v1)
+ * - Row click copies node id + notifies (no canvas select/zoom API in v1)
+ * - Missing-node row flag deferred (requires canvas lookup API)
+ *
+ * SELECTOR DISCIPLINE: every useAppStore() call selects a single primitive or
+ * stable stored reference. Never return a new object literal from a selector.
+ */
+
+import React, { useEffect, useState } from "react";
+import type { Bridge, Link } from "../lib/bridge.js";
+import type { PluginBus } from "../lib/plugin-bus.js";
+import { useAppStore } from "../stores/app.js";
+import { Card } from "../components/index.js";
+
+// ─── Local types ──────────────────────────────────────────────────────────────
+
+/** Mirrored from SelectionPayload (src/messages.ts). UI must not import from src/. */
+interface SelectionInfo {
+  page: string;
+  fileName: string;
+  fileKey: string;
+  nodes: Array<{
+    id: string;
+    name: string;
+    type: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }>;
+  stylesInUse: number;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const UNIT_TYPE_OPTIONS: { label: string; value: string }[] = [
+  { label: "Page", value: "Page" },
+  { label: "Template", value: "Template" },
+  { label: "Organism", value: "Organism" },
+  { label: "Molecule", value: "Molecule" },
+];
+
+// ─── Components ───────────────────────────────────────────────────────────────
+
+export function Components({
+  bridge,
+  bus,
+}: {
+  bridge: Bridge;
+  bus: PluginBus;
+}): React.JSX.Element {
+  // ── Store selectors — single primitives / stable stored refs only ──────────
+  const snapshot = useAppStore((s) => s.snapshot);
+  const setTab = useAppStore((s) => s.setTab);
+  const setFocus = useAppStore((s) => s.setFocus);
+  const toast = useAppStore((s) => s.toast);
+
+  // ── Local state ───────────────────────────────────────────────────────────
+  const [selection, setSelection] = useState<SelectionInfo | null>(null);
+  const [links, setLinks] = useState<Link[]>([]);
+  const [selectedAcId, setSelectedAcId] = useState("");
+  const [unitType, setUnitType] = useState("Page");
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const [isCheckLoading, setIsCheckLoading] = useState(false);
+
+  // ── Load links on mount ───────────────────────────────────────────────────
+  useEffect(() => {
+    void bridge
+      .getLinks()
+      .then(({ links: loaded }) => setLinks(loaded))
+      .catch(() => {
+        /* non-fatal — bridge may be offline */
+      });
+  }, [bridge]);
+
+  // ── Subscribe to canvas selection ─────────────────────────────────────────
+  useEffect(() => {
+    const unsub = bus.onSelection((raw) => {
+      if (raw !== null && typeof raw === "object") {
+        const payload = raw as SelectionInfo;
+        if (Array.isArray(payload.nodes)) {
+          setSelection(payload);
+        }
+      }
+    });
+    return unsub;
+  }, [bus]);
+
+  // ── Derived values ────────────────────────────────────────────────────────
+  const requirements = snapshot?.requirements ?? [];
+  const primaryNode = selection?.nodes[0] ?? null;
+
+  // Rollup: y = distinct unit names in links ∪ current selection name
+  const linkedUnitNames = new Set(links.map((l) => l.unitName));
+  if (primaryNode !== null) linkedUnitNames.add(primaryNode.name);
+  const rollupY = linkedUnitNames.size;
+  const rollupX = links.length;
+
+  // Is the current selection already linked to the selected AC?
+  const isDuplicate =
+    primaryNode !== null && selectedAcId !== ""
+      ? links.some((l) => l.nodeId === primaryNode.id && l.acId === selectedAcId)
+      : false;
+
+  const canLink = primaryNode !== null && selectedAcId !== "" && !isDuplicate;
+
+  // ── Link handler ──────────────────────────────────────────────────────────
+  async function handleLink(): Promise<void> {
+    if (!canLink || primaryNode === null) return;
+
+    const newLink: Link = {
+      nodeId: primaryNode.id,
+      unitName: primaryNode.name,
+      unitType,
+      acId: selectedAcId,
+    };
+    const nextLinks = [...links, newLink];
+    try {
+      await bridge.putLinks(nextLinks);
+      setLinks(nextLinks);
+    } catch {
+      toast("Failed to save link — is the bridge running?");
+    }
+  }
+
+  // ── Unlink handler ────────────────────────────────────────────────────────
+  async function handleUnlink(link: Link): Promise<void> {
+    const nextLinks = links.filter(
+      (l) => !(l.nodeId === link.nodeId && l.acId === link.acId),
+    );
+    try {
+      await bridge.putLinks(nextLinks);
+      setLinks(nextLinks);
+    } catch {
+      toast("Failed to remove link — is the bridge running?");
+    }
+  }
+
+  // ── Unit-type change: persist on any linked rows for this node ─────────────
+  async function handleUnitTypeChange(newType: string): Promise<void> {
+    setUnitType(newType);
+    if (primaryNode === null) return;
+
+    const hasLinkedRows = links.some((l) => l.nodeId === primaryNode.id);
+    if (!hasLinkedRows) return;
+
+    const nextLinks = links.map((l) =>
+      l.nodeId === primaryNode.id ? { ...l, unitType: newType } : l,
+    );
+    try {
+      await bridge.putLinks(nextLinks);
+      setLinks(nextLinks);
+    } catch {
+      toast("Failed to update link — is the bridge running?");
+    }
+  }
+
+  // ── Check my design ────────────────────────────────────────────────────────
+  async function handleCheck(): Promise<void> {
+    const nodeIds = [...new Set(links.map((l) => l.nodeId))];
+    setIsCheckLoading(true);
+    try {
+      const { id } = await bridge.enqueue({ kind: "check-design", payload: { nodeIds } });
+      setFocus({ runId: id });
+      setTab("checks");
+    } catch {
+      toast("Check failed to enqueue — is the bridge running?");
+    } finally {
+      setIsCheckLoading(false);
+    }
+  }
+
+  // ── AC id click: open stories file path from requirements artifact ─────────
+  function handleAcClick(_acId: string): void {
+    const reqArtifact = snapshot?.artifacts.find((a) => a.key === "requirements");
+    const path = reqArtifact?.path ?? null;
+    if (path !== null) {
+      void bridge.openPath(path).catch(() => {});
+    }
+  }
+
+  // ── Node id click: copy + notify ──────────────────────────────────────────
+  function handleCopyNodeId(nodeId: string): void {
+    // Guard: navigator.clipboard may be undefined in restricted contexts (e.g. jsdom).
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(nodeId).catch(() => {});
+    }
+    bus.notify(`Node id copied: ${nodeId}`);
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-gray-50">
+      <div className="flex flex-col gap-4 p-4 pb-20">
+
+        {/* ── Selection card ───────────────────────────────────────────── */}
+        <Card>
+          {primaryNode !== null ? (
+            <div className="flex flex-col gap-2 px-3 py-3">
+              {/* Unit name + unit-type native select */}
+              <div className="flex items-center gap-2">
+                <span className="flex-1 text-sm font-medium text-gray-900 truncate">
+                  {primaryNode.name}
+                </span>
+                <select
+                  value={unitType}
+                  onChange={(e) => void handleUnitTypeChange(e.target.value)}
+                  aria-label="Unit type"
+                  className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-700 bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                >
+                  {UNIT_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Meta row: node id (mono, click=copy) + styles count + sync badge */}
+              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleCopyNodeId(primaryNode.id)}
+                  title="Copy node id"
+                  aria-label={`Copy node id ${primaryNode.id}`}
+                  className="font-mono text-gray-500 hover:text-primary-600 transition-colors"
+                >
+                  {primaryNode.id}
+                </button>
+                <span className="shrink-0">
+                  {selection!.stylesInUse} styles in use
+                </span>
+                {/* Sync badge — always "not mapped" in v1 */}
+                <span
+                  title="Code mapping arrives with drift integration"
+                  className="shrink-0 text-gray-400 italic"
+                >
+                  not mapped
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-2 py-6 text-center px-3">
+              <p className="text-sm text-gray-500">
+                Select a frame on the canvas to link it
+              </p>
+            </div>
+          )}
+        </Card>
+
+        {/* ── Zero-ACs callout ─────────────────────────────────────────── */}
+        {requirements.length === 0 && (
+          <div className="p-3 bg-gray-100 rounded-[var(--radius-card)] text-xs text-gray-600">
+            No requirements yet — create them in{" "}
+            <button
+              type="button"
+              onClick={() => setTab("artifacts")}
+              className="text-primary-600 hover:underline font-medium"
+            >
+              Artifacts →
+            </button>
+          </div>
+        )}
+
+        {/* ── Link composer ────────────────────────────────────────────── */}
+        {requirements.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="req-select"
+              className="text-xs text-gray-600 shrink-0"
+            >
+              Requirement:
+            </label>
+            <select
+              id="req-select"
+              value={selectedAcId}
+              onChange={(e) => setSelectedAcId(e.target.value)}
+              aria-label="Requirement to link"
+              className="flex-1 text-xs border border-gray-300 rounded px-2 py-1.5 text-gray-700 bg-white min-w-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+            >
+              <option value="">Select AC…</option>
+              {requirements.map((req) => (
+                <option key={req.id} value={req.id}>
+                  {req.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void handleLink()}
+              disabled={!canLink}
+              aria-label="Link unit to requirement"
+              className={[
+                "text-xs px-3 py-1.5 rounded font-medium shrink-0 transition-colors",
+                canLink
+                  ? "bg-primary-600 text-white hover:bg-primary-700"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed",
+              ].join(" ")}
+            >
+              Link
+            </button>
+          </div>
+        )}
+
+        {/* ── Linked components section ─────────────────────────────────── */}
+        <div>
+          <div className="flex items-center justify-between px-3 pt-3 pb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Linked Components
+            </span>
+            {rollupY > 0 && (
+              <span className="text-xs text-gray-400">
+                {rollupX} of {rollupY} linked
+              </span>
+            )}
+          </div>
+
+          <Card>
+            {links.length === 0 && primaryNode === null ? (
+              <p className="text-sm text-gray-400 text-center py-6">
+                No linked components yet
+              </p>
+            ) : (
+              <div>
+                {/* Linked rows */}
+                {links.map((link, idx) => {
+                  const rowId = `${link.nodeId}:${link.acId}`;
+                  const isHovered = hoveredRowId === rowId;
+                  return (
+                    <div
+                      key={rowId}
+                      className={[
+                        "flex items-center gap-2 px-3 py-2 text-xs",
+                        idx < links.length - 1 ? "border-b border-gray-100" : "",
+                        isHovered ? "bg-gray-50" : "",
+                      ].join(" ")}
+                      onMouseEnter={() => setHoveredRowId(rowId)}
+                      onMouseLeave={() => setHoveredRowId(null)}
+                    >
+                      {/* Status dot: green (linked) */}
+                      <span
+                        className="w-2 h-2 rounded-full bg-green-500 shrink-0"
+                        aria-hidden="true"
+                      />
+
+                      {/* Unit name — click to copy node id */}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyNodeId(link.nodeId)}
+                        className="flex-1 text-left text-gray-800 truncate hover:text-primary-600 transition-colors"
+                        title={`Node: ${link.nodeId}`}
+                      >
+                        {link.unitName}
+                      </button>
+
+                      {/* Unit-type chip */}
+                      <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 shrink-0">
+                        {link.unitType}
+                      </span>
+
+                      {/* AC id — click to open requirements file */}
+                      <button
+                        type="button"
+                        onClick={() => handleAcClick(link.acId)}
+                        className="text-indigo-600 hover:underline font-mono shrink-0 transition-colors"
+                        title="Open requirement file"
+                        aria-label={`Open ${link.acId}`}
+                      >
+                        {link.acId}
+                      </button>
+
+                      {/* Unlink button — visible on hover */}
+                      {isHovered && (
+                        <button
+                          type="button"
+                          onClick={() => void handleUnlink(link)}
+                          className="text-red-500 hover:text-red-700 text-xs ml-1 shrink-0 transition-colors"
+                          aria-label={`Unlink ${link.unitName} from ${link.acId}`}
+                        >
+                          Unlink
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Current selection — not yet linked (selection-known unlinked unit) */}
+                {primaryNode !== null &&
+                  !links.some((l) => l.nodeId === primaryNode.id) && (
+                    <div
+                      className={[
+                        "flex items-center gap-2 px-3 py-2 text-xs",
+                        links.length > 0 ? "border-t border-gray-100" : "",
+                      ].join(" ")}
+                    >
+                      {/* Status dot: hollow */}
+                      <span
+                        className="w-2 h-2 rounded-full border-2 border-gray-300 shrink-0"
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-gray-500 truncate">
+                        {primaryNode.name}
+                      </span>
+                      <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-400 shrink-0">
+                        {unitType}
+                      </span>
+                      <span className="text-amber-500 shrink-0">not linked yet</span>
+                    </div>
+                  )}
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
+
+      {/* ── Sticky footer: Check my design ──────────────────────────────── */}
+      <div className="sticky bottom-0 border-t border-gray-200 bg-white px-4 py-3">
+        <button
+          type="button"
+          onClick={() => void handleCheck()}
+          disabled={links.length === 0 || isCheckLoading}
+          aria-label="Check my design"
+          className={[
+            "w-full py-2 px-4 rounded font-medium text-sm transition-colors",
+            links.length > 0 && !isCheckLoading
+              ? "bg-primary-600 text-white hover:bg-primary-700"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed",
+          ].join(" ")}
+        >
+          {isCheckLoading ? "Enqueuing…" : "Check my design"}
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,511 @@
+// @vitest-environment jsdom
+/**
+ * screen-components.test.tsx — RTL tests for the Components screen.
+ *
+ * Test cases map to PRD §6 acceptance criteria:
+ *   AC-1  Selection card updates from a fake bus selection event (incl. stylesInUse).
+ *   AC-2  Link creates + persists via putLinks body assert + rollup updates.
+ *   AC-3  Unlink removes from putLinks body.
+ *   AC-4  Duplicate-pair is disabled (Link button disabled).
+ *   AC-5  Zero-AC callout renders and "Artifacts →" triggers setTab("artifacts").
+ *   AC-6  SKIP — missing-node row flag deferred (requires canvas lookup API).
+ *   AC-7  Check CTA enqueues with linked ids, sets focus, switches tab.
+ *   AC-8  AC id click opens requirements path via bridge.openPath.
+ *   AC-9  Unit-type change persists on linked rows (putLinks body updated).
+ *
+ * Fake bus and bridge are always injected — no module-level mocks.
+ * The real useAppStore is reset before each test (setState pattern).
+ */
+
+import "@testing-library/jest-dom/vitest";
+import React from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+
+import type { Bridge, Link, ProjectSnapshot } from "../ui/lib/bridge.js";
+import type { PluginBus } from "../ui/lib/plugin-bus.js";
+import { Components } from "../ui/screens/Components.js";
+import { useAppStore } from "../ui/stores/app.js";
+
+// ─── Fake bus ─────────────────────────────────────────────────────────────────
+
+type SelectionCb = (sel: unknown) => void;
+
+interface FakeBus extends PluginBus {
+  _fireSelection(sel: unknown): void;
+}
+
+function makeBus(): FakeBus {
+  let selectionCbs: SelectionCb[] = [];
+  return {
+    storageGet: vi.fn().mockResolvedValue(undefined),
+    storageSet: vi.fn().mockResolvedValue(undefined),
+    fileInfo: vi.fn().mockResolvedValue({ name: "Test", fileKey: "fk" }),
+    insertIcon: vi.fn().mockResolvedValue("node-1"),
+    notify: vi.fn(),
+    close: vi.fn(),
+    onSelection(cb: SelectionCb) {
+      selectionCbs.push(cb);
+      return () => {
+        selectionCbs = selectionCbs.filter((c) => c !== cb);
+      };
+    },
+    _fireSelection(sel: unknown) {
+      for (const cb of selectionCbs) cb(sel);
+    },
+  };
+}
+
+// ─── Fake bridge ──────────────────────────────────────────────────────────────
+
+function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
+  return {
+    health: vi.fn().mockResolvedValue({ ok: true }),
+    connectProject: vi.fn(),
+    snapshot: vi.fn().mockResolvedValue({}),
+    putClassification: vi.fn().mockResolvedValue({ ok: true }),
+    putProfile: vi.fn().mockResolvedValue({ ok: true }),
+    getLinks: vi.fn().mockResolvedValue({ links: [] }),
+    putLinks: vi.fn().mockResolvedValue({ ok: true }),
+    openPath: vi.fn().mockResolvedValue({ ok: true }),
+    stats: vi.fn(),
+    logs: vi.fn(),
+    enqueue: vi.fn().mockResolvedValue({ id: "run-abc" }),
+    events: vi.fn().mockReturnValue(() => {}),
+    latestRender: vi.fn(),
+    verify: vi.fn(),
+    ...overrides,
+  } as unknown as Bridge;
+}
+
+// ─── Snapshot factory ──────────────────────────────────────────────────────────
+
+function makeSnapshot(overrides: Partial<ProjectSnapshot> = {}): ProjectSnapshot {
+  return {
+    name: "Test Project",
+    root: "/home/user/test",
+    hasClassification: true,
+    hasProfile: true,
+    classification: null,
+    profile: null,
+    artifacts: [
+      {
+        key: "requirements",
+        group: "product" as const,
+        label: "Requirements",
+        status: "up-to-date" as const,
+        meta: "",
+        path: "/docs/requirements.md",
+      },
+    ],
+    requirements: [
+      { id: "AC-101", title: "Payment declined error" },
+      { id: "AC-102", title: "Loading state" },
+    ],
+    ...overrides,
+  };
+}
+
+// ─── Store reset ───────────────────────────────────────────────────────────────
+
+const BASE_APP_STATE = {
+  connection: {
+    status: "connected" as const,
+    endpoint: "http://localhost:3779",
+    repoPath: "/home/user/test",
+    mode: "local" as const,
+  },
+  fileInfo: null,
+  snapshot: makeSnapshot(),
+  route: { screen: "tabs" as const, tab: "components" as const },
+  toasts: [],
+  focus: null,
+};
+
+function resetStores(snapshotOverride?: Partial<ProjectSnapshot>): void {
+  useAppStore.setState({
+    ...BASE_APP_STATE,
+    snapshot:
+      snapshotOverride !== undefined
+        ? makeSnapshot(snapshotOverride)
+        : makeSnapshot(),
+  });
+}
+
+beforeEach(() => {
+  resetStores();
+});
+afterEach(cleanup);
+
+// ─── Helper: fake selection payload ───────────────────────────────────────────
+
+function makeSelectionPayload(opts: {
+  id?: string;
+  name?: string;
+  stylesInUse?: number;
+} = {}) {
+  return {
+    page: "Page 1",
+    fileName: "Test File",
+    fileKey: "fk-123",
+    nodes: [
+      {
+        id: opts.id ?? "12:308",
+        name: opts.name ?? "Checkout / Error State",
+        type: "FRAME",
+        x: 0,
+        y: 0,
+        w: 375,
+        h: 812,
+      },
+    ],
+    stylesInUse: opts.stylesInUse ?? 5,
+  };
+}
+
+// ─── AC-1: Selection card updates from bus selection ──────────────────────────
+
+describe("AC-1: Selection card", () => {
+  it("updates from a fake selection event including stylesInUse count", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge();
+
+    render(<Components bridge={bridge} bus={bus} />);
+
+    // Wait for mount effects (getLinks) to settle.
+    await waitFor(() => {
+      expect(bridge.getLinks).toHaveBeenCalled();
+    });
+
+    // Empty state before selection.
+    expect(
+      screen.getByText("Select a frame on the canvas to link it"),
+    ).toBeInTheDocument();
+
+    // Fire selection from bus.
+    act(() => {
+      bus._fireSelection(makeSelectionPayload({ stylesInUse: 47 }));
+    });
+
+    // Node id (unique mono text) confirms selection card rendered.
+    await waitFor(() => {
+      expect(screen.getByText("12:308")).toBeInTheDocument();
+    });
+
+    // stylesInUse rendered.
+    expect(screen.getByText("47 styles in use")).toBeInTheDocument();
+
+    // Sync badge always "not mapped" in v1.
+    expect(screen.getByText("not mapped")).toBeInTheDocument();
+
+    // Unit-type select present.
+    expect(screen.getByRole("combobox", { name: "Unit type" })).toBeInTheDocument();
+  });
+});
+
+// ─── AC-2: Link creates + persists ────────────────────────────────────────────
+
+describe("AC-2: Link creation", () => {
+  it("creates a link, calls putLinks with correct body, and updates rollup", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    // Fire selection — wait for unique node id text (not unit name, which may appear in multiple places).
+    act(() => {
+      bus._fireSelection(
+        makeSelectionPayload({ id: "12:308", name: "Checkout / Error State" }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByText("12:308")).toBeInTheDocument(),
+    );
+
+    // Select requirement.
+    const reqSelect = screen.getByRole("combobox", { name: "Requirement to link" });
+    await user.selectOptions(reqSelect, "AC-101");
+
+    // Click Link.
+    const linkBtn = screen.getByRole("button", { name: "Link unit to requirement" });
+    expect(linkBtn).not.toBeDisabled();
+    await user.click(linkBtn);
+
+    // putLinks called with the new link.
+    await waitFor(() => {
+      expect(bridge.putLinks).toHaveBeenCalledWith([
+        expect.objectContaining({
+          nodeId: "12:308",
+          unitName: "Checkout / Error State",
+          acId: "AC-101",
+          unitType: "Page",
+        }),
+      ]);
+    });
+
+    // Rollup shows "1 of 1 linked".
+    await waitFor(() => {
+      expect(screen.getByText("1 of 1 linked")).toBeInTheDocument();
+    });
+
+    // AC id chip appears in linked row.
+    expect(screen.getByText("AC-101")).toBeInTheDocument();
+  });
+});
+
+// ─── AC-3: Unlink removes from putLinks body ──────────────────────────────────
+
+describe("AC-3: Unlink", () => {
+  it("removes a link via hover→Unlink and calls putLinks with reduced body", async () => {
+    const existingLink: Link = {
+      nodeId: "12:100",
+      unitName: "Checkout / Default",
+      unitType: "Page",
+      acId: "AC-101",
+    };
+    const bridge = makeBridge({
+      getLinks: vi.fn().mockResolvedValue({ links: [existingLink] }),
+    });
+    const bus = makeBus();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+
+    // Wait for initial links to load and render.
+    await waitFor(() => {
+      expect(screen.getByText("Checkout / Default")).toBeInTheDocument();
+    });
+
+    // Hover the row to reveal Unlink button (use fireEvent.mouseEnter; user.hover
+    // does not reliably trigger onMouseEnter in jsdom with synthetic events).
+    const unitNameBtn = screen.getByTitle("Node: 12:100");
+    const row = unitNameBtn.closest("div")!;
+    act(() => {
+      fireEvent.mouseEnter(row);
+    });
+
+    const unlinkBtn = await screen.findByRole("button", {
+      name: /unlink checkout \/ default from AC-101/i,
+    });
+    await user.click(unlinkBtn);
+
+    // putLinks called with empty array (link removed).
+    await waitFor(() => {
+      expect(bridge.putLinks).toHaveBeenCalledWith([]);
+    });
+
+    // Row no longer displayed.
+    await waitFor(() => {
+      expect(screen.queryByText("Checkout / Default")).not.toBeInTheDocument();
+    });
+  });
+});
+
+// ─── AC-4: Duplicate-pair disabled ────────────────────────────────────────────
+
+describe("AC-4: Duplicate pair", () => {
+  it("disables Link button when the nodeId+acId pair already exists", async () => {
+    const existingLink: Link = {
+      nodeId: "12:308",
+      unitName: "Checkout / Error State",
+      unitType: "Page",
+      acId: "AC-101",
+    };
+    const bridge = makeBridge({
+      getLinks: vi.fn().mockResolvedValue({ links: [existingLink] }),
+    });
+    const bus = makeBus();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    // Fire selection matching the existing link's nodeId.
+    act(() => {
+      bus._fireSelection(
+        makeSelectionPayload({ id: "12:308", name: "Checkout / Error State" }),
+      );
+    });
+    // Wait for node id (unique text) to confirm selection card is showing.
+    await waitFor(() =>
+      expect(screen.getByText("12:308")).toBeInTheDocument(),
+    );
+
+    // Select the same AC already linked.
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Requirement to link" }),
+      "AC-101",
+    );
+
+    // Link button must be disabled (duplicate pair).
+    const linkBtn = screen.getByRole("button", { name: "Link unit to requirement" });
+    expect(linkBtn).toBeDisabled();
+  });
+});
+
+// ─── AC-5: Zero-AC callout ────────────────────────────────────────────────────
+
+describe("AC-5: Zero-AC callout", () => {
+  it("renders callout and setTab('artifacts') on click when no requirements exist", async () => {
+    resetStores({ requirements: [] });
+    const bridge = makeBridge();
+    const bus = makeBus();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    // Callout is visible.
+    expect(
+      screen.getByText(/no requirements yet/i),
+    ).toBeInTheDocument();
+
+    // Click "Artifacts →" link inside callout.
+    const artifactsBtn = screen.getByRole("button", { name: /Artifacts →/i });
+    await user.click(artifactsBtn);
+
+    // Store tab should be "artifacts".
+    expect(useAppStore.getState().route.tab).toBe("artifacts");
+  });
+});
+
+// ─── AC-6: Missing-node row — SKIP ────────────────────────────────────────────
+
+describe("AC-6: Missing-node row (SKIP)", () => {
+  it.skip(
+    "flags a linked row as 'missing on canvas' when the node is not on canvas — deferred (requires canvas lookup API)",
+    () => {
+      // Deferred to a future task that adds bus.getNodeById() or equivalent.
+    },
+  );
+});
+
+// ─── AC-7: Check my design CTA ────────────────────────────────────────────────
+
+describe("AC-7: Check my design", () => {
+  it("enqueues check-design with linked nodeIds, sets runId focus, and switches to checks", async () => {
+    const existingLinks: Link[] = [
+      { nodeId: "12:100", unitName: "Checkout / Default", unitType: "Page", acId: "AC-101" },
+      { nodeId: "12:101", unitName: "Checkout / Loading", unitType: "Template", acId: "AC-102" },
+    ];
+    const bridge = makeBridge({
+      getLinks: vi.fn().mockResolvedValue({ links: existingLinks }),
+    });
+    const bus = makeBus();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+
+    // Wait for links to load.
+    await waitFor(() => {
+      expect(screen.getByText("Checkout / Default")).toBeInTheDocument();
+    });
+
+    const checkBtn = screen.getByRole("button", { name: "Check my design" });
+    expect(checkBtn).not.toBeDisabled();
+    await user.click(checkBtn);
+
+    // enqueue called with the linked node ids.
+    await waitFor(() => {
+      expect(bridge.enqueue).toHaveBeenCalledWith({
+        kind: "check-design",
+        payload: {
+          nodeIds: expect.arrayContaining(["12:100", "12:101"]),
+        },
+      });
+    });
+
+    // Store focus set to runId returned by enqueue.
+    await waitFor(() => {
+      expect(useAppStore.getState().focus).toEqual({ runId: "run-abc" });
+    });
+
+    // Tab switched to checks.
+    expect(useAppStore.getState().route.tab).toBe("checks");
+  });
+});
+
+// ─── AC-8: AC id click opens requirements path ────────────────────────────────
+
+describe("AC-8: AC id click", () => {
+  it("calls bridge.openPath with the requirements artifact path on AC id click", async () => {
+    const existingLink: Link = {
+      nodeId: "12:100",
+      unitName: "Checkout / Default",
+      unitType: "Page",
+      acId: "AC-101",
+    };
+    const bridge = makeBridge({
+      getLinks: vi.fn().mockResolvedValue({ links: [existingLink] }),
+    });
+    const bus = makeBus();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("AC-101")).toBeInTheDocument();
+    });
+
+    // Click AC id chip.
+    await user.click(screen.getByRole("button", { name: "Open AC-101" }));
+
+    await waitFor(() => {
+      expect(bridge.openPath).toHaveBeenCalledWith("/docs/requirements.md");
+    });
+  });
+});
+
+// ─── AC-9: Unit-type change persists on linked rows ───────────────────────────
+
+describe("AC-9: Unit-type change persists on linked row", () => {
+  it("calls putLinks with updated unitType when type is changed for an already-linked node", async () => {
+    const existingLink: Link = {
+      nodeId: "12:308",
+      unitName: "Checkout / Error State",
+      unitType: "Page",
+      acId: "AC-101",
+    };
+    const bridge = makeBridge({
+      getLinks: vi.fn().mockResolvedValue({ links: [existingLink] }),
+    });
+    const bus = makeBus();
+    const user = userEvent.setup();
+
+    render(<Components bridge={bridge} bus={bus} />);
+
+    // Load links + fire selection for the linked node.
+    await waitFor(() =>
+      expect(screen.getByText("Checkout / Error State")).toBeInTheDocument(),
+    );
+
+    act(() => {
+      bus._fireSelection(
+        makeSelectionPayload({ id: "12:308", name: "Checkout / Error State" }),
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Unit type" })).toBeInTheDocument(),
+    );
+
+    // Change unit type from "Page" to "Organism".
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Unit type" }),
+      "Organism",
+    );
+
+    // putLinks should be called with the updated unitType on the existing row.
+    await waitFor(() => {
+      expect(bridge.putLinks).toHaveBeenCalledWith([
+        expect.objectContaining({
+          nodeId: "12:308",
+          acId: "AC-101",
+          unitType: "Organism",
+        }),
+      ]);
+    });
+  });
+});

@@ -1,6 +1,12 @@
 import type { MainToUi, UiToMain } from "../src/messages.js";
 
-/** A fake scene node exposing only the surface `code.ts` touches. */
+/**
+ * A fake scene node exposing only the surface `code.ts` touches.
+ *
+ * Note: `fills`, `strokes`, `fontName`, and `children` are already present,
+ * which means `countStylesInSubtree` (selection.ts) can walk this node and
+ * compute `stylesInUse` correctly in tests.
+ */
 export class FakeNode {
   name = "";
   x = 0;

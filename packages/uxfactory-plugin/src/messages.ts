@@ -24,6 +24,8 @@ export interface SelectionPayload {
   fileName: string;
   fileKey: string;
   nodes: SelectionNode[];
+  /** Count of distinct style keys (fill hex + stroke hex + font key) in the primary node subtree. */
+  stylesInUse: number;
 }
 
 /** Messages the iframe UI sends to the main thread. */

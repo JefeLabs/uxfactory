@@ -138,6 +138,34 @@ describe("code.ts render", () => {
     expect(sel.nodes[0]).toMatchObject({ id: node.id, name: "picked", x: 5, y: 6, w: 7, h: 8 });
   });
 
+  it("computes stylesInUse from the primary selected node subtree", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    // Build a parent FRAME with two children carrying distinct fills.
+    const parent = fig.createFrame();
+    parent.name = "checkout";
+    parent.fills = [{ type: "SOLID", color: { r: 1, g: 0, b: 0 } }]; // red fill
+
+    const childA = fig.createRectangle();
+    childA.name = "bg";
+    childA.fills = [{ type: "SOLID", color: { r: 0, g: 0, b: 1 } }]; // blue fill (distinct)
+    parent.appendChild(childA);
+
+    const childB = fig.createRectangle();
+    childB.name = "dup";
+    childB.fills = [{ type: "SOLID", color: { r: 1, g: 0, b: 0 } }]; // same red as parent (not counted again)
+    parent.appendChild(childB);
+
+    fig.currentPage.selection = [parent];
+    fig.__fireSelectionChange();
+
+    const sel = lastOfType(fig, "selection")!.selection;
+    expect(typeof sel.stylesInUse).toBe("number");
+    // red fill + blue fill = 2 distinct fill keys
+    expect(sel.stylesInUse).toBe(2);
+  });
+
   it("renders the same spec twice into equal reports (modulo node ids + renderId)", async () => {
     const fig = makeFigma();
     await loadCode(fig);

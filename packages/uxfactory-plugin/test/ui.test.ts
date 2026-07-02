@@ -221,6 +221,7 @@ describe("ui selection main-message", () => {
       fileName: "MyFile",
       fileKey: "abc123",
       nodes: [{ id: "1:2", name: "Rect", type: "RECTANGLE", x: 0, y: 0, w: 100, h: 50 }],
+      stylesInUse: 0,
     };
     await ui.onMainMessage({ type: "selection", selection });
     const [url, init] = fetchImpl.mock.calls.at(-1) as unknown as [string, RequestInit];

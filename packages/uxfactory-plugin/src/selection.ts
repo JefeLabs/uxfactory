@@ -16,9 +16,66 @@ export interface RawSelNode {
   characters?: string;
 }
 
+/**
+ * Minimal node surface needed to walk a subtree and count distinct style keys.
+ * Satisfied by Figma's SceneNode (cast) and by FakeNode in tests.
+ */
+export interface StyleCountNode {
+  type: string;
+  fills?: unknown;
+  strokes?: unknown;
+  fontName?: { family: string; style: string };
+  children?: readonly StyleCountNode[];
+}
+
+const MAX_STYLE_WALK = 500;
+
+function extractSolidHex(paints: unknown): string | undefined {
+  if (!Array.isArray(paints) || paints.length === 0) return undefined;
+  const first = paints[0] as { type?: string; color?: { r: number; g: number; b: number } };
+  if (first.type !== "SOLID" || !first.color) return undefined;
+  const { r, g, b } = first.color;
+  const ch = (v: number): string => Math.round(v * 255).toString(16).padStart(2, "0");
+  return `#${ch(r)}${ch(g)}${ch(b)}`;
+}
+
+/**
+ * Counts distinct style keys (solid fill hex + solid stroke hex + font family/style)
+ * across the node subtree. Capped at 500 nodes for performance.
+ */
+export function countStylesInSubtree(root: StyleCountNode): number {
+  const keys = new Set<string>();
+  const queue: StyleCountNode[] = [root];
+  let visited = 0;
+
+  while (queue.length > 0 && visited < MAX_STYLE_WALK) {
+    const node = queue.shift()!;
+    visited++;
+
+    const fill = extractSolidHex(node.fills);
+    if (fill !== undefined) keys.add(`fill:${fill}`);
+
+    const stroke = extractSolidHex(node.strokes);
+    if (stroke !== undefined) keys.add(`stroke:${stroke}`);
+
+    if (node.type === "TEXT" && node.fontName !== undefined) {
+      keys.add(`font:${node.fontName.family}/${node.fontName.style}`);
+    }
+
+    if (node.children) {
+      for (const child of node.children) {
+        queue.push(child);
+      }
+    }
+  }
+
+  return keys.size;
+}
+
 export function mapSelection(
   nodes: RawSelNode[],
   meta: { page: string; fileName: string; fileKey: string },
+  stylesInUse = 0,
 ): SelectionPayload {
   return {
     page: meta.page,
@@ -41,5 +98,6 @@ export function mapSelection(
       if (n.characters !== undefined) out.characters = n.characters;
       return out;
     }),
+    stylesInUse,
   };
 }

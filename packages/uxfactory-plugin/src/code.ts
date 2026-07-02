@@ -6,7 +6,7 @@ import { planRender, type PlannedChild } from "./planner.js";
 import { planEdit, captureInverse } from "./edits.js";
 import { UndoStack } from "./undo-stack.js";
 import { assembleReport, newRenderId } from "./report.js";
-import { mapSelection, type RawSelNode } from "./selection.js";
+import { mapSelection, countStylesInSubtree, type RawSelNode, type StyleCountNode } from "./selection.js";
 import { planAnnotations } from "./annotation-plan.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
 import { snapshotNode } from "./canvas-snapshot.js";
@@ -933,12 +933,21 @@ function postSelection(): void {
     if (n.characters !== undefined) out.characters = n.characters;
     return out;
   });
+  // Count distinct style keys in the primary selected node's subtree.
+  const stylesInUse =
+    page.selection.length > 0
+      ? countStylesInSubtree(page.selection[0] as unknown as StyleCountNode)
+      : 0;
   post({
     type: "selection",
-    selection: mapSelection(raw, {
-      page: page.name,
-      fileName: fig.root.name,
-      fileKey: fig.fileKey ?? "",
-    }),
+    selection: mapSelection(
+      raw,
+      {
+        page: page.name,
+        fileName: fig.root.name,
+        fileKey: fig.fileKey ?? "",
+      },
+      stylesInUse,
+    ),
   });
 }

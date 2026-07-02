@@ -42,6 +42,7 @@ describe("mapSelection", () => {
           characters: "hi",
         },
       ],
+      stylesInUse: 0,
     });
   });
 
