@@ -1,8 +1,8 @@
 # Panel TanStack Adoption — Query + Router (Design)
 
 **Date:** 2026-07-02
-**Status:** Approved direction (user: "let's adopt tanstack query and tanstack router") — spec for the plan.
-**Baseline:** panel redesign v1 (all 9 screens, acceptance-walk fixes through the guided-Create dialog). Refactor starts only on a green, walk-validated baseline.
+**Status:** Approved direction (user: "let's adopt tanstack query and tanstack router") — spec for the plan. Sequenced BEFORE the multi-root bridge (user, 2026-07-02) — root-scoped query keys arrive in that later feature.
+**Baseline:** panel redesign v1 (all 9 screens, acceptance-walk fixes through the Artifact Editor and cwd hint). Refactor starts only on a green, walk-validated baseline.
 
 ---
 

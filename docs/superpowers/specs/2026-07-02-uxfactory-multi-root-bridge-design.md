@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-02
 **Status:** Approved direction (user: "option 1" — multi-root bridge over rebind or bridge-per-port).
-**Sequencing:** After the acceptance walk stabilizes; BEFORE the TanStack adoption (feature-first, same precedent as the Artifact Editor — the refactor then migrates root-scoped queries with everything else, and Query keys get the root dimension from day one).
+**Sequencing:** After the TanStack adoption (user resequenced 2026-07-02: "TanStack first, multi-root after"). The migration ships root-agnostic queries on the smaller of the two surfaces; this feature then adds the root dimension to settled query keys and router-owned navigation, instead of hand-rolled fetch code being rewritten twice.
 
 ## 1. Problem
 
