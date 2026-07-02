@@ -6,6 +6,8 @@ packages:
 # the Figma plugin build (scripts/build-plugin.mjs) needs it. Must be committed
 # so CI's fresh `pnpm install` approves it too.
 allowBuilds:
+  # es5-ext (transitive via MDXEditor's tree) has a postinstall we don't need — keep blocked.
+  es5-ext: false
   esbuild: true
 # pnpm's minimum-release-age policy: exempt the recent pinned versions we use.
 minimumReleaseAgeExclude:

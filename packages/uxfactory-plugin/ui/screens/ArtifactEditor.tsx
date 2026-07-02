@@ -38,6 +38,8 @@ import {
   linkPlugin,
   markdownShortcutPlugin,
 } from "@mdxeditor/editor";
+// Editor styling — vite inlines this into the singlefile ui.html (vitest stubs css imports).
+import "@mdxeditor/editor/style.css";
 import type { Bridge, ArtifactStatus, ArtifactContent } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import { sectionGuidanceFor } from "../lib/artifact-schemas.js";
