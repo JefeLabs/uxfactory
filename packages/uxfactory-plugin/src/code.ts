@@ -566,8 +566,11 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
         if (def.fill !== undefined) master.fills = solidPaint(def.fill);
         applyEffects(master, def.effects);
         applyCornerRadius(master, def.cornerRadius);
+        // Isolated ctx: master internals never reach the page reportNodes/byName.
+        // editDiffs + components remain shared so nested instances still resolve.
+        const masterCtx: RenderCtx = { byName: new Map(), reportNodes: new Map(), editDiffs: ctx.editDiffs, components: ctx.components };
         for (const child of def.children) {
-          await renderChild(child, master, ctx);
+          await renderChild(child, master, masterCtx);
         }
         applyAutoLayout(master, def.layout, def.sizing);
         master.x = masterCursor - def.width;

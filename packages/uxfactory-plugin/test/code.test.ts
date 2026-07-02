@@ -321,6 +321,30 @@ describe("code.ts render", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SP3c — master rendering isolation (multi-level component)
+// ---------------------------------------------------------------------------
+describe("code.ts master rendering isolation (SP3c)", () => {
+  it("does not leak multi-level master internals into the report", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      components: { card: { name: "Card", width: 200, height: 80,
+        children: [ { name: "row", x: 8, y: 8, width: 184, height: 40, children: [
+          { type: "text", name: "t1", x: 4, y: 4, width: 100, height: 20, characters: "Hi" },
+        ] } ] } },
+      frames: [{ name: "v", x: 0, y: 0, width: 390, height: 400, children: [
+        { type: "component-instance", name: "i1", component: "card", x: 10, y: 10 },
+        { type: "component-instance", name: "i2", component: "card", x: 10, y: 100 },
+      ] }],
+    };
+    await fig.__send({ type: "render", spec, jobId: "leak1" });
+    const rendered = lastOfType(fig, "rendered")!;
+    expect(rendered.report.counts.objects).toBe(2);                        // i1 + i2 ONLY
+    expect(rendered.report.nodes.some((n) => n.name === "row" || n.name === "t1")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fix 1 — error boundary
 // ---------------------------------------------------------------------------
 describe("code.ts error boundary (Fix 1)", () => {
