@@ -543,6 +543,108 @@ describe("code.ts typography rendering (SP3c Task 6)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 2 — typed ui↔main bus handlers
+// ---------------------------------------------------------------------------
+describe("code.ts bus handlers (Task 2)", () => {
+  it("storage-get retrieves a value and posts storage-value with the same key", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    // Pre-populate the store so getAsync returns a known value.
+    await fig.clientStorage.setAsync("palette", ["#FF0000", "#00FF00"]);
+
+    await fig.__send({ type: "storage-get", key: "palette" });
+    const reply = lastOfType(fig, "storage-value");
+    expect(reply).toBeDefined();
+    expect(reply!.key).toBe("palette");
+    expect(reply!.value).toEqual(["#FF0000", "#00FF00"]);
+  });
+
+  it("storage-get returns undefined for an unknown key", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "storage-get", key: "unknown-key" });
+    const reply = lastOfType(fig, "storage-value");
+    expect(reply).toBeDefined();
+    expect(reply!.key).toBe("unknown-key");
+    expect(reply!.value).toBeUndefined();
+  });
+
+  it("storage-set persists the value (no reply posted)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "storage-set", key: "user", value: { id: 42 } });
+    // No storage-value reply is expected.
+    expect(lastOfType(fig, "storage-value")).toBeUndefined();
+    // Value is stored in the mock.
+    expect(await fig.clientStorage.getAsync("user")).toEqual({ id: 42 });
+  });
+
+  it("file-info-request posts file-info with root name and fileKey", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "file-info-request" });
+    const reply = lastOfType(fig, "file-info");
+    expect(reply).toBeDefined();
+    expect(reply!.name).toBe("Test File");
+    expect(reply!.fileKey).toBe("file-key-123");
+  });
+
+  it("insert-icon creates a node with correct size, position, plugin data, and posts icon-inserted", async () => {
+    const fig = makeFigma();
+    // Set viewport center so positioning is predictable.
+    fig.viewport.center.x = 100;
+    fig.viewport.center.y = 200;
+    await loadCode(fig);
+
+    await fig.__send({ type: "insert-icon", name: "star", svg: "<svg/>", size: 24 });
+
+    const reply = lastOfType(fig, "icon-inserted");
+    expect(reply).toBeDefined();
+    expect(typeof reply!.nodeId).toBe("string");
+
+    // Find the node on the current page.
+    const node = fig.currentPage.children.find((n) => n.id === reply!.nodeId);
+    expect(node).toBeDefined();
+
+    // Correct size.
+    expect(node!.width).toBe(24);
+    expect(node!.height).toBe(24);
+
+    // Centered at viewport center.
+    expect(node!.x).toBe(100 - 12); // center.x - size/2
+    expect(node!.y).toBe(200 - 12); // center.y - size/2
+
+    // Plugin data set.
+    expect(node!._pluginData.get("assetSet")).toBe("lucide");
+    expect(node!._pluginData.get("assetId")).toBe("star");
+
+    // SVG stashed on the node.
+    expect(node!._svg).toBe("<svg/>");
+  });
+
+  it("notify records the message via figma.notify", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "notify", message: "Hello from plugin" });
+    expect(fig.notifyCalls).toContain("Hello from plugin");
+  });
+
+  it("close calls figma.closePlugin", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    expect(fig.closeCalled).toBe(false);
+    await fig.__send({ type: "close" });
+    expect(fig.closeCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fix 5 — graceful instance failure
 // ---------------------------------------------------------------------------
 describe("code.ts graceful instance failure (Fix 5)", () => {

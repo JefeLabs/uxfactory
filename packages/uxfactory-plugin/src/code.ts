@@ -61,6 +61,7 @@ interface EditableNode {
   appendChild(child: EditableNode): void;
   remove(): void;
   exportAsync?(settings: { format: string }): Promise<Uint8Array>;
+  setPluginData(key: string, value: string): void;
 }
 
 /** A Figma page node. */
@@ -87,9 +88,17 @@ interface FigmaApi {
   createSection(): EditableNode;
   createSticky(): EditableNode;
   createConnector(): EditableNode;
+  createNodeFromSvg(svg: string): EditableNode;
   createPage(): PageNode;
   loadFontAsync(name: { family: string; style: string }): Promise<void>;
   importComponentByKeyAsync(key: string): Promise<{ createInstance(): EditableNode }>;
+  clientStorage: {
+    getAsync(key: string): Promise<unknown>;
+    setAsync(key: string, value: unknown): Promise<void>;
+  };
+  notify(message: string): void;
+  closePlugin(): void;
+  viewport: { center: { x: number; y: number } };
   ui: {
     postMessage(msg: MainToUi): void;
     onmessage: ((msg: UiToMain) => void) | null;
@@ -117,6 +126,27 @@ async function handleMessage(msg: UiToMain): Promise<void> {
     else if (msg.type === "review-selection") await reviewSelection();
     else if (msg.type === "undo") applyUndo();
     else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
+    else if (msg.type === "storage-get") {
+      const value = await fig.clientStorage.getAsync(msg.key);
+      post({ type: "storage-value", key: msg.key, value });
+    } else if (msg.type === "storage-set") {
+      await fig.clientStorage.setAsync(msg.key, msg.value);
+    } else if (msg.type === "file-info-request") {
+      post({ type: "file-info", name: fig.root.name, fileKey: fig.fileKey ?? "" });
+    } else if (msg.type === "insert-icon") {
+      const node = fig.createNodeFromSvg(msg.svg);
+      node.resize(msg.size, msg.size);
+      node.x = fig.viewport.center.x - msg.size / 2;
+      node.y = fig.viewport.center.y - msg.size / 2;
+      node.setPluginData("assetSet", "lucide");
+      node.setPluginData("assetId", msg.name);
+      fig.currentPage.appendChild(node);
+      post({ type: "icon-inserted", nodeId: node.id });
+    } else if (msg.type === "notify") {
+      fig.notify(msg.message);
+    } else if (msg.type === "close") {
+      fig.closePlugin();
+    }
   } catch (err) {
     post({ type: "render-error", message: String(err) });
   }

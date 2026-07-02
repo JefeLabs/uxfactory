@@ -20,6 +20,13 @@ export class FakeNode {
   fontName: { family: string; style: string } | undefined = undefined;
   connectorStart: unknown = undefined;
   connectorEnd: unknown = undefined;
+  /** Plugin data map — populated by setPluginData(). */
+  _pluginData: Map<string, string> = new Map();
+  /** SVG source stashed when this node was created via createNodeFromSvg(). */
+  _svg: string | undefined = undefined;
+  setPluginData(key: string, value: string): void {
+    this._pluginData.set(key, value);
+  }
   /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
   clipsContent: boolean | undefined = undefined;
   /**
@@ -102,6 +109,7 @@ export interface FakeFigma {
   createSticky(): FakeNode;
   createConnector(): FakeNode;
   createComponent(): FakeNode;
+  createNodeFromSvg(svg: string): FakeNode;
   createComponentCalls: number;
   createPage(): FakeNode & { selection: FakeNode[] };
   loadFontAsync(name: { family: string; style: string }): Promise<void>;
@@ -111,6 +119,18 @@ export interface FakeFigma {
   failFontKeys: string[];
   importComponentByKeyAsync(key: string): Promise<{ createInstance(): FakeNode }>;
   exportAsync(): Promise<Uint8Array>;
+  clientStorage: {
+    store: Map<string, unknown>;
+    getAsync(key: string): Promise<unknown>;
+    setAsync(key: string, value: unknown): Promise<void>;
+  };
+  notify(message: string): void;
+  /** All messages passed to notify(). */
+  notifyCalls: string[];
+  closePlugin(): void;
+  /** True after closePlugin() has been called. */
+  closeCalled: boolean;
+  viewport: { center: { x: number; y: number } };
   ui: {
     posted: MainToUi[];
     onmessage: ((msg: UiToMain) => unknown) | null;
@@ -236,6 +256,25 @@ export function makeFigma(): FakeFigma {
     return p;
   };
 
+  // ---- clientStorage ----
+  const clientStorageStore = new Map<string, unknown>();
+  const clientStorage: FakeFigma["clientStorage"] = {
+    store: clientStorageStore,
+    async getAsync(key: string): Promise<unknown> {
+      return clientStorageStore.get(key);
+    },
+    async setAsync(key: string, value: unknown): Promise<void> {
+      clientStorageStore.set(key, value);
+    },
+  };
+
+  // ---- notify / closePlugin ----
+  const notifyCalls: string[] = [];
+  let closeCalled = false;
+
+  // ---- viewport ----
+  const viewport = { center: { x: 0, y: 0 } };
+
   // ---- ui bus ----
   const posted: MainToUi[] = [];
   const ui: FakeFigma["ui"] = {
@@ -272,6 +311,11 @@ export function makeFigma(): FakeFigma {
     createSticky,
     createConnector,
     createComponent,
+    createNodeFromSvg(svg: string): FakeNode {
+      const node = create("FRAME");
+      node._svg = svg;
+      return node;
+    },
     get createComponentCalls() {
       return createComponentCalls;
     },
@@ -281,6 +325,20 @@ export function makeFigma(): FakeFigma {
     failFontKeys,
     importComponentByKeyAsync: () => Promise.resolve({ createInstance: () => create("INSTANCE") }),
     exportAsync: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+    clientStorage,
+    notify(message: string): void {
+      notifyCalls.push(message);
+    },
+    get notifyCalls() {
+      return notifyCalls;
+    },
+    closePlugin(): void {
+      closeCalled = true;
+    },
+    get closeCalled() {
+      return closeCalled;
+    },
+    viewport,
     ui,
     __fireSelectionChange() {
       for (const cb of selectionHandlers) cb();
