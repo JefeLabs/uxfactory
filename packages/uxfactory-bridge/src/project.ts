@@ -85,7 +85,7 @@ export interface ProjectPluginOptions {
   logRing: string[];
 }
 
-// ─── Fixed v1 artifact concern registry paths ────────────────────────────────
+// ─── Fixed v1 artifact concern registry paths (conventional fallbacks) ───────
 
 const STORIES_PATH = "design/acceptance-criteria.json";
 const TOKENS_PATH = "design/token-set.json";
@@ -151,6 +151,46 @@ async function findByPrefix(dir: string, prefix: string): Promise<string | null>
   }
 }
 
+/**
+ * Read `uxfactory.batch.json` at `root` and resolve `inputs.stories` /
+ * `inputs.tokens` to absolute paths. Falls back to the conventional constants
+ * when the registry is absent, unparseable, or the individual fields are
+ * missing/non-string. Never throws.
+ */
+async function resolveInputPaths(
+  root: string,
+): Promise<{ storiesPath: string; tokensPath: string }> {
+  const defaults = {
+    storiesPath: path.join(root, STORIES_PATH),
+    tokensPath: path.join(root, TOKENS_PATH),
+  };
+  try {
+    const raw = await readFile(path.join(root, "uxfactory.batch.json"), "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return defaults;
+    }
+    const registry = parsed as Record<string, unknown>;
+    const inputs = registry["inputs"];
+    if (inputs === null || typeof inputs !== "object" || Array.isArray(inputs)) {
+      return defaults;
+    }
+    const inp = inputs as Record<string, unknown>;
+    return {
+      storiesPath:
+        typeof inp["stories"] === "string"
+          ? path.resolve(root, inp["stories"])
+          : defaults.storiesPath,
+      tokensPath:
+        typeof inp["tokens"] === "string"
+          ? path.resolve(root, inp["tokens"])
+          : defaults.tokensPath,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
 /** True when `dir` has a `.git` directory or a `uxfactory.batch.json` file. */
 async function isProjectRoot(dir: string): Promise<boolean> {
   return (
@@ -161,7 +201,11 @@ async function isProjectRoot(dir: string): Promise<boolean> {
 
 // ─── Snapshot builder ────────────────────────────────────────────────────────
 
-async function buildArtifacts(root: string): Promise<ArtifactRow[]> {
+async function buildArtifacts(
+  root: string,
+  storiesPath: string,
+  tokensPath: string,
+): Promise<ArtifactRow[]> {
   const rows: ArtifactRow[] = [];
 
   // ── product: brief ────────────────────────────────────────────────────────
@@ -186,8 +230,7 @@ async function buildArtifacts(root: string): Promise<ArtifactRow[]> {
 
   // ── product: requirements ─────────────────────────────────────────────────
   {
-    const abs = path.join(root, STORIES_PATH);
-    const r = await checkJsonArtifact(abs);
+    const r = await checkJsonArtifact(storiesPath);
     rows.push({ key: "requirements", group: "product", label: "Requirements", ...r });
   }
 
@@ -260,7 +303,7 @@ async function buildArtifacts(root: string): Promise<ArtifactRow[]> {
 
   // ── design: tokens ────────────────────────────────────────────────────────
   {
-    const abs = path.join(root, TOKENS_PATH);
+    const abs = tokensPath;
     const exists = await fileAccessible(abs);
     if (!exists) {
       rows.push({ key: "tokens", group: "design", label: "Tokens", status: "missing", meta: "", path: null });
@@ -302,8 +345,7 @@ async function buildArtifacts(root: string): Promise<ArtifactRow[]> {
   return rows;
 }
 
-async function buildRequirements(root: string): Promise<Requirement[]> {
-  const storiesPath = path.join(root, STORIES_PATH);
+async function buildRequirements(storiesPath: string): Promise<Requirement[]> {
   try {
     const raw = await readFile(storiesPath, "utf8");
     const data = JSON.parse(raw) as {
@@ -345,8 +387,9 @@ export async function buildSnapshot(
     profile = JSON.parse(raw) as Record<string, unknown>;
   } catch { /* absent or unparseable */ }
 
-  const artifacts = await buildArtifacts(root);
-  const requirements = await buildRequirements(root);
+  const { storiesPath, tokensPath } = await resolveInputPaths(root);
+  const artifacts = await buildArtifacts(root, storiesPath, tokensPath);
+  const requirements = await buildRequirements(storiesPath);
 
   return {
     name: path.basename(root),
@@ -529,10 +572,10 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 
   // ── GET /stats ───────────────────────────────────────────────────────────
   app.get("/stats", async () => {
-    // Token count from the design/token-set.json colors map (null when unreadable).
+    // Token count from the registry-resolved (or conventional) tokens file colors map.
     let tokenCount: number | null = null;
     try {
-      const tokensPath = path.join(servedRoot, TOKENS_PATH);
+      const { tokensPath } = await resolveInputPaths(servedRoot);
       const raw = await readFile(tokensPath, "utf8");
       const data = JSON.parse(raw) as { colors?: unknown };
       if (

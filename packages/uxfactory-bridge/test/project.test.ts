@@ -621,6 +621,120 @@ describe("GET /stats", () => {
   });
 });
 
+// ─── Registry-path resolution (uxfactory.batch.json inputs) ──────────────────
+
+describe("registry-path resolution — non-conventional stories + tokens paths", () => {
+  it("snapshot and /stats use registry paths when conventional paths are absent", async () => {
+    await addGitMarker(root);
+
+    // Registry points to non-conventional locations.
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: {
+        stories: "specs/acs.json",
+        tokens: "design/tokens.ds.json",
+      },
+    });
+
+    // Stories file at NON-conventional path only.
+    const registryStories = {
+      stories: [
+        {
+          id: "US-10",
+          acceptanceCriteria: [
+            { id: "AC-10.1", statement: "Registry story one" },
+            { id: "AC-10.2", statement: "Registry story two" },
+          ],
+        },
+      ],
+    };
+    await writeJson(path.join(root, "specs/acs.json"), registryStories);
+
+    // Tokens file at NON-conventional path only (5 colors).
+    const registryTokens = {
+      colors: {
+        "primary-100": "#eef",
+        "primary-500": "#5B5BD6",
+        "primary-700": "#3730a3",
+        "success-500": "#22c55e",
+        "danger-500": "#ef4444",
+      },
+    };
+    await writeJson(path.join(root, "design/tokens.ds.json"), registryTokens);
+
+    // Conventional paths intentionally absent.
+
+    app = await createBridge({ dataDir });
+
+    // Snapshot should resolve registry paths.
+    const snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as {
+      requirements: Array<{ id: string; title: string }>;
+      artifacts: Array<{ key: string; status: string; meta: string }>;
+    };
+
+    // requirements artifact and list come from specs/acs.json.
+    const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["requirements"]?.status).toBe("up-to-date");
+    expect(snap.requirements).toHaveLength(2);
+    expect(snap.requirements[0]).toEqual({ id: "AC-10.1", title: "Registry story one" });
+    expect(snap.requirements[1]).toEqual({ id: "AC-10.2", title: "Registry story two" });
+
+    // tokens artifact and meta come from design/tokens.ds.json.
+    expect(byKey["tokens"]?.status).toBe("up-to-date");
+    expect(byKey["tokens"]?.meta).toBe("5 colors");
+
+    // /stats tokenCount also uses the registry path.
+    const stats = (
+      await app.inject({ method: "GET", url: "/stats" })
+    ).json() as { tokenCount: number | null };
+    expect(stats.tokenCount).toBe(5);
+  });
+});
+
+describe("registry-path resolution — unparseable registry falls back to conventional paths", () => {
+  it("snapshot works (no throw) and reads conventional paths when registry is unparseable", async () => {
+    await addGitMarker(root);
+
+    // Write an invalid JSON registry file.
+    await mkdir(path.join(root), { recursive: true });
+    await writeFile(path.join(root, "uxfactory.batch.json"), "{ not valid json !!!", "utf8");
+
+    // Files at CONVENTIONAL paths.
+    await writeJson(path.join(root, "design/acceptance-criteria.json"), {
+      stories: [
+        {
+          id: "US-99",
+          acceptanceCriteria: [{ id: "AC-99.1", statement: "Fallback story" }],
+        },
+      ],
+    });
+    await writeJson(path.join(root, "design/token-set.json"), {
+      colors: { red: "#f00", green: "#0f0" },
+    });
+
+    app = await createBridge({ dataDir });
+
+    const snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as {
+      requirements: Array<{ id: string; title: string }>;
+      artifacts: Array<{ key: string; status: string; meta: string }>;
+    };
+
+    // Conventional stories file is found.
+    const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["requirements"]?.status).toBe("up-to-date");
+    expect(snap.requirements).toHaveLength(1);
+    expect(snap.requirements[0]).toEqual({ id: "AC-99.1", title: "Fallback story" });
+
+    // Conventional tokens file is found.
+    expect(byKey["tokens"]?.status).toBe("up-to-date");
+    expect(byKey["tokens"]?.meta).toBe("2 colors");
+  });
+});
+
 // ─── GET /logs ────────────────────────────────────────────────────────────────
 
 describe("GET /logs", () => {
