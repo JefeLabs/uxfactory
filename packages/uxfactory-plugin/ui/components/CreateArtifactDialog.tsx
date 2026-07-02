@@ -12,42 +12,13 @@
 
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { createGuidanceCopyFor } from "../lib/artifact-schemas.js";
 
-// ─── Artifact-specific guiding copy ───────────────────────────────────────────
-
-const GUIDANCE_COPY: Record<string, string> = {
-  "brief":
-    "Describe the product, its audience, and what success looks like — the agent drafts the product brief from this.",
-  "requirements":
-    "List the capabilities and acceptance criteria that matter most — the agent turns them into testable requirements.",
-  "sitemap":
-    "List the main areas or journeys your product needs — the agent proposes the page map.",
-  "flows":
-    "Name the key user flows (e.g. checkout, returns) and any steps they must include — the agent maps each one screen by screen.",
-  "brand-colors":
-    "Name anchor colors (hex codes welcome) or describe the brand personality to convey — the agent derives brand colors that fit.",
-  "palettes":
-    "Describe the mood and contrast you want (e.g. calm neutrals with one bold accent) — the agent builds the full color ramps.",
-  "fonts":
-    "Mention typefaces you like or the tone to strike (e.g. friendly, editorial, technical) — the agent selects the font pairing.",
-  "grid":
-    "Note target devices, breakpoints, and how dense layouts should feel — the agent defines the grid and viewports.",
-  "tokens":
-    "Call out platforms or naming conventions the tokens must serve — the agent assembles the design token set.",
-  "icons":
-    "Describe the icon style you want (e.g. outlined, rounded, duotone) and any must-have glyphs — the agent curates the set.",
-  "photography":
-    "Describe subject matter, mood, and treatment (e.g. candid people, warm light, high contrast) — the agent writes the photography direction.",
-  "illustrations":
-    "Describe the illustration style (e.g. flat geometric, hand-drawn, editorial spot art) and where it will appear — the agent defines the direction.",
-};
-
-const DEFAULT_GUIDANCE_COPY =
-  "Add any direction you want the agent to follow — goals, constraints, and examples all help ground the result.";
+// ─── Re-export for backward-compat (tests import guidanceCopyFor from here) ──
 
 /** Resolve the guiding copy for an artifact key (exported for tests). */
 export function guidanceCopyFor(artifactKey: string): string {
-  return GUIDANCE_COPY[artifactKey] ?? DEFAULT_GUIDANCE_COPY;
+  return createGuidanceCopyFor(artifactKey);
 }
 
 // ─── CreateArtifactDialog ─────────────────────────────────────────────────────

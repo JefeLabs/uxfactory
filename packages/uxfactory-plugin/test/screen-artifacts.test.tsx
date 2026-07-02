@@ -13,6 +13,13 @@
  *   - AC-1, 2, 3, 6, 7: drive <Artifacts> directly.
  *   - AC-4, 5: drive <ExpandedHeader> directly.
  *   - All store state set via setState; bridge is always a fake.
+ *
+ * Open-behavior (v2): "Open" button mounts ArtifactEditor in-panel; a new
+ * "↗" icon button keeps the old external-open behavior via bridge.openPath.
+ * AC-2 and keyboard tests updated accordingly.
+ *
+ * MDXEditor mock: ArtifactEditor imports @mdxeditor/editor which is mocked
+ * here with a thin textarea stub so jsdom tests work without browser APIs.
  */
 
 import "@testing-library/jest-dom/vitest";
@@ -40,6 +47,7 @@ import type {
   Bridge,
   BridgeEvent,
   ArtifactRow,
+  ArtifactContent,
   ProjectSnapshot,
 } from "../ui/lib/bridge.js";
 import { BridgeError } from "../ui/lib/bridge.js";
@@ -47,6 +55,47 @@ import { Artifacts } from "../ui/screens/Artifacts.js";
 import { ExpandedHeader } from "../ui/components/ExpandedHeader.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore } from "../ui/stores/wizard.js";
+
+// ─── MDXEditor mock ──────────────────────────────────────────────────────────
+// ArtifactEditor (mounted when "Open" is clicked) imports @mdxeditor/editor.
+// We replace it with a thin textarea stub so jsdom tests don't need browser APIs.
+
+vi.mock("@mdxeditor/editor", async () => {
+  const { createElement } = await import("react");
+  return {
+    MDXEditor: ({
+      markdown,
+      onChange,
+    }: {
+      markdown: string;
+      onChange?: (v: string) => void;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [k: string]: any;
+    }) =>
+      createElement("textarea", {
+        "data-testid": "mdxeditor",
+        value: markdown,
+        readOnly: onChange === undefined,
+        onChange: onChange
+          ? (e: { target: { value: string } }) => onChange(e.target.value)
+          : undefined,
+      }),
+    headingsPlugin: () => ({}),
+    listsPlugin: () => ({}),
+    quotePlugin: () => ({}),
+    linkPlugin: () => ({}),
+    markdownShortcutPlugin: () => ({}),
+  };
+});
+
+// ─── Minimal brief artifact for editor tests ──────────────────────────────────
+
+const BRIEF_ARTIFACT: ArtifactContent = {
+  key: "brief",
+  path: "/home/user/meridian/brief.md",
+  format: "markdown",
+  content: "## Overview\nThis is an overview.",
+};
 
 // ─── Meridian fixture artifacts ───────────────────────────────────────────────
 // 12 registered concerns · 10 up-to-date · 1 draft · 1 missing = "10 of 12"
@@ -212,6 +261,8 @@ function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
     events: vi.fn().mockReturnValue(() => {}),
     latestRender: vi.fn().mockResolvedValue(null),
     verify: vi.fn().mockResolvedValue(null),
+    getArtifact: vi.fn().mockResolvedValue(BRIEF_ARTIFACT),
+    putArtifact: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
   };
 }
@@ -354,22 +405,65 @@ describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () =
   });
 });
 
-// ─── AC-2: Open calls openPath; open-failure renders row-level note ───────────
+// ─── AC-2: Open mounts editor; ↗ icon calls openPath ─────────────────────────
+// v2 open behavior: "Open" button mounts ArtifactEditor in-panel; the new
+// "↗" secondary icon button calls bridge.openPath (external editor).
 
-describe("AC-2: Open calls openPath; BridgeError → row-level amber note", () => {
-  it("Open button calls bridge.openPath with the artifact path", async () => {
+describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError → row-level note", () => {
+  it("Open button mounts the ArtifactEditor (shows Back button)", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
     render(<Artifacts bridge={bridge} />);
 
     await user.click(screen.getByRole("button", { name: /Open Brief/i }));
 
+    // ArtifactEditor header has a "Back to artifacts" button
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Back to artifacts/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("Back button in editor returns to inventory", async () => {
+    const user = userEvent.setup();
+    render(<Artifacts bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Back to artifacts/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /Back to artifacts/i }));
+
+    // Inventory heading is back
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: /Meridian Health artifacts/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("↗ icon button calls bridge.openPath with the artifact path (external open)", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    const externalButtons = screen.getAllByRole("button", {
+      name: /Open in external editor/i,
+    });
+    // Click the first one (Brief row)
+    await user.click(externalButtons[0]!);
+
     expect(bridge.openPath).toHaveBeenCalledWith(
       "/home/user/meridian/brief.md",
     );
   });
 
-  it("BridgeError on open renders a row-level alert (no modal)", async () => {
+  it("BridgeError on external open renders a row-level alert (no modal)", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge({
       openPath: vi
@@ -378,7 +472,10 @@ describe("AC-2: Open calls openPath; BridgeError → row-level amber note", () =
     });
     render(<Artifacts bridge={bridge} />);
 
-    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+    const externalButtons = screen.getAllByRole("button", {
+      name: /Open in external editor/i,
+    });
+    await user.click(externalButtons[0]!);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
@@ -391,14 +488,18 @@ describe("AC-2: Open calls openPath; BridgeError → row-level amber note", () =
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("non-BridgeError on open renders a generic row-level alert", async () => {
+  it("non-BridgeError on external open renders a generic row-level alert", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge({
       openPath: vi.fn().mockRejectedValue(new Error("Network error")),
     });
     render(<Artifacts bridge={bridge} />);
 
-    await user.click(screen.getByRole("button", { name: /Open Requirements/i }));
+    const externalButtons = screen.getAllByRole("button", {
+      name: /Open in external editor/i,
+    });
+    // Click the second one (Requirements row)
+    await user.click(externalButtons[1]!);
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
@@ -820,9 +921,12 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     const bridge = makeBridge();
     render(<Artifacts bridge={bridge} />);
 
-    // Tab past Open Brief, Open Requirements to reach Regenerate Sitemap
+    // Tab order now includes ↗ buttons after each Open button:
+    //   Open Brief → ↗ Brief → Open Requirements → ↗ Requirements → Regenerate Sitemap
     await user.tab(); // Open Brief
+    await user.tab(); // ↗ (Brief)
     await user.tab(); // Open Requirements
+    await user.tab(); // ↗ (Requirements)
     await user.tab(); // Regenerate Sitemap
 
     const regenerateBtn = screen.getByRole("button", { name: /Regenerate Sitemap/i });

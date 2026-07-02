@@ -44,6 +44,7 @@ import { BridgeError } from "../lib/bridge.js";
 import type { ArtifactGroup } from "../lib/bridge.js";
 import { Card, Row, SectionHeader } from "../components/index.js";
 import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
+import { ArtifactEditor } from "./ArtifactEditor.js";
 import { useAppStore } from "../stores/app.js";
 
 // ─── Group registry (fixed order per PRD §4) ─────────────────────────────────
@@ -117,6 +118,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const [dialogRow, setDialogRow] = useState<ArtifactRow | null>(null);
   /** Highlighted artifact key (from focus intent). */
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
+  /** Key of the artifact currently open in the in-panel editor (null = inventory). */
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   /** DOM refs to each artifact row wrapper, keyed by artifact key. */
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -233,9 +236,9 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     };
   }, []);
 
-  // ── Open file via bridge ─────────────────────────────────────────────────────
+  // ── Open artifact in external editor via bridge (the ↗ icon button) ──────────
 
-  async function handleOpen(row: ArtifactRow): Promise<void> {
+  async function handleExternalOpen(row: ArtifactRow): Promise<void> {
     if (!row.path) return;
     try {
       await bridge.openPath(row.path);
@@ -310,6 +313,26 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     );
   }
 
+  // ── In-panel editor subview ──────────────────────────────────────────────────
+  // When editingKey is set the editor fills the tab area; Back clears it.
+
+  const editingRow = editingKey
+    ? (artifacts.find((r) => r.key === editingKey) ?? null)
+    : null;
+
+  if (editingRow !== null) {
+    return (
+      <ArtifactEditor
+        artifactKey={editingRow.key}
+        label={editingRow.label}
+        status={editingRow.status}
+        bridge={bridge}
+        onBack={() => setEditingKey(null)}
+        onRegenerate={() => openDialog(editingRow)}
+      />
+    );
+  }
+
   // ── Main render ──────────────────────────────────────────────────────────────
 
   return (
@@ -376,7 +399,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                       </button>
                     );
                   } else if (row.path !== null) {
-                    // up-to-date or draft — show Open; draft with path also shows Regenerate
+                    // up-to-date or draft — show Open (in-panel) + ↗ (external);
+                    // draft rows also show Regenerate.
                     action = (
                       <div className="flex items-center gap-2">
                         {row.status === "draft" && (
@@ -391,11 +415,20 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                         )}
                         <button
                           type="button"
-                          onClick={() => void handleOpen(row)}
+                          onClick={() => setEditingKey(row.key)}
                           className="text-xs text-primary-600 hover:underline font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
                           aria-label={`Open ${row.label}`}
                         >
                           Open
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleExternalOpen(row)}
+                          className="text-xs text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                          aria-label="Open in external editor"
+                          title="Open in external editor"
+                        >
+                          ↗
                         </button>
                       </div>
                     );

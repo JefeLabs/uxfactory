@@ -86,6 +86,13 @@ export interface BridgeEvent {
   seq: number;
 }
 
+export interface ArtifactContent {
+  key: string;
+  path: string;
+  format: "markdown" | "json";
+  content: string;
+}
+
 export interface ConnectOk {
   ok: true;
   snapshot: ProjectSnapshot;
@@ -147,6 +154,10 @@ export interface Bridge {
   latestRender(): Promise<unknown>;
   /** POST /verify */
   verify(body: unknown): Promise<unknown>;
+  /** GET /project/artifact?key= → {key, path, format, content} (404 when missing) */
+  getArtifact?(key: string): Promise<ArtifactContent>;
+  /** PUT /project/artifact {key, content} → {ok} */
+  putArtifact?(key: string, content: string): Promise<{ ok: boolean }>;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -339,6 +350,16 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     verify(body: unknown) {
       return post<unknown>("/verify", body);
+    },
+
+    getArtifact(key: string) {
+      return request<ArtifactContent>(
+        `/project/artifact?key=${encodeURIComponent(key)}`,
+      );
+    },
+
+    putArtifact(key: string, content: string) {
+      return put<{ ok: boolean }>("/project/artifact", { key, content });
     },
   };
 }
