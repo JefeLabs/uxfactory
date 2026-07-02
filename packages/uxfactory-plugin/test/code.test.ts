@@ -296,6 +296,28 @@ describe("code.ts render", () => {
     const api = vpc.children.find((n) => n.name === "api")!;
     expect(api).toMatchObject({ type: "RECTANGLE", x: 80, y: 80 });
   });
+
+  it("reports recursive object counts and places masters off-flow", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      components: { b: { name: "Btn", width: 100, height: 40,
+        children: [{ type: "text", name: "l", x: 8, y: 8, width: 80, height: 20, characters: "Go" }] } },
+      frames: [{ name: "v", x: 0, y: 0, width: 390, height: 400, children: [
+        { name: "col", x: 0, y: 0, width: 390, height: 200, children: [
+          { type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10 },
+        ] },
+        { type: "component-instance", name: "go", component: "b", x: 10, y: 210 },
+      ] }],
+    };
+    await fig.__send({ type: "render", spec, jobId: "r1" });
+    const rendered = lastOfType(fig, "rendered")!;
+    // objects = col + s + go = 3 (recursive; master internals excluded)
+    expect(rendered.report.counts.objects).toBe(3);
+    const master = fig.currentPage.children.find((n) => n.type === "COMPONENT")!;
+    expect(master.x).toBe(-200);                                 // cursor -100 → x = -100 - 100(width)
+    expect(master.y).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

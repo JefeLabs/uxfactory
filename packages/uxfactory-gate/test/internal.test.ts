@@ -146,3 +146,25 @@ describe("numbersEqual", () => {
   it("treats tiny float drift as equal", () => expect(numbersEqual(0.1 + 0.2, 0.3)).toBe(true));
   it("treats real differences as unequal", () => expect(numbersEqual(0.5, 0.6)).toBe(false));
 });
+
+describe("recursive walk (task 7)", () => {
+  it("counts and gates nested frames and component instances recursively", () => {
+    const spec = {
+      components: { "comp-1": { name: "card", width: 200, height: 80,
+        children: [{ type: "text", name: "label", x: 16, y: 16, width: 100, height: 20, characters: "Hi" }] } },
+      frames: [{ name: "view", x: 0, y: 0, width: 390, height: 844, children: [
+        { name: "col", x: 10, y: 10, width: 300, height: 400, children: [
+          { type: "shape", name: "s1", x: 5, y: 5, width: 50, height: 50 },
+        ] },
+        { type: "component-instance", name: "card-a", component: "comp-1", x: 20, y: 430 },
+      ] }],
+    } as unknown as Spec;
+    const expected = expectedCounts(spec);
+    // objects: col(1) + s1(1) + card-a(1) = 3; the def's internals contribute nothing
+    expect(expected).toEqual({ frames: 1, sections: 0, objects: 3, connectors: 0 });
+    const children = collectChildren(spec);
+    expect(children.map((c) => c.name).sort()).toEqual(["card-a", "col", "s1"]);
+    const s1 = children.find((c) => c.name === "s1")!;
+    expect(s1.x).toBe(5);                                        // parent-relative, NOT accumulated
+  });
+});

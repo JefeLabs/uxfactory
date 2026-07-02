@@ -558,6 +558,7 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
     const ctx: RenderCtx = { byName, reportNodes, editDiffs, components: new Map() };
 
     if (plan.components) {
+      let masterCursor = -100;
       for (const [id, def] of Object.entries(plan.components)) {
         const master = fig.createComponent();
         master.name = def.name;
@@ -569,6 +570,9 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
           await renderChild(child, master, ctx);
         }
         applyAutoLayout(master, def.layout, def.sizing);
+        master.x = masterCursor - def.width;
+        master.y = 0;
+        masterCursor = master.x - 100;
         page.appendChild(master);
         ctx.components.set(id, master);
       }
@@ -648,9 +652,7 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
     const counts: ReportCounts = {
       frames: plan.frames.length,
       sections: plan.sections.length,
-      objects:
-        plan.frames.reduce((n, f) => n + f.children.length, 0) +
-        plan.sections.reduce((n, s) => n + s.children.length, 0),
+      objects: reportNodes.size,
       connectors: plan.connectors.length,
     };
 

@@ -27,24 +27,28 @@ export interface SpecChild {
   height?: number;
 }
 
+/** Internal structural shape for recursive child walking (keeps the package decoupled from spec internals). */
+type AnyChild = { name: string; x: number; y: number; width?: number; height?: number; type?: string; children?: AnyChild[] };
+
+/** Recursively push each child into `out`. Nested frames (no `type`) are pushed AND recursed;
+ *  typed leaves (component-instance, shape, text, etc.) are pushed but NOT recursed. */
+function walkChildren(children: AnyChild[], out: SpecChild[]): void {
+  for (const child of children) {
+    out.push({ name: child.name, x: child.x, y: child.y, width: child.width, height: child.height });
+    if (child.type === undefined && Array.isArray(child.children)) walkChildren(child.children, out);
+  }
+}
+
 /** Flatten every child across a spec's frames or sections. Edit-only specs have none. */
 export function collectChildren(spec: Spec): SpecChild[] {
   const children: SpecChild[] = [];
   const containers = hasFrames(spec)
-    ? (spec as { frames: { children?: SpecChild[] }[] }).frames
+    ? (spec as { frames: { children?: AnyChild[] }[] }).frames
     : hasSections(spec)
-      ? (spec as { sections: { children?: SpecChild[] }[] }).sections
+      ? (spec as { sections: { children?: AnyChild[] }[] }).sections
       : [];
   for (const container of containers) {
-    for (const child of container.children ?? []) {
-      children.push({
-        name: child.name,
-        x: child.x,
-        y: child.y,
-        width: child.width,
-        height: child.height,
-      });
-    }
+    walkChildren(container.children ?? [], children);
   }
   return children;
 }
