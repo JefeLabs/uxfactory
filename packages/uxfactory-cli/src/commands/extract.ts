@@ -6,12 +6,13 @@
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { validate } from "@uxfactory/spec";
-import type { DesignSpec } from "@uxfactory/spec";
+import type { DesignSpec, Frame, FrameChild, ComponentInstanceNode } from "@uxfactory/spec";
 import { EXIT } from "../exit.js";
 import { readRegistry } from "../batch/registry.js";
 import { readTrace } from "../batch/trace.js";
 import { renderHtml, type HtmlRenderDeps } from "../render/html-render.js";
 import { extractDesignSpec, type ExtractedView } from "../extract/dom-to-designspec.js";
+import { componentize, type ComponentizeStats } from "../extract/componentize.js";
 import type { IO } from "../io.js";
 
 const DEFAULT_VIEWPORT = { width: 390, height: 844 };
@@ -20,6 +21,7 @@ export interface ExtractFlags {
   json?: boolean;
   dataDir: string;
   cwd: string;
+  components?: boolean;
 }
 
 export async function extractCmd(
@@ -66,7 +68,16 @@ export async function extractCmd(
   }
 
   const { spec, stats } = extractDesignSpec(views);
-  const result = validate(spec);
+
+  let compStats: ComponentizeStats | null = null;
+  let finalSpec = spec;
+  if (flags.components !== false) {
+    const result = componentize(spec);
+    finalSpec = result.spec;
+    compStats = result.stats;
+  }
+
+  const result = validate(finalSpec);
   if (!result.valid) {
     const msg = result.errors.map((e) => `${e.path}: ${e.message}`).join("; ");
     if (flags.json === true) io.out(JSON.stringify({ ok: false, reason: "invalid-spec", errors: msg }));
@@ -78,13 +89,24 @@ export async function extractCmd(
   await mkdir(outDir, { recursive: true });
   const files: string[] = [];
   const combinedPath = path.join(outDir, "design.designspec.json");
-  await writeFile(combinedPath, JSON.stringify(spec, null, 2), "utf8");
+  await writeFile(combinedPath, JSON.stringify(finalSpec, null, 2), "utf8");
   files.push(combinedPath);
-  for (const frame of spec.frames) {
+  for (const frame of finalSpec.frames) {
     const lastSlash = frame.name.lastIndexOf("/");
     const page = frame.name.slice(0, lastSlash);
     const view = frame.name.slice(lastSlash + 1);
-    const single: DesignSpec = { frames: [{ ...frame, x: 0 }] };
+    const refs = new Set<string>();
+    const collectRefs = (c: FrameChild): void => {
+      if ("type" in c && c.type === "component-instance") refs.add((c as ComponentInstanceNode).component);
+      if (!("type" in c)) for (const cc of (c as Frame).children ?? []) collectRefs(cc);
+    };
+    for (const c of frame.children ?? []) collectRefs(c);
+    const single: DesignSpec = {
+      frames: [{ ...frame, x: 0 }],
+      ...(refs.size > 0
+        ? { components: Object.fromEntries([...refs].map((id) => [id, finalSpec.components![id]!])) }
+        : {}),
+    };
     const file = path.join(outDir, `${path.basename(page, ".html")}-${view}.designspec.json`);
     await writeFile(file, JSON.stringify(single, null, 2), "utf8");
     files.push(file);
@@ -94,6 +116,7 @@ export async function extractCmd(
     io.out(JSON.stringify({
       ok: excluded.length === 0, views: stats.views, excluded, nodes: stats.nodes,
       containers: stats.containers, selfCheckFallbacks: stats.selfCheckFallbacks,
+      componentize: compStats,
       files: files.map((f) => path.relative(flags.cwd, f)),
     }));
   } else {

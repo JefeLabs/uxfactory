@@ -87,4 +87,43 @@ describe("extractCmd", () => {
       { renderViews: async () => [] });
     expect(code).toBe(EXIT.TRANSPORT);
   });
+
+  it("componentizes by default and scopes per-view component subsets", async () => {
+    const io = makeIO();
+    const cardTree = (chars: string) => node({
+      tag: "div", sel: "div.card", bbox: { x: 20, y: 20, width: 200, height: 80 },
+      styles: { ...node({ tag: "div" }).styles, backgroundColor: "rgb(255, 255, 255)" },
+      children: [node({ tag: "span", sel: "span.label", bbox: { x: 36, y: 36, width: 100, height: 20 }, text: chars })],
+    });
+    const treeFor = (chars: string) => node({
+      tag: "body", bbox: { x: 0, y: 0, width: 390, height: 844 }, children: [cardTree(chars)] });
+    const snapWithTree = (view: string, chars: string): RenderSnapshot => ({
+      ...snap(view), domTree: treeFor(chars) });
+    const code = await extractCmd(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root }, io,
+      { renderViews: async () => [snapWithTree("success", "Done"), snapWithTree("error", "Failed")] },
+    );
+    expect(code).toBe(EXIT.OK);
+    const combined = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/designspec/design.designspec.json"), "utf8"));
+    expect(validate(combined).valid).toBe(true);
+    expect(Object.keys(combined.components ?? {})).toEqual(["comp-1"]);
+    const perView = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/designspec/checkout-success.designspec.json"), "utf8"));
+    expect(validate(perView).valid).toBe(true);
+    expect(Object.keys(perView.components ?? {})).toEqual(["comp-1"]);   // subset carried
+    const summary = JSON.parse(io.outText().trim().split("\n").at(-1)!);
+    expect(summary.componentize).toMatchObject({ components: 1, instances: 2 });
+  });
+
+  it("--no-components disables detection", async () => {
+    const io = makeIO();
+    const code = await extractCmd(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, components: false }, io,
+      { renderViews: async () => [snap("success"), snap("error")] },
+    );
+    expect(code).toBe(EXIT.OK);
+    const combined = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/designspec/design.designspec.json"), "utf8"));
+    expect(combined.components).toBeUndefined();
+    const summary = JSON.parse(io.outText().trim().split("\n").at(-1)!);
+    expect(summary.componentize).toBeNull();
+  });
 });
