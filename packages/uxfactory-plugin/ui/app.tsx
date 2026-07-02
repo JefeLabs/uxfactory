@@ -277,10 +277,12 @@ export function App({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
     }
   }, [screen]);
 
-  // Show the context bar on all post-connect screens, and also when
-  // auto-reconnecting (which temporarily shows on the connect screen).
+  // Show the context bar ONLY on the tabs screen, and also when
+  // auto-reconnecting (which temporarily overlays the connect screen).
+  // Setup screens (setup-1, setup-2) own their own project header bars —
+  // rendering the shell ContextBar there would double up the project header.
   const showContextBar =
-    screen !== "connect" || connectionStatus === "reconnecting";
+    screen === "tabs" || (screen === "connect" && connectionStatus === "reconnecting");
 
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">

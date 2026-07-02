@@ -231,7 +231,7 @@ describe("reconnect-cancel path", () => {
     // connection.status must be "none" (not just a screen change)
     expect(useAppStore.getState().connection.status).toBe("none");
 
-    // ContextBar is suppressed: showContextBar = (screen !== "connect" || status === "reconnecting")
+    // ContextBar is suppressed: showContextBar = (screen === "tabs" || (screen === "connect" && status === "reconnecting"))
     // With screen="connect" and status="none", the ContextBar reconnecting pill should be gone.
     expect(screen.queryByRole("status", { name: "Reconnecting…" })).not.toBeInTheDocument();
   });
@@ -343,6 +343,21 @@ describe("setup-1 screen", () => {
     // SetupClassification renders a "Starting mode" radiogroup
     expect(screen.getByRole("radiogroup", { name: /Starting mode/i })).toBeInTheDocument();
   });
+
+  it("does NOT show the shell ContextBar on setup-1 (screen owns its own project header)", () => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
+      fileInfo: { name: "Test", fileKey: "k" },
+      snapshot: null,
+      route: { screen: "setup-1", tab: "prompt" },
+      toasts: [],
+    });
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // The ContextBar's expand/collapse chevron button is unique to the shell ContextBar.
+    // Setup screens own their own project header (which may include a status pill of its own),
+    // so we assert the shell-specific expand button is absent — not the pill.
+    expect(screen.queryByRole("button", { name: /Expand project details/i })).not.toBeInTheDocument();
+  });
 });
 
 describe("setup-2 screen", () => {
@@ -358,6 +373,21 @@ describe("setup-2 screen", () => {
     // SetupDefaults renders buttons with aria-labels for each defaults field
     // Check for the "Back" navigation button which is always rendered
     expect(screen.getByRole("button", { name: /Back/i })).toBeInTheDocument();
+  });
+
+  it("does NOT show the shell ContextBar on setup-2 (screen owns its own project header)", () => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
+      fileInfo: { name: "Test", fileKey: "k" },
+      snapshot: null,
+      route: { screen: "setup-2", tab: "prompt" },
+      toasts: [],
+    });
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // The ContextBar's expand/collapse chevron button is unique to the shell ContextBar.
+    // Setup screens own their own project header (which may include a status pill of its own),
+    // so we assert the shell-specific expand button is absent — not the pill.
+    expect(screen.queryByRole("button", { name: /Expand project details/i })).not.toBeInTheDocument();
   });
 });
 
