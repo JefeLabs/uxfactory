@@ -14,8 +14,9 @@ export function Toast({ toasts, onDismiss }: ToastProps) {
   if (toasts.length === 0) return null;
 
   return (
+    // No aria-live here — each role="status" item below is its own implicit live region
+    // (polite). A single aria-live on the container would duplicate announcements.
     <div
-      aria-live="polite"
       aria-label="Notifications"
       className="fixed bottom-4 right-4 flex flex-col gap-2 z-50 max-w-xs"
     >

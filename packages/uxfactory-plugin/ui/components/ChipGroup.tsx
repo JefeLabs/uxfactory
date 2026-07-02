@@ -12,7 +12,8 @@ export interface ChipGroupProps {
   values?: string[];
   onChange: (v: string | string[]) => void;
   multi?: boolean;
-  ariaLabel: string;
+  /** Optional — screens with a visible label context may omit; Segmented keeps ariaLabel required. */
+  ariaLabel?: string;
 }
 
 const selectedStyle =

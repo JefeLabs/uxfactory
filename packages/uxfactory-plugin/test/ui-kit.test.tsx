@@ -68,6 +68,49 @@ describe("ChipGroup — single", () => {
     await user.click(within(group).getByRole("radio", { name: "Marketing" }));
     expect(onChange).toHaveBeenCalledWith("marketing");
   });
+
+  it("renders without ariaLabel — group is still operable (screens with visible label context)", () => {
+    render(
+      <ChipGroup options={options} value="marketing" onChange={vi.fn()} />,
+    );
+    // aria-label is undefined so we query by role only — Radix still renders the radiogroup
+    const groups = screen.getAllByRole("radiogroup");
+    expect(groups.length).toBeGreaterThanOrEqual(1);
+    expect(within(groups[0]!).getByRole("radio", { name: "Marketing" })).toBeInTheDocument();
+  });
+
+  it("navigates with arrow keys — ArrowRight moves focus to next chip (roving focus)", () => {
+    // Radix ToggleGroup type="single" uses RovingFocusGroup which schedules
+    // setTimeout(focusFirst, 0) on arrow key. Unlike RadioGroup, ToggleGroup does NOT
+    // auto-select on focus: onChange fires on click/space only; we assert focus moved.
+    // Use fake timers so we can flush that scheduled focus call deterministically.
+    vi.useFakeTimers();
+
+    try {
+      render(
+        <ChipGroup options={options} value="marketing" onChange={vi.fn()} />,
+      );
+
+      const group = screen.getByRole("radiogroup");
+      const marketing = within(group).getByRole("radio", { name: "Marketing" });
+      const ecommerce = within(group).getByRole("radio", { name: "Ecommerce" });
+
+      marketing.focus();
+      expect(document.activeElement).toBe(marketing);
+
+      // Fire the keydown sequence that Radix's RovingFocusGroup listens to
+      fireEvent.keyDown(document, { key: "ArrowRight", code: "ArrowRight" });
+      fireEvent.keyDown(marketing, { key: "ArrowRight", code: "ArrowRight" });
+      // Flush the setTimeout(focusFirst, 0) scheduled by RovingFocusGroup
+      vi.runAllTimers();
+      fireEvent.keyUp(document, { key: "ArrowRight", code: "ArrowRight" });
+
+      // Focus should have moved to the next chip
+      expect(document.activeElement).toBe(ecommerce);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -177,6 +220,12 @@ describe("Segmented", () => {
     // Radix RovingFocusGroup uses setTimeout(focusFirst, 0) for keyboard nav.
     // Use fake timers so we can control when that fires, and fire keydown/keyup
     // manually to control the isArrowKeyPressedRef state that gates the click.
+    //
+    // The coupling: Radix sets isArrowKeyPressedRef.current = true on keydown, then
+    // schedules setTimeout(focusFirst, 0) which calls focus() on the next item. When
+    // focus fires while isArrowKeyPressedRef is still true (before keyup clears it),
+    // the RadioGroup item's focus handler fires onValueChange. We must hold keyup
+    // AFTER runAllTimers() to preserve that window.
     vi.useFakeTimers();
     const onChange = vi.fn();
 
@@ -399,6 +448,31 @@ describe("Field", () => {
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("with id provided, label is associated to the input via htmlFor — getByLabelText finds it", () => {
+    render(
+      <Field label="Title" id="title-input">
+        <input type="text" id="title-input" />
+      </Field>,
+    );
+    // getByLabelText resolves the <label htmlFor="title-input"> → <input id="title-input"> link
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+  });
+
+  it("without id, children are wrapped in role=group associated via aria-labelledby", () => {
+    const { container } = render(
+      <Field label="Category">
+        <input type="text" />
+      </Field>,
+    );
+    const group = container.querySelector('[role="group"]');
+    expect(group).not.toBeNull();
+    // The group's aria-labelledby should point to the auto-id on the label
+    const labelledBy = group!.getAttribute("aria-labelledby");
+    expect(labelledBy).toBeTruthy();
+    const label = container.querySelector(`#${CSS.escape(labelledBy!)}`);
+    expect(label).toHaveTextContent("Category");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -433,6 +507,15 @@ describe("Toast", () => {
     );
     expect(onDismiss).toHaveBeenCalledWith("toast-1");
   });
+
+  it("container does not carry aria-live — live region is per role=status item (avoids duplicate announcements)", () => {
+    const toasts = [{ id: "1", message: "Done" }];
+    const { container } = render(<Toast toasts={toasts} onDismiss={vi.fn()} />);
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper).not.toHaveAttribute("aria-live");
+    // Each item carries role="status" which is an implicit aria-live="polite" region
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -465,5 +548,23 @@ describe("Chip", () => {
 
     await user.click(screen.getByRole("checkbox", { name: "Ecommerce" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards value as data-value attribute", () => {
+    render(<Chip label="Ecommerce" value="ecommerce" />);
+    expect(screen.getByRole("checkbox")).toHaveAttribute("data-value", "ecommerce");
+  });
+
+  it("dial tone renders label as muted prefix span and value as semibold span", () => {
+    render(<Chip label="Visual" value="High" tone="dial" />);
+    const chip = screen.getByRole("checkbox");
+    // Accessible name is the concatenated text of both spans
+    expect(chip).toHaveTextContent("Visual");
+    expect(chip).toHaveTextContent("High");
+    // Structural: two spans — first muted (text-gray-400), second semibold (font-semibold)
+    const spans = chip.querySelectorAll("span");
+    expect(spans).toHaveLength(2);
+    expect(spans[0]).toHaveClass("text-gray-400");
+    expect(spans[1]).toHaveClass("font-semibold");
   });
 });
