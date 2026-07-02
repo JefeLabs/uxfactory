@@ -32,6 +32,10 @@ export interface CapturedStyles {
   boxShadow: string;
   opacity: string;
   color: string;
+  fontSize: string;
+  fontWeight: string;
+  fontFamily: string;
+  lineHeight: string;
 }
 
 /** One visible element (or `#text` run) in the captured tree. Fully serializable. */
@@ -61,7 +65,8 @@ export const EXTRACT_FN = `() => {
     "gridTemplateColumns","gridTemplateRows","paddingTop","paddingRight","paddingBottom","paddingLeft",
     "backgroundColor","borderTopWidth","borderRightWidth","borderBottomWidth","borderLeftWidth",
     "borderTopColor","borderTopLeftRadius","borderTopRightRadius","borderBottomRightRadius",
-    "borderBottomLeftRadius","boxShadow","opacity","color"];
+    "borderBottomLeftRadius","boxShadow","opacity","color",
+    "fontSize","fontWeight","fontFamily","lineHeight"];
   const visible = (el) => {
     const s = getComputedStyle(el);
     if (s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity) === 0) return false;

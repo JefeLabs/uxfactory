@@ -15,6 +15,7 @@ export function node(partial: Partial<CapturedNode> & { tag: string }): Captured
       borderTopLeftRadius: "0px", borderTopRightRadius: "0px",
       borderBottomRightRadius: "0px", borderBottomLeftRadius: "0px",
       boxShadow: "none", opacity: "1", color: "rgb(17, 24, 39)",
+      fontSize: "16px", fontWeight: "400", fontFamily: "Inter, sans-serif", lineHeight: "24px",
     },
     ...partial,
   };

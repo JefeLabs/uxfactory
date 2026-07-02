@@ -49,10 +49,10 @@ function fp(node: FrameChild): string {
   if (node.type === "text") {
     return stable({
       k: "t", w: node.width, h: node.height,
-      fontSize: (node as { fontSize?: number }).fontSize,
-      fontWeight: (node as { fontWeight?: number }).fontWeight,
-      fontFamily: (node as { fontFamily?: string }).fontFamily,
-      lineHeight: (node as { lineHeight?: number }).lineHeight,
+      fontSize: node.fontSize,
+      fontWeight: node.fontWeight,
+      fontFamily: node.fontFamily,
+      lineHeight: node.lineHeight,
       opacity: node.opacity,
     });
   }

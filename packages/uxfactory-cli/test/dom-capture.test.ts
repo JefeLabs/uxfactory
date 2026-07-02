@@ -9,6 +9,7 @@ describe("EXTRACT_FN", () => {
     const fn = new Function(`return (${EXTRACT_FN});`)();
     expect(typeof fn).toBe("function");
     expect(fn.length).toBe(0);
+    expect(EXTRACT_FN).toContain("fontFamily");
   });
 });
 

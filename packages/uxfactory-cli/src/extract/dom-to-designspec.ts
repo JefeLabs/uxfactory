@@ -35,6 +35,15 @@ export interface ExtractResult {
   stats: ExtractStats;
 }
 
+/** Apply typography from CapturedStyles onto an emitted TextNode (both text paths). */
+function applyTypography(text: TextNode, styles: CapturedNode["styles"]): void {
+  const fs = px(styles.fontSize); if (fs > 0) text.fontSize = fs;
+  const fw = px(styles.fontWeight); if (fw > 0) text.fontWeight = fw;
+  const fam = styles.fontFamily.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
+  if (fam) text.fontFamily = fam;
+  const lh = px(styles.lineHeight); if (lh > 0) text.lineHeight = lh; // "normal" → px()=0 → omitted
+}
+
 const CANVAS_GUTTER = 100;
 const PLACEHOLDER_FILL = "#E5E7EB";
 const PRUNE_TOLERANCE = 2;
@@ -135,6 +144,7 @@ function toChild(n: CapturedNode, ox: number, oy: number, ctx: PassCtx, parentFi
     const text: TextNode = { type: "text", name: n.sel, characters: n.text ?? "", x, y, width, height };
     const fillHex = mapTextFill(n.styles);
     if (fillHex !== null) text.fill = fillHex;
+    applyTypography(text, n.styles);
     return text;
   }
   if (n.children.length === 0) {

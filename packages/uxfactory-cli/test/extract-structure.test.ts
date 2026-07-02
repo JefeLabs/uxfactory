@@ -63,6 +63,16 @@ describe("extractDesignSpec — structure", () => {
     expect(section.x).toBe(10); expect(section.y).toBe(10);
   });
 
+  it("emits typography on text nodes", () => {
+    const h1 = node({ tag: "h1", bbox: { x: 0, y: 0, width: 200, height: 40 }, text: "Title",
+      styles: { ...node({ tag: "h1" }).styles, fontSize: "28px", fontWeight: "700",
+        fontFamily: '"Fraunces", serif', lineHeight: "36px" } });
+    const body = node({ tag: "body", bbox: { x: 0, y: 0, width: 390, height: 844 }, children: [h1] });
+    const { spec } = extractDesignSpec([view(body)]);
+    const t = spec.frames[0]!.children![0] as TextNode;
+    expect(t).toMatchObject({ fontSize: 28, fontWeight: 700, fontFamily: "Fraunces", lineHeight: 36 });
+  });
+
   it("turns #text runs into text nodes and is deterministic", () => {
     const p = node({ tag: "p", bbox: { x: 0, y: 0, width: 200, height: 40 },
       children: [
