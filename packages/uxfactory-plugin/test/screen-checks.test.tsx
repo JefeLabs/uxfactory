@@ -211,6 +211,7 @@ function makeDefaultProps(overrides: Partial<ChecksViewProps> = {}): ChecksViewP
     onNodeRef: vi.fn(),
     onComponentsLink: vi.fn(),
     onSelectHistory: vi.fn(),
+    onRefresh: vi.fn(),
     ...overrides,
   };
 }
@@ -1170,5 +1171,49 @@ describe("Tier row expand/collapse", () => {
     expect(t2btn).toHaveAttribute("aria-expanded", "true");
     await user.click(t2btn);
     expect(t2btn).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+// ─── Focus-driven refresh (generate→Checks navigation) ────────────────────────
+
+describe("focus.runId intent — Checks refetches on navigate from generate", () => {
+  it("re-fetches latestRender when focus.runId intent arrives", async () => {
+    const latestRender = vi.fn().mockResolvedValue(null);
+    const bridge = makeBridge({ latestRender });
+    const bus = makeBus();
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    // Wait for the initial mount fetch to complete
+    await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(1));
+
+    // Simulate the generate→Checks leg: producer sets focus.runId before setTab
+    act(() => {
+      useAppStore.getState().setFocus({ runId: "run-gen-1" });
+    });
+
+    // Checks must refetch latestRender after the intent arrives
+    await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(2));
+
+    // clearFocus() must have been called — focus is null again
+    expect(useAppStore.getState().focus).toBeNull();
+  });
+
+  it("Refresh button triggers refetch of latestRender", async () => {
+    const user = userEvent.setup();
+    const latestRender = vi.fn().mockResolvedValue(null);
+    const bridge = makeBridge({ latestRender });
+    const bus = makeBus();
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    // Wait for the mount fetch (empty state — latestRender returns null)
+    await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(1));
+
+    // Refresh button is visible in the Checks header even during empty state
+    await user.click(screen.getByRole("button", { name: /Refresh/i }));
+
+    // latestRender must have been called again
+    await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(2));
   });
 });

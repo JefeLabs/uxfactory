@@ -260,6 +260,8 @@ Gates + commit (`feat(plugin): Artifacts screen — inventory, freshness, quick 
 **Requirements source:** `.plans/panel/05-components-PRD.md`. Selection card bound to bus `onSelection` (name, unit-type Select persisted into links store row, node id → bus select/zoom, `47 styles in use` from the extended payload, sync badge from snapshot `uxfactory.map.json` presence: `✓ In sync` if node mapped, `not mapped` else — drift deferred); Requirement Select from `snapshot.requirements` + `Link` (PUT links whole-set); LINKED COMPONENTS list (rollup `x of y linked` where y = units present in links ∪ selection-known units; rows per PRD anatomy; unlink on hover; `missing on canvas` when bus lookup fails + `Relink`); sticky `Check my design` → enqueue check run scoped to linked node ids → Checks tab.
 **Tests:** PRD §6 criteria 1–7 (selection sync <500ms with fake bus, link persistence round-trip, rollup, missing-node flag, AC click opens requirement (open call), zero-AC callout).
 
+**Notes:** Deferred: worker-side check-design handler (PP2) — enqueue is wire-accepted but unfulfilled.
+
 Gates + commit (`feat(plugin): Components screen — unit↔requirement linking`).
 
 ---

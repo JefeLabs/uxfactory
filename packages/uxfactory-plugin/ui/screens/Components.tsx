@@ -175,6 +175,7 @@ export function Components({
     const nodeIds = [...new Set(links.map((l) => l.nodeId))];
     setIsCheckLoading(true);
     try {
+        // NOTE: no worker handler for "check-design" yet (PP2) — the job enqueues and waits; Checks still shows the latest render's verification.
       const { id } = await bridge.enqueue({ kind: "check-design", payload: { nodeIds } });
       setFocus({ runId: id });
       setTab("checks");

@@ -96,6 +96,8 @@ export interface ChecksViewProps {
   onNodeRef(nodeId: string): void;
   onComponentsLink(): void;
   onSelectHistory(id: string): void;
+  /** Manual escape-hatch: refetch latestRender + rebuild model. */
+  onRefresh(): void;
 }
 
 // ─── Markdown report builder (pure, deterministic) ───────────────────────────
@@ -416,26 +418,44 @@ export function ChecksView({
   onNodeRef,
   onComponentsLink,
   onSelectHistory,
+  onRefresh,
 }: ChecksViewProps): React.JSX.Element {
   const [expandedTier, setExpandedTier] = useState<TierId | undefined>(
     () => model.failedTier ?? undefined,
   );
 
+  // ── Shared Refresh header (visible in all states as escape hatch) ────────────
+  const refreshHeader = (
+    <div className="flex items-center justify-end px-4 py-2 border-b border-gray-100">
+      <button
+        type="button"
+        onClick={onRefresh}
+        aria-label="Refresh checks"
+        className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-500 hover:bg-gray-50"
+      >
+        Refresh
+      </button>
+    </div>
+  );
+
   // ── Empty state ─────────────────────────────────────────────────────────────
   if (isEmpty) {
     return (
-      <div className="flex flex-col flex-1 items-center justify-center gap-4 p-8 text-center">
-        <p className="text-sm text-gray-600">
-          No checks yet — link components and press{" "}
-          <strong>Check my design</strong>
-        </p>
-        <button
-          type="button"
-          onClick={onComponentsLink}
-          className="text-sm text-primary-600 hover:underline font-medium"
-        >
-          Go to Components →
-        </button>
+      <div className="flex flex-col flex-1 min-h-0">
+        {refreshHeader}
+        <div className="flex flex-col flex-1 items-center justify-center gap-4 p-8 text-center">
+          <p className="text-sm text-gray-600">
+            No checks yet — link components and press{" "}
+            <strong>Check my design</strong>
+          </p>
+          <button
+            type="button"
+            onClick={onComponentsLink}
+            className="text-sm text-primary-600 hover:underline font-medium"
+          >
+            Go to Components →
+          </button>
+        </div>
       </div>
     );
   }
@@ -443,6 +463,7 @@ export function ChecksView({
   // ── Main layout ─────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-gray-50">
+      {refreshHeader}
       <div className="flex flex-col gap-3 p-4">
 
         {/* Run banner */}
@@ -520,6 +541,10 @@ export function Checks({
 }): React.JSX.Element {
   // Store selectors — single primitives only
   const setTab = useAppStore((s) => s.setTab);
+  // focus?.runId: Checks refetches when a runId intent arrives (generate→Checks
+  // navigation). clearFocus is called synchronously so the effect doesn't re-fire.
+  const focusRunId = useAppStore((s) => s.focus?.runId);
+  const clearFocus = useAppStore((s) => s.clearFocus);
 
   // Local state
   const [model, setModel] = useState<TierModel>(() => toTierModel({}));
@@ -536,6 +561,16 @@ export function Checks({
     void init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-fetch when a runId focus intent arrives (generate→Checks navigation).
+  // clearFocus() is called synchronously to prevent the effect from re-firing.
+  useEffect(() => {
+    if (focusRunId !== undefined) {
+      void init();
+      clearFocus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRunId]);
 
   async function init(): Promise<void> {
     // Resolve fileKey for storage
@@ -759,6 +794,7 @@ export function Checks({
       onNodeRef={handleNodeRef}
       onComponentsLink={() => setTab("components")}
       onSelectHistory={handleSelectHistory}
+      onRefresh={() => void init()}
     />
   );
 }

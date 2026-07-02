@@ -54,9 +54,9 @@ export interface ToastItem {
  * View action sets `runId` before switching to Checks; a grounding chip
  * sets `artifactKey` before switching to Artifacts).
  *
- * Consumers read it on mount/focus — Checks consumes `runId`, Artifacts
- * consumes `artifactKey` — and are responsible for clearing it via
- * `clearFocus()` once applied.
+ * Consumers read it on mount/focus — Checks refetches when `runId` arrives
+ * (useEffect keyed on focus?.runId triggers init() + clearFocus()); Artifacts
+ * consumes `artifactKey` on mount. Consumers clear via `clearFocus()`.
  */
 export interface FocusIntent {
   runId?: string;
