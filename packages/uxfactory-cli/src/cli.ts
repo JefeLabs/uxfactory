@@ -256,6 +256,20 @@ export function buildProgram(): Command {
     );
 
   program
+    .command("extract <dir>")
+    .description("Extract the rendered HTML views into a semantic DesignSpec (SP3b)")
+    .option("--json", "machine-readable summary")
+    .option("--data-dir <path>", "data directory (default <cwd>/.uxfactory)")
+    .action(async (dir: string, opts: { json?: boolean; dataDir?: string }) => {
+      const { extractCmd } = await import("./commands/extract.js");
+      lastCode = await extractCmd(
+        dir,
+        { json: opts.json, dataDir: resolveDataDir(opts.dataDir), cwd: process.cwd() },
+        consoleIO,
+      );
+    });
+
+  program
     .command("generate-specs [dir]")
     .description(
       "Deterministically scaffold *.uxfactory.json specs from the registered stories (no LLM)",
