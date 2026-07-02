@@ -68,7 +68,7 @@ interface EditableNode {
 interface PageNode {
   id: string;
   name: string;
-  selection: readonly EditableNode[];
+  selection: EditableNode[];
   children: readonly EditableNode[];
   appendChild(node: EditableNode): void;
 }
@@ -150,7 +150,7 @@ async function handleMessage(msg: UiToMain): Promise<void> {
         .map((id) => fig.getNodeById(id))
         .filter((n): n is EditableNode => n !== null);
       if (nodes.length > 0) {
-        (fig.currentPage as unknown as { selection: EditableNode[] }).selection = nodes;
+        fig.currentPage.selection = nodes;
         fig.viewport.scrollAndZoomIntoView(nodes);
       }
     } else if (msg.type === "notify") {

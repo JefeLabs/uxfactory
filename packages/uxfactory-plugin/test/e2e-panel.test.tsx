@@ -15,9 +15,10 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, act, cleanup } from "@testing-library/react";
+import { render, screen, act, cleanup, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useAppStore } from "../ui/stores/app.js";
+import { useWizardStore } from "../ui/stores/wizard.js";
 import { App } from "../ui/app.js";
 import type { Bridge } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
@@ -217,5 +218,111 @@ describe("E2E: reconnect then cancel", () => {
     expect(screen.queryByRole("status", { name: /Reconnecting|Connected/i })).not.toBeInTheDocument();
     // Connect screen should be visible again
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
+  });
+});
+
+// ─── E2E: Wizard walk — sequential UI-driven flow ────────────────────────────
+
+describe("E2E: wizard walk — Connect → setup-1 → setup-2 → tabs", () => {
+  beforeEach(() => {
+    // Reset wizard store to known defaults so category is pre-selected
+    useWizardStore.setState({
+      classification: {
+        category: "ecommerce",
+        industry: "corporate",
+        locale: "en-US",
+        platforms: ["desktop", "mobile"],
+        layout: "responsive",
+        ageGroup: "18-39",
+        startingMode: "start-fresh",
+      },
+      defaults: {
+        style: "mix",
+        visual: "high",
+        editorial: "medium",
+        flow: "low",
+        coverage: "medium",
+        coherence: "high",
+      },
+      userEdited: {
+        style: false,
+        visual: false,
+        editorial: false,
+        flow: false,
+        coverage: false,
+        coherence: false,
+      },
+    });
+    resetToConnect();
+  });
+
+  it("drives boot → Connect ok (hasClassification:false) → setup-1 → Continue → setup-2 → Save → tabs+Prompt", async () => {
+    const user = userEvent.setup();
+
+    const freshSnapshot = {
+      name: "Wizard Walk",
+      root: "/home/user/wizard-walk",
+      hasClassification: false as const,
+      hasProfile: false,
+      classification: null,
+      profile: null,
+      artifacts: [],
+      requirements: [],
+    };
+
+    const bridge = makeBridge();
+    bridge.health = vi.fn().mockResolvedValue({ ok: true });
+    bridge.connectProject = vi.fn().mockResolvedValue({ ok: true, snapshot: freshSnapshot });
+    bridge.putClassification = vi.fn().mockResolvedValue({ ok: true });
+    bridge.putProfile = vi.fn().mockResolvedValue({ ok: true });
+
+    const bus = makeBus();
+
+    render(<App bridge={bridge} bus={bus} />);
+
+    // Boot: connect screen visible, no tabs
+    expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+
+    // Type repo path (health check resolves in parallel)
+    await user.type(screen.getByPlaceholderText("~/path/to/repo"), "/home/user/wizard-walk");
+
+    // Wait for health check to enable the CTA (bridgeStatus → "running")
+    const connectBtn = screen.getByRole("button", { name: /^Connect$/ });
+    await waitFor(() => expect(connectBtn).not.toBeDisabled());
+
+    // Click Connect → bridge.connectProject → connectSucceeded → setup-1
+    await user.click(connectBtn);
+
+    // Assert setup-1 DOM: heading for new project + Category chip group
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /This looks like a new project/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("group", { name: /Category/i })).toBeInTheDocument();
+
+    // Continue — category "ecommerce" is pre-selected so canContinue is true
+    const continueBtn = screen.getByRole("button", { name: /^Continue$/ });
+    expect(continueBtn).not.toBeDisabled();
+    await user.click(continueBtn);
+
+    // Assert setup-2 DOM: "Generation defaults" heading
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Generation defaults/i }),
+      ).toBeInTheDocument(),
+    );
+
+    // Click "Save & continue" → bridge.putProfile → goto("tabs")
+    await user.click(screen.getByRole("button", { name: /Save/i }));
+
+    // Assert tabs visible + Prompt tab active
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tablist", { name: "Panel tabs" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("tab", { name: "Prompt" })).toHaveAttribute("data-state", "active");
   });
 });

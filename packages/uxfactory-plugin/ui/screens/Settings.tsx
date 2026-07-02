@@ -19,7 +19,7 @@
  * stable stored reference. Never return a new object literal from a selector.
  */
 
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { Bridge, BridgeStats, SkillEntry } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
@@ -59,6 +59,27 @@ function formatStorageKb(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} / 100 kb`;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Sum JSON-stringified byte lengths for all known storage prefixes under a
+ * given fileKey. Non-fatal: missing/errored keys are counted as 0.
+ */
+async function computeStorageUsed(bus: PluginBus, fileKey: string): Promise<number> {
+  let total = 0;
+  for (const prefix of STORAGE_PREFIXES) {
+    try {
+      const val = await bus.storageGet(`${prefix}:${fileKey}`);
+      if (val !== undefined && val !== null) {
+        total += JSON.stringify(val).length;
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+  return total;
+}
+
 // ─── LogsDrawer ───────────────────────────────────────────────────────────────
 
 interface LogsDrawerProps {
@@ -72,21 +93,20 @@ function LogsDrawer({ bridge, open, onClose }: LogsDrawerProps): React.JSX.Eleme
   const [autoRepoll, setAutoRepoll] = useState(false);
   const repollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function fetchLogs(): Promise<void> {
+  const fetchLogs = useCallback(async (): Promise<void> => {
     try {
       const resp = await bridge.logs(200);
       setLines(resp.lines);
     } catch {
       // non-fatal — keep showing whatever is cached
     }
-  }
+  }, [bridge]);
 
   // Fetch on open
   useEffect(() => {
     if (!open) return;
     void fetchLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, fetchLogs]);
 
   // Auto-repoll (2s while Live toggle on and drawer open)
   useEffect(() => {
@@ -104,8 +124,7 @@ function LogsDrawer({ bridge, open, onClose }: LogsDrawerProps): React.JSX.Eleme
         repollRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, autoRepoll]);
+  }, [open, autoRepoll, fetchLogs]);
 
   return (
     <Dialog.Root
@@ -206,6 +225,16 @@ export function Settings({
   // ── Logs drawer state ──────────────────────────────────────────────────────
   const [logsOpen, setLogsOpen] = useState(false);
 
+  // ── Escape key closes the restart popover ─────────────────────────────────
+  useEffect(() => {
+    if (!restartOpen) return;
+    const handleEscape = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setRestartOpen(false);
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [restartOpen]);
+
   // ── Stats polling (every 10s, cleanup on unmount) ──────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -266,17 +295,7 @@ export function Settings({
         return;
       }
 
-      let total = 0;
-      for (const prefix of STORAGE_PREFIXES) {
-        try {
-          const val = await bus.storageGet(`${prefix}:${fk}`);
-          if (val !== undefined && val !== null) {
-            total += JSON.stringify(val).length;
-          }
-        } catch {
-          // non-fatal
-        }
-      }
+      const total = await computeStorageUsed(bus, fk);
       if (!cancelled) setStorageUsed(total);
     }
 
@@ -322,19 +341,7 @@ export function Settings({
     } catch {
       // best-effort — storage failure is non-fatal
     }
-    // Recompute storage meter
-    let total = 0;
-    for (const prefix of STORAGE_PREFIXES) {
-      try {
-        const val = await bus.storageGet(`${prefix}:${fileKey}`);
-        if (val !== undefined && val !== null) {
-          total += JSON.stringify(val).length;
-        }
-      } catch {
-        // non-fatal
-      }
-    }
-    setStorageUsed(total);
+    setStorageUsed(await computeStorageUsed(bus, fileKey));
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -482,7 +489,8 @@ export function Settings({
               </button>
               {restartOpen && (
                 <div
-                  role="tooltip"
+                  role="dialog"
+                  aria-label="Restart options"
                   className="absolute bottom-full left-0 mb-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10"
                 >
                   <p className="text-xs text-gray-500 mb-2">

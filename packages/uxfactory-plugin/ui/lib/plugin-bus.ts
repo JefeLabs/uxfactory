@@ -1,5 +1,8 @@
 import type { MainToUi, UiToMain } from "../../src/messages.js";
 
+/** Structural shape of a review report — extracted from the UiToMain union. */
+type ReviewPayload = Extract<UiToMain, { type: "review" }>["report"];
+
 export interface PluginBus {
   storageGet<T>(key: string): Promise<T | undefined>;
   /** Fire-and-forget — resolves immediately without waiting for a reply. */
@@ -14,7 +17,7 @@ export interface PluginBus {
   /** Fire-and-forget: select canvas nodes by id and scroll into view. */
   selectNodes(ids: string[]): void;
   /** Fire-and-forget: post a review report to the plugin main thread. */
-  postReview(report: unknown): void;
+  postReview(report: ReviewPayload): void;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -212,8 +215,8 @@ export function createBus(
       send({ type: "select-nodes", ids });
     },
 
-    postReview(report: unknown): void {
-      send({ type: "review", report } as Extract<UiToMain, { type: "review" }>);
+    postReview(report: ReviewPayload): void {
+      send({ type: "review", report });
     },
   };
 }

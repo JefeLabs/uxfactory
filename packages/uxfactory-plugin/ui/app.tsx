@@ -20,7 +20,7 @@ import React, { useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { Code, ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
-import type { Tab } from "./stores/app.js";
+import type { Screen, Tab } from "./stores/app.js";
 import { Chip, StatusPill } from "./components/index.js";
 import type { StatusPillStatus } from "./components/index.js";
 import type { Bridge } from "./lib/bridge.js";
@@ -284,7 +284,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
 // ─── Resize map ───────────────────────────────────────────────────────────────
 
-const RESIZE_MAP: Record<string, [number, number]> = {
+const RESIZE_MAP: Record<Screen, [number, number]> = {
   connect:  [540, 760],
   "setup-1": [540, 760],
   "setup-2": [540, 760],
@@ -302,7 +302,7 @@ export function App({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
   // Resize the plugin window when the active screen changes.
   useEffect(() => {
-    const [w, h] = RESIZE_MAP[screen] ?? [560, 640];
+    const [w, h] = RESIZE_MAP[screen];
     if (typeof parent !== "undefined" && parent !== window) {
       parent.postMessage({ pluginMessage: { type: "resize", width: w, height: h } }, "*");
     }
