@@ -11,5 +11,5 @@
       "@uxfactory/gate": ["../uxfactory-gate/src/index.ts"]
     }
   },
-  "include": ["src", "test", "ui/components"]
+  "include": ["src", "test", "ui/components", "ui/vite-env.d.ts"]
 }
