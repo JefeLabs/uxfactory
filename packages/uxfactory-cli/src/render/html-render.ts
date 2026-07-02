@@ -9,6 +9,8 @@ export interface HtmlRenderRequest {
   /** Absolute directory screenshots are written to. */
   previewDir: string;
   viewport: { width: number; height: number };
+  /** When true, capture the DOM as a CapturedNode tree on each snapshot (SP3b extract). */
+  captureDom?: boolean;
 }
 
 /** Injectable renderer for deterministic testing without a real browser. */

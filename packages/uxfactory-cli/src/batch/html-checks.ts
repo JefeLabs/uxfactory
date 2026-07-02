@@ -1,4 +1,5 @@
 import type { BatchFinding, CheckResult, ImpliedState, Severity, StorySet, TokenSet } from "./checks.js";
+import type { CapturedNode } from "../render/dom-capture.js";
 import { binds } from "./scope.js";
 import type { GateThresholds, RenderScope } from "./scope.js";
 import type { BatchReport } from "./run.js";
@@ -37,6 +38,8 @@ export interface RenderSnapshot {
   coverChecks: CoverCheck[];
   paintedColors: PaintedColor[];
   axe: AxeFinding[];
+  /** Present iff the render was requested with captureDom (SP3b extract). */
+  domTree?: CapturedNode;
 }
 
 /** Key separator (NUL char) that cannot appear in a story id or impliedState. */

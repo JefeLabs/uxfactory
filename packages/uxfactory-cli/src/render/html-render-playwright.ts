@@ -8,6 +8,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { HtmlRenderRequest } from "./html-render.js";
 import type { RenderSnapshot, CoverCheck, PaintedColor, AxeFinding } from "../batch/html-checks.js";
+import { EXTRACT_FN } from "./dom-capture.js";
+import type { CapturedNode } from "./dom-capture.js";
 
 const SETTLE_TIMEOUT_MS = 5000;
 const FREEZE_CSS =
@@ -107,6 +109,11 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
             `(${CAPTURE_FN})(${JSON.stringify(view.covers)})`,
           )) as { coverChecks: CoverCheck[]; paintedColors: PaintedColor[] };
 
+          let domTree: CapturedNode | undefined;
+          if (req.captureDom === true) {
+            domTree = (await page.evaluate(`(${EXTRACT_FN})()`)) as CapturedNode;
+          }
+
           await page.addScriptTag({ content: axeSource });
           const axeRaw = (await page.evaluate(
             "axe.run(document, { resultTypes: ['violations'] })",
@@ -118,7 +125,7 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
             targets: v.nodes.flatMap((n) => n.target.map(String)),
           }));
 
-          out.push({ ...base, ok: true, coverChecks: captured.coverChecks, paintedColors: captured.paintedColors, axe });
+          out.push({ ...base, ok: true, coverChecks: captured.coverChecks, paintedColors: captured.paintedColors, axe, ...(domTree !== undefined ? { domTree } : {}) });
         } catch (err) {
           out.push({
             ...base, ok: false, error: (err as Error).message,
