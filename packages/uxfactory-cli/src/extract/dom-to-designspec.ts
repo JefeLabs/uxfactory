@@ -7,6 +7,7 @@ import type { DesignSpec, Frame, FrameChild, TextNode, ShapeNode } from "@uxfact
 import type { CapturedNode } from "../render/dom-capture.js";
 import { REPLACED_TAGS } from "../render/dom-capture.js";
 import { resolveFill, mapStroke, mapCornerRadius, mapEffects, mapOpacity, mapTextFill } from "./style-map.js";
+import { inferCandidate, verifyCandidate } from "./layout-infer.js";
 
 export interface ExtractedView {
   page: string;
@@ -58,7 +59,7 @@ function hasNoVisualSignal(n: CapturedNode): boolean {
 }
 
 /** Content box: bbox inset by padding. */
-function contentBox(n: CapturedNode): { x: number; y: number; width: number; height: number } {
+export function contentBox(n: CapturedNode): { x: number; y: number; width: number; height: number } {
   const s = n.styles;
   return {
     x: n.bbox.x + px(s.paddingLeft),
@@ -97,6 +98,46 @@ interface PassCtx {
   stats: ExtractStats;
 }
 
+/**
+ * Infer→verify→attach auto-layout onto a frame, then apply fill sizing to its
+ * nested Frame children when the candidate is verified. Returns true when a
+ * layout was attached, false otherwise (for stats accounting).
+ *
+ * Call AFTER frame.children is populated so fill-sizing can inspect them.
+ */
+function attachLayout(frame: Frame, n: CapturedNode, ctx: PassCtx): boolean {
+  const candidate = n.children.length > 0 ? inferCandidate(n) : null;
+  let attached = false;
+  if (candidate !== null) {
+    if (verifyCandidate(candidate, n)) {
+      frame.layout = candidate.layout;
+      ctx.stats.containers[candidate.source] += 1;
+      attached = true;
+    } else {
+      ctx.stats.selfCheckFallbacks += 1;
+    }
+  }
+  if (!attached) {
+    ctx.stats.containers.absolute += 1;
+    return false;
+  }
+  // Fill sizing: only on nested Frame children (no `type` discriminant) of this
+  // verified container; leaves (ShapeNode/TextNode/InstanceNode) are skipped.
+  const content = contentBox(n);
+  for (const [i, childNode] of n.children.entries()) {
+    const child = frame.children![i]!;
+    if (!("type" in child)) { // nested Frame — leaves carry `type`
+      const b = childNode.bbox;
+      if (frame.layout!.mode === "vertical" && Math.abs(b.width - content.width) <= 1) {
+        (child as Frame).sizing = { horizontal: "fill" };
+      } else if (frame.layout!.mode === "horizontal" && Math.abs(b.height - content.height) <= 1) {
+        (child as Frame).sizing = { vertical: "fill" };
+      }
+    }
+  }
+  return true;
+}
+
 /** Map one captured child into a FrameChild, positioned relative to (ox, oy). */
 function toChild(n: CapturedNode, ox: number, oy: number, ctx: PassCtx, parentFill: string): FrameChild {
   ctx.stats.nodes += 1;
@@ -131,7 +172,6 @@ function toChild(n: CapturedNode, ox: number, oy: number, ctx: PassCtx, parentFi
 
 /** Map a captured container into a nested Frame (children parent-relative). */
 function toFrame(n: CapturedNode, ox: number, oy: number, ctx: PassCtx, parentFill: string): Frame {
-  ctx.stats.containers.absolute += 1;
   const fill = resolveFill(n.styles, parentFill);
   const resolved = fill ?? parentFill;
   const frame: Frame = {
@@ -147,6 +187,7 @@ function toFrame(n: CapturedNode, ox: number, oy: number, ctx: PassCtx, parentFi
   if (cr !== undefined) frame.cornerRadius = cr;
   const fx = mapEffects(n.styles);
   if (fx.length > 0) frame.effects = fx;
+  attachLayout(frame, n, ctx);
   return frame;
 }
 
@@ -180,7 +221,10 @@ export function extractDesignSpec(views: ExtractedView[]): ExtractResult {
     if (cr !== undefined) root.cornerRadius = cr;
     const fx = mapEffects(tree.styles);
     if (fx.length > 0) root.effects = fx;
-    // Top-level frames NEVER emit sizing (SP3a carry-forward) and sit absolutely on the canvas.
+    // Top-level frames get the same candidate→verify→attach treatment as nested
+    // frames (body is often a flex/flow column); their children may receive fill
+    // sizing, but the root frame itself NEVER gets a sizing property.
+    attachLayout(root, tree, ctx);
     frames.push(root);
     cursorX += width + CANVAS_GUTTER;
   }

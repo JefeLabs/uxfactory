@@ -5,7 +5,7 @@
  */
 import type { AutoLayout, Padding } from "@uxfactory/spec";
 import type { CapturedNode } from "../render/dom-capture.js";
-import { px } from "./dom-to-designspec.js";
+import { px, contentBox } from "./dom-to-designspec.js";
 
 export type LayoutSource = "flex" | "grid" | "flow";
 export interface LayoutCandidate { layout: AutoLayout; source: LayoutSource; }
@@ -112,4 +112,51 @@ export function inferCandidate(n: CapturedNode): LayoutCandidate | null {
   if (d === "flex" || d === "inline-flex") return flexCandidate(n);
   if (d === "grid" || d === "inline-grid") return gridCandidate(n);
   return flowCandidate(n);
+}
+
+export const SELF_CHECK_TOLERANCE = 1; // px, per coordinate
+
+/**
+ * Reconstruct each child's expected position under SP3a auto-layout semantics
+ * and compare with the observed bboxes. Any per-coordinate delta above
+ * SELF_CHECK_TOLERANCE rejects the candidate (§6 of the SP3b spec).
+ */
+export function verifyCandidate(candidate: LayoutCandidate, parent: CapturedNode): boolean {
+  const { layout } = candidate;
+  const kids = parent.children;
+  if (kids.length === 0) return true;
+  const content = contentBox(parent);
+  const vertical = layout.mode === "vertical";
+  const gap = layout.gap ?? 0;
+
+  const primarySizes = kids.map((k) => (vertical ? k.bbox.height : k.bbox.width));
+  const run = primarySizes.reduce((a, b) => a + b, 0) + gap * (kids.length - 1);
+  const contentPrimary = vertical ? content.height : content.width;
+  const leftover = contentPrimary - run;
+
+  let cursor = vertical ? content.y : content.x;
+  let step = gap;
+  const align = layout.primaryAlign ?? "start";
+  if (align === "center") cursor += leftover / 2;
+  else if (align === "end") cursor += leftover;
+  else if (align === "space-between" && kids.length > 1) step = gap + leftover / (kids.length - 1);
+
+  for (const [i, kid] of kids.entries()) {
+    const expectedPrimary = cursor;
+    cursor += primarySizes[i]! + step;
+
+    const counterSize = vertical ? kid.bbox.width : kid.bbox.height;
+    const contentCounter = vertical ? content.width : content.height;
+    const counterStart = vertical ? content.x : content.y;
+    const cAlign = layout.counterAlign ?? "start";
+    let expectedCounter = counterStart;
+    if (cAlign === "center") expectedCounter += (contentCounter - counterSize) / 2;
+    else if (cAlign === "end") expectedCounter += contentCounter - counterSize;
+
+    const obsPrimary = vertical ? kid.bbox.y : kid.bbox.x;
+    const obsCounter = vertical ? kid.bbox.x : kid.bbox.y;
+    if (Math.abs(obsPrimary - expectedPrimary) > SELF_CHECK_TOLERANCE) return false;
+    if (Math.abs(obsCounter - expectedCounter) > SELF_CHECK_TOLERANCE) return false;
+  }
+  return true;
 }
