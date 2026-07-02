@@ -15,14 +15,14 @@ describe("EXTRACT_FN", () => {
 
 describe("renderHtml captureDom passthrough", () => {
   it("hands captureDom to the injected renderer", async () => {
-    let seen: HtmlRenderRequest | null = null;
+    const seen: HtmlRenderRequest[] = [];
     await renderHtml(
       {
         baseDir: "/tmp", trace: { version: 1, pages: [] }, previewDir: "/tmp",
         viewport: { width: 390, height: 844 }, captureDom: true,
       },
-      { renderViews: async (r) => { seen = r; return []; } },
+      { renderViews: async (r) => { seen.push(r); return []; } },
     );
-    expect(seen?.captureDom).toBe(true);
+    expect(seen[0]?.captureDom).toBe(true);
   });
 });

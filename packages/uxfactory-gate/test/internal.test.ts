@@ -11,6 +11,7 @@ import {
   numbersEqual,
 } from "../src/internal.js";
 import type { RenderReport } from "../src/report.js";
+import type { Spec } from "@uxfactory/spec";
 
 const designSpec = {
   editor: "figma" as const,
