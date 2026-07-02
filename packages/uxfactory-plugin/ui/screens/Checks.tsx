@@ -52,6 +52,19 @@ interface ReviewReport {
   reliability?: "exact" | "best-effort";
 }
 
+// ─── Storage shape ───────────────────────────────────────────────────────────
+
+/**
+ * M-5: versioned storage payload for persisted run counter + history.
+ * Stored at `checks:v1:${fileKey}`.
+ * Legacy shape was `HistoryEntry[]` (array) — still accepted for backward compat.
+ */
+interface ChecksStorage {
+  entries: HistoryEntry[];
+  /** Monotonic counter: the run number to assign to the CURRENT run. Incremented on each save. */
+  runCounter: number;
+}
+
 // ─── Local types ────────────────────────────────────────────────────────────
 
 export interface RunMeta {
@@ -72,7 +85,9 @@ export interface ChecksViewProps {
   isEmpty: boolean;
   runMeta: RunMeta;
   hasAnnotations: boolean;
-  isAnnotating: boolean;
+  // I-3: isAnnotating removed — post is fire-and-forget; annotate button is never
+  // disabled. Removing the prop avoids the phantom `setIsAnnotating(false)` bug
+  // (was immediately resetting to false after post, never reaching true in renders).
   historyEntries: HistoryEntry[];
   currentHistoryId?: string;
   onCopyReport(): void;
@@ -215,9 +230,11 @@ function FindingCard({
         </div>
       )}
 
-      {/* Hint */}
+      {/* I-1: render hint with hintPrefix — "nearest: " for token findings, none for craft fixes */}
       {finding.hint && (
-        <p className="text-xs text-gray-500 italic">nearest: {finding.hint}</p>
+        <p className="text-xs text-gray-500 italic">
+          {finding.hintPrefix ?? ""}{finding.hint}
+        </p>
       )}
     </div>
   );
@@ -521,7 +538,8 @@ export function Checks({
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [currentHistoryId, setCurrentHistoryId] = useState<string | undefined>();
   const [hasAnnotations, setHasAnnotations] = useState(false);
-  const [isAnnotating, setIsAnnotating] = useState(false);
+  // I-3: isAnnotating state removed — post is fire-and-forget; annotate button is
+  // never disabled. Removing avoids the phantom reset bug (was always set to false).
 
   // Fetch live data on mount
   useEffect(() => {
@@ -539,13 +557,32 @@ export function Checks({
       /* no fileKey — continue without history */
     }
 
-    // Load run history
+    // M-5: load run history + persisted monotonic counter from storage.
+    // Legacy shape was HistoryEntry[] (array) — still accepted for backward compat.
     let loadedHistory: HistoryEntry[] = [];
+    let runCounter = 1; // default for first-ever run
     if (fk) {
       try {
-        const stored = await bus.storageGet<HistoryEntry[]>(`checks:v1:${fk}`);
-        if (Array.isArray(stored)) {
-          loadedHistory = stored.slice(0, 20);
+        const stored = await bus.storageGet<ChecksStorage | HistoryEntry[]>(
+          `checks:v1:${fk}`,
+        );
+        if (
+          stored !== null &&
+          stored !== undefined &&
+          typeof stored === "object" &&
+          !Array.isArray(stored) &&
+          "entries" in stored
+        ) {
+          // New ChecksStorage format
+          const cs = stored as ChecksStorage;
+          loadedHistory = cs.entries.slice(0, 20);
+          runCounter = cs.runCounter;
+        } else if (Array.isArray(stored)) {
+          // Legacy HistoryEntry[] format — compute counter from length
+          loadedHistory = (stored as HistoryEntry[]).slice(0, 20);
+          runCounter = loadedHistory.length + 1;
+        }
+        if (loadedHistory.length > 0) {
           setHistory(loadedHistory);
         }
       } catch {
@@ -557,15 +594,20 @@ export function Checks({
     // V1 seam: the render report (GET /rendered) is the only bridge-served data
     // source today. We try to parse it as both a GateResult (T3) and a BatchReport
     // (T1/T2). Batch + craft reports are not served — those rows will be "pending".
+    //
+    // AC-5 live tier streaming: deferred to T14/PP2 (run-event plumbing).
+    // When T14 adds bridge.events(), a streaming subscription would be established
+    // here to receive tier updates in real-time as each tier completes.
     let gotLiveData = false;
+    let liveTierModel: TierModel | null = null;
     try {
       const raw = await bridge.latestRender();
       if (raw !== null && raw !== undefined) {
-        const tierModel = toTierModel({
+        liveTierModel = toTierModel({
           batchReport: raw,
           verifyResult: raw,
         });
-        setModel(tierModel);
+        setModel(liveTierModel);
         setIsEmpty(false);
         gotLiveData = true;
 
@@ -574,11 +616,31 @@ export function Checks({
         setRunMeta({
           unit: latestRunUnitType,
           escalationSkipped: true,
-          runNumber: loadedHistory.length + 1,
+          runNumber: runCounter, // M-5: use persisted counter
         });
       }
     } catch {
       /* keep pending model */
+    }
+
+    // M-5: on live data, persist the incremented counter + new history entry.
+    if (gotLiveData && fk && liveTierModel !== null) {
+      const newEntry: HistoryEntry = {
+        id: `run-${runCounter}`,
+        label: `Run #${runCounter} · ${liveTierModel.failedTier ? "fail" : "pass"}`,
+        model: liveTierModel,
+      };
+      const updatedHistory = [newEntry, ...loadedHistory].slice(0, 20);
+      const payload: ChecksStorage = {
+        entries: updatedHistory,
+        runCounter: runCounter + 1,
+      };
+      try {
+        await bus.storageSet(`checks:v1:${fk}`, payload);
+        setHistory(updatedHistory);
+      } catch {
+        /* non-fatal — history loss is acceptable */
+      }
     }
 
     // If no live data but history exists, show the most recent history entry
@@ -599,20 +661,53 @@ export function Checks({
       .filter((r) => r.status === "fail")
       .flatMap((r) => r.findings);
 
+    // I-2: route findings to the correct annotation shape.
+    // - T1 coverage findings: have `requirement` → CoverageGap (numbered pin, no node targeting).
+    // - Others (T2/T3/VLM): prefer `nodeName` (node NAME matched by drawReview) then `nodeId`.
+    const mappedFindings = findings.map((f) => {
+      if (f.requirement !== undefined) {
+        return {
+          requirement: f.requirement,
+          property: f.nodeId ?? "",
+          status: "unmet" as const,
+          detail: `${f.ruleId}: ${f.message}`,
+        };
+      }
+      return {
+        property: f.nodeName ?? f.nodeId ?? "",
+        status: "unmet" as const,
+        detail: `${f.ruleId}: ${f.message}`,
+      };
+    });
+
+    // M-3: count findings that have no canvas target (no requirement, nodeName, or nodeId).
+    // The button label counts ALL findings; a post-post toast reports non-placeables.
+    const placeableCount = findings.filter(
+      (f) =>
+        f.requirement !== undefined ||
+        f.nodeName !== undefined ||
+        f.nodeId !== undefined,
+    ).length;
+    const nonPlaceableCount = findings.length - placeableCount;
+
     const report: ReviewReport = {
       conformant: false,
-      findings: findings.map((f) => ({
-        property: f.nodeId, // used as node selector by drawReview
-        status: "unmet",
-        detail: `${f.ruleId}: ${f.message}`,
-      })),
+      findings: mappedFindings,
       reliability: "best-effort",
     };
 
     // T14: route via bus.postToMain once that method is added
     postToMain({ type: "review", report });
     setHasAnnotations(true);
-    setIsAnnotating(false);
+
+    // M-3: inform user when some findings had no canvas target
+    if (nonPlaceableCount > 0) {
+      useAppStore
+        .getState()
+        .toast(
+          `${placeableCount} placeable · ${nonPlaceableCount} without canvas targets`,
+        );
+    }
   }
 
   function handleClearAnnotations(): void {
@@ -664,7 +759,6 @@ export function Checks({
       isEmpty={isEmpty}
       runMeta={runMeta}
       hasAnnotations={hasAnnotations}
-      isAnnotating={isAnnotating}
       historyEntries={history}
       currentHistoryId={currentHistoryId}
       onCopyReport={handleCopyReport}

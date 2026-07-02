@@ -13,6 +13,10 @@
  *   4. Combined inputs — cascade correctly.
  *   5. Short-circuit: T1 fail → T2, T3 skipped, VLM gated.
  *   6. Defensive empties / null / unknown inputs → sensible defaults, never throw.
+ *   7. I-1: hintPrefix field — "nearest: " for token findings, undefined for craft.
+ *   8. I-2: nodeName/requirement fields for annotation routing.
+ *   9. M-1: T0 has no fake stats — skipReason "implicit" instead.
+ *  10. M-2: isBatchReport excludes GateResult shapes.
  */
 
 import { describe, expect, it } from "vitest";
@@ -61,6 +65,30 @@ const MERIDIAN_BATCH_REPORT = {
           detail:
             "Meridian/Error State: painted color #000000 at .cta-button is not a registered token",
           ref: "#000000",
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * Meridian batch report with "nearest: " hint in token finding detail.
+ * Used to test I-1 hint parsing.
+ */
+const MERIDIAN_BATCH_WITH_NEAREST = {
+  checks: [
+    { id: "render-coverage", status: "pass", severity: "must", findings: [] },
+    { id: "a11y", status: "pass", severity: "must", findings: [] },
+    { id: "contrast", status: "pass", severity: "must", findings: [] },
+    {
+      id: "token-conformance",
+      status: "fail",
+      severity: "must",
+      findings: [
+        {
+          detail:
+            "Fill #E24C4C is not a resolved token — nearest: semantic/danger-500",
+          ref: "#E24C4C",
         },
       ],
     },
@@ -231,6 +259,183 @@ describe("toTierModel — defensive empties", () => {
     expect(row(model, "T0").status).toBe("pass");
   });
 });
+
+// ─── M-1: T0 honest stats ────────────────────────────────────────────────────
+
+describe("M-1: T0 has no fake stats — skipReason 'implicit' instead", () => {
+  it("T0 pass has no stats field (fake '2/2' removed)", () => {
+    const model = toTierModel({});
+    expect(row(model, "T0").stats).toBeUndefined();
+  });
+
+  it("T0 pass has skipReason 'implicit'", () => {
+    const model = toTierModel({});
+    expect(row(model, "T0").skipReason).toBe("implicit");
+  });
+
+  it("T0 pass with batch input has skipReason 'implicit' and no stats", () => {
+    const model = toTierModel({ batchReport: CLEAN_BATCH_REPORT });
+    expect(row(model, "T0").stats).toBeUndefined();
+    expect(row(model, "T0").skipReason).toBe("implicit");
+  });
+});
+
+// ─── M-2: isBatchReport excludes GateResult ──────────────────────────────────
+
+describe("M-2: isBatchReport excludes GateResult shapes", () => {
+  it("a GateResult (status FAIL) passed as batchReport does not populate T1/T2", () => {
+    // Before M-2, a GateResult with checks:[] would pass isBatchReport and mis-parse.
+    const model = toTierModel({ batchReport: GATE_RESULT_GEOMETRY_FAIL });
+    // T1 and T2 should be pending (not parsed from a GateResult)
+    expect(row(model, "T1").status).toBe("pending");
+    expect(row(model, "T2").status).toBe("pending");
+  });
+
+  it("a GateResult (status PASS) passed as batchReport does not populate T1/T2", () => {
+    const model = toTierModel({ batchReport: GATE_RESULT_PASS });
+    expect(row(model, "T1").status).toBe("pending");
+    expect(row(model, "T2").status).toBe("pending");
+  });
+
+  it("dual-dispatch (same raw as both batchReport and verifyResult) routes correctly", () => {
+    // This mimics how Checks container calls toTierModel({ batchReport: raw, verifyResult: raw })
+    // with a GateResult. After M-2, GateResult is NOT parsed as BatchReport.
+    const raw = GATE_RESULT_GEOMETRY_FAIL;
+    const model = toTierModel({ batchReport: raw, verifyResult: raw });
+    expect(row(model, "T1").status).toBe("pending"); // NOT parsed as batch
+    expect(row(model, "T3").status).toBe("fail"); // parsed as gate
+  });
+});
+
+// ─── I-1: hintPrefix ─────────────────────────────────────────────────────────
+
+describe("I-1: hintPrefix — 'nearest: ' for token findings, undefined for craft", () => {
+  it("VLM craft finding has hint but no hintPrefix (prefix must not be 'nearest: ')", () => {
+    const model = toTierModel({
+      batchReport: CLEAN_BATCH_REPORT,
+      verifyResult: GATE_RESULT_PASS,
+      craftReport: CRAFT_REPORT_DIM_FAIL,
+    });
+    const vlmFinding = row(model, "VLM").findings[0]!;
+    expect(vlmFinding.hint).toContain("contrast");
+    expect(vlmFinding.hintPrefix).toBeUndefined();
+  });
+
+  it("token finding with '— nearest: xxx' in detail → hint='xxx', hintPrefix='nearest: '", () => {
+    const model = toTierModel({ batchReport: MERIDIAN_BATCH_WITH_NEAREST });
+    const t2Finding = row(model, "T2").findings[0]!;
+    expect(t2Finding.hint).toBe("semantic/danger-500");
+    expect(t2Finding.hintPrefix).toBe("nearest: ");
+  });
+
+  it("token finding with '— nearest: xxx' strips the suffix from message", () => {
+    const model = toTierModel({ batchReport: MERIDIAN_BATCH_WITH_NEAREST });
+    const t2Finding = row(model, "T2").findings[0]!;
+    expect(t2Finding.message).toBe("Fill #E24C4C is not a resolved token");
+    expect(t2Finding.message).not.toContain("nearest:");
+  });
+
+  it("token finding without '— nearest:' in detail has no hint or hintPrefix", () => {
+    const model = toTierModel({ batchReport: MERIDIAN_BATCH_REPORT });
+    const t2Finding = row(model, "T2").findings[0]!;
+    expect(t2Finding.hint).toBeUndefined();
+    expect(t2Finding.hintPrefix).toBeUndefined();
+  });
+});
+
+// ─── I-2: nodeName and requirement fields ────────────────────────────────────
+
+describe("I-2: annotation routing fields — nodeName and requirement", () => {
+  it("T1 coverage finding has requirement set from ref (story · state)", () => {
+    const model = toTierModel({ batchReport: COVERAGE_FAIL_BATCH });
+    const t1Finding = row(model, "T1").findings[0]!;
+    expect(t1Finding.requirement).toBe("checkout-success · error");
+  });
+
+  it("T1 coverage finding also retains nodeId (ref)", () => {
+    const model = toTierModel({ batchReport: COVERAGE_FAIL_BATCH });
+    const t1Finding = row(model, "T1").findings[0]!;
+    expect(t1Finding.nodeId).toBe("checkout-success/error");
+  });
+
+  it("T3 finding has nodeName = GateFailure.name", () => {
+    const model = toTierModel({ verifyResult: GATE_RESULT_GEOMETRY_FAIL });
+    const t3Finding = row(model, "T3").findings[0]!;
+    expect(t3Finding.nodeName).toBe("Hero Button");
+  });
+
+  it("T3 finding retains nodeId alongside nodeName", () => {
+    const model = toTierModel({ verifyResult: GATE_RESULT_GEOMETRY_FAIL });
+    const t3Finding = row(model, "T3").findings[0]!;
+    expect(t3Finding.nodeId).toBe("123:456");
+    expect(t3Finding.nodeName).toBe("Hero Button");
+  });
+
+  it("T3 finding without name has nodeName undefined", () => {
+    const gateWithoutName = {
+      status: "FAIL",
+      checks: [{ id: "counts", status: "FAIL" }],
+      failures: [
+        {
+          check: "counts",
+          property: "frames",
+          expected: 3,
+          actual: 2,
+          // no name, no nodeId
+        },
+      ],
+      summary: { checks: 1, passed: 0, failed: 1, skipped: 0 },
+    };
+    const model = toTierModel({ verifyResult: gateWithoutName });
+    const t3Finding = row(model, "T3").findings[0]!;
+    expect(t3Finding.nodeName).toBeUndefined();
+    expect(t3Finding.nodeId).toBeUndefined();
+  });
+
+  it("T2 a11y finding has nodeName = selector ref", () => {
+    const batchWithA11y = {
+      checks: [
+        {
+          id: "a11y",
+          status: "fail",
+          severity: "must",
+          findings: [
+            {
+              detail: "page › view: Touch targets must be 44x44 minimum (target-size)",
+              ref: ".dismiss-btn",
+            },
+          ],
+        },
+      ],
+    };
+    const model = toTierModel({ batchReport: batchWithA11y });
+    const t2Finding = row(model, "T2").findings[0]!;
+    expect(t2Finding.nodeName).toBe(".dismiss-btn");
+  });
+
+  it("T2 contrast finding has nodeName = selector ref", () => {
+    const batchWithContrast = {
+      checks: [
+        {
+          id: "contrast",
+          status: "fail",
+          severity: "must",
+          findings: [
+            {
+              detail: 'page › view: "Retry payment" label insufficient color contrast',
+              ref: ".retry-label",
+            },
+          ],
+        },
+      ],
+    };
+    const model = toTierModel({ batchReport: batchWithContrast });
+    const t2Finding = row(model, "T2").findings[0]!;
+    expect(t2Finding.nodeName).toBe(".retry-label");
+  });
+});
+
+// ─── Meridian batch report (token-conformance fail) ──────────────────────────
 
 describe("toTierModel — Meridian batch report (token-conformance fail)", () => {
   const model = toTierModel({ batchReport: MERIDIAN_BATCH_REPORT });

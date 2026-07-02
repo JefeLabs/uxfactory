@@ -14,6 +14,12 @@ export interface TierFinding {
   expected?: string | number;
   actual?: string | number;
   hint?: string;
+  /** I-1: prefix rendered before hint. "nearest: " for token findings; undefined for craft fixes. */
+  hintPrefix?: string;
+  /** I-2: preferred node name for ElementFlag routing (annotation-plan.ts drawReview). */
+  nodeName?: string;
+  /** I-2: requirement string for CoverageGap routing (annotation-plan.ts drawReview). */
+  requirement?: string;
 }
 
 export interface TierRowModel {
@@ -114,11 +120,12 @@ interface CraftReport {
 // ---------------------------------------------------------------------------
 
 function isBatchReport(v: unknown): v is BatchReport {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    Array.isArray((v as Record<string, unknown>).checks)
-  );
+  if (typeof v !== "object" || v === null) return false;
+  const rec = v as Record<string, unknown>;
+  // M-2: exclude GateResult shapes — they always carry status "PASS" or "FAIL" at the root,
+  // ensuring dual-dispatch (batchReport: raw, verifyResult: raw) routes correctly.
+  if (rec.status === "PASS" || rec.status === "FAIL") return false;
+  return Array.isArray(rec.checks);
 }
 
 function isGateResult(v: unknown): v is GateResult {
@@ -184,10 +191,11 @@ function fallbackModel(): TierModel {
 function buildT0(batch: BatchReport | null): TierRowModel {
   const tier: TierId = "T0";
   const name = "Schema";
-  const stats = "2/2 · implicit";
+  // M-1: No fake "2/2" stats. Schema validation is implicit — show "implicit" as honest note.
+  const skipReason = "implicit";
 
   if (!batch) {
-    return { tier, name, status: "pass", stats, findings: [] };
+    return { tier, name, status: "pass", skipReason, findings: [] };
   }
 
   const schemaCheck = (batch.checks ?? []).find((c) => c.id === "schema");
@@ -197,10 +205,10 @@ function buildT0(batch: BatchReport | null): TierRowModel {
       message: f.detail,
       nodeId: f.ref,
     }));
-    return { tier, name, status: "fail", stats, findings };
+    return { tier, name, status: "fail", findings };
   }
 
-  return { tier, name, status: "pass", stats, findings: [] };
+  return { tier, name, status: "pass", skipReason, findings: [] };
 }
 
 function buildT1(batch: BatchReport | null): TierRowModel {
@@ -228,11 +236,20 @@ function buildT1(batch: BatchReport | null): TierRowModel {
   }
 
   if (check.status === "fail") {
-    const findings: TierFinding[] = (check.findings ?? []).map((f) => ({
-      ruleId: "coverage.render",
-      message: f.detail,
-      nodeId: f.ref,
-    }));
+    const findings: TierFinding[] = (check.findings ?? []).map((f) => {
+      // I-2: parse requirement from ref.
+      // Coverage refs have format "story-id/impliedState" (no "›").
+      // Render-failure and selector refs use "page › view › ..." (contains "›").
+      const ref = f.ref ?? "";
+      const requirement =
+        ref && !ref.includes("›") ? ref.replace("/", " · ") : undefined;
+      return {
+        ruleId: "coverage.render",
+        message: f.detail,
+        nodeId: f.ref,
+        requirement,
+      };
+    });
     return {
       tier,
       name,
@@ -278,33 +295,41 @@ function buildT2(batch: BatchReport | null): TierRowModel {
 
   const findings: TierFinding[] = [];
 
-  // a11y findings
+  // a11y findings — I-2: nodeName = selector string for ElementFlag routing
   if (a11yCheck && a11yCheck.status === "fail") {
     for (const f of a11yCheck.findings ?? []) {
       const match = f.detail.match(/\(([^)]+)\)\s*$/);
       const ruleId = match ? `a11y.${match[1]}` : "a11y.violation";
-      findings.push({ ruleId, message: f.detail, nodeId: f.ref });
+      findings.push({ ruleId, message: f.detail, nodeId: f.ref, nodeName: f.ref });
     }
   }
 
-  // contrast findings
+  // contrast findings — I-2: nodeName = selector string
   if (contrastCheck && contrastCheck.status === "fail") {
     for (const f of contrastCheck.findings ?? []) {
       findings.push({
         ruleId: "contrast.text-min",
         message: f.detail,
         nodeId: f.ref,
+        nodeName: f.ref,
       });
     }
   }
 
-  // token-conformance findings
+  // token-conformance findings — I-1: parse " — nearest: xxx" into hint with prefix
   if (tokenCheck && tokenCheck.status === "fail") {
     for (const f of tokenCheck.findings ?? []) {
+      const nearestMatch = f.detail.match(/ — nearest: (.+)$/);
+      const hint = nearestMatch ? nearestMatch[1] : undefined;
+      const message = nearestMatch
+        ? f.detail.replace(/ — nearest: .+$/, "")
+        : f.detail;
       findings.push({
         ruleId: "token.color-raw",
-        message: f.detail,
+        message,
         actual: f.ref, // hex color, not a node
+        hint,
+        hintPrefix: hint ? "nearest: " : undefined,
       });
     }
   }
@@ -333,10 +358,12 @@ function buildT3(verifyResult: unknown): TierRowModel {
 
   const gate = verifyResult;
 
+  // I-2: nodeName = GateFailure.name for ElementFlag routing in annotation-plan.ts
   const findings: TierFinding[] = (gate.failures ?? []).map((f) => ({
     ruleId: `conform.${f.check}`,
     message: buildGateMsg(f),
     nodeId: f.nodeId,
+    nodeName: f.name,
     expected: coerceStr(f.expected),
     actual: coerceStr(f.actual),
   }));
@@ -400,6 +427,7 @@ function buildVLM(
           ruleId: `craft.${dim.name}`,
           message: `${f.screen}: ${f.issue}`,
           hint: f.fix,
+          // I-1: hintPrefix intentionally omitted — craft fix suggestions have no "nearest: " prefix
         });
       }
     }
@@ -482,7 +510,7 @@ function buildTierModel(input: {
   rows.push(t3);
 
   // VLM — Craft review
-  const vlm = buildVLM(input.craftReport, firstLocalFail !== null);
+  const vlm = buildVLM(input.craftReport, firstLocalFailed(rows));
   rows.push(vlm);
 
   // openFindings: sum of findings across all "fail" rows
@@ -495,4 +523,9 @@ function buildTierModel(input: {
   const failedTier: TierId | null = failedRow ? failedRow.tier : null;
 
   return { rows, failedTier, openFindings };
+}
+
+/** True when any local (non-VLM) row failed — used to gate VLM. */
+function firstLocalFailed(rows: TierRowModel[]): boolean {
+  return rows.some((r) => r.tier !== "VLM" && r.status === "fail");
 }

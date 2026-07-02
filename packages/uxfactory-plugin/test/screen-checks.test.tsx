@@ -203,7 +203,7 @@ function makeDefaultProps(overrides: Partial<ChecksViewProps> = {}): ChecksViewP
     isEmpty: false,
     runMeta: { unit: "page", runNumber: 38, escalationSkipped: true },
     hasAnnotations: false,
-    isAnnotating: false,
+    // I-3: isAnnotating removed from ChecksViewProps
     historyEntries: [],
     onCopyReport: vi.fn(),
     onAnnotate: vi.fn(),
@@ -295,7 +295,7 @@ describe("AC-1: failing run renders banner with tier name, per-tier stats, findi
     expect(screen.getByText("token.color-raw")).toBeInTheDocument();
   });
 
-  it("finding card shows the finding message", () => {
+  it("finding card shows the finding message (stripped of nearest: suffix)", () => {
     render(<ChecksView {...makeDefaultProps({ model: FAILING_MODEL })} />);
     expect(screen.getByText(/Fill #E24C4C is not a resolved token/)).toBeInTheDocument();
   });
@@ -306,6 +306,376 @@ describe("AC-1: failing run renders banner with tier name, per-tier stats, findi
     expect(screen.getByText("a11y.target-size")).toBeInTheDocument();
     expect(screen.getByText("contrast.text-min")).toBeInTheDocument();
     expect(screen.getByText("token.color-raw")).toBeInTheDocument();
+  });
+});
+
+// ─── I-1: Hint rendering with hintPrefix ─────────────────────────────────────
+
+describe("I-1: hint rendered with hintPrefix — 'nearest: ' for token, none for craft", () => {
+  it("token finding with nearest hint renders 'nearest: <token>'", () => {
+    // FAILING_MODEL token finding has nearest: semantic/danger-500
+    render(<ChecksView {...makeDefaultProps({ model: FAILING_MODEL })} />);
+    expect(screen.getByText(/nearest: semantic\/danger-500/)).toBeInTheDocument();
+  });
+
+  it("craft finding renders fix without 'nearest: ' prefix", () => {
+    const craftFailModel = toTierModel({
+      batchReport: {
+        checks: [
+          { id: "render-coverage", status: "pass", severity: "must", findings: [] },
+          { id: "a11y", status: "pass", severity: "must", findings: [] },
+          { id: "contrast", status: "pass", severity: "must", findings: [] },
+          { id: "token-conformance", status: "pass", severity: "must", findings: [] },
+        ],
+      },
+      verifyResult: {
+        status: "PASS",
+        checks: [{ id: "geometry", status: "PASS" }],
+        failures: [],
+        summary: { checks: 1, passed: 1, failed: 0, skipped: 0 },
+      },
+      craftReport: {
+        version: 1,
+        overall: 4,
+        pass: false,
+        reliability: "best-effort",
+        dimensions: [
+          {
+            name: "hierarchy",
+            score: 2,
+            findings: [
+              {
+                screen: "Error State",
+                issue: "Poor CTA hierarchy",
+                fix: "Increase contrast between heading and button",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    render(<ChecksView {...makeDefaultProps({ model: craftFailModel })} />);
+    // VLM auto-expands (failedTier = VLM). Fix shows without "nearest: " prefix.
+    expect(
+      screen.getByText("Increase contrast between heading and button"),
+    ).toBeInTheDocument();
+    // Must NOT appear with "nearest: " prefix
+    expect(
+      screen.queryByText(/nearest: Increase contrast/),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ─── I-2: Annotation routing field assertions ─────────────────────────────────
+
+describe("I-2: annotation routing — coverage vs element finding fields", () => {
+  it("T1 coverage finding routes as CoverageGap (requirement field set in postMessage)", async () => {
+    const user = userEvent.setup();
+
+    // Coverage fail: batchReport only — no status PASS/FAIL so M-2 guard allows it
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        checks: [
+          {
+            id: "render-coverage",
+            status: "fail",
+            findings: [
+              {
+                detail: "story checkout-success error state not covered",
+                ref: "checkout-success/error",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    const bus = makeBus();
+    const postSpy = vi.spyOn(window, "postMessage");
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Annotate/i })).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /Annotate/i }));
+
+    const call = postSpy.mock.calls[0]![0] as {
+      pluginMessage: {
+        report: {
+          findings: Array<{ requirement?: string; property?: string; status: string }>;
+        };
+      };
+    };
+    const findings = call.pluginMessage.report.findings;
+    // T1 coverage finding → CoverageGap: requirement is set, status = "unmet"
+    expect(findings[0]!.requirement).toBe("checkout-success · error");
+    expect(findings[0]!.status).toBe("unmet");
+
+    postSpy.mockRestore();
+  });
+
+  it("T3 element finding routes as ElementFlag (property = nodeName)", async () => {
+    const user = userEvent.setup();
+
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        status: "FAIL",
+        checks: [{ id: "geometry", status: "FAIL" }],
+        failures: [
+          {
+            check: "geometry",
+            nodeId: "12:341",
+            name: "Retry Button",
+            property: "x",
+            expected: 100,
+            actual: 120,
+          },
+        ],
+        summary: { checks: 1, passed: 0, failed: 1, skipped: 0 },
+      }),
+    });
+    const bus = makeBus();
+    const postSpy = vi.spyOn(window, "postMessage");
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Annotate/i })).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /Annotate/i }));
+
+    const call = postSpy.mock.calls[0]![0] as {
+      pluginMessage: {
+        report: {
+          findings: Array<{ requirement?: string; property?: string }>;
+        };
+      };
+    };
+    const findings = call.pluginMessage.report.findings;
+    // T3 element finding → ElementFlag: no requirement, property = nodeName ("Retry Button")
+    expect(findings[0]!.requirement).toBeUndefined();
+    expect(findings[0]!.property).toBe("Retry Button");
+
+    postSpy.mockRestore();
+  });
+});
+
+// ─── I-3: isAnnotating removed ───────────────────────────────────────────────
+
+describe("I-3: isAnnotating removed — annotate button is fire-and-forget", () => {
+  it("annotate button is not disabled after first click (no 500ms gate)", async () => {
+    const user = userEvent.setup();
+
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        status: "FAIL",
+        checks: [{ id: "geometry", status: "FAIL" }],
+        failures: [
+          {
+            check: "geometry",
+            nodeId: "12:341",
+            name: "Btn",
+            property: "x",
+            expected: 1,
+            actual: 2,
+          },
+        ],
+        summary: { checks: 1, passed: 0, failed: 1, skipped: 0 },
+      }),
+    });
+    const bus = makeBus();
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    const btn = await screen.findByRole("button", { name: /Annotate/i });
+    expect(btn).not.toBeDisabled();
+    await user.click(btn);
+    // Button remains enabled after click — fire-and-forget
+    expect(btn).not.toBeDisabled();
+  });
+});
+
+// ─── M-3: Annotate toast for non-placeable findings ──────────────────────────
+
+describe("M-3: annotate toast 'M placeable · K without canvas targets' when K>0", () => {
+  it("toasts with placeable + non-placeable counts when some findings lack canvas target", async () => {
+    const user = userEvent.setup();
+
+    // Two failures: one with name (placeable), one without name or nodeId (non-placeable)
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        status: "FAIL",
+        checks: [
+          { id: "geometry", status: "FAIL" },
+          { id: "counts", status: "FAIL" },
+        ],
+        failures: [
+          {
+            check: "geometry",
+            nodeId: "12:341",
+            name: "Retry Button",
+            property: "x",
+            expected: 100,
+            actual: 120,
+          },
+          {
+            // No nodeId, no name → non-placeable
+            check: "counts",
+            property: "frames",
+            expected: 3,
+            actual: 2,
+          },
+        ],
+        summary: { checks: 2, passed: 0, failed: 2, skipped: 0 },
+      }),
+    });
+    const bus = makeBus();
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Annotate 2 failures/i }),
+      ).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /Annotate 2 failures/i }));
+
+    // Toast should note the 1 non-placeable and 1 placeable
+    const toasts = useAppStore.getState().toasts;
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]!.message).toMatch(/1 placeable/);
+    expect(toasts[0]!.message).toMatch(/1 without canvas targets/);
+  });
+
+  it("no toast when all findings are placeable", async () => {
+    const user = userEvent.setup();
+
+    // All failures have name → all placeable
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        status: "FAIL",
+        checks: [{ id: "geometry", status: "FAIL" }],
+        failures: [
+          {
+            check: "geometry",
+            nodeId: "12:341",
+            name: "Retry Button",
+            property: "x",
+            expected: 100,
+            actual: 120,
+          },
+        ],
+        summary: { checks: 1, passed: 0, failed: 1, skipped: 0 },
+      }),
+    });
+    const bus = makeBus();
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Annotate/i })).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /Annotate/i }));
+
+    // No toast — all findings are placeable
+    expect(useAppStore.getState().toasts).toHaveLength(0);
+  });
+});
+
+// ─── M-5: persisted run counter ──────────────────────────────────────────────
+
+describe("M-5: runNumber from persisted monotonic counter (not history.length + 1)", () => {
+  it("uses runCounter from new ChecksStorage shape for runNumber", async () => {
+    // Storage has counter=43 — this run should be #43 even though there are 2 history entries
+    const storedPayload = {
+      entries: [
+        { id: "run-42", label: "Run #42 · pass", model: CLEAN_MODEL },
+        { id: "run-41", label: "Run #41 · pass", model: CLEAN_MODEL },
+      ],
+      runCounter: 43,
+    };
+
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        status: "FAIL",
+        checks: [{ id: "geometry", status: "FAIL" }],
+        failures: [
+          {
+            check: "geometry",
+            nodeId: "12:341",
+            name: "Btn",
+            property: "x",
+            expected: 1,
+            actual: 2,
+          },
+        ],
+        summary: { checks: 1, passed: 0, failed: 1, skipped: 0 },
+      }),
+    });
+    const bus = makeBus({ "checks:v1:file-abc": storedPayload });
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    // Run #43 should appear in the banner (from persisted counter, not history.length+1=3)
+    await waitFor(() =>
+      expect(screen.getByRole("banner")).toHaveTextContent(/run #43/i),
+    );
+  });
+
+  it("legacy HistoryEntry[] format still loads history entries", async () => {
+    // Old format: plain array (no runCounter)
+    const storedHistory: HistoryEntry[] = [
+      { id: "h-1", label: "Run #1 · pass", model: CLEAN_MODEL },
+    ];
+
+    const bridge = makeBridge({ latestRender: vi.fn().mockResolvedValue(null) });
+    const bus = makeBus({ "checks:v1:file-abc": storedHistory });
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Run #1 · pass" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("saves incremented counter back to storage after live run", async () => {
+    const storedPayload = {
+      entries: [],
+      runCounter: 10,
+    };
+
+    const bridge = makeBridge({
+      latestRender: vi.fn().mockResolvedValue({
+        status: "FAIL",
+        checks: [{ id: "geometry", status: "FAIL" }],
+        failures: [
+          { check: "geometry", nodeId: "12:341", name: "Btn", property: "x", expected: 1, actual: 2 },
+        ],
+        summary: { checks: 1, passed: 0, failed: 1, skipped: 0 },
+      }),
+    });
+    const bus = makeBus({ "checks:v1:file-abc": storedPayload });
+
+    render(<Checks bridge={bridge} bus={bus} />);
+
+    // Banner should show run #10 (from persisted counter)
+    await waitFor(() =>
+      expect(screen.getByRole("banner")).toHaveTextContent(/run #10/i),
+    );
+
+    // storageSet should have been called with runCounter=11 (next run)
+    await waitFor(() =>
+      expect(bus.storageSet).toHaveBeenCalledWith(
+        "checks:v1:file-abc",
+        expect.objectContaining({ runCounter: 11 }),
+      ),
+    );
   });
 });
 
@@ -391,7 +761,7 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
       ).toBeInTheDocument(),
     );
 
-    // Click twice
+    // Click twice — I-3: no disable gate; both clicks fire (fire-and-forget)
     await user.click(screen.getByRole("button", { name: /Annotate/i }));
     await user.click(screen.getByRole("button", { name: /Annotate/i }));
 
@@ -649,7 +1019,7 @@ describe("AC-6: History dropdown renders last 20 run entries; selecting one load
     expect(onSelectHistory).toHaveBeenCalledWith("run-36");
   });
 
-  it("Checks container loads history from bus storage", async () => {
+  it("Checks container loads history from bus storage (legacy HistoryEntry[] format)", async () => {
     const storedHistory: HistoryEntry[] = [
       { id: "h-1", label: "Run #1 · pass", model: CLEAN_MODEL },
     ];
