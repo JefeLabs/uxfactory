@@ -24,6 +24,7 @@ import {
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
+import os from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
 
@@ -425,8 +426,18 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       return reply.code(400).send({ error: "repoPath must be a non-empty string" });
     }
 
-    // Resolve the given path to an absolute path.
-    const resolved = path.resolve(repoPath);
+    // Expand a leading ~ to the user's home directory before resolving.
+    // Absolute paths (starting with /) resolve unchanged. Other relative paths
+    // are resolved against the process cwd — these are accepted as-is but are
+    // unlikely to match the served root in practice.
+    const homedir = os.homedir();
+    const expanded =
+      repoPath === "~"
+        ? homedir
+        : repoPath.startsWith("~/")
+        ? path.join(homedir, repoPath.slice(2))
+        : repoPath;
+    const resolved = path.resolve(expanded);
 
     // 1. Does the path exist as a directory?
     let isDir = false;

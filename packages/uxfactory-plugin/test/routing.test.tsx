@@ -147,11 +147,6 @@ describe("boot path — connect screen (no stored connection)", () => {
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
   });
 
-  it("shows the TitleBar with 'UXFactory (Developer VM)'", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
-    expect(screen.getByText("UXFactory (Developer VM)")).toBeInTheDocument();
-  });
-
   it("does not show the context bar on the plain connect screen", () => {
     render(<App bridge={makeBridge()} bus={makeBus()} />);
     // The ContextBar has an expand/collapse button unique to it — absent on connect screen.

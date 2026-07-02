@@ -209,6 +209,72 @@ describe("POST /project/connect", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it("tilde expansion — ~/... path connects ok when served root is under home", async () => {
+    // Create a temp directory directly under os.homedir() so we can use ~/... form.
+    const homeRoot = await mkdtemp(path.join(os.homedir(), "uxf-tilde-test-"));
+    const homeDataDir = path.join(homeRoot, ".uxfactory");
+    await mkdir(homeDataDir, { recursive: true });
+    await addGitMarker(homeRoot);
+    const homeApp = await createBridge({ dataDir: homeDataDir });
+
+    try {
+      // Compute the ~/... form of the path (homeRoot is guaranteed under os.homedir()).
+      const rel = path.relative(os.homedir(), homeRoot);
+      const tildePath = `~/${rel}`;
+
+      const res = await homeApp.inject({
+        method: "POST",
+        url: "/project/connect",
+        payload: { repoPath: tildePath },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { ok: boolean; snapshot?: { root: string } };
+      expect(body.ok).toBe(true);
+      expect(body.snapshot?.root).toBe(homeRoot);
+    } finally {
+      await homeApp.close();
+      await rm(homeRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("tilde expansion — ~/definitely/missing → not-found", async () => {
+    app = await createBridge({ dataDir });
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/connect",
+      payload: { repoPath: "~/definitely/missing/path/xyz-nonexistent" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  it("tilde expansion — ~/valid-but-different-root → bridge-serves-different-root with served", async () => {
+    // Served root is the shared `root` (a tmpdir, not under home).
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+
+    // Create a second valid root under home so the tilde path resolves correctly.
+    const homeRoot = await mkdtemp(path.join(os.homedir(), "uxf-tilde-diff-"));
+    try {
+      await addGitMarker(homeRoot);
+      const rel = path.relative(os.homedir(), homeRoot);
+      const tildePath = `~/${rel}`;
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/project/connect",
+        payload: { repoPath: tildePath },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as { ok: boolean; reason?: string; served?: string };
+      expect(body.ok).toBe(false);
+      expect(body.reason).toBe("bridge-serves-different-root");
+      expect(body.served).toBe(root);
+    } finally {
+      await rm(homeRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 // ─── GET /project/snapshot ───────────────────────────────────────────────────

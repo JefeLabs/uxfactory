@@ -1,5 +1,5 @@
 /**
- * app.tsx — Shell: TitleBar + ContextBar + TabNav + screen switch.
+ * app.tsx — Shell: ContextBar + TabNav + screen switch.
  *
  * Screen switch:
  *   connect   → <Connect bridge bus>
@@ -18,7 +18,7 @@
 
 import React, { useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Code, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
 import type { Screen, Tab } from "./stores/app.js";
 import { Chip, StatusPill } from "./components/index.js";
@@ -37,37 +37,6 @@ import { Components } from "./screens/Components.js";
 import { Assets } from "./screens/Assets.js";
 import { Checks } from "./screens/Checks.js";
 import { Settings } from "./screens/Settings.js";
-
-// ─── TitleBar ────────────────────────────────────────────────────────────────
-
-function TitleBar() {
-  // Inline the close handler rather than selecting it from the store — avoids
-  // creating a new closure reference on every render.
-  function handleClose() {
-    if (typeof parent !== "undefined" && parent !== window) {
-      parent.postMessage({ pluginMessage: { type: "close" } }, "*");
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border-b border-gray-700 shrink-0">
-      <div className="flex items-center justify-center w-6 h-6 rounded bg-primary-600 shrink-0">
-        <Code size={14} className="text-white" aria-hidden="true" />
-      </div>
-      <span className="flex-1 text-sm font-medium truncate text-white">
-        UXFactory (Developer VM)
-      </span>
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={handleClose}
-        className="text-gray-400 hover:text-white text-base leading-none px-1"
-      >
-        ×
-      </button>
-    </div>
-  );
-}
 
 // ─── Connection status → StatusPill status mapping ────────────────────────────
 
@@ -315,8 +284,6 @@ export function App({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
-      <TitleBar />
-
       {showContextBar && <ContextBar />}
 
       {/* Screen switch */}
