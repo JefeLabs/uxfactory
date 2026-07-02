@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { createBus } from "../ui/lib/plugin-bus.js";
 
 /** Build a fake post/listen pair for round-trip tests. */
@@ -92,6 +92,74 @@ describe("plugin-bus timeout", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("plugin-bus timeout queue cleanup", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a timed-out request does not consume the next reply of the same kind", async () => {
+    vi.useFakeTimers();
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    // 1. storageGet with no reply → advance past 5 s → rejects with timeout.
+    const p1 = bus.storageGet<string>("k");
+    vi.advanceTimersByTime(5_001);
+    await expect(p1).rejects.toThrow(/timeout/i);
+
+    // 2. storageGet again → deliver one storage-value for "k".
+    // The second call must resolve with the delivered value, not be starved
+    // by the stale entry that was left behind by the timed-out first call.
+    const p2 = bus.storageGet<string>("k");
+    t.deliver({ type: "storage-value", key: "k", value: "hello" });
+    expect(await p2).toBe("hello");
+  });
+
+  it("map key is cleaned up after timeout with no other pending entries", async () => {
+    vi.useFakeTimers();
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    // Cause a timeout — the per-key queue should be deleted (no leak).
+    const p1 = bus.storageGet<string>("leak-key");
+    vi.advanceTimersByTime(5_001);
+    await expect(p1).rejects.toThrow(/timeout/i);
+
+    // A fresh get after cleanup must work as if it is the first call ever.
+    const p2 = bus.storageGet<string>("leak-key");
+    t.deliver({ type: "storage-value", key: "leak-key", value: "fresh" });
+    expect(await p2).toBe("fresh");
+  });
+
+  it("a timed-out fileInfo does not consume the next fileInfo reply", async () => {
+    vi.useFakeTimers();
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    const p1 = bus.fileInfo();
+    vi.advanceTimersByTime(5_001);
+    await expect(p1).rejects.toThrow(/timeout/i);
+
+    const p2 = bus.fileInfo();
+    t.deliver({ type: "file-info", name: "My File", fileKey: "xyz" });
+    expect(await p2).toEqual({ name: "My File", fileKey: "xyz" });
+  });
+
+  it("a timed-out insertIcon does not consume the next icon-inserted reply", async () => {
+    vi.useFakeTimers();
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    const p1 = bus.insertIcon("star", "<svg/>", 24);
+    vi.advanceTimersByTime(5_001);
+    await expect(p1).rejects.toThrow(/timeout/i);
+
+    const p2 = bus.insertIcon("circle", "<svg/>", 16);
+    t.deliver({ type: "icon-inserted", nodeId: "10:1" });
+    expect(await p2).toBe("10:1");
   });
 });
 

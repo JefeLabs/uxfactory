@@ -15,13 +15,17 @@ export interface PluginBus {
 
 const TIMEOUT_MS = 5_000;
 
-/** Wrap a promise with a hard timeout — rejects if no reply arrives within `ms` ms. */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+/**
+ * Wrap a promise with a hard timeout — rejects if no reply arrives within `ms` ms.
+ * `onTimeout` fires synchronously when the timer fires, before the outer promise rejects.
+ * Use it to splice the caller's queue entry and reject the inner promise cleanly.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => void): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const id = setTimeout(
-      () => reject(new Error(`plugin-bus: timeout after ${ms}ms`)),
-      ms,
-    );
+    const id = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`plugin-bus: timeout after ${ms}ms`));
+    }, ms);
     p.then(
       (v) => {
         clearTimeout(id);
@@ -48,6 +52,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
  *   - file-info-request / file-info: FIFO queue.
  *   - insert-icon / icon-inserted:   FIFO queue.
  *   All awaitable calls time out after 5 s and reject — callers should fail soft.
+ *   On timeout the queue entry is removed so the next caller's reply is not consumed.
  */
 export function createBus(
   post?: (msg: unknown) => void,
@@ -118,11 +123,28 @@ export function createBus(
         queue = [];
         storagePending.set(key, queue);
       }
-      const p = new Promise<T | undefined>((resolve, reject) =>
-        queue!.push({ resolve: (v) => resolve(v as T | undefined), reject }),
-      );
+      // Build entry with placeholder fns; the Promise executor overwrites them
+      // synchronously, so they are always set before any caller can invoke them.
+      const entry: { resolve: (v: unknown) => void; reject: (e: Error) => void } = {
+        resolve: (_v) => {},
+        reject: (_e) => {},
+      };
+      const p = new Promise<T | undefined>((res, rej) => {
+        entry.resolve = (v) => res(v as T | undefined);
+        entry.reject = rej as (e: Error) => void;
+      });
+      queue.push(entry);
       send({ type: "storage-get", key });
-      return withTimeout(p, TIMEOUT_MS);
+      return withTimeout(p, TIMEOUT_MS, () => {
+        // Remove this entry so a subsequent reply is not silently consumed.
+        const q = storagePending.get(key);
+        if (q) {
+          const idx = q.indexOf(entry);
+          if (idx !== -1) q.splice(idx, 1);
+          if (q.length === 0) storagePending.delete(key);
+        }
+        entry.reject(new Error(`plugin-bus: timeout after ${TIMEOUT_MS}ms`));
+      });
     },
 
     storageSet(key: string, value: unknown): Promise<void> {
@@ -131,19 +153,42 @@ export function createBus(
     },
 
     fileInfo(): Promise<{ name: string; fileKey: string }> {
-      const p = new Promise<{ name: string; fileKey: string }>((resolve, reject) =>
-        fileInfoPending.push({ resolve, reject }),
-      );
+      const entry: {
+        resolve: (v: { name: string; fileKey: string }) => void;
+        reject: (e: Error) => void;
+      } = {
+        resolve: (_v) => {},
+        reject: (_e) => {},
+      };
+      const p = new Promise<{ name: string; fileKey: string }>((res, rej) => {
+        entry.resolve = res;
+        entry.reject = rej as (e: Error) => void;
+      });
+      fileInfoPending.push(entry);
       send({ type: "file-info-request" });
-      return withTimeout(p, TIMEOUT_MS);
+      return withTimeout(p, TIMEOUT_MS, () => {
+        const idx = fileInfoPending.indexOf(entry);
+        if (idx !== -1) fileInfoPending.splice(idx, 1);
+        entry.reject(new Error(`plugin-bus: timeout after ${TIMEOUT_MS}ms`));
+      });
     },
 
     insertIcon(name: string, svg: string, size: number): Promise<string> {
-      const p = new Promise<string>((resolve, reject) =>
-        iconPending.push({ resolve, reject }),
-      );
+      const entry: { resolve: (nodeId: string) => void; reject: (e: Error) => void } = {
+        resolve: (_nodeId) => {},
+        reject: (_e) => {},
+      };
+      const p = new Promise<string>((res, rej) => {
+        entry.resolve = res;
+        entry.reject = rej as (e: Error) => void;
+      });
+      iconPending.push(entry);
       send({ type: "insert-icon", name, svg, size });
-      return withTimeout(p, TIMEOUT_MS);
+      return withTimeout(p, TIMEOUT_MS, () => {
+        const idx = iconPending.indexOf(entry);
+        if (idx !== -1) iconPending.splice(idx, 1);
+        entry.reject(new Error(`plugin-bus: timeout after ${TIMEOUT_MS}ms`));
+      });
     },
 
     notify(message: string): void {
