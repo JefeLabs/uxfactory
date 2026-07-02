@@ -155,7 +155,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const ageGroup = useWizardStore((s) => s.classification.ageGroup);
   const startingMode = useWizardStore((s) => s.classification.startingMode);
   const setClassification = useWizardStore((s) => s.setClassification);
-  const applysuggestions = useWizardStore((s) => s.applysuggestions);
+  const applySuggestions = useWizardStore((s) => s.applySuggestions);
   const prefillFrom = useWizardStore((s) => s.prefillFrom);
 
   // ── Scan-based initialization ───────────────────────────────────────────────
@@ -193,7 +193,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
       ageGroup,
     });
     // Seed defaults for step 2 (respects userEdited flags).
-    applysuggestions({ category, industry });
+    applySuggestions({ category, industry });
     goto("setup-2");
   }
 
@@ -314,21 +314,26 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
               specifications from your designs.
             </RadioCard>
 
-            <RadioCard
-              title="Use existing work"
-              badge={existingBadge}
-              selected={startingMode === "use-existing"}
-              onSelect={() => setClassification({ startingMode: "use-existing" })}
-            >
-              {isEmpty ? (
-                <>
-                  Nothing detected — you can still point us at your specs later
-                  in <span className="font-medium">Artifacts</span>.
-                </>
-              ) : (
-                "For projects that already have specifications, requirements, or design tokens — UXFactory will check your designs against them."
-              )}
-            </RadioCard>
+            {/* PRD-01 §2: on empty repo, "Use existing work" gets a dimmed look
+                (reduced opacity) while remaining fully selectable. Wrap in a div
+                for opacity — do NOT change the RadioCard kit component itself. */}
+            <div className={isEmpty ? "opacity-50" : undefined}>
+              <RadioCard
+                title="Use existing work"
+                badge={existingBadge}
+                selected={startingMode === "use-existing"}
+                onSelect={() => setClassification({ startingMode: "use-existing" })}
+              >
+                {isEmpty ? (
+                  <>
+                    Nothing detected — you can still point us at your specs later
+                    in <span className="font-medium">Artifacts</span>.
+                  </>
+                ) : (
+                  "For projects that already have specifications, requirements, or design tokens — UXFactory will check your designs against them."
+                )}
+              </RadioCard>
+            </div>
           </div>
         </div>
       </div>

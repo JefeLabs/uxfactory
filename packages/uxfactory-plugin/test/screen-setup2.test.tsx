@@ -230,17 +230,14 @@ describe("PRD §6.3 — Save & continue writes engine-vocab profile body", () =>
 
     expect(bridge.putProfile).toHaveBeenCalledOnce();
     const body = (bridge.putProfile as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(body).toMatchObject({
+    // Bridge reads a FLAT body — dials must not be nested under scope/experimental.
+    expect(body).toEqual({
       style: "mix",
-      scope: {
-        visual: "high",
-        editorial: "medium",
-        flow: "low",
-        coverage: "medium",
-      },
-      experimental: {
-        coherence: "high",
-      },
+      visual: "high",
+      editorial: "medium",
+      flow: "low",
+      coverage: "medium",
+      coherence: "high",
     });
   });
 
@@ -273,11 +270,11 @@ describe("PRD §6.3 — Save & continue writes engine-vocab profile body", () =>
     const body = (bridge.putProfile as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const allValues = [
       body.style,
-      body.scope?.visual,
-      body.scope?.editorial,
-      body.scope?.flow,
-      body.scope?.coverage,
-      body.experimental?.coherence,
+      body.visual,
+      body.editorial,
+      body.flow,
+      body.coverage,
+      body.coherence,
     ];
     const validVocab = ["informal", "mix", "formal", "low", "medium", "high"];
     for (const v of allValues) {
@@ -398,6 +395,14 @@ describe("PRD §6.6 — tooltips on Visual and Coverage state binding consequenc
     render(<SetupDefaults bridge={makeFakeBridge()} />);
     const btn = screen.getByRole("button", {
       name: /when requirements exist, they take precedence/i,
+    });
+    expect(btn).toBeInTheDocument();
+  });
+
+  it("Coverage info button aria-label includes T1 binding line", () => {
+    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    const btn = screen.getByRole("button", {
+      name: /coverage ≥ low → requirement coverage binds \(t1\)/i,
     });
     expect(btn).toBeInTheDocument();
   });

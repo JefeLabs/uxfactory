@@ -18,38 +18,36 @@ import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
 import { Field, Segmented, StatusPill } from "../components/index.js";
 import type { SegmentedOption } from "../components/index.js";
+import {
+  styleLabelToEngine,
+  fidelityLabelToEngine,
+  flowsLabelToEngine,
+  coverageLabelToEngine,
+} from "../lib/dials.js";
 
 // ─── Dial option sets ─────────────────────────────────────────────────────────
+// Derived from lib/dials.ts maps — single source of truth for label↔engine vocab.
 // Options use engine values as `value` and display labels as `label`.
-// This means the Segmented controls work directly with the engine vocabulary
-// stored in the wizard draft — no conversion needed in the render path.
-// All label↔engine maps live in lib/dials.ts; never inline vocab here.
+// The Segmented controls work directly with engine vocabulary stored in the
+// wizard draft — no conversion needed in the render path.
 
-const STYLE_OPTIONS: SegmentedOption[] = [
-  { label: "Informal", value: "informal" },
-  { label: "Mix", value: "mix" },
-  { label: "Formal", value: "formal" },
-];
+const STYLE_OPTIONS: SegmentedOption[] = Object.entries(styleLabelToEngine).map(
+  ([label, value]) => ({ label, value }),
+);
 
-const FIDELITY_OPTIONS: SegmentedOption[] = [
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-];
+const FIDELITY_OPTIONS: SegmentedOption[] = Object.entries(fidelityLabelToEngine).map(
+  ([label, value]) => ({ label, value }),
+);
 
-// Flows: Shallow→low, Medium→medium, Deep→high  (from dials.ts flowsLabelToEngine)
-const FLOWS_OPTIONS: SegmentedOption[] = [
-  { label: "Shallow", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "Deep", value: "high" },
-];
+// Flows: Shallow→low, Medium→medium, Deep→high  (dials.ts flowsLabelToEngine)
+const FLOWS_OPTIONS: SegmentedOption[] = Object.entries(flowsLabelToEngine).map(
+  ([label, value]) => ({ label, value }),
+);
 
-// Coverage: Thin→low, Medium→medium, Exhaustive→high  (from dials.ts coverageLabelToEngine)
-const COVERAGE_OPTIONS: SegmentedOption[] = [
-  { label: "Thin", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "Exhaustive", value: "high" },
-];
+// Coverage: Thin→low, Medium→medium, Exhaustive→high  (dials.ts coverageLabelToEngine)
+const COVERAGE_OPTIONS: SegmentedOption[] = Object.entries(coverageLabelToEngine).map(
+  ([label, value]) => ({ label, value }),
+);
 
 // Verbatim caption from PRD 02 §2 (acceptance criteria §6 item 5).
 const COVERAGE_CAPTION =
@@ -57,7 +55,9 @@ const COVERAGE_CAPTION =
 
 // Tooltip copy for binding consequences (PRD 02 §3).
 const VISUAL_TOOLTIP = "At Medium+, a11y/contrast/token checks bind";
-const COVERAGE_TOOLTIP = COVERAGE_CAPTION; // surface the same copy as the tooltip
+// Coverage tooltip: caption + T1 binding consequence (PRD 02 §3).
+const COVERAGE_TOOLTIP =
+  `${COVERAGE_CAPTION} Coverage ≥ Low → requirement coverage binds (T1).`;
 
 // ─── Category display labels ──────────────────────────────────────────────────
 
@@ -127,14 +127,14 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   const coverage = useWizardStore((s) => s.defaults.coverage);
   const coherence = useWizardStore((s) => s.defaults.coherence);
   const setDefault = useWizardStore((s) => s.setDefault);
-  const applysuggestions = useWizardStore((s) => s.applysuggestions);
+  const applySuggestions = useWizardStore((s) => s.applySuggestions);
 
   // ── Apply suggestions when classification changes ───────────────────────────
-  // `applysuggestions` respects `userEdited` flags — it only overwrites fields
+  // `applySuggestions` respects `userEdited` flags — it only overwrites fields
   // the user has NOT manually edited. On re-entry, `prefillFrom` marks persisted
   // fields as userEdited so they are protected from re-suggestion.
   useEffect(() => {
-    applysuggestions({ category, industry });
+    applySuggestions({ category, industry });
     // Run when classification changes (e.g., user went back and changed category).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, industry]);
@@ -143,21 +143,10 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   async function handleSave() {
     // Write profile with engine vocabulary (no label conversion needed — the
     // wizard draft already stores engine values: low | medium | high).
-    // Style belongs to classification.json; the bridge writes it via the same
-    // PUT body (style→classification passthrough per bridge contract).
-    await bridge.putProfile({
-      style,
-      scope: {
-        visual,
-        editorial,
-        flow,
-        coverage,
-      },
-      experimental: {
-        // Coherence is tentative (v1 generation hint only; no check enforcement).
-        coherence,
-      },
-    });
+    // The bridge reads a FLAT body: {visual, editorial, coverage, flow, style?,
+    // coherence?}. It merges scope fields into profile.scope and coherence into
+    // profile.experimental, and style propagates to classification.json.
+    await bridge.putProfile({ style, visual, editorial, flow, coverage, coherence });
     toastFn("Applies to new runs");
     goto("tabs");
   }
@@ -210,7 +199,7 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
             </Field>
 
             {/* Visual fidelity — info tooltip */}
-            <Field label="Visual">
+            <Field label="Visual fidelity">
               <div className="flex items-center gap-2">
                 <div className="flex-1">
                   <Segmented
@@ -228,7 +217,7 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
             </Field>
 
             {/* Editorial fidelity */}
-            <Field label="Editorial">
+            <Field label="Editorial fidelity">
               <Segmented
                 options={FIDELITY_OPTIONS}
                 value={editorial}

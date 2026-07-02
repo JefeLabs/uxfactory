@@ -182,6 +182,15 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     expect(screen.getByText("Detected — project is empty")).toBeInTheDocument();
   });
 
+  it("'Use existing work' card has dimmed wrapper (opacity-50) on empty repo but remains selectable", () => {
+    render(<SetupClassification bridge={makeFakeBridge()} />);
+    const card = screen.getByRole("radio", { name: /Use existing work/i });
+    // Card is wrapped in opacity-50 div — pointer events not disabled
+    expect(card.parentElement).toHaveClass("opacity-50");
+    // Still selectable — no aria-disabled on the radio card
+    expect(card).not.toHaveAttribute("aria-disabled", "true");
+  });
+
   it("Continue button is enabled (Category is set)", () => {
     render(<SetupClassification bridge={makeFakeBridge()} />);
     const btn = screen.getByRole("button", { name: "Continue" });
