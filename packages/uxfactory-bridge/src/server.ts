@@ -120,6 +120,12 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     return { ok: true, pending: await store.pending() };
   });
 
+  // The Connect screen offers this as a one-click repo-path hint — browsers
+  // never expose absolute paths, so the pick must come from the Node side.
+  app.get("/fs/cwd", async () => {
+    return { cwd: process.cwd() };
+  });
+
   app.get("/next", async (_req, reply) => {
     store.markPluginSeen();
     const job = await store.dequeueNext();

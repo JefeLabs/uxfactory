@@ -73,6 +73,7 @@ export function Connect({
   // isReturning: hide hero band for users who have connected before
   const [isReturning, setIsReturning] = useState(connectionRepoPath !== "");
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
+  const [bridgeCwd, setBridgeCwd] = useState<string | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -146,6 +147,24 @@ export function Connect({
       clearInterval(interval);
     };
   }, [bridge]);
+
+  // ── Cwd hint: the bridge's working directory is almost always the repo root ──
+  useEffect(() => {
+    if (bridgeStatus !== "running" || bridgeCwd !== null) return;
+    const pending = bridge.getCwd?.();
+    if (!pending) return; // legacy bridge builds don't serve /fs/cwd
+    let cancelled = false;
+    pending
+      .then((res) => {
+        if (!cancelled && res.cwd !== "") setBridgeCwd(res.cwd);
+      })
+      .catch(() => {
+        // Hint only — never block connecting on it
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge, bridgeStatus, bridgeCwd]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -313,6 +332,21 @@ export function Connect({
                 aria-invalid={pathError ? "true" : undefined}
               />
             </Field>
+
+            {/* Cwd hint chip — one-click fill from the bridge's directory */}
+            {bridgeCwd !== null && repoPath.trim() !== bridgeCwd && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRepoPath(bridgeCwd);
+                  if (pathError) setPathError(null);
+                }}
+                className="w-full text-left text-xs text-primary-700 bg-primary-50 border border-primary-100 rounded-[var(--radius-card)] px-3 py-2 hover:bg-primary-100 transition-colors"
+              >
+                Use bridge folder:{" "}
+                <span className="font-mono break-all">{bridgeCwd}</span>
+              </button>
+            )}
 
             {/* Primary CTA */}
             <button

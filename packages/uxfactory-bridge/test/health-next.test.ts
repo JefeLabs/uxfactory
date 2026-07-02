@@ -53,3 +53,11 @@ describe("GET /next", () => {
     expect(empty.body).toBe("");
   });
 });
+
+describe("GET /fs/cwd", () => {
+  it("reports the bridge process working directory (Connect screen hint)", async () => {
+    const res = await app.inject({ method: "GET", url: "/fs/cwd" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ cwd: process.cwd() });
+  });
+});

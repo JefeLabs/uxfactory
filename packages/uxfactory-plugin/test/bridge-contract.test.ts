@@ -290,3 +290,12 @@ describe("contract: stats", () => {
     expect(stats.tokenCount).toBe(3);
   });
 });
+
+// ─── fs/cwd ──────────────────────────────────────────────────────────────────
+
+describe("contract: getCwd", () => {
+  it("returns the bridge process cwd for the Connect screen hint", async () => {
+    const res = await bridge.getCwd!();
+    expect(res).toEqual({ cwd: process.cwd() });
+  });
+});

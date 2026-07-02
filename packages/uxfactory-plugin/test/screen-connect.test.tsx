@@ -84,6 +84,7 @@ function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
     events: vi.fn().mockReturnValue(() => {}),
     latestRender: vi.fn().mockResolvedValue(null),
     verify: vi.fn().mockResolvedValue(null),
+    getCwd: vi.fn().mockResolvedValue({ cwd: "/repos/demo-shop" }),
     ...overrides,
   };
 }
@@ -567,5 +568,62 @@ describe("AC-7: a11y basics", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Checking…");
     // CTA should be disabled while checking
     expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+  });
+});
+
+// ─── Cwd hint chip ───────────────────────────────────────────────────────────
+
+describe("cwd hint chip — one-click fill from the bridge's working directory", () => {
+  it("shows the bridge folder once running and fills the input on click", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+
+    render(<Connect bridge={bridge} bus={makeBus()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+
+    const chip = await screen.findByRole("button", { name: /use bridge folder/i });
+    expect(chip).toHaveTextContent("/repos/demo-shop");
+
+    await user.click(chip);
+    expect(screen.getByRole("textbox")).toHaveValue("/repos/demo-shop");
+    // Field now matches the hint — the chip retires
+    expect(
+      screen.queryByRole("button", { name: /use bridge folder/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears a prior path error when the chip fills the field", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      connectProject: vi.fn().mockResolvedValue({ ok: false, reason: "not-found" }),
+    });
+
+    render(<Connect bridge={bridge} bus={makeBus()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+
+    await user.type(screen.getByRole("textbox"), "/bad/path");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByText("Path not found");
+
+    await user.click(screen.getByRole("button", { name: /use bridge folder/i }));
+    expect(screen.queryByText("Path not found")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("/repos/demo-shop");
+  });
+
+  it("omits the chip when the bridge build lacks getCwd", async () => {
+    const bridge = makeBridge({ getCwd: undefined });
+
+    render(<Connect bridge={bridge} bus={makeBus()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /use bridge folder/i }),
+    ).not.toBeInTheDocument();
   });
 });

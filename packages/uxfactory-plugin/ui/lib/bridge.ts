@@ -158,6 +158,8 @@ export interface Bridge {
   getArtifact?(key: string): Promise<ArtifactContent>;
   /** PUT /project/artifact {key, content} → {ok} */
   putArtifact?(key: string, content: string): Promise<{ ok: boolean }>;
+  /** GET /fs/cwd — bridge working directory, the Connect repo-path hint (optional — absent in legacy bridge builds) */
+  getCwd?(): Promise<{ cwd: string }>;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -360,6 +362,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     putArtifact(key: string, content: string) {
       return put<{ ok: boolean }>("/project/artifact", { key, content });
+    },
+
+    getCwd() {
+      return request<{ cwd: string }>("/fs/cwd");
     },
   };
 }
