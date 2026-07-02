@@ -194,13 +194,14 @@ export function Components({
     }
   }
 
-  // ── Node id click: copy + notify ──────────────────────────────────────────
+  // ── Node id click: select on canvas (primary) + copy (secondary) ─────────
   function handleCopyNodeId(nodeId: string): void {
-    // Guard: navigator.clipboard may be undefined in restricted contexts (e.g. jsdom).
+    // Primary: select the node on canvas and scroll into view.
+    bus.selectNodes([nodeId]);
+    // Secondary: copy id to clipboard for reference.
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(nodeId).catch(() => {});
     }
-    bus.notify(`Node id copied: ${nodeId}`);
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -243,7 +244,7 @@ export function Components({
                   {primaryNode.id}
                 </button>
                 <span className="shrink-0">
-                  {selection!.stylesInUse} styles in use
+                  {selection?.stylesInUse ?? 0} styles in use
                 </span>
                 {/* Sync badge — always "not mapped" in v1 */}
                 <span

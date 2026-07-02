@@ -98,16 +98,6 @@ export interface ChecksViewProps {
   onSelectHistory(id: string): void;
 }
 
-// ─── postToMain helper ───────────────────────────────────────────────────────
-
-/**
- * Post a UiToMain message to the plugin main thread directly.
- * T14: once bus.postToMain() is added, remove this helper and route there.
- */
-function postToMain(msg: Record<string, unknown>): void {
-  parent.postMessage({ pluginMessage: msg }, "*");
-}
-
 // ─── Markdown report builder (pure, deterministic) ───────────────────────────
 
 function buildMarkdownReport(model: TierModel, meta: RunMeta): string {
@@ -696,8 +686,7 @@ export function Checks({
       reliability: "best-effort",
     };
 
-    // T14: route via bus.postToMain once that method is added
-    postToMain({ type: "review", report });
+    bus.postReview(report);
     setHasAnnotations(true);
 
     // M-3: inform user when some findings had no canvas target
@@ -717,7 +706,7 @@ export function Checks({
       findings: [],
       reliability: "best-effort",
     };
-    postToMain({ type: "review", report: emptyReport });
+    bus.postReview(emptyReport);
     setHasAnnotations(false);
   }
 
@@ -733,9 +722,12 @@ export function Checks({
   // ── Node ref click ─────────────────────────────────────────────────────────
 
   function handleNodeRef(nodeId: string): void {
-    // V1: no bus.selectNode() exists. Notify as fallback.
-    // T14: replace with bus.selectNode(nodeId) once available.
-    bus.notify(`Node: ${nodeId}`);
+    // If it looks like a Figma node id (digits:digits), select it on canvas.
+    if (/^\d+:\d+$/.test(nodeId)) {
+      bus.selectNodes([nodeId]);
+    } else {
+      bus.notify(`Node: ${nodeId}`);
+    }
   }
 
   // ── History navigation ─────────────────────────────────────────────────────

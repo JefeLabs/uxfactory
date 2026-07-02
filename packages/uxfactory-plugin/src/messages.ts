@@ -35,6 +35,7 @@ export type UiToMain =
   | { type: "review-selection" }
   | { type: "undo" }
   | { type: "resize"; width: number; height: number }
+  | { type: "select-nodes"; ids: string[] }
   | { type: "storage-get"; key: string }
   | { type: "storage-set"; key: string; value: unknown }
   | { type: "file-info-request" }

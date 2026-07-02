@@ -11,6 +11,10 @@ export interface PluginBus {
   close(): void;
   /** Subscribes to MainToUi "selection" messages. Returns an unsubscribe function. */
   onSelection(cb: (sel: unknown) => void): () => void;
+  /** Fire-and-forget: select canvas nodes by id and scroll into view. */
+  selectNodes(ids: string[]): void;
+  /** Fire-and-forget: post a review report to the plugin main thread. */
+  postReview(report: unknown): void;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -202,6 +206,14 @@ export function createBus(
     onSelection(cb: (sel: unknown) => void): () => void {
       selectionListeners.add(cb);
       return () => selectionListeners.delete(cb);
+    },
+
+    selectNodes(ids: string[]): void {
+      send({ type: "select-nodes", ids });
+    },
+
+    postReview(report: unknown): void {
+      send({ type: "review", report } as Extract<UiToMain, { type: "review" }>);
     },
   };
 }

@@ -136,7 +136,11 @@ export interface FakeFigma {
   closePlugin(): void;
   /** True after closePlugin() has been called. */
   closeCalled: boolean;
-  viewport: { center: { x: number; y: number } };
+  viewport: {
+    center: { x: number; y: number };
+    scrollAndZoomIntoViewCalls: FakeNode[][];
+    scrollAndZoomIntoView(nodes: FakeNode[]): void;
+  };
   ui: {
     posted: MainToUi[];
     onmessage: ((msg: UiToMain) => unknown) | null;
@@ -279,7 +283,14 @@ export function makeFigma(): FakeFigma {
   let closeCalled = false;
 
   // ---- viewport ----
-  const viewport = { center: { x: 0, y: 0 } };
+  const scrollAndZoomIntoViewCalls: FakeNode[][] = [];
+  const viewport = {
+    center: { x: 0, y: 0 },
+    scrollAndZoomIntoViewCalls,
+    scrollAndZoomIntoView(nodes: FakeNode[]) {
+      scrollAndZoomIntoViewCalls.push([...nodes]);
+    },
+  };
 
   // ---- ui bus ----
   const posted: MainToUi[] = [];

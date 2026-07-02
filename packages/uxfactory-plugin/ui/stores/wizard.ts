@@ -131,12 +131,6 @@ export interface WizardActions {
   /**
    * Re-run the suggestion engine and apply suggestions to any fields the user
    * has NOT manually edited.
-   * @deprecated use applySuggestions
-   */
-  applysuggestions(classification: Partial<ClassificationDraft>): void;
-  /**
-   * Re-run the suggestion engine and apply suggestions to any fields the user
-   * has NOT manually edited. Canonical camelCase name.
    */
   applySuggestions(classification: Partial<ClassificationDraft>): void;
   /** Pre-fill wizard from a snapshot (re-entering setup on a classified project). */
@@ -199,11 +193,6 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
     }));
   },
 
-  /** @deprecated use applySuggestions */
-  applysuggestions(classification) {
-    get().applySuggestions(classification);
-  },
-
   applySuggestions(classification) {
     const suggestion = suggestFor(classification);
     set((s) => {
@@ -262,7 +251,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
 
       if (Object.keys(patchDefaults).length > 0) {
         // Mark every restored defaults field as userEdited so that Screen 2's
-        // applysuggestions effect does not overwrite persisted profile values
+        // applySuggestions effect does not overwrite persisted profile values
         // when the screen re-mounts (acceptance criteria: re-entry shows
         // persisted values, not re-suggested ones).
         const userEditedPatch = Object.fromEntries(

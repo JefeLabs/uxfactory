@@ -240,6 +240,7 @@ function RunBadge({ run }: { run: RunEntry }) {
 
 export function Prompt({
   bridge,
+  bus,
 }: {
   bridge: Bridge;
   bus: PluginBus;
@@ -508,15 +509,16 @@ export function Prompt({
                     <span className="flex-1 text-sm text-gray-800 truncate">
                       {run.prompt}
                     </span>
-                    {/* View → focus intent (consumed by Checks) + tab switch. */}
+                    {/* View → focus intent (consumed by Checks) + tab switch + canvas select. */}
                     <button
                       type="button"
                       onClick={() => {
                         setFocus({ runId: run.id });
                         setTab("checks");
-                        // run.nodeIds is available for canvas selection here, but
-                        // src/messages.ts has no select/zoom UiToMain variant yet.
-                        // zoom: pending main-thread select-nodes message (T14)
+                        // Zoom the canvas to the generated nodes if available.
+                        if (run.nodeIds && run.nodeIds.length > 0) {
+                          bus.selectNodes(run.nodeIds);
+                        }
                       }}
                       className="text-xs text-primary-600 hover:underline shrink-0"
                     >

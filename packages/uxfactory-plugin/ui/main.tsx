@@ -2,7 +2,8 @@
  * main.tsx — Plugin UI entry point.
  *
  * Boot sequence (PRD 00 §5):
- * 1. createBus() → wire plugin message bridge to main thread.
+ * 1. createBus() + createBridge() — constructed at module scope so the App
+ *    receives stable references before boot completes.
  * 2. bus.fileInfo() → get {name, fileKey} for this Figma file.
  * 3. bus.storageGet("conn:v1:"+fileKey) → check for a previously persisted connection.
  *    • None → route to connect screen.
@@ -27,10 +28,15 @@ interface StoredConnection {
   repoPath: string;
 }
 
-async function boot(): Promise<void> {
-  const bus = createBus();
-  const bridge = createBridge();
+// ── Construct ONE bus and ONE bridge at module scope ──────────────────────────
+// Both are stable references passed to <App> — creating them here avoids
+// re-creating them on every render and ensures boot() and the App share the
+// same instances.
 
+const bus = createBus();
+const bridge = createBridge();
+
+async function boot(): Promise<void> {
   const store = useAppStore.getState();
 
   try {
@@ -97,6 +103,6 @@ if (!rootEl) throw new Error("Missing #root element");
 
 createRoot(rootEl).render(
   <StrictMode>
-    <App />
+    <App bridge={bridge} bus={bus} />
   </StrictMode>,
 );

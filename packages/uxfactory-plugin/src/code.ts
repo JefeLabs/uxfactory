@@ -98,7 +98,10 @@ interface FigmaApi {
   };
   notify(message: string): void;
   closePlugin(): void;
-  viewport: { center: { x: number; y: number } };
+  viewport: {
+    center: { x: number; y: number };
+    scrollAndZoomIntoView(nodes: EditableNode[]): void;
+  };
   ui: {
     postMessage(msg: MainToUi): void;
     onmessage: ((msg: UiToMain) => void) | null;
@@ -142,6 +145,14 @@ async function handleMessage(msg: UiToMain): Promise<void> {
       node.setPluginData("assetId", msg.name);
       fig.currentPage.appendChild(node);
       post({ type: "icon-inserted", nodeId: node.id });
+    } else if (msg.type === "select-nodes") {
+      const nodes = msg.ids
+        .map((id) => fig.getNodeById(id))
+        .filter((n): n is EditableNode => n !== null);
+      if (nodes.length > 0) {
+        (fig.currentPage as unknown as { selection: EditableNode[] }).selection = nodes;
+        fig.viewport.scrollAndZoomIntoView(nodes);
+      }
     } else if (msg.type === "notify") {
       fig.notify(msg.message);
     } else if (msg.type === "close") {

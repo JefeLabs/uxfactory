@@ -2,10 +2,10 @@
  * app.tsx — Shell: TitleBar + ContextBar + TabNav + screen switch.
  *
  * Screen switch:
- *   connect   → ConnectScreen (placeholder until Task 6)
- *   setup-1   → SetupClassificationScreen (placeholder until Task 7)
- *   setup-2   → SetupDefaultsScreen (placeholder until Task 8)
- *   tabs      → ContextBar + TabNav with per-tab placeholder Cards
+ *   connect   → <Connect bridge bus>
+ *   setup-1   → <SetupClassification bridge>
+ *   setup-2   → <SetupDefaults bridge>
+ *   tabs      → ContextBar + TabNav with real per-tab screens
  *
  * ContextBar: collapsed by default — shows project name, category + layout
  * chips, +N overflow chip, StatusPill, and a chevron to expand all chip rows.
@@ -16,13 +16,27 @@
  * snapshot on every render and throw an infinite-update error.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { Code, ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
 import type { Tab } from "./stores/app.js";
-import { Chip, Card, StatusPill } from "./components/index.js";
+import { Chip, StatusPill } from "./components/index.js";
 import type { StatusPillStatus } from "./components/index.js";
+import type { Bridge } from "./lib/bridge.js";
+import type { PluginBus } from "./lib/plugin-bus.js";
+
+// ─── Real screen imports ──────────────────────────────────────────────────────
+
+import { Connect } from "./screens/Connect.js";
+import { SetupClassification } from "./screens/SetupClassification.js";
+import { SetupDefaults } from "./screens/SetupDefaults.js";
+import { Prompt } from "./screens/Prompt.js";
+import { Artifacts } from "./screens/Artifacts.js";
+import { Components } from "./screens/Components.js";
+import { Assets } from "./screens/Assets.js";
+import { Checks } from "./screens/Checks.js";
+import { Settings } from "./screens/Settings.js";
 
 // ─── TitleBar ────────────────────────────────────────────────────────────────
 
@@ -177,7 +191,7 @@ const TAB_DEFS: { value: Tab; label: string }[] = [
 
 // ─── TabNav ───────────────────────────────────────────────────────────────────
 
-function TabNav() {
+function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
   // Select individual primitives/stable references to avoid new-object-literal.
   const tab = useAppStore((s) => s.route.tab);
   const setTab = useAppStore((s) => s.setTab);
@@ -210,70 +224,89 @@ function TabNav() {
         ))}
       </Tabs.List>
 
-      {/* Tab panels — placeholder cards until each task lands */}
-      {TAB_DEFS.map(({ value, label }) => (
-        <Tabs.Content
-          key={value}
-          value={value}
-          className="flex-1 overflow-y-auto p-4"
-        >
-          <Card>
-            <p className="text-sm text-gray-500 text-center py-8">
-              {label} arrives in a later task
-            </p>
-          </Card>
-        </Tabs.Content>
-      ))}
+      {/* Tab panels — real screens */}
+      <Tabs.Content
+        value="prompt"
+        className="flex-1 overflow-hidden"
+        style={{ display: tab === "prompt" ? undefined : "none" }}
+        forceMount
+      >
+        <Prompt bridge={bridge} bus={bus} />
+      </Tabs.Content>
+
+      <Tabs.Content
+        value="artifacts"
+        className="flex-1 overflow-hidden"
+        style={{ display: tab === "artifacts" ? undefined : "none" }}
+        forceMount
+      >
+        <Artifacts bridge={bridge} />
+      </Tabs.Content>
+
+      <Tabs.Content
+        value="components"
+        className="flex-1 overflow-hidden"
+        style={{ display: tab === "components" ? undefined : "none" }}
+        forceMount
+      >
+        <Components bridge={bridge} bus={bus} />
+      </Tabs.Content>
+
+      <Tabs.Content
+        value="assets"
+        className="flex-1 overflow-hidden"
+        style={{ display: tab === "assets" ? undefined : "none" }}
+        forceMount
+      >
+        <Assets bridge={bridge} bus={bus} />
+      </Tabs.Content>
+
+      <Tabs.Content
+        value="checks"
+        className="flex-1 overflow-hidden"
+        style={{ display: tab === "checks" ? undefined : "none" }}
+        forceMount
+      >
+        <Checks bridge={bridge} bus={bus} />
+      </Tabs.Content>
+
+      <Tabs.Content
+        value="settings"
+        className="flex-1 overflow-hidden"
+        style={{ display: tab === "settings" ? undefined : "none" }}
+        forceMount
+      >
+        <Settings bridge={bridge} bus={bus} />
+      </Tabs.Content>
     </Tabs.Root>
   );
 }
 
-// ─── Placeholder screens ──────────────────────────────────────────────────────
+// ─── Resize map ───────────────────────────────────────────────────────────────
 
-function ConnectScreen() {
-  return (
-    <div className="flex flex-1 items-center justify-center p-4">
-      <Card>
-        <p className="text-sm text-gray-500 text-center py-8">
-          Connect arrives in a later task
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-function SetupClassificationScreen() {
-  return (
-    <div className="flex flex-1 items-center justify-center p-4">
-      <Card>
-        <p className="text-sm text-gray-500 text-center py-8">
-          Project Setup (Classification) arrives in a later task
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-function SetupDefaultsScreen() {
-  return (
-    <div className="flex flex-1 items-center justify-center p-4">
-      <Card>
-        <p className="text-sm text-gray-500 text-center py-8">
-          Project Setup (Generation Defaults) arrives in a later task
-        </p>
-      </Card>
-    </div>
-  );
-}
+const RESIZE_MAP: Record<string, [number, number]> = {
+  connect:  [540, 760],
+  "setup-1": [540, 760],
+  "setup-2": [540, 760],
+  tabs:     [560, 640],
+};
 
 // ─── App / Shell ─────────────────────────────────────────────────────────────
 
-export function App() {
+export function App({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
   // Select individual primitives/stable references only.
   const screen = useAppStore((s) => s.route.screen);
   const connectionStatus = useAppStore((s) => s.connection.status);
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
+
+  // Resize the plugin window when the active screen changes.
+  useEffect(() => {
+    const [w, h] = RESIZE_MAP[screen] ?? [560, 640];
+    if (typeof parent !== "undefined" && parent !== window) {
+      parent.postMessage({ pluginMessage: { type: "resize", width: w, height: h } }, "*");
+    }
+  }, [screen]);
 
   // Show the context bar on all post-connect screens, and also when
   // auto-reconnecting (which temporarily shows on the connect screen).
@@ -288,10 +321,10 @@ export function App() {
 
       {/* Screen switch */}
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-        {screen === "connect" && <ConnectScreen />}
-        {screen === "setup-1" && <SetupClassificationScreen />}
-        {screen === "setup-2" && <SetupDefaultsScreen />}
-        {screen === "tabs" && <TabNav />}
+        {screen === "connect" && <Connect bridge={bridge} bus={bus} />}
+        {screen === "setup-1" && <SetupClassification bridge={bridge} />}
+        {screen === "setup-2" && <SetupDefaults bridge={bridge} />}
+        {screen === "tabs" && <TabNav bridge={bridge} bus={bus} />}
       </div>
 
       {/* Toast overlay */}
