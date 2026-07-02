@@ -12,7 +12,11 @@ describe("manifest", () => {
     expect(manifest.main).toBe("dist/code.js");
     expect(manifest.ui).toBe("dist/ui.html");
     expect(manifest.editorType).toEqual(["figma", "figjam"]);
-    expect(manifest.networkAccess).toEqual({ allowedDomains: ["http://localhost:3779"] });
+    // Figma rejects localhost in `allowedDomains`, so the bridge URL lives in
+    // `devAllowedDomains` with a `reasoning`. Still truthful + localhost-only.
+    expect(manifest.networkAccess.allowedDomains).toEqual(["none"]);
+    expect(manifest.networkAccess.devAllowedDomains).toEqual(["http://localhost:3779"]);
+    expect(typeof manifest.networkAccess.reasoning).toBe("string");
   });
 });
 
