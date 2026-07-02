@@ -1,0 +1,957 @@
+{
+  "frames": [
+    {
+      "name": "screens/checkout.html/error",
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 1436.33,
+      "children": [
+        {
+          "name": "header.site-header",
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 45,
+          "children": [
+            {
+              "type": "text",
+              "name": "a.brand",
+              "characters": "Meridian Health",
+              "x": 16,
+              "y": 12,
+              "width": 133.91,
+              "height": 20,
+              "fill": "#14302B"
+            },
+            {
+              "name": "ul",
+              "x": 261.77,
+              "y": 13,
+              "width": 112.23,
+              "height": 18,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "a",
+                  "characters": "Cart",
+                  "x": 0,
+                  "y": 0,
+                  "width": 30.23,
+                  "height": 18,
+                  "fill": "#3F5854"
+                },
+                {
+                  "type": "text",
+                  "name": "a",
+                  "characters": "Checkout",
+                  "x": 42.23,
+                  "y": 0,
+                  "width": 70,
+                  "height": 18,
+                  "fill": "#14302B"
+                }
+              ],
+              "layout": {
+                "mode": "horizontal",
+                "gap": 12,
+                "padding": {
+                  "top": 0,
+                  "right": 0,
+                  "bottom": 0,
+                  "left": 0
+                },
+                "primaryAlign": "start",
+                "counterAlign": "start"
+              }
+            }
+          ],
+          "fill": "#FFFFFF",
+          "layout": {
+            "mode": "horizontal",
+            "padding": {
+              "top": 12,
+              "right": 16,
+              "bottom": 12,
+              "left": 16
+            },
+            "primaryAlign": "space-between",
+            "counterAlign": "center"
+          }
+        },
+        {
+          "name": "section.view-form",
+          "x": 32,
+          "y": 93,
+          "width": 326,
+          "height": 1164.14,
+          "children": [
+            {
+              "name": "div.page-head",
+              "x": 0,
+              "y": 0,
+              "width": 326,
+              "height": 73.39,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "span.step-chip",
+                  "characters": "Step 2 of 2",
+                  "x": 0,
+                  "y": 0,
+                  "width": 104.83,
+                  "height": 23,
+                  "fill": "#FFFFFF"
+                },
+                {
+                  "type": "text",
+                  "name": "h1",
+                  "characters": "Checkout",
+                  "x": 0,
+                  "y": 35,
+                  "width": 326,
+                  "height": 38.39,
+                  "fill": "#14302B"
+                }
+              ],
+              "layout": {
+                "mode": "vertical",
+                "gap": 12,
+                "padding": {
+                  "top": 0,
+                  "right": 0,
+                  "bottom": 0,
+                  "left": 0
+                }
+              },
+              "sizing": {
+                "horizontal": "fill"
+              }
+            },
+            {
+              "name": "div.checkout-layout",
+              "x": 0,
+              "y": 105.39,
+              "width": 326,
+              "height": 1058.75,
+              "children": [
+                {
+                  "name": "div.form-card",
+                  "x": 0,
+                  "y": 0,
+                  "width": 468,
+                  "height": 686.36,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "h2#payment-heading",
+                      "characters": "Payment details",
+                      "x": 33,
+                      "y": 35,
+                      "width": 402,
+                      "height": 31.19,
+                      "fill": "#14302B"
+                    },
+                    {
+                      "name": "div#decline-alert",
+                      "x": 33,
+                      "y": 90.19,
+                      "width": 402,
+                      "height": 124.17,
+                      "children": [
+                        {
+                          "type": "text",
+                          "name": "span.alert-icon",
+                          "characters": "⚠",
+                          "x": 20,
+                          "y": 16,
+                          "width": 14.48,
+                          "height": 18,
+                          "fill": "#B91C1C"
+                        },
+                        {
+                          "name": "div",
+                          "x": 46.48,
+                          "y": 16,
+                          "width": 339.52,
+                          "height": 92.17,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "h3",
+                              "characters": "Your card was declined",
+                              "x": 0,
+                              "y": 0,
+                              "width": 339.52,
+                              "height": 21,
+                              "fill": "#991B1B"
+                            },
+                            {
+                              "type": "text",
+                              "name": "p",
+                              "characters": "We couldn’t charge this card. Double-check the number and expiry, try a different card, or contact your bank, then submit payment again.",
+                              "x": 0,
+                              "y": 25,
+                              "width": 339.52,
+                              "height": 67.17,
+                              "fill": "#991B1B"
+                            }
+                          ],
+                          "layout": {
+                            "mode": "vertical",
+                            "gap": 4,
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            }
+                          }
+                        }
+                      ],
+                      "fill": "#FEE2E2",
+                      "cornerRadius": 12,
+                      "effects": [
+                        {
+                          "type": "drop-shadow",
+                          "color": "#0A1210",
+                          "x": 0,
+                          "y": 1,
+                          "blur": 3,
+                          "spread": 0,
+                          "opacity": 0.1
+                        },
+                        {
+                          "type": "drop-shadow",
+                          "color": "#0A1210",
+                          "x": 0,
+                          "y": 1,
+                          "blur": 2,
+                          "spread": 0,
+                          "opacity": 0.06
+                        }
+                      ]
+                    },
+                    {
+                      "name": "form#payment-form",
+                      "x": 33,
+                      "y": 238.36,
+                      "width": 402,
+                      "height": 403,
+                      "children": [
+                        {
+                          "name": "div.field",
+                          "x": 0,
+                          "y": 0,
+                          "width": 402,
+                          "height": 68,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "label",
+                              "characters": "Name on card",
+                              "x": 0,
+                              "y": 0,
+                              "width": 402,
+                              "height": 16,
+                              "fill": "#14302B"
+                            },
+                            {
+                              "type": "shape",
+                              "name": "input#card-name",
+                              "x": 0,
+                              "y": 24,
+                              "width": 402,
+                              "height": 44,
+                              "fill": "#FFFFFF",
+                              "stroke": "#D2DEDA",
+                              "strokeWidth": 1,
+                              "cornerRadius": 6
+                            }
+                          ],
+                          "layout": {
+                            "mode": "vertical",
+                            "gap": 8,
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            },
+                            "primaryAlign": "start",
+                            "counterAlign": "start"
+                          }
+                        },
+                        {
+                          "name": "div.field",
+                          "x": 0,
+                          "y": 84,
+                          "width": 402,
+                          "height": 91,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "label",
+                              "characters": "Card number",
+                              "x": 0,
+                              "y": 0,
+                              "width": 402,
+                              "height": 16,
+                              "fill": "#14302B"
+                            },
+                            {
+                              "type": "shape",
+                              "name": "input#card-number",
+                              "x": 0,
+                              "y": 24,
+                              "width": 402,
+                              "height": 44,
+                              "fill": "#FFFFFF",
+                              "stroke": "#D2DEDA",
+                              "strokeWidth": 1,
+                              "cornerRadius": 6
+                            },
+                            {
+                              "type": "text",
+                              "name": "span#card-number-hint",
+                              "characters": "16 digits, no spaces required",
+                              "x": 0,
+                              "y": 76,
+                              "width": 402,
+                              "height": 15,
+                              "fill": "#547066"
+                            }
+                          ],
+                          "layout": {
+                            "mode": "vertical",
+                            "gap": 8,
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            },
+                            "primaryAlign": "start",
+                            "counterAlign": "start"
+                          }
+                        },
+                        {
+                          "name": "div.field-row",
+                          "x": 0,
+                          "y": 191,
+                          "width": 402,
+                          "height": 84,
+                          "children": [
+                            {
+                              "name": "div.field",
+                              "x": 0,
+                              "y": 0,
+                              "width": 193,
+                              "height": 68,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "name": "label",
+                                  "characters": "Expiry date",
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 193,
+                                  "height": 16,
+                                  "fill": "#14302B"
+                                },
+                                {
+                                  "type": "shape",
+                                  "name": "input#card-expiry",
+                                  "x": 0,
+                                  "y": 24,
+                                  "width": 193,
+                                  "height": 44,
+                                  "fill": "#FFFFFF",
+                                  "stroke": "#D2DEDA",
+                                  "strokeWidth": 1,
+                                  "cornerRadius": 6
+                                }
+                              ],
+                              "layout": {
+                                "mode": "vertical",
+                                "gap": 8,
+                                "padding": {
+                                  "top": 0,
+                                  "right": 0,
+                                  "bottom": 0,
+                                  "left": 0
+                                },
+                                "primaryAlign": "start",
+                                "counterAlign": "start"
+                              }
+                            },
+                            {
+                              "name": "div.field",
+                              "x": 209,
+                              "y": 0,
+                              "width": 193,
+                              "height": 68,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "name": "label",
+                                  "characters": "Security code",
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 193,
+                                  "height": 16,
+                                  "fill": "#14302B"
+                                },
+                                {
+                                  "type": "shape",
+                                  "name": "input#card-cvc",
+                                  "x": 0,
+                                  "y": 24,
+                                  "width": 193,
+                                  "height": 44,
+                                  "fill": "#FFFFFF",
+                                  "stroke": "#D2DEDA",
+                                  "strokeWidth": 1,
+                                  "cornerRadius": 6
+                                }
+                              ],
+                              "layout": {
+                                "mode": "vertical",
+                                "gap": 8,
+                                "padding": {
+                                  "top": 0,
+                                  "right": 0,
+                                  "bottom": 0,
+                                  "left": 0
+                                },
+                                "primaryAlign": "start",
+                                "counterAlign": "start"
+                              }
+                            }
+                          ],
+                          "layout": {
+                            "mode": "horizontal",
+                            "gap": 16,
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            }
+                          }
+                        },
+                        {
+                          "name": "div.field",
+                          "x": 0,
+                          "y": 275,
+                          "width": 402,
+                          "height": 68,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "label",
+                              "characters": "Billing postal code",
+                              "x": 0,
+                              "y": 0,
+                              "width": 402,
+                              "height": 16,
+                              "fill": "#14302B"
+                            },
+                            {
+                              "type": "shape",
+                              "name": "input#billing-zip",
+                              "x": 0,
+                              "y": 24,
+                              "width": 402,
+                              "height": 44,
+                              "fill": "#FFFFFF",
+                              "stroke": "#D2DEDA",
+                              "strokeWidth": 1,
+                              "cornerRadius": 6
+                            }
+                          ],
+                          "layout": {
+                            "mode": "vertical",
+                            "gap": 8,
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            },
+                            "primaryAlign": "start",
+                            "counterAlign": "start"
+                          }
+                        },
+                        {
+                          "name": "button#pay-button",
+                          "x": 0,
+                          "y": 359,
+                          "width": 402,
+                          "height": 44,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "span#pay-button-label",
+                              "characters": "Pay $167.40",
+                              "x": 156.17,
+                              "y": 13,
+                              "width": 89.66,
+                              "height": 18,
+                              "fill": "#FFFFFF"
+                            }
+                          ],
+                          "fill": "#0C5C52",
+                          "cornerRadius": 12,
+                          "effects": [
+                            {
+                              "type": "drop-shadow",
+                              "color": "#0A1210",
+                              "x": 0,
+                              "y": 1,
+                              "blur": 3,
+                              "spread": 0,
+                              "opacity": 0.1
+                            },
+                            {
+                              "type": "drop-shadow",
+                              "color": "#0A1210",
+                              "x": 0,
+                              "y": 1,
+                              "blur": 2,
+                              "spread": 0,
+                              "opacity": 0.06
+                            }
+                          ],
+                          "layout": {
+                            "mode": "horizontal",
+                            "gap": 8,
+                            "padding": {
+                              "top": 12,
+                              "right": 24,
+                              "bottom": 12,
+                              "left": 24
+                            },
+                            "primaryAlign": "center",
+                            "counterAlign": "center"
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 20,
+                  "effects": [
+                    {
+                      "type": "drop-shadow",
+                      "color": "#0A1210",
+                      "x": 0,
+                      "y": 26,
+                      "blur": 56,
+                      "spread": 0,
+                      "opacity": 0.24
+                    },
+                    {
+                      "type": "drop-shadow",
+                      "color": "#0A1210",
+                      "x": 0,
+                      "y": 8,
+                      "blur": 18,
+                      "spread": 0,
+                      "opacity": 0.12
+                    }
+                  ]
+                },
+                {
+                  "name": "div.summary-card",
+                  "x": 0,
+                  "y": 718.36,
+                  "width": 468,
+                  "height": 340.39,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "h2#summary-heading",
+                      "characters": "Order summary",
+                      "x": 25,
+                      "y": 25,
+                      "width": 418,
+                      "height": 23.39,
+                      "fill": "#14302B"
+                    },
+                    {
+                      "name": "div.summary-line-items",
+                      "x": 25,
+                      "y": 64.39,
+                      "width": 418,
+                      "height": 75,
+                      "children": [
+                        {
+                          "name": "div.summary-line-item",
+                          "x": 0,
+                          "y": 0,
+                          "width": 418,
+                          "height": 17,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "span",
+                              "characters": "Compression Recovery Socks ×2",
+                              "x": 0,
+                              "y": 0,
+                              "width": 212.06,
+                              "height": 17,
+                              "fill": "#3F5854"
+                            },
+                            {
+                              "type": "text",
+                              "name": "span",
+                              "characters": "$34.00",
+                              "x": 371.52,
+                              "y": 0,
+                              "width": 46.48,
+                              "height": 17,
+                              "fill": "#3F5854"
+                            }
+                          ],
+                          "layout": {
+                            "mode": "horizontal",
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            },
+                            "primaryAlign": "space-between",
+                            "counterAlign": "start"
+                          },
+                          "sizing": {
+                            "horizontal": "fill"
+                          }
+                        },
+                        {
+                          "name": "div.summary-line-item",
+                          "x": 0,
+                          "y": 29,
+                          "width": 418,
+                          "height": 17,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "span",
+                              "characters": "Home BP Monitor",
+                              "x": 0,
+                              "y": 0,
+                              "width": 113.28,
+                              "height": 17,
+                              "fill": "#3F5854"
+                            },
+                            {
+                              "type": "text",
+                              "name": "span",
+                              "characters": "$59.00",
+                              "x": 371.81,
+                              "y": 0,
+                              "width": 46.19,
+                              "height": 17,
+                              "fill": "#3F5854"
+                            }
+                          ],
+                          "layout": {
+                            "mode": "horizontal",
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            },
+                            "primaryAlign": "space-between",
+                            "counterAlign": "start"
+                          },
+                          "sizing": {
+                            "horizontal": "fill"
+                          }
+                        },
+                        {
+                          "name": "div.summary-line-item",
+                          "x": 0,
+                          "y": 58,
+                          "width": 418,
+                          "height": 17,
+                          "children": [
+                            {
+                              "type": "text",
+                              "name": "span",
+                              "characters": "Therapy Foam Roller",
+                              "x": 0,
+                              "y": 0,
+                              "width": 132.88,
+                              "height": 17,
+                              "fill": "#3F5854"
+                            },
+                            {
+                              "type": "text",
+                              "name": "span",
+                              "characters": "$28.00",
+                              "x": 371.92,
+                              "y": 0,
+                              "width": 46.08,
+                              "height": 17,
+                              "fill": "#3F5854"
+                            }
+                          ],
+                          "layout": {
+                            "mode": "horizontal",
+                            "padding": {
+                              "top": 0,
+                              "right": 0,
+                              "bottom": 0,
+                              "left": 0
+                            },
+                            "primaryAlign": "space-between",
+                            "counterAlign": "start"
+                          },
+                          "sizing": {
+                            "horizontal": "fill"
+                          }
+                        }
+                      ],
+                      "layout": {
+                        "mode": "vertical",
+                        "gap": 12,
+                        "padding": {
+                          "top": 0,
+                          "right": 0,
+                          "bottom": 0,
+                          "left": 0
+                        },
+                        "primaryAlign": "start",
+                        "counterAlign": "start"
+                      }
+                    },
+                    {
+                      "name": "div.summary-row",
+                      "x": 25,
+                      "y": 155.39,
+                      "width": 418,
+                      "height": 34,
+                      "children": [
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "Subtotal",
+                          "x": 0,
+                          "y": 8,
+                          "width": 57.38,
+                          "height": 18,
+                          "fill": "#3F5854"
+                        },
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "$155.00",
+                          "x": 362.44,
+                          "y": 8,
+                          "width": 55.56,
+                          "height": 18,
+                          "fill": "#3F5854"
+                        }
+                      ],
+                      "layout": {
+                        "mode": "horizontal",
+                        "padding": {
+                          "top": 8,
+                          "right": 0,
+                          "bottom": 8,
+                          "left": 0
+                        },
+                        "primaryAlign": "space-between",
+                        "counterAlign": "start"
+                      }
+                    },
+                    {
+                      "name": "div.summary-row",
+                      "x": 25,
+                      "y": 189.39,
+                      "width": 418,
+                      "height": 34,
+                      "children": [
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "Estimated shipping",
+                          "x": 0,
+                          "y": 8,
+                          "width": 130.63,
+                          "height": 18,
+                          "fill": "#3F5854"
+                        },
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "Free",
+                          "x": 387.72,
+                          "y": 8,
+                          "width": 30.28,
+                          "height": 18,
+                          "fill": "#3F5854"
+                        }
+                      ],
+                      "layout": {
+                        "mode": "horizontal",
+                        "padding": {
+                          "top": 8,
+                          "right": 0,
+                          "bottom": 8,
+                          "left": 0
+                        },
+                        "primaryAlign": "space-between",
+                        "counterAlign": "start"
+                      }
+                    },
+                    {
+                      "name": "div.summary-row",
+                      "x": 25,
+                      "y": 223.39,
+                      "width": 418,
+                      "height": 34,
+                      "children": [
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "Estimated tax",
+                          "x": 0,
+                          "y": 8,
+                          "width": 93.09,
+                          "height": 18,
+                          "fill": "#3F5854"
+                        },
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "$12.40",
+                          "x": 371.05,
+                          "y": 8,
+                          "width": 46.95,
+                          "height": 18,
+                          "fill": "#3F5854"
+                        }
+                      ],
+                      "layout": {
+                        "mode": "horizontal",
+                        "padding": {
+                          "top": 8,
+                          "right": 0,
+                          "bottom": 8,
+                          "left": 0
+                        },
+                        "primaryAlign": "space-between",
+                        "counterAlign": "start"
+                      }
+                    },
+                    {
+                      "name": "div.summary-row",
+                      "x": 25,
+                      "y": 269.39,
+                      "width": 418,
+                      "height": 46,
+                      "children": [
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "Total",
+                          "x": 0,
+                          "y": 17,
+                          "width": 42.31,
+                          "height": 21,
+                          "fill": "#14302B"
+                        },
+                        {
+                          "type": "text",
+                          "name": "span",
+                          "characters": "$167.40",
+                          "x": 348.14,
+                          "y": 17,
+                          "width": 69.86,
+                          "height": 21,
+                          "fill": "#14302B"
+                        }
+                      ],
+                      "layout": {
+                        "mode": "horizontal",
+                        "padding": {
+                          "top": 16,
+                          "right": 0,
+                          "bottom": 8,
+                          "left": 0
+                        },
+                        "primaryAlign": "space-between",
+                        "counterAlign": "start"
+                      }
+                    }
+                  ],
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 20,
+                  "effects": [
+                    {
+                      "type": "drop-shadow",
+                      "color": "#0A1210",
+                      "x": 0,
+                      "y": 6,
+                      "blur": 16,
+                      "spread": 0,
+                      "opacity": 0.16
+                    },
+                    {
+                      "type": "drop-shadow",
+                      "color": "#0A1210",
+                      "x": 0,
+                      "y": 2,
+                      "blur": 6,
+                      "spread": 0,
+                      "opacity": 0.08
+                    }
+                  ]
+                }
+              ],
+              "layout": {
+                "mode": "vertical",
+                "gap": 32,
+                "padding": {
+                  "top": 0,
+                  "right": 0,
+                  "bottom": 0,
+                  "left": 0
+                }
+              },
+              "sizing": {
+                "horizontal": "fill"
+              }
+            }
+          ],
+          "layout": {
+            "mode": "vertical",
+            "gap": 32,
+            "padding": {
+              "top": 0,
+              "right": 0,
+              "bottom": 0,
+              "left": 0
+            }
+          }
+        },
+        {
+          "type": "text",
+          "name": "p",
+          "characters": "© 2026 Meridian Health, Inc. All rights reserved.",
+          "x": 32,
+          "y": 1353.14,
+          "width": 326,
+          "height": 51.19,
+          "fill": "#3F5854"
+        }
+      ],
+      "fill": "#F3F8F7"
+    }
+  ]
+}

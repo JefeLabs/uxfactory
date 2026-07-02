@@ -1,0 +1,227 @@
+{
+  "frames": [
+    {
+      "name": "screens/checkout.html/success",
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 927.34,
+      "children": [
+        {
+          "name": "header.site-header",
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 45,
+          "children": [
+            {
+              "type": "text",
+              "name": "a.brand",
+              "characters": "Meridian Health",
+              "x": 16,
+              "y": 12,
+              "width": 133.91,
+              "height": 20,
+              "fill": "#14302B"
+            },
+            {
+              "name": "ul",
+              "x": 261.77,
+              "y": 13,
+              "width": 112.23,
+              "height": 18,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "a",
+                  "characters": "Cart",
+                  "x": 0,
+                  "y": 0,
+                  "width": 30.23,
+                  "height": 18,
+                  "fill": "#3F5854"
+                },
+                {
+                  "type": "text",
+                  "name": "a",
+                  "characters": "Checkout",
+                  "x": 42.23,
+                  "y": 0,
+                  "width": 70,
+                  "height": 18,
+                  "fill": "#14302B"
+                }
+              ],
+              "layout": {
+                "mode": "horizontal",
+                "gap": 12,
+                "padding": {
+                  "top": 0,
+                  "right": 0,
+                  "bottom": 0,
+                  "left": 0
+                },
+                "primaryAlign": "start",
+                "counterAlign": "start"
+              }
+            }
+          ],
+          "fill": "#FFFFFF",
+          "layout": {
+            "mode": "horizontal",
+            "padding": {
+              "top": 12,
+              "right": 16,
+              "bottom": 12,
+              "left": 16
+            },
+            "primaryAlign": "space-between",
+            "counterAlign": "center"
+          }
+        },
+        {
+          "name": "main",
+          "x": 0,
+          "y": 45,
+          "width": 390,
+          "height": 767.16,
+          "children": [
+            {
+              "name": "div.confirm-card",
+              "x": 32,
+              "y": 80,
+              "width": 326,
+              "height": 623.16,
+              "children": [
+                {
+                  "type": "text",
+                  "name": "div.confirm-badge",
+                  "characters": "✓",
+                  "x": 131,
+                  "y": 67,
+                  "width": 64,
+                  "height": 64,
+                  "fill": "#15803D"
+                },
+                {
+                  "type": "text",
+                  "name": "h1#confirm-heading",
+                  "characters": "Order confirmed",
+                  "x": 33,
+                  "y": 155,
+                  "width": 260,
+                  "height": 96,
+                  "fill": "#14302B"
+                },
+                {
+                  "type": "text",
+                  "name": "p",
+                  "characters": "Thanks, Jordan — your payment went through and your order is on its way.",
+                  "x": 33,
+                  "y": 263,
+                  "width": 260,
+                  "height": 76.78,
+                  "fill": "#3F5854"
+                },
+                {
+                  "type": "text",
+                  "name": "span.order-number",
+                  "characters": "Order #MER-48213",
+                  "x": 72.84,
+                  "y": 363.78,
+                  "width": 180.31,
+                  "height": 32,
+                  "fill": "#0B4E45"
+                },
+                {
+                  "type": "text",
+                  "name": "p.caption",
+                  "characters": "A receipt has been sent to your email. Estimated delivery: 3–5 business days.",
+                  "x": 33,
+                  "y": 427.78,
+                  "width": 260,
+                  "height": 36.38,
+                  "fill": "#547066"
+                },
+                {
+                  "name": "div.confirm-actions",
+                  "x": 33,
+                  "y": 496.16,
+                  "width": 260,
+                  "height": 62,
+                  "children": [
+                    {
+                      "type": "text",
+                      "name": "a.btn",
+                      "characters": "View order",
+                      "x": 0,
+                      "y": 0,
+                      "width": 103.92,
+                      "height": 62,
+                      "fill": "#14302B"
+                    },
+                    {
+                      "type": "text",
+                      "name": "a.btn",
+                      "characters": "Continue shopping",
+                      "x": 115.92,
+                      "y": 0,
+                      "width": 144.08,
+                      "height": 62,
+                      "fill": "#FFFFFF"
+                    }
+                  ],
+                  "layout": {
+                    "mode": "horizontal",
+                    "gap": 12,
+                    "padding": {
+                      "top": 0,
+                      "right": 0,
+                      "bottom": 0,
+                      "left": 0
+                    },
+                    "primaryAlign": "center",
+                    "counterAlign": "start"
+                  }
+                }
+              ],
+              "fill": "#FFFFFF",
+              "cornerRadius": 20,
+              "effects": [
+                {
+                  "type": "drop-shadow",
+                  "color": "#0A1210",
+                  "x": 0,
+                  "y": 26,
+                  "blur": 56,
+                  "spread": 0,
+                  "opacity": 0.24
+                },
+                {
+                  "type": "drop-shadow",
+                  "color": "#0A1210",
+                  "x": 0,
+                  "y": 8,
+                  "blur": 18,
+                  "spread": 0,
+                  "opacity": 0.12
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "name": "p",
+          "characters": "© 2026 Meridian Health, Inc. All rights reserved.",
+          "x": 32,
+          "y": 844.16,
+          "width": 326,
+          "height": 51.19,
+          "fill": "#3F5854"
+        }
+      ],
+      "fill": "#F3F8F7"
+    }
+  ]
+}
