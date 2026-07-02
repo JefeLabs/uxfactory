@@ -472,6 +472,90 @@ export async function provisionCraftRubric(projectRoot: string): Promise<string>
 }
 
 // ---------------------------------------------------------------------------
+// panel-artifact plan table — the Artifacts tab concern keys
+// ---------------------------------------------------------------------------
+
+/**
+ * The artifact concern keys the panel's Artifacts tab sends as
+ * `{ kind: "generate-artifact", payload: { artifact: <key>, guidance?: string } }`.
+ * Distinct from the legacy `target` discriminator used by the pipeline panel's
+ * seeded workstreams (user-story / acceptance-criteria / user-journey).
+ */
+export type PanelArtifactKey =
+  | 'brief'
+  | 'sitemap'
+  | 'flows'
+  | 'brand-colors'
+  | 'palettes'
+  | 'fonts'
+  | 'grid'
+  | 'tokens'
+  | 'icons'
+  | 'photography'
+  | 'illustrations';
+
+interface PanelArtifactEntry {
+  /** Human label used in the generated user instruction. */
+  label: string;
+  /**
+   * Registry-matching path (relative to projectRoot) the agent writes the
+   * artifact to. Verbatim copy from `buildArtifacts` in
+   * `packages/uxfactory-bridge/src/project.ts` so writing this path flips the
+   * snapshot row from `missing` → `up-to-date`.
+   */
+  path: string;
+  /**
+   * When set, the four design-system.json section keys (`brand-colors`,
+   * `palettes`, `fonts`, `grid`) share a single file; the agent merges/creates
+   * exactly this section without touching the others.
+   */
+  sectionKey?: string;
+}
+
+/**
+ * Maps every panel concern key to its registry-matching target path and a
+ * human label. Paths are verbatim from `buildArtifacts` in
+ * `packages/uxfactory-bridge/src/project.ts`.
+ */
+const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
+  brief: { label: 'Product Brief', path: 'brief.md' },
+  sitemap: { label: 'Sitemap', path: 'design/sitemap.json' },
+  flows: { label: 'Flows', path: 'design/flows.json' },
+  'brand-colors': {
+    label: 'Brand Colors',
+    path: 'design/design-system.json',
+    sectionKey: 'brand-colors',
+  },
+  palettes: { label: 'Palettes', path: 'design/design-system.json', sectionKey: 'palettes' },
+  fonts: { label: 'Fonts', path: 'design/design-system.json', sectionKey: 'fonts' },
+  grid: { label: 'Grid', path: 'design/design-system.json', sectionKey: 'grid' },
+  tokens: { label: 'Tokens', path: 'design/token-set.json' },
+  icons: { label: 'Icons', path: 'design/assets/icons.json' },
+  photography: { label: 'Photography', path: 'design/assets/photography.json' },
+  illustrations: { label: 'Illustrations', path: 'design/assets/illustrations.json' },
+};
+
+/** Narrow an opaque value to a known `PanelArtifactKey`. */
+function isPanelArtifact(v: unknown): v is PanelArtifactKey {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PANEL_ARTIFACT_MAP, v);
+}
+
+/**
+ * Thrown when a `generate-artifact` request carries an `artifact` key that is
+ * not one of the panel concern keys. `runGenerative`'s catch maps it to
+ * `status 2` — the adapter is never streamed.
+ */
+export class InvalidArtifactError extends Error {
+  constructor(public readonly artifact: unknown) {
+    super(
+      `generate-artifact: unrecognised 'artifact' key (got ${JSON.stringify(artifact)}); ` +
+        `expected one of: ${(Object.keys(PANEL_ARTIFACT_MAP) as PanelArtifactKey[]).join(' | ')}`,
+    );
+    this.name = 'InvalidArtifactError';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // per-kind plan: which skill + what user instruction + the artifact path
 // ---------------------------------------------------------------------------
 
@@ -494,6 +578,40 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
   const p = asObject(req.payload);
 
   if (req.kind === 'generate-artifact') {
+    // ── Panel-artifact path (Artifacts tab: artifact + optional guidance) ───
+    // The panel's Artifacts tab sends `{ artifact: <key>, guidance?: string }`.
+    // Route through PANEL_ARTIFACT_MAP when the payload carries an `artifact`
+    // key; an explicit but unrecognised key is a setup error (caught → status 2)
+    // and the adapter is never streamed.
+    const artifact = str(p, 'artifact');
+    if (artifact !== undefined) {
+      if (!isPanelArtifact(artifact)) throw new InvalidArtifactError(artifact);
+      const entry = PANEL_ARTIFACT_MAP[artifact];
+      const guidance = str(p, 'guidance');
+      const sectionNote =
+        entry.sectionKey !== undefined
+          ? ` Merge ONLY the '${entry.sectionKey}' section into ${entry.path}` +
+            ` (create the file if absent, preserve all other sections).`
+          : '';
+      const guidanceNote =
+        guidance !== undefined && guidance.trim() !== ''
+          ? ` USER GUIDANCE (honor verbatim): ${guidance}`
+          : '';
+      const user =
+        `Write the ${entry.label} artifact to ${entry.path} inside ${ctx.projectRoot}.` +
+        ` Ground the content in uxfactory.classification.json and uxfactory.profile.json` +
+        ` (read both first).${sectionNote}` +
+        ` Keep the output strictly the artifact file:` +
+        ` valid JSON for .json targets, Markdown for .md targets.` +
+        ` Report the written path once done.${guidanceNote}`;
+      return {
+        systemPrompt: loadSkill('generate'),
+        user,
+        artifactPath: entry.path,
+      };
+    }
+
+    // ── Legacy target path (pipeline panel: target + seedRefs + constraints) ─
     // The panel drives 3 seeded workstreams via a `target` discriminator; an
     // absent/unknown target is a setup error (caught → status 2), never streamed.
     const target = p['target'];

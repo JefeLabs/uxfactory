@@ -886,6 +886,128 @@ describe('runGenerative', () => {
     expect(adapter.lastInput).toBeNull();
   });
 
+  // ── Panel-artifact plan table (Artifacts tab concern keys) ─────────────────
+
+  it('generate-artifact artifact:brief builds a plan with brief.md path + guidance in user prompt', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_brief',
+        kind: 'generate-artifact',
+        payload: { artifact: 'brief', guidance: 'target enterprise SaaS customers' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('generate'));
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('brief.md');
+    expect(user).toContain('target enterprise SaaS customers');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe('brief.md');
+  });
+
+  it('generate-artifact artifact:brief omits USER GUIDANCE clause when guidance is absent', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      {
+        id: 'pr_brief_ng',
+        kind: 'generate-artifact',
+        payload: { artifact: 'brief' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('brief.md');
+    expect(user).not.toContain('USER GUIDANCE');
+  });
+
+  it('generate-artifact with an unknown artifact key → status 2 (never invokes the adapter)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_bad_artifact',
+        kind: 'generate-artifact',
+        payload: { artifact: 'unknown-key' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect(adapter.lastInput).toBeNull();
+  });
+
+  it('generate-artifact legacy target:user-story is unaffected by the panel-artifact table (regression)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_legacy_regression',
+        kind: 'generate-artifact',
+        payload: { target: 'user-story', classification: { category: 'web_app' } },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('generate'));
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    // Legacy path carries target + AcceptanceCriterion + emphasis.
+    expect(user).toContain('user-story');
+    expect(user).toContain('AcceptanceCriterion');
+    expect(user).toContain('the user-story narratives');
+    // Legacy path is NOT routed through panel-artifact framing.
+    expect(user).not.toContain('USER GUIDANCE');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe(
+      'design/acceptance-criteria.json',
+    );
+  });
+
+  it('generate-artifact artifact:brand-colors maps to design-system.json with section-merge instructions', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_brand_colors',
+        kind: 'generate-artifact',
+        payload: { artifact: 'brand-colors' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('design/design-system.json');
+    expect(user).toContain('brand-colors');
+    // section-merge instruction is present for shared-file section keys.
+    expect(user).toContain('Merge ONLY');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe('design/design-system.json');
+  });
+
   it('a thrown RateLimitError (AdapterError) → status 2', async () => {
     const adapter = new FakeAdapter(projectRoot, [], new RateLimitError('429 slow down'));
     const bridge = new FakeBridge();
