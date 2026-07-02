@@ -61,6 +61,16 @@ export interface BridgeLogsResponse {
   lines: string[];
 }
 
+export interface SkillEntry {
+  name: string;
+  rev: string;
+  pinned: boolean;
+}
+
+export interface SkillsResponse {
+  skills: SkillEntry[];
+}
+
 export interface PipelineEnqueueRequest {
   kind: string;
   payload?: unknown;
@@ -124,6 +134,8 @@ export interface Bridge {
   stats(): Promise<BridgeStats>;
   /** GET /logs?tail=N */
   logs(tail?: number): Promise<BridgeLogsResponse>;
+  /** GET /skills (optional — absent in legacy bridge builds) */
+  skills?(): Promise<SkillsResponse>;
   /** POST /pipeline/request */
   enqueue(request: PipelineEnqueueRequest): Promise<PipelineEnqueueResponse>;
   /**
@@ -307,6 +319,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     logs(tail?: number) {
       const qs = tail !== undefined ? `?tail=${tail}` : "";
       return request<BridgeLogsResponse>(`/logs${qs}`);
+    },
+
+    skills() {
+      return request<SkillsResponse>("/skills");
     },
 
     enqueue(requestBody: PipelineEnqueueRequest) {

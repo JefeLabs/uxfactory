@@ -1,5 +1,5 @@
 /**
- * project.test.ts — TDD tests for the project/panel bridge routes (Task 3).
+ * project.test.ts — TDD tests for the project/panel bridge routes (Task 3 + Task 13).
  *
  * Test matrix:
  *  - connect: happy / not-found / not-a-root / different-root
@@ -10,10 +10,12 @@
  *  - open path containment (../.. escape → 400; valid path → 200)
  *  - stats shape
  *  - logs ring buffer (request appears in /logs)
+ *  - GET /skills: empty (no dir), single skill, multiple skills, non-dir entry skipped
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -770,5 +772,96 @@ describe("GET /logs", () => {
     expect(res.statusCode).toBe(200);
     const { lines } = res.json() as { lines: string[] };
     expect(lines.length).toBeLessThanOrEqual(200);
+  });
+});
+
+// ─── GET /skills ──────────────────────────────────────────────────────────────
+
+describe("GET /skills", () => {
+  /** Create a skill directory with SKILL.md at root/skill/{name}/SKILL.md. */
+  async function addSkill(root: string, name: string, content: string): Promise<void> {
+    const skillPath = path.join(root, "skill", name);
+    await mkdir(skillPath, { recursive: true });
+    await writeFile(path.join(skillPath, "SKILL.md"), content, "utf8");
+  }
+
+  /** Compute expected rev for given content. */
+  function expectedRev(content: string): string {
+    return createHash("sha256").update(content, "utf8").digest("hex").slice(0, 7);
+  }
+
+  it("returns empty skills list when skill/ directory is absent", async () => {
+    app = await createBridge({ dataDir });
+
+    const res = await app.inject({ method: "GET", url: "/skills" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { skills: unknown[] };
+    expect(body.skills).toEqual([]);
+  });
+
+  it("returns a single skill entry with name, rev, and pinned:false", async () => {
+    const content = "# craft-review\nReview skill content\n";
+    await addSkill(root, "craft-review", content);
+    app = await createBridge({ dataDir });
+
+    const res = await app.inject({ method: "GET", url: "/skills" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { skills: Array<{ name: string; rev: string; pinned: boolean }> };
+    expect(body.skills).toHaveLength(1);
+
+    const skill = body.skills[0]!;
+    expect(skill.name).toBe("craft-review");
+    expect(skill.rev).toBe(expectedRev(content));
+    expect(skill.rev).toMatch(/^[0-9a-f]{7}$/);
+    expect(skill.pinned).toBe(false);
+  });
+
+  it("returns multiple skills sorted by directory order", async () => {
+    const contentA = "# skill-a\n";
+    const contentB = "# skill-b\n";
+    await addSkill(root, "skill-a", contentA);
+    await addSkill(root, "skill-b", contentB);
+    app = await createBridge({ dataDir });
+
+    const res = await app.inject({ method: "GET", url: "/skills" });
+    const body = res.json() as { skills: Array<{ name: string; rev: string; pinned: boolean }> };
+    expect(body.skills).toHaveLength(2);
+
+    const names = body.skills.map((s) => s.name);
+    expect(names).toContain("skill-a");
+    expect(names).toContain("skill-b");
+
+    // Verify rev for each
+    const byName = Object.fromEntries(body.skills.map((s) => [s.name, s]));
+    expect(byName["skill-a"]?.rev).toBe(expectedRev(contentA));
+    expect(byName["skill-b"]?.rev).toBe(expectedRev(contentB));
+  });
+
+  it("skips subdirectory entries that have no SKILL.md", async () => {
+    // A dir with SKILL.md
+    await addSkill(root, "valid-skill", "# valid skill\n");
+    // A dir without SKILL.md
+    await mkdir(path.join(root, "skill", "no-skill-md"), { recursive: true });
+    app = await createBridge({ dataDir });
+
+    const res = await app.inject({ method: "GET", url: "/skills" });
+    const body = res.json() as { skills: Array<{ name: string }> };
+    // Only the valid skill should appear
+    expect(body.skills).toHaveLength(1);
+    expect(body.skills[0]?.name).toBe("valid-skill");
+  });
+
+  it("rev is deterministic — same content produces the same rev on repeated calls", async () => {
+    const content = "# determinism test\nSame content always gives same rev.\n";
+    await addSkill(root, "my-skill", content);
+    app = await createBridge({ dataDir });
+
+    const res1 = await app.inject({ method: "GET", url: "/skills" });
+    const res2 = await app.inject({ method: "GET", url: "/skills" });
+
+    const body1 = res1.json() as { skills: Array<{ rev: string }> };
+    const body2 = res2.json() as { skills: Array<{ rev: string }> };
+    expect(body1.skills[0]?.rev).toBe(body2.skills[0]?.rev);
+    expect(body1.skills[0]?.rev).toBe(expectedRev(content));
   });
 });

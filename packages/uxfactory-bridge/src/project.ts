@@ -22,6 +22,7 @@ import {
   stat,
 } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import path from "node:path";
 import { platform } from "node:process";
@@ -70,6 +71,12 @@ export interface Link {
   unitName: string;
   unitType: string;
   acId: string;
+}
+
+export interface SkillEntry {
+  name: string;
+  rev: string;
+  pinned: boolean;
 }
 
 export interface ProjectPluginOptions {
@@ -603,5 +610,34 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
         ? Math.max(0, Math.min(500, parseInt(tailRaw, 10) || 200))
         : 200;
     return { lines: logRing.slice(-n) };
+  });
+
+  // ── GET /skills ───────────────────────────────────────────────────────────
+  app.get("/skills", async () => {
+    const skillDir = path.join(servedRoot, "skill");
+    let dirEntries: import("node:fs").Dirent[] = [];
+    try {
+      dirEntries = await readdir(skillDir, { withFileTypes: true });
+    } catch {
+      // skill/ directory absent → empty list
+      return { skills: [] as SkillEntry[] };
+    }
+
+    const skills: SkillEntry[] = [];
+    for (const entry of dirEntries) {
+      if (!entry.isDirectory()) continue;
+      const skillMdPath = path.join(skillDir, entry.name, "SKILL.md");
+      try {
+        const content = await readFile(skillMdPath, "utf8");
+        const rev = createHash("sha256")
+          .update(content, "utf8")
+          .digest("hex")
+          .slice(0, 7);
+        skills.push({ name: entry.name, rev, pinned: false });
+      } catch {
+        // directory without SKILL.md — not a skill, skip
+      }
+    }
+    return { skills };
   });
 };
