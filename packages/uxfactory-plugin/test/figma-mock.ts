@@ -19,6 +19,11 @@ export class FakeNode {
   connectorEnd: unknown = undefined;
   /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
   clipsContent: boolean | undefined = undefined;
+  /**
+   * NOTE: real Figma flips primary/counterAxisSizingMode to AUTO (hug) when
+   * layoutMode is enabled — this fake does NOT model that. applyAutoLayout pins
+   * both axes FIXED (see code.ts); the code.test.ts assertions guard it.
+   */
   layoutMode: string | undefined = undefined;
   itemSpacing: number | undefined = undefined;
   paddingTop: number | undefined = undefined;

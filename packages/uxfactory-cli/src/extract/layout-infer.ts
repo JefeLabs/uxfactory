@@ -5,7 +5,7 @@
  */
 import type { AutoLayout, Padding } from "@uxfactory/spec";
 import type { CapturedNode } from "../render/dom-capture.js";
-import { px, contentBox } from "./dom-to-designspec.js";
+import { px, contentBox } from "./layout-utils.js";
 
 export type LayoutSource = "flex" | "grid" | "flow";
 export interface LayoutCandidate { layout: AutoLayout; source: LayoutSource; }

@@ -4,7 +4,7 @@
  */
 import type { Effect, CornerRadius } from "@uxfactory/spec";
 import type { CapturedStyles } from "../render/dom-capture.js";
-import { px } from "./dom-to-designspec.js";
+import { px } from "./layout-utils.js";
 
 const RGB_RE = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/;
 

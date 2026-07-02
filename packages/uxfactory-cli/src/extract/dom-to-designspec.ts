@@ -8,6 +8,8 @@ import type { CapturedNode } from "../render/dom-capture.js";
 import { REPLACED_TAGS } from "../render/dom-capture.js";
 import { resolveFill, mapStroke, mapCornerRadius, mapEffects, mapOpacity, mapTextFill } from "./style-map.js";
 import { inferCandidate, verifyCandidate } from "./layout-infer.js";
+import { px, r2, contentBox } from "./layout-utils.js";
+export { px, r2, contentBox } from "./layout-utils.js";
 
 export interface ExtractedView {
   page: string;
@@ -16,6 +18,11 @@ export interface ExtractedView {
   tree: CapturedNode;
 }
 
+/**
+ * Extraction statistics. NOTE: `selfCheckFallbacks` is a SUBSET of
+ * `containers.absolute` (candidates found but rejected by the geometric
+ * self-check) — do not sum them.
+ */
 export interface ExtractStats {
   views: number;
   nodes: number;
@@ -32,17 +39,6 @@ const CANVAS_GUTTER = 100;
 const PLACEHOLDER_FILL = "#E5E7EB";
 const PRUNE_TOLERANCE = 2;
 
-/** Round to 2 decimals (determinism convention, matches the svg renderer). */
-export function r2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-/** Parse a computed px length ("12px" → 12); anything non-numeric → 0. */
-export function px(s: string): number {
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : 0;
-}
-
 const REPLACED = new Set<string>(REPLACED_TAGS);
 
 /** True when the container paints nothing of its own (prunable wrapper candidate). */
@@ -56,17 +52,6 @@ function hasNoVisualSignal(n: CapturedNode): boolean {
     px(s.borderTopLeftRadius) === 0 && px(s.borderTopRightRadius) === 0 &&
     px(s.borderBottomRightRadius) === 0 && px(s.borderBottomLeftRadius) === 0;
   return bgTransparent && noBorder && s.boxShadow === "none" && noRadius && px(s.opacity) === 1;
-}
-
-/** Content box: bbox inset by padding. */
-export function contentBox(n: CapturedNode): { x: number; y: number; width: number; height: number } {
-  const s = n.styles;
-  return {
-    x: n.bbox.x + px(s.paddingLeft),
-    y: n.bbox.y + px(s.paddingTop),
-    width: n.bbox.width - px(s.paddingLeft) - px(s.paddingRight),
-    height: n.bbox.height - px(s.paddingTop) - px(s.paddingBottom),
-  };
 }
 
 /**
