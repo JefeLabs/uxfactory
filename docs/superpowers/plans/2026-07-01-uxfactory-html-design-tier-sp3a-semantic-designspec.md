@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Two packages only:** `@uxfactory/spec` (`packages/uxfactory-spec`) and `@uxfactory/plugin` (`packages/uxfactory-plugin`). Do NOT touch `packages/uxfactory-cli`, `clients/*`, or `skill/*`.
+- **Scope:** primarily `@uxfactory/spec` and `@uxfactory/plugin`. **Engine-consumer exception (approved boundary decision):** `FrameChild` is a *shared* type, so the engine's approximate SVG renderer `packages/uxfactory-cli/src/render/svg.ts` compiles against it and MUST be updated in lockstep whenever a new `FrameChild` member is added. Per the user's decision, `svg.ts` must **render** the new nested/semantic children — recurse into nested `Frame`s (Task 1) and draw `component-instance`s as approximate boxes (Task 2), NOT skip them — while staying deterministic/offline/LLM-free and byte-identical for existing (non-nested) specs (guarded by `packages/uxfactory-cli/test/svg.test.ts`). Do NOT touch anything else in `packages/uxfactory-cli`, `clients/*`, or `skill/*`.
 - **Additive & backward-compatible:** every new field is OPTIONAL. Existing specs must validate and render identically. Every schema definition uses `"additionalProperties": false`, so **every new field must be added to the schema explicitly** or a spec using it validate-fails — keep `types.ts` and `uxfactory.schema.json` in lockstep.
 - **Friendly values stay in the model and plan; Figma-enum mapping happens only in `code.ts`** (e.g. `"horizontal"` → `"HORIZONTAL"`, `"start"` → `"MIN"`). The planner (`planner.ts`) stays Figma-agnostic.
 - **Render is fail-soft for bad references:** a `component-instance` naming a missing component, or a failed instantiate, is skipped with a note in `editDiffs` (mirroring the existing published-`instance` skip) — never aborts the render.
@@ -20,7 +20,8 @@
 - **Effects:** `drop-shadow` and `inner-shadow` only.
 - **`CornerRadius`** is `number | { tl, tr, br, bl }`. `EditSet.cornerRadius` stays `number` — do NOT change it.
 - Commits: work on `main` (no feature branch); stage explicit paths only (never `git add -A`); every commit ends with the trailer `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`.
-- Verification commands: `pnpm --filter @uxfactory/spec test`, `pnpm --filter @uxfactory/plugin test`, and `pnpm -r build` (typecheck). To run one plugin test file: `pnpm --filter @uxfactory/plugin exec vitest run test/<file>`.
+- Verification commands: `pnpm --filter @uxfactory/spec test`, `pnpm --filter @uxfactory/plugin test`, and `pnpm -r build`. To run one plugin test file: `pnpm --filter @uxfactory/plugin exec vitest run test/<file>`.
+- **Typecheck gates (IMPORTANT):** `pnpm -r build` typechecks `@uxfactory/spec`, `@uxfactory/cli`, `@uxfactory/gate`, `@uxfactory/bridge` (all `tsc`) but **NOT `@uxfactory/plugin`** — the plugin's `build` is esbuild (no typecheck) and vitest doesn't typecheck either. The plugin's real typecheck is the separate `pnpm --filter @uxfactory/plugin typecheck` (`tsc -p tsconfig.typecheck.json`). Because the shared spec-type widenings (Tasks 1–3) break the plugin's type-consumers (`planner.ts`, `code.ts`) before the planner (Task 4) and render (Task 5) repair them, **the plugin typecheck is expected RED from Task 1 through Task 4 — do not chase it during those tasks.** It MUST be restored GREEN at **Task 5** and kept green through Tasks 6–8. Spec/engine tasks (1–3) gate on `pnpm -r build` + package tests; render tasks (5–8) additionally gate on `pnpm --filter @uxfactory/plugin typecheck`.
 
 ## File map
 
@@ -44,6 +45,8 @@
 
 **Interfaces:**
 - Produces: `AutoLayout`, `SizingSpec`, `Padding`, `Align`, `PrimaryAlign`, `Sizing` types; `Frame` gains optional `layout`, `sizing`, `fill`; `FrameChild` union gains `Frame` (recursion). Schema gains `autoLayout`, `sizingSpec`, `padding` definitions and `frame` gains those properties + a self-`$ref` in `children`.
+
+**Engine consumer (approved boundary decision):** adding `Frame` to `FrameChild` breaks `packages/uxfactory-cli/src/render/svg.ts` at compile time. Update it to **recurse into nested frames**, not skip them: replace the `normalize` frame loop with a recursive `pushFrame(frame, ox, oy, out)` that pushes the frame's box (absolute origin `ox+frame.x`, `oy+frame.y`) then, per child, calls `leaf(child, ax, ay)` when `"type" in child` else `pushFrame(child, ax, ay, out)` (nested `Frame`). Top-level frames call `pushFrame(frame, 0, 0, out)` — byte-identical to today for non-nested specs. Optionally thread `frame.fill` onto the frame `Drawable` (`fill?: string`, `drawDrawable` uses `d.fill ?? FRAME_FILL`). Add a `specToSvg` test in `packages/uxfactory-cli/test/svg.test.ts` asserting a nested frame renders (inner frame rect + its child), and that a non-nested spec is unchanged. Do NOT alter any other engine behavior.
 
 - [ ] **Step 1: Write the failing validation fixtures**
 
@@ -257,6 +260,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `AutoLayout`, `SizingSpec`, `FrameChild` (Task 1).
 - Produces: `ComponentDef`, `ComponentInstanceNode`, `InstanceOverride` types; `FrameChild` gains `ComponentInstanceNode`; `DesignSpec` gains `components?: Record<string, ComponentDef>`. Schema gains `componentDef`, `componentInstanceNode`, `instanceOverride` definitions.
+
+**Engine consumer (approved boundary decision):** adding `ComponentInstanceNode` (`type:"component-instance"`) to `FrameChild` makes `leaf()` in `packages/uxfactory-cli/src/render/svg.ts` non-exhaustive. Add `ComponentInstanceNode` to that file's `LeafChild` type and a `case "component-instance"` to `leaf()`'s switch that returns an approximate box drawable (a dashed rect labelled with the `component` id, sized from `width ?? INSTANCE_W` / `height ?? INSTANCE_H` — reuse the existing `instance` styling). Add a `specToSvg` test asserting a `component-instance` child renders an approximate box. Stay deterministic; do NOT alter other engine behavior.
 
 - [ ] **Step 1: Write the failing validation fixtures**
 
@@ -483,6 +488,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Produces: `Effect`, `CornerRadius` types; `effects?: Effect[]` added to `ShapeNode`, `TextNode`, `InstanceNode`, `Frame`, `ComponentDef`; `ShapeNode.cornerRadius`/`Frame.cornerRadius`/`ComponentDef.cornerRadius` become `CornerRadius`. Schema gains `effect`, `effectsArray`, `cornerRadius` definitions. `EditSet.cornerRadius` is unchanged (`number`).
+
+**Engine consumer (approved boundary decision):** widening `ShapeNode.cornerRadius` from `number` to `CornerRadius` breaks `packages/uxfactory-cli/src/render/svg.ts` — `leaf()`'s shape case does `cornerRadius: child.cornerRadius` into a `Drawable` whose `cornerRadius?` is `number`. Fix it by **flattening the object form to a single number** for the approximate `rx`: change that line to `cornerRadius: typeof child.cornerRadius === "number" ? child.cornerRadius : child.cornerRadius?.tl` (use the top-left radius as the approximate uniform radius). Effects are NOT read by `svg.ts` (it ignores unknown fields), so they need no engine change. This is the only Task 3 engine ripple; `svg.ts` output stays byte-identical for existing numeric-radius specs. The plugin type-consumers (`planner.ts`/`code.ts`) are NOT part of the `pnpm -r build` gate and are repaired in Tasks 4–5 — the plugin typecheck stays red here (see Global Constraints); do not touch them in Task 3.
 
 - [ ] **Step 1: Write the failing validation fixtures**
 
