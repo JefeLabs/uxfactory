@@ -369,14 +369,14 @@ describe("AC-4: search filters across sections in < 100ms for local index", () =
     expect(within(photoSection).getByRole("img", { name: "Product hero image" })).toBeInTheDocument();
   });
 
-  it("search is performant — filtering completes synchronously (no async needed)", () => {
-    // Verify filtering logic is synchronous (< 100ms; no async in the filter chain).
-    render(<Assets bridge={makeBridge()} bus={makeBus()} />);
-    const start = Date.now();
-    // Trigger a filter by changing the input value via the store state directly
-    // (not user-event — this tests the underlying computation, not UX timing).
-    useAppStore.setState({ ...useAppStore.getState() }); // no-op re-render
-    const elapsed = Date.now() - start;
+  it("icon filter derivation completes in < 100ms for the full icon set", () => {
+    // Run the same filter expression used in Assets.tsx 100 times to confirm it is
+    // well within the 100ms budget even at volume (single pass is sub-millisecond).
+    const start = performance.now();
+    for (let i = 0; i < 100; i++) {
+      FULL_ICON_SET.filter((n) => n.includes("bell"));
+    }
+    const elapsed = performance.now() - start;
     expect(elapsed).toBeLessThan(100);
   });
 });
@@ -420,6 +420,30 @@ describe("AC-5: Create on Illustrations enqueues generate-artifact + inline stat
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(screen.queryByRole("button", { name: "Create" })).not.toBeInTheDocument();
+  });
+
+  it("Create resets generating state and fires error toast when bridge rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockRejectedValue(new Error("connection refused")),
+    });
+    render(<Assets bridge={bridge} bus={makeBus()} />);
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    // illusGenerating resets → Create button reappears
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create" })).toBeInTheDocument();
+    });
+    // Error toast fires
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(
+        toasts.some(
+          (t) => t.message === "Could not start generation — is the bridge running?",
+        ),
+      ).toBe(true);
+    });
   });
 
   it("Generating… clears when snapshot transitions illustrations to defined", async () => {

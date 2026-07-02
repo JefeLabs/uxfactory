@@ -82,7 +82,7 @@ import type { LucideIcon } from "lucide-react";
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
-import { Card } from "../components/index.js";
+import { Card, ChipGroup } from "../components/index.js";
 import {
   FIXTURE_PHOTOS,
   DEFAULT_ICON_NAMES,
@@ -300,7 +300,8 @@ export function Assets({
       // Generating state persists until snapshot reflects the artifact;
       // the illusDefined useEffect above clears it when the store updates.
     } catch {
-      // Keep generating state; snapshot polling would detect completion.
+      setIllusGenerating(false);
+      toast("Could not start generation — is the bridge running?");
     }
   }
 
@@ -327,36 +328,17 @@ export function Assets({
           />
         </div>
 
-        {/* Filter chips — single-select scope */}
-        <div
-          role="radiogroup"
-          aria-label="Asset type filter"
-          className="flex gap-2 flex-wrap"
-        >
-          {SCOPE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={scope === opt.value}
-              onClick={() => setScope(opt.value)}
-              className={[
-                "inline-flex items-center px-3 py-1 rounded-full border text-sm",
-                "cursor-pointer transition-colors select-none",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
-                scope === opt.value
-                  ? "bg-primary-50 border-primary-600 text-primary-600 font-semibold"
-                  : "bg-white border-gray-300 text-gray-700 hover:border-gray-400",
-              ].join(" ")}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {/* Filter chips — single-select scope (ChipGroup wraps Radix ToggleGroup; roving tabindex + ArrowLeft/Right handled by Radix) */}
+        <ChipGroup
+          options={SCOPE_OPTIONS}
+          value={scope}
+          onChange={(v) => setScope(v as ScopeFilter)}
+          ariaLabel="Asset type filter"
+        />
 
         {/* ── ICONS section ──────────────────────────────────────────────── */}
         {showIcons && (
-          <section role="region" aria-label="ICONS">
+          <section aria-label="ICONS">
             <Card>
               {/* Section header */}
               <div className="flex items-center justify-between px-3 pt-3 pb-2">
@@ -433,7 +415,7 @@ export function Assets({
 
         {/* ── PHOTOGRAPHY section ─────────────────────────────────────────── */}
         {showPhotos && (
-          <section role="region" aria-label="PHOTOGRAPHY">
+          <section aria-label="PHOTOGRAPHY">
             <Card>
               {/* Section header */}
               <div className="flex items-center justify-between px-3 pt-3 pb-2">
@@ -482,7 +464,7 @@ export function Assets({
 
         {/* ── ILLUSTRATIONS section ───────────────────────────────────────── */}
         {showIllus && (
-          <section role="region" aria-label="ILLUSTRATIONS">
+          <section aria-label="ILLUSTRATIONS">
             <Card>
               {/* Section header */}
               <div className="flex items-center px-3 pt-3 pb-2">
