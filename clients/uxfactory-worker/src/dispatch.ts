@@ -26,6 +26,13 @@ export interface DispatchCtx {
   projectRoot: string;
   /** Resolved `uxfactory` binary to spawn (see resolveCliBin). */
   cliBin: string;
+  /**
+   * The bridge data directory that the Figma plugin polls for queued render jobs.
+   * Used by the generate-design landing step to pass `--data-dir` to `publish`.
+   * Defaults to `<cwd>/.uxfactory` when absent (worker and bridge are co-located
+   * in current deployments — both read/write the same filesystem path).
+   */
+  bridgeDataDir?: string;
 }
 
 /** A handler's terminal outcome — relayed verbatim to `postResult`. */

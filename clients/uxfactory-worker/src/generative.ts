@@ -36,6 +36,7 @@ import type { PipelineRequest, BridgeLike } from './bridge-client.js';
 import type { DispatchCtx, DispatchOutcome } from './dispatch.js';
 import { ensureBatchRegistry } from './batch-registry.js';
 import { loadSkill } from './skills.js';
+import { landDesign, realLandingDeps } from './landing.js';
 
 // ---------------------------------------------------------------------------
 // secret masking — never let an `sk-…`-shaped key reach the panel or the result
@@ -549,7 +550,8 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
       'Once the deterministic gate is green, run the independent craft-judge step (skill Step 4b): ' +
       'dispatch a fresh subagent following .uxfactory/craft-rubric.md to score the rendered ' +
       'screenshots and write craft-report.json, then revise for craft to the bar before finishing. ' +
-      'Emit a UXF::PROGRESS line at every loop step.';
+      'Emit a UXF::PROGRESS line at every loop step. ' +
+      'After the craft bar is met (or the budget is spent with the gate green), run `uxfactory extract --json design` once and report its stats line (phase "extract").';
     return {
       systemPrompt: loadSkill('design'),
       user,
@@ -647,6 +649,28 @@ export async function runGenerative(
         ? await readArtifactRefs(path.join(ctx.projectRoot, plan.artifactPath), plan.target)
         : undefined;
 
+    // For generate-design: publish + bounded-verify each per-view designspec that
+    // the skill's Step 4c `uxfactory extract` produced. A landing failure NEVER
+    // changes the job status — the whole block is wrapped in try/catch.
+    let landing: import('./landing.js').LandingResult | undefined;
+    if (req.kind === 'generate-design') {
+      try {
+        const bridgeDataDir = ctx.bridgeDataDir ?? path.resolve('.uxfactory');
+        const landingResult = await landDesign(ctx.projectRoot, bridgeDataDir, realLandingDeps);
+        if (landingResult !== null) {
+          landing = landingResult;
+          const passes = landingResult.verdicts.filter((v) => v.verify === 'pass').length;
+          await bridge.postEvent(req.id, {
+            type: 'progress',
+            phase: 'landing',
+            note: `${landingResult.published.length} published, ${passes} verified`,
+          });
+        }
+      } catch {
+        // Catastrophic landing failure — discard silently; status unchanged.
+      }
+    }
+
     return {
       status: 0,
       result: {
@@ -654,6 +678,7 @@ export async function runGenerative(
         ...(plan.artifactPath !== undefined ? { artifactPath: plan.artifactPath } : {}),
         ...(artifacts !== undefined ? { artifacts } : {}),
         ...(usage !== undefined ? { usage } : {}),
+        ...(landing !== undefined ? { landing } : {}),
       },
     };
   } catch (err) {

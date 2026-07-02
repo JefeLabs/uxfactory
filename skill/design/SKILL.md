@@ -104,6 +104,22 @@ Once `uxfactory batch` is green (exit 0), get an **independent** craft verdict �
 
 Emit `UXF::PROGRESS {"iter":<n>,"phase":"craft","gate":null,"status":"pass"|"fail"|null,"findings":<count>,"note":"craft overall N/5"}` at each craft step.
 
+## Step 4c — Extract for Figma landing
+
+After **green AND craft-pass** (or when `maxIterations` is spent with the gate green), run:
+
+```bash
+uxfactory extract --json design
+```
+
+This renders each view in the trace, converts the DOM to a DesignSpec, and writes per-view files to `.uxfactory/batch/designspec/<page>-<view>.designspec.json`. Report the JSON stats line from the output. Emit:
+
+```
+UXF::PROGRESS {"phase":"extract","note":"<stats line from uxfactory extract>"}
+```
+
+On **exit 1** or **exit 2**, include the failure note in your final summary and finish normally — extraction never retracts the screens deliverable. The screens authored in Steps 1–4b remain the primary output regardless of extraction outcome.
+
 ## Step 5 — Stop
 
 Stop at **exit 0** (clean) or when `maxIterations` is spent (surface best-effort screens + open findings). **Never spin** — never re-run the gate without changing anything.
@@ -120,4 +136,4 @@ UXF::PROGRESS {"iter":<n>,"phase":"draft"|"gate"|"revise"|"done","gate":<gate-id
 
 ## Report
 
-When you stop, report: the `design/screens/<page>.html` files written, whether `design/tokens.ds.json` was authored (and why — the `visual` dial), whether the gate reached **green** (exit 0) or hit the budget with open findings, and the **iteration count** spent.
+When you stop, report: the `design/screens/<page>.html` files written, whether `design/tokens.ds.json` was authored (and why — the `visual` dial), whether the gate reached **green** (exit 0) or hit the budget with open findings, the **iteration count** spent, and — if Step 4c ran — the designspec outputs written to `.uxfactory/batch/designspec/` (per-view files ready for Figma landing).
