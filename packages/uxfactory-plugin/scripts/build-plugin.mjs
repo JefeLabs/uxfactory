@@ -1,7 +1,8 @@
 import { build } from "esbuild";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rename } from "node:fs/promises";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "dist");
@@ -37,17 +38,21 @@ export async function buildPlugin(outDir = dist) {
     outfile: path.join(outDir, "code.js"),
   });
 
-  // 2. iframe UI → bundled JS string, inlined into ui.html
-  const uiResult = await build({
-    ...common,
-    entryPoints: [path.join(root, "src/ui.ts")],
-    write: false,
+  // 2. React panel UI → fully inlined ui.html (via vite + vite-plugin-singlefile)
+  //    vite emits dist/index.html; we rename it to <outDir>/ui.html.
+  const { build: viteBuild } = await import("vite");
+  await viteBuild({
+    configFile: path.join(root, "vite.config.ts"),
+    // Override outDir so smoke-test temp-dir builds don't touch the shared dist/.
+    build: {
+      outDir,
+      emptyOutDir: false, // preserve code.js already written above
+    },
+    // Suppress vite's stdout chatter during automated builds.
+    logLevel: "warn",
   });
-  const uiJs = uiResult.outputFiles[0].text;
-  const template = await readFile(path.join(root, "src/ui.html"), "utf8");
-  // Function replacement avoids `$`-pattern expansion in the bundled JS.
-  const html = template.replace("/*__UI_BUNDLE__*/", () => uiJs);
-  await writeFile(path.join(outDir, "ui.html"), html, "utf8");
+  // Vite's rollup entry produces index.html; rename to the manifest's expected name.
+  await rename(path.join(outDir, "index.html"), path.join(outDir, "ui.html"));
 
   console.log(
     `plugin build complete: ${path.join(outDir, "code.js")}, ${path.join(outDir, "ui.html")}`,
