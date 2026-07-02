@@ -8,6 +8,8 @@
  *   PUT  /project/profile
  *   GET  /project/links
  *   PUT  /project/links
+ *   GET  /project/artifact
+ *   PUT  /project/artifact
  *   POST /project/open
  *   GET  /stats
  *   GET  /logs
@@ -17,6 +19,7 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   readFile,
   writeFile,
+  mkdir,
   readdir,
   access,
   stat,
@@ -98,6 +101,25 @@ export interface ProjectPluginOptions {
 const STORIES_PATH = "design/acceptance-criteria.json";
 const TOKENS_PATH = "design/token-set.json";
 const DESIGN_SYSTEM_PATH = "design/design-system.json";
+
+/**
+ * Canonical write-path for each panel concern key. Used when no existing file
+ * is found during path resolution (the "create new" case for GET 404 / PUT mkdir).
+ */
+const CONCERN_CANONICAL: Record<string, string> = {
+  brief: "brief.md",
+  requirements: STORIES_PATH,
+  sitemap: "design/sitemap.json",
+  flows: "design/flows.json",
+  "brand-colors": DESIGN_SYSTEM_PATH,
+  palettes: DESIGN_SYSTEM_PATH,
+  fonts: DESIGN_SYSTEM_PATH,
+  grid: DESIGN_SYSTEM_PATH,
+  tokens: TOKENS_PATH,
+  icons: "design/assets/icons.json",
+  photography: "design/assets/photography.json",
+  illustrations: "design/assets/illustrations.json",
+};
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
 
@@ -197,6 +219,71 @@ async function resolveInputPaths(
   } catch {
     return defaults;
   }
+}
+
+/** Shape returned by {@link resolveConcernPath}. */
+interface ConcernPath {
+  /** Absolute path to the artifact file. */
+  absolutePath: string;
+  /** Root-relative path string (for the response body). */
+  relativePath: string;
+  /** Format inferred from the file extension. */
+  format: "markdown" | "json";
+  /** Whether the file currently exists on disk. */
+  exists: boolean;
+}
+
+/**
+ * Resolve a panel concern key to its artifact path, mirroring the same logic as
+ * `buildArtifacts` (registry-aware for tokens/requirements; prefix-search for
+ * sitemap/flows; two-candidate search for brief). Returns `null` for unknown
+ * keys. Never throws.
+ */
+async function resolveConcernPath(
+  key: string,
+  root: string,
+): Promise<ConcernPath | null> {
+  if (!Object.prototype.hasOwnProperty.call(CONCERN_CANONICAL, key)) return null;
+
+  let absolutePath: string;
+  let exists = false;
+
+  if (key === "brief") {
+    // Mirror buildArtifacts: check brief.md first, then design/brief.md.
+    let found: string | null = null;
+    for (const rel of ["brief.md", "design/brief.md"]) {
+      const abs = path.join(root, rel);
+      if (await fileAccessible(abs)) {
+        found = abs;
+        break;
+      }
+    }
+    absolutePath = found ?? path.join(root, "brief.md");
+    exists = found !== null;
+  } else if (key === "requirements") {
+    const { storiesPath } = await resolveInputPaths(root);
+    absolutePath = storiesPath;
+    exists = await fileAccessible(absolutePath);
+  } else if (key === "tokens") {
+    const { tokensPath } = await resolveInputPaths(root);
+    absolutePath = tokensPath;
+    exists = await fileAccessible(absolutePath);
+  } else if (key === "sitemap" || key === "flows") {
+    const designDir = path.join(root, "design");
+    const found = await findByPrefix(designDir, key);
+    absolutePath = found ?? path.join(root, CONCERN_CANONICAL[key]!);
+    exists = found !== null;
+  } else {
+    // All remaining keys (design-system sections, assets) have a single conventional path.
+    absolutePath = path.join(root, CONCERN_CANONICAL[key]!);
+    exists = await fileAccessible(absolutePath);
+  }
+
+  const relativePath = path.relative(root, absolutePath);
+  const ext = path.extname(absolutePath).toLowerCase();
+  const format: "markdown" | "json" = ext === ".md" ? "markdown" : "json";
+
+  return { absolutePath, relativePath, format, exists };
 }
 
 /** True when `dir` has a `.git` directory or a `uxfactory.batch.json` file. */
@@ -560,6 +647,70 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
     await writeFile(linksPath, `${JSON.stringify(links, null, 2)}\n`, "utf8");
     return { ok: true };
   });
+
+  // ── GET /project/artifact ────────────────────────────────────────────────
+  app.get<{ Querystring: { key?: string } }>("/project/artifact", async (req, reply) => {
+    const key = req.query.key;
+    if (typeof key !== "string" || key.trim() === "") {
+      return reply.code(400).send({ error: "key query param is required" });
+    }
+
+    const resolved = await resolveConcernPath(key, servedRoot);
+    if (resolved === null) {
+      return reply.code(400).send({ error: `unknown concern key: ${key}` });
+    }
+
+    // Containment check — the resolved path must be inside the served root
+    // (guards a crafted registry pointing outside; checked BEFORE existence so
+    // a traversal never even leaks whether the target file exists).
+    const rootWithSep = servedRoot.endsWith(path.sep) ? servedRoot : servedRoot + path.sep;
+    if (resolved.absolutePath !== servedRoot && !resolved.absolutePath.startsWith(rootWithSep)) {
+      return reply
+        .code(400)
+        .send({ error: "artifact path is outside the project root", key });
+    }
+
+    if (!resolved.exists) {
+      return reply.code(404).send({ error: `artifact not found: ${key}` });
+    }
+
+    const content = await readFile(resolved.absolutePath, "utf8");
+    return { key, path: resolved.relativePath, format: resolved.format, content };
+  });
+
+  // ── PUT /project/artifact ────────────────────────────────────────────────
+  app.put<{ Body: { key?: unknown; content?: unknown } }>(
+    "/project/artifact",
+    async (req, reply) => {
+      const { key, content } = (req.body ?? {}) as { key?: unknown; content?: unknown };
+
+      if (typeof key !== "string" || key.trim() === "") {
+        return reply.code(400).send({ error: "key must be a non-empty string" });
+      }
+      if (typeof content !== "string") {
+        return reply.code(400).send({ error: "content must be a string" });
+      }
+
+      const resolved = await resolveConcernPath(key, servedRoot);
+      if (resolved === null) {
+        return reply.code(400).send({ error: `unknown concern key: ${key}` });
+      }
+
+      // Containment check — guard against a registry pointing outside root.
+      const rootWithSep = servedRoot.endsWith(path.sep) ? servedRoot : servedRoot + path.sep;
+      if (resolved.absolutePath !== servedRoot && !resolved.absolutePath.startsWith(rootWithSep)) {
+        return reply
+          .code(400)
+          .send({ error: "artifact path is outside the project root", key });
+      }
+
+      // mkdir -p the parent directory so writing to a new location always succeeds.
+      await mkdir(path.dirname(resolved.absolutePath), { recursive: true });
+      await writeFile(resolved.absolutePath, content, "utf8");
+
+      return { ok: true };
+    },
+  );
 
   // ── POST /project/open ───────────────────────────────────────────────────
   app.post<{ Body: { path?: unknown } }>("/project/open", async (req, reply) => {

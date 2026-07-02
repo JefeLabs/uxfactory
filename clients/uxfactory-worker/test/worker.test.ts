@@ -1008,6 +1008,79 @@ describe('runGenerative', () => {
     expect((out.result as { artifactPath: string }).artifactPath).toBe('design/design-system.json');
   });
 
+  // ── Brief content rule: five schema sections + no-restatement ─────────────
+
+  it('generate-artifact artifact:brief prompt mandates the five ## sections', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      {
+        id: 'pr_brief_sections',
+        kind: 'generate-artifact',
+        payload: { artifact: 'brief' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    // Spec §2 Worker: exactly these ## sections must be mandated.
+    expect(user).toContain('## Overview');
+    expect(user).toContain('## Audience & insight');
+    expect(user).toContain('## Goals & success metrics');
+    expect(user).toContain('## Scope & constraints');
+    expect(user).toContain('## Risks & open questions');
+  });
+
+  it('generate-artifact artifact:brief prompt contains the no-restatement rule', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      {
+        id: 'pr_brief_no_restate',
+        kind: 'generate-artifact',
+        payload: { artifact: 'brief' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    // Must explicitly forbid restating pinned config values.
+    expect(user).toContain('DO NOT restate');
+    // Must require net-new substance or an honest TBD line per section.
+    expect(user).toContain('net-new substance');
+    expect(user).toContain('TBD — needs user input');
+  });
+
+  it('generate-artifact artifact:tokens prompt does NOT carry the brief section rule (regression)', async () => {
+    // The brief-specific instruction must not leak into other panel artifact plans.
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      {
+        id: 'pr_tokens_no_brief',
+        kind: 'generate-artifact',
+        payload: { artifact: 'tokens' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).not.toContain('## Overview');
+    expect(user).not.toContain('DO NOT restate');
+  });
+
   it('a thrown RateLimitError (AdapterError) → status 2', async () => {
     const adapter = new FakeAdapter(projectRoot, [], new RateLimitError('429 slow down'));
     const bridge = new FakeBridge();

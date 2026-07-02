@@ -955,3 +955,204 @@ describe("GET /skills", () => {
     expect(body1.skills[0]?.rev).toBe(expectedRev(content));
   });
 });
+
+// ─── GET /project/artifact ───────────────────────────────────────────────────
+
+describe("GET /project/artifact", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  it("round-trip: PUT brief → GET returns content + path + format", async () => {
+    const briefContent = "# My Brief\n\n## Overview\nGreat product.\n";
+
+    // Write via PUT.
+    const put = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "brief", content: briefContent },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({ ok: true });
+
+    // Read via GET.
+    const get = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=brief",
+    });
+    expect(get.statusCode).toBe(200);
+    const body = get.json() as {
+      key: string;
+      path: string;
+      format: string;
+      content: string;
+    };
+    expect(body.key).toBe("brief");
+    expect(body.path).toBe("brief.md");
+    expect(body.format).toBe("markdown");
+    expect(body.content).toBe(briefContent);
+  });
+
+  it("round-trip: snapshot reflects up-to-date after PUT brief", async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "brief", content: "# Brief\n\n## Overview\nHello.\n" },
+    });
+
+    const snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string }> };
+    const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["brief"]?.status).toBe("up-to-date");
+  });
+
+  it("unknown key → 400", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=nonexistent-artifact-xyz",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("missing key query param → 400", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/project/artifact",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("known key but file absent → 404", async () => {
+    // brief.md does not exist (fresh root with only .git marker)
+    const res = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=brief",
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("registry-resolved path honored: tokens at a non-conventional path", async () => {
+    // Point registry to a custom tokens path.
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { tokens: "custom/my-tokens.json" },
+    });
+    await writeJson(path.join(root, "custom/my-tokens.json"), {
+      colors: { primary: "#fff" },
+    });
+
+    const get = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=tokens",
+    });
+    expect(get.statusCode).toBe(200);
+    const body = get.json() as { key: string; path: string; format: string; content: string };
+    expect(body.key).toBe("tokens");
+    // The path returned is root-relative and points to the registry location.
+    expect(body.path).toBe("custom/my-tokens.json");
+    expect(body.format).toBe("json");
+    expect(JSON.parse(body.content)).toMatchObject({ colors: { primary: "#fff" } });
+  });
+
+  it("traversal-safe: a registry pointing outside root yields 400, never content", async () => {
+    // A crafted batch.json points tokens outside the project root. Even though
+    // the resolve succeeds, the containment check must fire (before existence,
+    // so it can't leak whether /etc/passwd exists).
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { tokens: "../../../../../../etc/passwd" },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=tokens",
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+// ─── PUT /project/artifact ───────────────────────────────────────────────────
+
+describe("PUT /project/artifact", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  it("unknown key → 400", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "totally-unknown", content: "stuff" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("missing content → 400", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "brief" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("traversal-safe: a registry pointing outside root yields 400, never a write", async () => {
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { tokens: "../outside-tokens.json" },
+    });
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "tokens", content: "{}" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("creates parent directory when it does not exist (mkdir -p semantics)", async () => {
+    // icons lives under design/assets/ which does not exist yet.
+    const res = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "icons", content: JSON.stringify({ icons: [] }) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+
+    // The file should now exist.
+    const get = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=icons",
+    });
+    expect(get.statusCode).toBe(200);
+  });
+
+  it("registry-resolved PUT: writes tokens to the non-conventional path", async () => {
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { tokens: "tokens/custom.json" },
+    });
+
+    const tokenContent = JSON.stringify({ colors: { accent: "#0f0" } }, null, 2);
+    const put = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "tokens", content: tokenContent },
+    });
+    expect(put.statusCode).toBe(200);
+
+    // Verify via GET that it's at the registry path.
+    const get = await app.inject({
+      method: "GET",
+      url: "/project/artifact?key=tokens",
+    });
+    expect(get.statusCode).toBe(200);
+    const body = get.json() as { path: string; content: string };
+    expect(body.path).toBe("tokens/custom.json");
+    expect(body.content).toBe(tokenContent);
+  });
+});

@@ -593,6 +593,20 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
           ? ` Merge ONLY the '${entry.sectionKey}' section into ${entry.path}` +
             ` (create the file if absent, preserve all other sections).`
           : '';
+      // Brief content rule (Artifact Editor v1 spec §2 Worker): the brief carries
+      // exactly the panel's section schema, never parrots the pinned setup values,
+      // and every section earns its place (substance or an honest TBD).
+      const briefNote =
+        artifact === 'brief'
+          ? ' Structure the document with exactly these ## sections in order:' +
+            ' ## Overview, ## Audience & insight, ## Goals & success metrics,' +
+            ' ## Scope & constraints, ## Risks & open questions.' +
+            ' DO NOT restate classification or profile values (category, industry, platforms,' +
+            ' scope dials — these are pinned config, not brief content); reference them only' +
+            ' where an implication matters (e.g. "given the mobile-first audience").' +
+            ' Every section must carry net-new substance; if a section is genuinely unknown' +
+            ' at this time, write a single "TBD — needs user input" line for it.'
+          : '';
       const guidanceNote =
         guidance !== undefined && guidance.trim() !== ''
           ? ` USER GUIDANCE (honor verbatim): ${guidance}`
@@ -600,7 +614,7 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
       const user =
         `Write the ${entry.label} artifact to ${entry.path} inside ${ctx.projectRoot}.` +
         ` Ground the content in uxfactory.classification.json and uxfactory.profile.json` +
-        ` (read both first).${sectionNote}` +
+        ` (read both first).${sectionNote}${briefNote}` +
         ` Keep the output strictly the artifact file:` +
         ` valid JSON for .json targets, Markdown for .md targets.` +
         ` Report the written path once done.${guidanceNote}`;
