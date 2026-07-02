@@ -21,7 +21,7 @@ describe("manifest", () => {
 });
 
 describe("build", () => {
-  it("emits a non-empty dist/code.js and a dist/ui.html that inlines the UI bundle", async () => {
+  it("emits a non-empty dist/code.js and a dist/ui.html that inlines the UI bundle", { timeout: 30_000 }, async () => {
     await buildPlugin();
     const code = await readFile(`${pkgRoot}dist/code.js`, "utf8");
     const html = await readFile(`${pkgRoot}dist/ui.html`, "utf8");

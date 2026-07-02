@@ -717,3 +717,32 @@ describe("code.ts graceful instance failure (Fix 5)", () => {
     expect(rendered!.report.edits?.some((e) => /skip/i.test(e.diff))).toBe(true);
   });
 });
+
+
+describe("code.ts select-nodes", () => {
+  it("selects found nodes and scrolls into view", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    // Render a spec to get real node ids into the registry.
+    await fig.__send({ type: "render", spec: design, jobId: "sn1" });
+    const rendered = lastOfType(fig, "rendered")!.report;
+    const nodeId = rendered.nodes[0]?.id;
+    if (!nodeId) return; // skip if no nodes rendered (shouldn't happen)
+
+    await fig.__send({ type: "select-nodes", ids: [nodeId] });
+
+    expect(fig.currentPage.selection).toHaveLength(1);
+    expect(fig.currentPage.selection[0]?.id).toBe(nodeId);
+    expect(fig.viewport.scrollAndZoomIntoViewCalls).toHaveLength(1);
+  });
+
+  it("no-ops gracefully when no ids resolve to nodes", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    await fig.__send({ type: "select-nodes", ids: ["999:999"] });
+
+    // selection should remain empty, no crash
+    expect(fig.currentPage.selection).toHaveLength(0);
+    expect(fig.viewport.scrollAndZoomIntoViewCalls).toHaveLength(0);
+  });
+});

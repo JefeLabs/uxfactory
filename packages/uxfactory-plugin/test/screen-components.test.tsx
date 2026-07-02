@@ -51,6 +51,8 @@ function makeBus(): FakeBus {
         selectionCbs = selectionCbs.filter((c) => c !== cb);
       };
     },
+    selectNodes: vi.fn(),
+    postReview: vi.fn(),
     _fireSelection(sel: unknown) {
       for (const cb of selectionCbs) cb(sel);
     },

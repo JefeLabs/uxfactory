@@ -9,13 +9,69 @@
 
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { render, screen, within, cleanup, act } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useAppStore } from "../ui/stores/app.js";
 import { App } from "../ui/app.js";
+import type { Bridge } from "../ui/lib/bridge.js";
+import type { PluginBus } from "../ui/lib/plugin-bus.js";
 
 afterEach(cleanup);
+
+// ─── Fake bridge + bus ────────────────────────────────────────────────────────
+
+function makeBridge(): Bridge {
+  return {
+    health: vi.fn().mockResolvedValue({ status: "running" }),
+    snapshot: vi.fn().mockResolvedValue({
+      name: "Demo Shop",
+      root: "/home/user/demo-shop",
+      hasClassification: true,
+      hasProfile: true,
+      classification: null,
+      profile: null,
+      artifacts: [],
+      requirements: [],
+    }),
+    classify: vi.fn().mockResolvedValue({ success: true }),
+    setProfile: vi.fn().mockResolvedValue({ success: true }),
+    render: vi.fn().mockResolvedValue({ jobId: "j-1" }),
+    runs: vi.fn().mockResolvedValue([]),
+    // getLinks returns { links: [] } (NOT bare array — Components.tsx destructures { links })
+    getLinks: vi.fn().mockResolvedValue({ links: [] }),
+    putLinks: vi.fn().mockResolvedValue({ ok: true }),
+    icons: vi.fn().mockResolvedValue({ icons: [] }),
+    openPath: vi.fn().mockResolvedValue({ ok: true }),
+    getChecks: vi.fn().mockResolvedValue({ categories: [] }),
+    postAnnotations: vi.fn().mockResolvedValue({ ok: true }),
+    deleteAnnotations: vi.fn().mockResolvedValue({ ok: true }),
+    getAnnotations: vi.fn().mockResolvedValue({ items: [] }),
+    getSettings: vi.fn().mockResolvedValue({}),
+    setSettings: vi.fn().mockResolvedValue({ ok: true }),
+    logs: vi.fn().mockResolvedValue({ lines: [] }),
+    stats: vi.fn().mockResolvedValue({ version: "0.0.0", uptimeMs: 0, runsRelayed: 0, tokenCount: null }),
+    skills: vi.fn().mockResolvedValue({ skills: [] }),
+    enqueue: vi.fn().mockResolvedValue({ jobId: "j-1", requestId: "r-1" }),
+    latestRender: vi.fn().mockResolvedValue(null),
+    // SSE subscription — returns a no-op teardown
+    events: vi.fn().mockReturnValue(() => {}),
+  } as unknown as Bridge;
+}
+
+function makeBus(): PluginBus {
+  return {
+    storageGet: vi.fn().mockResolvedValue(undefined),
+    storageSet: vi.fn().mockResolvedValue(undefined),
+    fileInfo: vi.fn().mockResolvedValue({ name: "Demo Shop", fileKey: "file-abc" }),
+    insertIcon: vi.fn().mockResolvedValue("node-1"),
+    notify: vi.fn(),
+    close: vi.fn(),
+    onSelection: vi.fn().mockReturnValue(() => {}),
+    selectNodes: vi.fn(),
+    postReview: vi.fn(),
+  };
+}
 
 // ─── Store reset helpers ──────────────────────────────────────────────────────
 
@@ -85,21 +141,23 @@ function resetToReconnecting() {
 describe("boot path — connect screen (no stored connection)", () => {
   beforeEach(resetToConnect);
 
-  it("renders the connect placeholder when screen is 'connect'", () => {
-    render(<App />);
-    expect(screen.getByText(/Connect arrives in a later task/i)).toBeInTheDocument();
+  it("renders the Connect screen when screen is 'connect'", () => {
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // Connect screen renders a repo-path input
+    expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
   });
 
   it("shows the TitleBar with 'UXFactory (Developer VM)'", () => {
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     expect(screen.getByText("UXFactory (Developer VM)")).toBeInTheDocument();
   });
 
   it("does not show the context bar on the plain connect screen", () => {
-    render(<App />);
-    // The context bar shows a project name + chips; these shouldn't appear
-    // when we're at the connect screen with no snapshot.
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // The ContextBar has an expand/collapse button unique to it — absent on connect screen.
+    // (The Connect screen renders its own bridge-health StatusPill, so we check by
+    //  the ContextBar's expand button rather than role="status".)
+    expect(screen.queryByRole("button", { name: /Expand project details/i })).not.toBeInTheDocument();
   });
 });
 
@@ -109,30 +167,32 @@ describe("boot path — tabs (stored connection + classified project)", () => {
   beforeEach(() => resetToTabs(true));
 
   it("renders the tab list with all 6 tabs", () => {
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     const tabs = within(tabList).getAllByRole("tab");
     expect(tabs).toHaveLength(6);
   });
 
   it("renders the Prompt tab label", () => {
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     expect(screen.getByRole("tab", { name: "Prompt" })).toBeInTheDocument();
   });
 
   it("shows the context bar with StatusPill 'Connected'", () => {
-    render(<App />);
-    expect(screen.getByRole("status")).toHaveTextContent("Connected");
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // The ContextBar connection status shows "Connected" (aria-label is unique
+    // vs the Connect screen's bridge-health labels "Running"/"Not detected"/"Checking…")
+    expect(screen.getByRole("status", { name: "Connected" })).toBeInTheDocument();
   });
 
   it("shows the project name in the context bar", () => {
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     expect(screen.getByText("Demo Shop")).toBeInTheDocument();
   });
 
-  it("shows 'Prompt arrives in a later task' as the default active panel", () => {
-    render(<App />);
-    expect(screen.getByText(/Prompt arrives in a later task/i)).toBeInTheDocument();
+  it("shows the Prompt tab as active by default", () => {
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    expect(screen.getByRole("tab", { name: "Prompt" })).toHaveAttribute("data-state", "active");
   });
 });
 
@@ -142,33 +202,34 @@ describe("reconnect-cancel path", () => {
   beforeEach(resetToReconnecting);
 
   it("shows 'Reconnecting…' status pill when connection.status is reconnecting", () => {
-    render(<App />);
-    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting");
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // Use aria-label to target specifically the ContextBar reconnecting pill (not Connect's bridge-health pill)
+    expect(screen.getByRole("status", { name: "Reconnecting…" })).toBeInTheDocument();
   });
 
   it("shows a Cancel button during reconnect", () => {
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     expect(screen.getByRole("button", { name: /Cancel reconnect/i })).toBeInTheDocument();
   });
 
   it("clicking Cancel routes to the connect screen", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
 
     await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
 
     // After cancel, route.screen should be "connect"
     expect(useAppStore.getState().route.screen).toBe("connect");
-    // Connect placeholder should now be visible
-    expect(screen.getByText(/Connect arrives in a later task/i)).toBeInTheDocument();
+    // Connect screen renders its repo-path input
+    expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
   });
 
   it("clicking Cancel resets connection.status to 'none' and hides the ContextBar", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
 
-    // Before cancel: reconnect bar with StatusPill is visible
-    expect(screen.getByRole("status")).toBeInTheDocument();
+    // Before cancel: ContextBar reconnect StatusPill is visible
+    expect(screen.getByRole("status", { name: "Reconnecting…" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
 
@@ -176,8 +237,8 @@ describe("reconnect-cancel path", () => {
     expect(useAppStore.getState().connection.status).toBe("none");
 
     // ContextBar is suppressed: showContextBar = (screen !== "connect" || status === "reconnecting")
-    // With screen="connect" and status="none", the bar should not render.
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    // With screen="connect" and status="none", the ContextBar reconnecting pill should be gone.
+    expect(screen.queryByRole("status", { name: "Reconnecting…" })).not.toBeInTheDocument();
   });
 });
 
@@ -188,7 +249,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
 
   it("resolving health/snapshot after cancel does not yank user to tabs", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
 
     // Create a controlled promise simulating the hanging Promise.all in boot.
     let resolveAll!: () => void;
@@ -230,34 +291,30 @@ describe("boot race guard — late bridge reply after cancel", () => {
     // The race guard must have prevented the yank to "tabs".
     expect(useAppStore.getState().route.screen).toBe("connect");
     expect(useAppStore.getState().connection.status).toBe("none");
-    // ContextBar (and StatusPill) must still be absent.
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    // ContextBar connection StatusPill must still be absent (no "Connected" pill).
+    expect(screen.queryByRole("status", { name: "Connected" })).not.toBeInTheDocument();
   });
 });
 
-// ─── Each tab click swaps placeholder ────────────────────────────────────────
+// ─── Each tab click changes active tab ───────────────────────────────────────
+// Note: TabNav uses forceMount + display:none so ALL panels are in the DOM at
+// once. The active tab is identified by data-state="active" on the tab trigger,
+// not by unique panel content.
 
-describe("tab navigation swaps placeholder content", () => {
+describe("tab navigation sets active tab", () => {
   beforeEach(() => resetToTabs(true));
 
-  const tabs = [
-    { label: "Prompt", placeholder: /Prompt arrives in a later task/i },
-    { label: "Artifacts", placeholder: /Artifacts arrives in a later task/i },
-    { label: "Components", placeholder: /Components arrives in a later task/i },
-    { label: "Assets", placeholder: /Assets arrives in a later task/i },
-    { label: "Checks", placeholder: /Checks arrives in a later task/i },
-    { label: "Settings", placeholder: /Settings arrives in a later task/i },
-  ] as const;
+  const tabLabels = ["Prompt", "Artifacts", "Components", "Assets", "Checks", "Settings"] as const;
 
-  for (const { label, placeholder } of tabs) {
-    it(`clicking '${label}' shows the ${label} placeholder card`, async () => {
+  for (const label of tabLabels) {
+    it(`clicking '${label}' makes its tab trigger active`, async () => {
       const user = userEvent.setup();
-      render(<App />);
+      render(<App bridge={makeBridge()} bus={makeBus()} />);
 
       const tabEl = screen.getByRole("tab", { name: label });
       await user.click(tabEl);
 
-      expect(screen.getByText(placeholder)).toBeInTheDocument();
+      expect(tabEl).toHaveAttribute("data-state", "active");
     });
   }
 });
@@ -269,7 +326,7 @@ describe("tab store binding", () => {
 
   it("clicking a tab updates route.tab in the store", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
 
     await user.click(screen.getByRole("tab", { name: "Artifacts" }));
     expect(useAppStore.getState().route.tab).toBe("artifacts");
@@ -278,8 +335,8 @@ describe("tab store binding", () => {
 
 // ─── Setup screens ────────────────────────────────────────────────────────────
 
-describe("setup-1 screen placeholder", () => {
-  it("renders the classification placeholder", () => {
+describe("setup-1 screen", () => {
+  it("renders the SetupClassification screen", () => {
     useAppStore.setState({
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
@@ -287,13 +344,14 @@ describe("setup-1 screen placeholder", () => {
       route: { screen: "setup-1", tab: "prompt" },
       toasts: [],
     });
-    render(<App />);
-    expect(screen.getByText(/Classification.*arrives in a later task/i)).toBeInTheDocument();
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // SetupClassification renders a "Starting mode" radiogroup
+    expect(screen.getByRole("radiogroup", { name: /Starting mode/i })).toBeInTheDocument();
   });
 });
 
-describe("setup-2 screen placeholder", () => {
-  it("renders the generation defaults placeholder", () => {
+describe("setup-2 screen", () => {
+  it("renders the SetupDefaults screen", () => {
     useAppStore.setState({
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
@@ -301,8 +359,10 @@ describe("setup-2 screen placeholder", () => {
       route: { screen: "setup-2", tab: "prompt" },
       toasts: [],
     });
-    render(<App />);
-    expect(screen.getByText(/Generation Defaults.*arrives in a later task/i)).toBeInTheDocument();
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    // SetupDefaults renders buttons with aria-labels for each defaults field
+    // Check for the "Back" navigation button which is always rendered
+    expect(screen.getByRole("button", { name: /Back/i })).toBeInTheDocument();
   });
 });
 
@@ -312,7 +372,7 @@ describe("toast system", () => {
   beforeEach(resetToConnect);
 
   it("shows a toast message when one is added", () => {
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     act(() => {
       useAppStore.getState().toast("Bridge not reachable");
     });
@@ -321,7 +381,7 @@ describe("toast system", () => {
 
   it("dismiss button removes the toast", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App bridge={makeBridge()} bus={makeBus()} />);
     act(() => {
       useAppStore.getState().toast("Some message");
     });

@@ -106,6 +106,8 @@ function makeBus(overrides: Partial<PluginBus> = {}): PluginBus {
     notify: vi.fn(),
     close: vi.fn(),
     onSelection: vi.fn().mockReturnValue(() => {}),
+    selectNodes: vi.fn(),
+    postReview: vi.fn(),
     ...overrides,
   };
 }

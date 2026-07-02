@@ -45,6 +45,8 @@ function makeFakeBus(initialStorage: Record<string, unknown> = {}): {
     notify: vi.fn(),
     close: vi.fn(),
     onSelection: vi.fn(() => () => {}),
+    selectNodes: vi.fn(),
+    postReview: vi.fn(),
   };
 
   return { bus, storage };
@@ -325,26 +327,26 @@ describe("wizard store — userEdited guard", () => {
     expect(useWizardStore.getState().defaults.visual).toBe("low");
   });
 
-  it("applysuggestions overwrites un-edited fields", () => {
-    useWizardStore.getState().applysuggestions({ category: "webapp" });
+  it("applySuggestions overwrites un-edited fields", () => {
+    useWizardStore.getState().applySuggestions({ category: "webapp" });
     // webapp suggests high flow
     expect(useWizardStore.getState().defaults.flow).toBe("high");
   });
 
-  it("applysuggestions does NOT overwrite user-edited fields", () => {
+  it("applySuggestions does NOT overwrite user-edited fields", () => {
     // User edits visual to "low"
     useWizardStore.getState().setDefault("visual", "low");
     // Now re-suggest with a classification that suggests "medium" visual
-    useWizardStore.getState().applysuggestions({ category: undefined });
+    useWizardStore.getState().applySuggestions({ category: undefined });
     // visual should still be "low" (user's choice), not "medium" (suggestion)
     expect(useWizardStore.getState().defaults.visual).toBe("low");
   });
 
-  it("applysuggestions overwrites fields the user has NOT edited", () => {
+  it("applySuggestions overwrites fields the user has NOT edited", () => {
     // User edits visual (only)
     useWizardStore.getState().setDefault("visual", "low");
     // Re-suggest with marketing category (flow: low, coverage: low)
-    useWizardStore.getState().applysuggestions({ category: "marketing" });
+    useWizardStore.getState().applySuggestions({ category: "marketing" });
     // coverage should be updated (not user-edited)
     expect(useWizardStore.getState().defaults.coverage).toBe("low");
   });
@@ -369,10 +371,10 @@ describe("wizard store — userEdited guard", () => {
     expect(useWizardStore.getState().defaults.visual).toBe("low");
   });
 
-  it("applySuggestions and applysuggestions produce identical results", () => {
-    // Both should apply webapp suggestions to the same initial state.
+  it("applySuggestions produces consistent results across calls", () => {
+    // Both calls with the same classification should produce the same result.
     useWizardStore.getState().applySuggestions({ category: "webapp" });
-    const afterCanonical = { ...useWizardStore.getState().defaults };
+    const firstPass = { ...useWizardStore.getState().defaults };
 
     // Reset to same initial state
     useWizardStore.setState((s) => ({
@@ -390,10 +392,10 @@ describe("wizard store — userEdited guard", () => {
       },
       classification: s.classification,
     }));
-    useWizardStore.getState().applysuggestions({ category: "webapp" });
-    const afterDeprecated = { ...useWizardStore.getState().defaults };
+    useWizardStore.getState().applySuggestions({ category: "webapp" });
+    const secondPass = { ...useWizardStore.getState().defaults };
 
-    expect(afterCanonical).toEqual(afterDeprecated);
+    expect(firstPass).toEqual(secondPass);
   });
 
   it("prefillFrom populates classification from snapshot", () => {

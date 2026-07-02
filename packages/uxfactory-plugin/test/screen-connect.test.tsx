@@ -101,6 +101,8 @@ function makeBus(storedByKey: Record<string, unknown> = {}): PluginBus {
     notify: vi.fn(),
     close: vi.fn(),
     onSelection: vi.fn().mockReturnValue(() => {}),
+    selectNodes: vi.fn(),
+    postReview: vi.fn(),
   };
 }
 

@@ -179,3 +179,37 @@ describe("plugin-bus onSelection", () => {
     expect(calls).toHaveLength(1); // still 1 — unsubscribed
   });
 });
+
+describe("plugin-bus selectNodes", () => {
+  it("sends a select-nodes message with the provided ids", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    bus.selectNodes(["1:1", "2:2"]);
+    expect(sent).toContainEqual({ type: "select-nodes", ids: ["1:1", "2:2"] });
+  });
+
+  it("sends select-nodes with an empty array (no-op on main thread)", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    bus.selectNodes([]);
+    expect(sent).toContainEqual({ type: "select-nodes", ids: [] });
+  });
+});
+
+describe("plugin-bus postReview", () => {
+  it("sends a review message with the provided report", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    const report = { conformant: false, findings: [{ status: "unmet", detail: "bad" }] };
+    bus.postReview(report);
+    expect(sent).toContainEqual({ type: "review", report });
+  });
+
+  it("sends a review message for an empty report (clear annotations)", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    const emptyReport = { conformant: true, findings: [] };
+    bus.postReview(emptyReport);
+    expect(sent).toContainEqual({ type: "review", report: emptyReport });
+  });
+});

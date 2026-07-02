@@ -246,6 +246,8 @@ function makeBus(storedByKey: Record<string, unknown> = {}): PluginBus {
     notify: vi.fn(),
     close: vi.fn(),
     onSelection: vi.fn().mockReturnValue(() => {}),
+    selectNodes: vi.fn(),
+    postReview: vi.fn(),
   };
 }
 
@@ -369,7 +371,7 @@ describe("I-1: hint rendered with hintPrefix — 'nearest: ' for token, none for
 // ─── I-2: Annotation routing field assertions ─────────────────────────────────
 
 describe("I-2: annotation routing — coverage vs element finding fields", () => {
-  it("T1 coverage finding routes as CoverageGap (requirement field set in postMessage)", async () => {
+  it("T1 coverage finding routes as CoverageGap (requirement field set in report)", async () => {
     const user = userEvent.setup();
 
     // Coverage fail: batchReport only — no status PASS/FAIL so M-2 guard allows it
@@ -390,7 +392,6 @@ describe("I-2: annotation routing — coverage vs element finding fields", () =>
       }),
     });
     const bus = makeBus();
-    const postSpy = vi.spyOn(window, "postMessage");
 
     render(<Checks bridge={bridge} bus={bus} />);
 
@@ -400,19 +401,13 @@ describe("I-2: annotation routing — coverage vs element finding fields", () =>
 
     await user.click(screen.getByRole("button", { name: /Annotate/i }));
 
-    const call = postSpy.mock.calls[0]![0] as {
-      pluginMessage: {
-        report: {
-          findings: Array<{ requirement?: string; property?: string; status: string }>;
-        };
-      };
+    const report = (bus.postReview as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      findings: Array<{ requirement?: string; property?: string; status: string }>;
     };
-    const findings = call.pluginMessage.report.findings;
+    const findings = report.findings;
     // T1 coverage finding → CoverageGap: requirement is set, status = "unmet"
     expect(findings[0]!.requirement).toBe("checkout-success · error");
     expect(findings[0]!.status).toBe("unmet");
-
-    postSpy.mockRestore();
   });
 
   it("T3 element finding routes as ElementFlag (property = nodeName)", async () => {
@@ -436,7 +431,6 @@ describe("I-2: annotation routing — coverage vs element finding fields", () =>
       }),
     });
     const bus = makeBus();
-    const postSpy = vi.spyOn(window, "postMessage");
 
     render(<Checks bridge={bridge} bus={bus} />);
 
@@ -446,19 +440,13 @@ describe("I-2: annotation routing — coverage vs element finding fields", () =>
 
     await user.click(screen.getByRole("button", { name: /Annotate/i }));
 
-    const call = postSpy.mock.calls[0]![0] as {
-      pluginMessage: {
-        report: {
-          findings: Array<{ requirement?: string; property?: string }>;
-        };
-      };
+    const report = (bus.postReview as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      findings: Array<{ requirement?: string; property?: string }>;
     };
-    const findings = call.pluginMessage.report.findings;
+    const findings = report.findings;
     // T3 element finding → ElementFlag: no requirement, property = nodeName ("Retry Button")
     expect(findings[0]!.requirement).toBeUndefined();
     expect(findings[0]!.property).toBe("Retry Button");
-
-    postSpy.mockRestore();
   });
 });
 
@@ -705,8 +693,6 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     });
     const bus = makeBus();
 
-    const postSpy = vi.spyOn(window, "postMessage");
-
     render(<Checks bridge={bridge} bus={bus} />);
 
     // Wait for the annotate button to appear (data loaded)
@@ -718,15 +704,8 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
 
     await user.click(screen.getByRole("button", { name: /Annotate/i }));
 
-    // Should have posted a review message
-    expect(postSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pluginMessage: expect.objectContaining({ type: "review" }),
-      }),
-      "*",
-    );
-
-    postSpy.mockRestore();
+    // Should have called bus.postReview with a report
+    expect(bus.postReview).toHaveBeenCalledTimes(1);
   });
 
   it("second press also posts (idempotent — clears then re-draws)", async () => {
@@ -751,8 +730,6 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     });
     const bus = makeBus();
 
-    const postSpy = vi.spyOn(window, "postMessage");
-
     render(<Checks bridge={bridge} bus={bus} />);
 
     await waitFor(() =>
@@ -766,9 +743,7 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     await user.click(screen.getByRole("button", { name: /Annotate/i }));
 
     // Called twice — idempotent (no duplicate prevention)
-    expect(postSpy).toHaveBeenCalledTimes(2);
-
-    postSpy.mockRestore();
+    expect(bus.postReview).toHaveBeenCalledTimes(2);
   });
 
   it("after annotating, Clear annotations button appears", async () => {
@@ -838,8 +813,6 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     });
     const bus = makeBus();
 
-    const postSpy = vi.spyOn(window, "postMessage");
-
     render(<Checks bridge={bridge} bus={bus} />);
 
     await waitFor(() =>
@@ -850,12 +823,10 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
 
     await user.click(screen.getByRole("button", { name: /Annotate 2 failures/i }));
 
-    const call = postSpy.mock.calls[0]![0] as {
-      pluginMessage: { type: string; report: { findings: unknown[] } };
+    const report = (bus.postReview as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      findings: unknown[];
     };
-    expect(call.pluginMessage.report.findings).toHaveLength(2);
-
-    postSpy.mockRestore();
+    expect(report.findings).toHaveLength(2);
   });
 });
 
