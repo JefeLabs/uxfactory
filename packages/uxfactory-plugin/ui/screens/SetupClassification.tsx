@@ -10,7 +10,7 @@
  * an infinite-update error.
  */
 
-import React, { useEffect, useId } from "react";
+import React, { useEffect, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
@@ -157,6 +157,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const setClassification = useWizardStore((s) => s.setClassification);
   const applySuggestions = useWizardStore((s) => s.applySuggestions);
   const prefillFrom = useWizardStore((s) => s.prefillFrom);
+  const toastFn = useAppStore((s) => s.toast);
 
   // ── Scan-based initialization ───────────────────────────────────────────────
   // Runs on mount. If the project already has a classification (re-entering
@@ -180,21 +181,28 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const canContinue = Boolean(category);
   const industryId = useId();
   const localeId = useId();
+  const [saving, setSaving] = useState(false);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   async function handleContinue() {
-    if (!canContinue) return;
-    await bridge.putClassification({
-      category,
-      industry,
-      locale,
-      platforms,
-      layout,
-      ageGroup,
-    });
-    // Seed defaults for step 2 (respects userEdited flags).
-    applySuggestions({ category, industry });
-    goto("setup-2");
+    if (!canContinue || saving) return;
+    setSaving(true);
+    try {
+      await bridge.putClassification({
+        category,
+        industry,
+        locale,
+        platforms,
+        layout,
+        ageGroup,
+      });
+      // Seed defaults for step 2 (respects userEdited flags).
+      applySuggestions({ category, industry });
+      goto("setup-2");
+    } catch {
+      toastFn("Could not save — is the bridge running?");
+      setSaving(false);
+    }
   }
 
   function handleBack() {
@@ -351,11 +359,11 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
         <button
           type="button"
           onClick={() => void handleContinue()}
-          disabled={!canContinue}
-          aria-disabled={!canContinue}
+          disabled={!canContinue || saving}
+          aria-disabled={!canContinue || saving}
           className={[
             "px-4 py-2 text-sm font-medium rounded-[var(--radius-card)] transition-colors",
-            canContinue
+            canContinue && !saving
               ? "bg-primary-600 text-white hover:bg-primary-700"
               : "bg-gray-200 text-gray-400 cursor-not-allowed",
           ].join(" ")}

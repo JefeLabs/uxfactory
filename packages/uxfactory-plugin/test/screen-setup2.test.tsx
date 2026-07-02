@@ -289,6 +289,50 @@ describe("PRD §6.3 — Save & continue writes engine-vocab profile body", () =>
   });
 });
 
+// ─── 3b. Error path — failed PUT does not navigate ───────────────────────────
+
+describe("PRD §6.3 (error path) — failed bridge write stays on setup-2", () => {
+  beforeEach(resetToFreshSetup);
+
+  it("stays on setup-2 when putProfile rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge({
+      putProfile: vi.fn(() => Promise.reject(new Error("network error"))),
+    });
+    render(<SetupDefaults bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Save & continue/i }));
+
+    expect(useAppStore.getState().route.screen).toBe("setup-2");
+  });
+
+  it("fires 'Could not save — is the bridge running?' toast when putProfile rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge({
+      putProfile: vi.fn(() => Promise.reject(new Error("network error"))),
+    });
+    render(<SetupDefaults bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Save & continue/i }));
+
+    const toasts = useAppStore.getState().toasts;
+    expect(toasts.some((t) => t.message === "Could not save — is the bridge running?")).toBe(true);
+  });
+
+  it("re-enables Save & continue button after putProfile rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge({
+      putProfile: vi.fn(() => Promise.reject(new Error("network error"))),
+    });
+    render(<SetupDefaults bridge={bridge} />);
+
+    const btn = screen.getByRole("button", { name: /Save & continue/i });
+    await user.click(btn);
+
+    expect(btn).not.toBeDisabled();
+  });
+});
+
 // ─── 4. Re-entry shows persisted values ──────────────────────────────────────
 
 describe("PRD §6.4 — re-entry shows persisted values, not re-suggested", () => {

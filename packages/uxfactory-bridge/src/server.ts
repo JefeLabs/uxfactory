@@ -71,7 +71,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   await store.init();
 
   const app = Fastify({ logger: false });
-  await app.register(cors, { origin: true });
+  await app.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PUT", "OPTIONS"] });
 
   // --- per-request log ring (500-line cap, "<METHOD> <url> <status>") ---
   app.addHook("onResponse", async (req, reply) => {

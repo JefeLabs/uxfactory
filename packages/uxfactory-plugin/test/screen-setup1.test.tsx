@@ -245,6 +245,51 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
   });
 });
 
+// ─── 2b. Error path — failed PUT does not navigate ───────────────────────────
+
+describe("PRD §6.2 (error path) — failed bridge write stays on setup-1", () => {
+  beforeEach(() => resetStores(makeSnapshot()));
+
+  it("stays on setup-1 when putClassification rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge({
+      putClassification: vi.fn(() => Promise.reject(new Error("network error"))),
+    });
+    render(<SetupClassification bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(useAppStore.getState().route.screen).toBe("setup-1");
+  });
+
+  it("fires 'Could not save — is the bridge running?' toast when putClassification rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge({
+      putClassification: vi.fn(() => Promise.reject(new Error("network error"))),
+    });
+    render(<SetupClassification bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    const toasts = useAppStore.getState().toasts;
+    expect(toasts.some((t) => t.message === "Could not save — is the bridge running?")).toBe(true);
+  });
+
+  it("re-enables Continue button after putClassification rejects", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge({
+      putClassification: vi.fn(() => Promise.reject(new Error("network error"))),
+    });
+    render(<SetupClassification bridge={bridge} />);
+
+    const btn = screen.getByRole("button", { name: "Continue" });
+    await user.click(btn);
+
+    expect(btn).not.toBeDisabled();
+    expect(btn).not.toHaveAttribute("aria-disabled", "true");
+  });
+});
+
 // ─── 3. Scan variant — found existing work ────────────────────────────────────
 
 describe("PRD §6.3 — scan variant: 'found existing work' pre-selects use-existing", () => {

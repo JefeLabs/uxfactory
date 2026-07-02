@@ -10,7 +10,7 @@
  * an infinite-update error.
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Info } from "lucide-react";
 import type { Bridge } from "../lib/bridge.js";
@@ -128,6 +128,7 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   const coherence = useWizardStore((s) => s.defaults.coherence);
   const setDefault = useWizardStore((s) => s.setDefault);
   const applySuggestions = useWizardStore((s) => s.applySuggestions);
+  const [saving, setSaving] = useState(false);
 
   // ── Apply suggestions when classification changes ───────────────────────────
   // `applySuggestions` respects `userEdited` flags — it only overwrites fields
@@ -141,14 +142,21 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
   async function handleSave() {
+    if (saving) return;
     // Write profile with engine vocabulary (no label conversion needed — the
     // wizard draft already stores engine values: low | medium | high).
     // The bridge reads a FLAT body: {visual, editorial, coverage, flow, style?,
     // coherence?}. It merges scope fields into profile.scope and coherence into
     // profile.experimental, and style propagates to classification.json.
-    await bridge.putProfile({ style, visual, editorial, flow, coverage, coherence });
-    toastFn("Applies to new runs");
-    goto("tabs");
+    setSaving(true);
+    try {
+      await bridge.putProfile({ style, visual, editorial, flow, coverage, coherence });
+      toastFn("Applies to new runs");
+      goto("tabs");
+    } catch {
+      toastFn("Could not save — is the bridge running?");
+      setSaving(false);
+    }
   }
 
   function handleBack() {
@@ -284,7 +292,13 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
         <button
           type="button"
           onClick={() => void handleSave()}
-          className="px-4 py-2 text-sm font-medium rounded-[var(--radius-card)] bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+          disabled={saving}
+          className={[
+            "px-4 py-2 text-sm font-medium rounded-[var(--radius-card)] transition-colors",
+            saving
+              ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+              : "bg-primary-600 text-white hover:bg-primary-700",
+          ].join(" ")}
         >
           Save &amp; continue
         </button>

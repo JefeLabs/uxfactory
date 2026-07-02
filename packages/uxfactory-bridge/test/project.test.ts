@@ -422,6 +422,30 @@ describe("GET /project/snapshot — full Meridian-shaped project", () => {
   });
 });
 
+// ─── OPTIONS /project/classification preflight ───────────────────────────────
+
+describe("OPTIONS /project/classification preflight — PUT must be allowed", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  it("preflight OPTIONS returns 204 and access-control-allow-methods containing PUT", async () => {
+    const res = await app.inject({
+      method: "OPTIONS",
+      url: "/project/classification",
+      headers: {
+        origin: "http://localhost:3000",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "content-type",
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    const allowedMethods = res.headers["access-control-allow-methods"] as string;
+    expect(allowedMethods).toContain("PUT");
+  });
+});
+
 // ─── PUT /project/classification ─────────────────────────────────────────────
 
 describe("PUT /project/classification", () => {
