@@ -515,6 +515,19 @@ describe("code.ts typography rendering (SP3c Task 6)", () => {
     expect(t.characters).toBe("x");
   });
 
+  it("preserves the weight when only the family is unavailable", async () => {
+    const fig = makeFigma();
+    fig.failFontKeys.push("-apple-system/Semi Bold", "-apple-system/Regular");
+    await loadCode(fig);
+    const spec: DesignSpec = { frames: [{ name: "f", x: 0, y: 0, width: 300, height: 100, children: [
+      { type: "text", name: "h2", x: 0, y: 0, width: 200, height: 40, characters: "Cart",
+        fontSize: 24, fontWeight: 600, fontFamily: "-apple-system" },
+    ] }] };
+    await fig.__send({ type: "render", spec, jobId: "w1" });
+    const h2 = fig.currentPage.children.find((n) => n.name === "f")!.children[0]!;
+    expect(h2.fontName).toEqual({ family: "Inter", style: "Semi Bold" });   // weight preserved
+  });
+
   it("applies fontSize/lineHeight even without a font family or weight", async () => {
     const fig = makeFigma();
     await loadCode(fig);

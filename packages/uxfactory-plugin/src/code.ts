@@ -358,18 +358,29 @@ export async function loadFontFailSoft(
   family: string,
   style: string,
 ): Promise<{ family: string; style: string }> {
+  // Leg 1: exact match.
   try {
     await fig.loadFontAsync({ family, style });
     return { family, style };
-  } catch {
+  } catch { /* fall through */ }
+  // Leg 2: same family, drop to Regular — only when not already Regular (avoids a redundant retry).
+  if (style !== "Regular") {
     try {
       await fig.loadFontAsync({ family, style: "Regular" });
       return { family, style: "Regular" };
-    } catch {
-      await fig.loadFontAsync({ family: "Inter", style: "Regular" });
-      return { family: "Inter", style: "Regular" };
-    }
+    } catch { /* fall through */ }
   }
+  // Leg 3: Inter with the ORIGINAL weight — preserves Semi Bold / Bold etc. when only the
+  // family is unavailable (e.g. -apple-system, system-ui).  Skip when already Regular.
+  if (style !== "Regular") {
+    try {
+      await fig.loadFontAsync({ family: "Inter", style });
+      return { family: "Inter", style };
+    } catch { /* fall through */ }
+  }
+  // Leg 4: last-resort Inter Regular.
+  await fig.loadFontAsync({ family: "Inter", style: "Regular" });
+  return { family: "Inter", style: "Regular" };
 }
 
 function applyEffects(node: EditableNode, effects: PlannedChild["effects"]): void {
