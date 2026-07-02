@@ -270,6 +270,29 @@ describe("code.ts render", () => {
     expect(screen.children.some((n) => n.name === "ok")).toBe(true);
     expect(screen.children.some((n) => n.name === "ghost")).toBe(false);
   });
+
+  it("renders a legacy flat spec with no semantic props touched (backward-compat)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    await fig.__send({ type: "render", spec: design, jobId: "legacy" });
+
+    const rendered = lastOfType(fig, "rendered");
+    expect(rendered).toBeDefined();
+    expect(rendered!.report.counts).toEqual({ frames: 1, sections: 0, objects: 2, connectors: 1 });
+
+    const vpc = fig.currentPage.children.find((n) => n.name === "vpc")!;
+    expect(vpc.type).toBe("FRAME");
+    // No auto-layout, no effects, no per-corner radius applied to a legacy frame.
+    expect(vpc.layoutMode).toBeUndefined();
+    expect(vpc.itemSpacing).toBeUndefined();
+    expect(vpc.effects).toBeUndefined();
+    expect(vpc.topLeftRadius).toBeUndefined();
+    expect(vpc.layoutSizingHorizontal).toBeUndefined();
+    // No components were created for a spec without a components map.
+    expect(fig.createComponentCalls).toBe(0);
+    const api = vpc.children.find((n) => n.name === "api")!;
+    expect(api).toMatchObject({ type: "RECTANGLE", x: 80, y: 80 });
+  });
 });
 
 // ---------------------------------------------------------------------------
