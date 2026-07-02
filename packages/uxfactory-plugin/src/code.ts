@@ -37,6 +37,8 @@ interface EditableNode {
   paddingLeft?: number;
   primaryAxisAlignItems?: string;
   counterAxisAlignItems?: string;
+  primaryAxisSizingMode?: string;
+  counterAxisSizingMode?: string;
   layoutSizingHorizontal?: string;
   layoutSizingVertical?: string;
   effects?: unknown;
@@ -299,6 +301,8 @@ const SIZING: Record<string, string> = { fixed: "FIXED", hug: "HUG", fill: "FILL
 function applyAutoLayout(node: EditableNode, layout: PlannedChild["layout"], sizing: PlannedChild["sizing"]): void {
   if (!layout) return;
   node.layoutMode = layout.mode === "vertical" ? "VERTICAL" : "HORIZONTAL";
+  node.primaryAxisSizingMode = "FIXED";
+  node.counterAxisSizingMode = "FIXED";
   if (layout.gap !== undefined) node.itemSpacing = layout.gap;
   if (layout.padding !== undefined) {
     const p = layout.padding;

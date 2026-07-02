@@ -27,6 +27,8 @@ export class FakeNode {
   paddingLeft: number | undefined = undefined;
   primaryAxisAlignItems: string | undefined = undefined;
   counterAxisAlignItems: string | undefined = undefined;
+  primaryAxisSizingMode: string | undefined = undefined;
+  counterAxisSizingMode: string | undefined = undefined;
   effects: unknown = undefined;
   topLeftRadius: number | undefined = undefined;
   topRightRadius: number | undefined = undefined;

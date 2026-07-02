@@ -177,9 +177,12 @@ describe("code.ts render", () => {
     expect(col.counterAxisAlignItems).toBe("CENTER");
     expect(col.layoutSizingHorizontal).toBe("FILL");
     expect(col.layoutSizingVertical).toBe("HUG");
+    expect(col.primaryAxisSizingMode).toBe("FIXED");
+    expect(col.counterAxisSizingMode).toBe("FIXED");
     const row = col.children.find((n) => n.name === "row")!;
     expect(row.type).toBe("FRAME");
     expect(row.layoutMode).toBe("HORIZONTAL");
+    expect(row.primaryAxisSizingMode).toBe("FIXED");
   });
 
   it("sets layoutSizing only after children are appended", async () => {
