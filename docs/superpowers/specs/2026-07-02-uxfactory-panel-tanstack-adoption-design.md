@@ -27,7 +27,7 @@ No visual changes; no new features; no ui-core package extraction yet (next step
 ## 4. Migration invariants (the safety rails)
 
 1. **Behavior-frozen refactor:** every existing RTL screen test keeps passing with minimal mechanical edits (render-with-providers helper replaces bare render; navigation asserts change from store-route to router location). Tests that assert *behavior* must not weaken.
-2. **Bundle budget:** +~15KB gz combined is acceptable; ui.html stays < 1.5MB, still fully inlined (both libs are pure JS — no singlefile hazard).
+2. **Bundle budget:** +~15KB gz combined is acceptable; ui.html stays < 2MB (the Artifact Editor spec raised the budget from the original 1.5MB — MDXEditor + its stylesheet moved the baseline to ~1.59MB), still fully inlined (both libs are pure JS — no singlefile hazard).
 3. **The contract tests (`bridge-contract.test.ts`) and e2e route walks keep passing unchanged in intent** (e2e asserts flows through the UI; route representation changes underneath).
 4. Per-screen migration order (each its own commit, suite green): providers+router shell w/ routes delegating to existing screens → Settings (most polling) → Artifacts (pending/invalidations) → Connect+Setup (mutation-gated navigation) → Checks (search-param run + refetch) → Prompt/Components (links query, enqueue mutations) → delete dead store fields (`route`, `focus`, hand-rolled polls) + final sweep.
 
@@ -39,5 +39,5 @@ Per-screen: existing suites adapted via a shared `renderWithProviders(ui, {route
 
 1. Zero hand-rolled `setInterval` polling or manual pending/error flags remain in `ui/screens/**` (grep-clean, except the bus-level pieces that aren't server state).
 2. `route`/`focus` gone from the app store; navigation is router-only with typed search params.
-3. All suites green; bundle < 1.5MB; behavior identical in a live Figma smoke (boot, setup redo path, tab walk, Create dialog, Checks run param).
+3. All suites green; bundle < 2MB; behavior identical in a live Figma smoke (boot, setup redo path, tab walk, Create dialog, Checks run param).
 4. The route tree + query layer sit in clearly extractable modules (`ui/router.tsx`, `ui/queries.ts`) — the ui-core extraction that follows is file moves, not rewrites.
