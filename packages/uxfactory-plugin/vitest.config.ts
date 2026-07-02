@@ -8,8 +8,9 @@ import { fileURLToPath } from "node:url";
 // still take precedence where a DOM is needed.
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "test/**/*.test.ts", "test/**/*.test.tsx"],
     environment: "node",
+    setupFiles: ["./test/setup-ui.ts"],
   },
   resolve: {
     alias: {

@@ -4,11 +4,12 @@
     "noEmit": true,
     "rootDir": "..",
     "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
     "types": ["@figma/plugin-typings", "node"],
     "paths": {
       "@uxfactory/spec": ["../uxfactory-spec/src/index.ts"],
       "@uxfactory/gate": ["../uxfactory-gate/src/index.ts"]
     }
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "ui/components"]
 }
