@@ -58,7 +58,8 @@ export function Connect({
   bus: PluginBus;
 }): React.JSX.Element {
   // ── Store selectors (single primitives / stable refs only) ─────────────────
-  const fileInfo = useAppStore((s) => s.fileInfo);
+  const fileName = useAppStore((s) => s.fileInfo?.name ?? "this file");
+  const fileKey = useAppStore((s) => s.fileInfo?.fileKey ?? "");
   const connectionEndpoint = useAppStore((s) => s.connection.endpoint);
   const connectionRepoPath = useAppStore((s) => s.connection.repoPath);
   const connectionMode = useAppStore((s) => s.connection.mode);
@@ -78,9 +79,7 @@ export function Connect({
   const repoInputId = useId();
 
   // ── Derived ─────────────────────────────────────────────────────────────────
-  const fileKey = fileInfo?.fileKey ?? "";
   const storageKey = `connection:${fileKey}`;
-  const fileName = fileInfo?.name ?? "this file";
 
   const ctaEnabled =
     bridgeStatus === "running" && repoPath.trim() !== "" && !isConnecting;
@@ -191,7 +190,7 @@ export function Connect({
         setIsConnecting(false);
       }
     } catch {
-      connectFailed("Bridge not reachable — start it with `uxfactory bridge`");
+      connectFailed(`Bridge not reachable at ${connectionEndpoint} — start it with \`uxfactory bridge\``);
       setIsConnecting(false);
     }
   };

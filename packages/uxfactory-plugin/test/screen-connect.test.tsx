@@ -303,7 +303,7 @@ describe("AC-3: invalid path → field-level error by kind, no partial persist",
     );
   });
 
-  it("bridge-serves-different-root → field shows served path", async () => {
+  it("bridge-serves-different-root → field shows served path and guidance", async () => {
     const bridge = makeBridge({
       connectProject: vi.fn().mockResolvedValue({
         ok: false,
@@ -319,6 +319,7 @@ describe("AC-3: invalid path → field-level error by kind, no partial persist",
         "This bridge serves /other/repo",
       ),
     );
+    expect(screen.getByRole("alert")).toHaveTextContent("connect to that path");
   });
 
   it("no partial persist — storageSet is NOT called on error", async () => {
@@ -336,6 +337,38 @@ describe("AC-3: invalid path → field-level error by kind, no partial persist",
     );
 
     expect(bus.storageSet).not.toHaveBeenCalled();
+  });
+});
+
+// ─── AC-3b: Bridge throw — endpoint appears in toast error ───────────────────
+
+describe("AC-3b: connectProject throws → connectFailed includes the endpoint URL", () => {
+  it("names the connection endpoint in the error when bridge is unreachable", async () => {
+    const user = userEvent.setup();
+    // Bridge health is healthy so CTA is enabled, but connectProject throws
+    const bridge = makeBridge({
+      health: vi.fn().mockResolvedValue({ ok: true }),
+      connectProject: vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    });
+    const bus = makeBus();
+
+    // Store endpoint already set to the default value in BASE_STORE
+    render(<Connect bridge={bridge} bus={bus} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+
+    await user.type(screen.getByRole("textbox"), "/home/user/demo-shop");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() =>
+      expect(useAppStore.getState().connection.status).toBe("error"),
+    );
+
+    const toastMessage = useAppStore.getState().toasts[0]?.message ?? "";
+    expect(toastMessage).toContain("http://localhost:3779");
+    expect(toastMessage).toContain("uxfactory bridge");
   });
 });
 
