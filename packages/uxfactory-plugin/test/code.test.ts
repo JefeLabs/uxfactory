@@ -434,6 +434,43 @@ describe("code.ts find-or-create page (Fix 3)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SP3c Task 6 — typography rendering + fail-soft font chain
+// ---------------------------------------------------------------------------
+describe("code.ts typography rendering (SP3c Task 6)", () => {
+  it("applies typography with a fail-soft font chain", async () => {
+    const fig = makeFigma();
+    fig.failFontKeys.push("Fraunces/Bold");                     // style load fails → falls to Regular
+    await loadCode(fig);
+    const spec: DesignSpec = { frames: [{ name: "f", x: 0, y: 0, width: 300, height: 100, children: [
+      { type: "text", name: "h1", x: 0, y: 0, width: 200, height: 40, characters: "Title",
+        fontSize: 28, fontWeight: 700, fontFamily: "Fraunces", lineHeight: 36 },
+    ] }] };
+    await fig.__send({ type: "render", spec, jobId: "t1" });
+    const f = fig.currentPage.children.find((n) => n.name === "f")!;
+    const h1 = f.children.find((n) => n.name === "h1")!;
+    expect(fig.loadFontAsyncCalls).toContain("Fraunces/Bold");   // tried
+    expect(h1.fontName).toEqual({ family: "Fraunces", style: "Regular" });  // fell back one step
+    expect(h1.characters).toBe("Title");
+    expect(h1.fontSize).toBe(28);
+    expect(h1.lineHeight).toEqual({ value: 36, unit: "PIXELS" });
+  });
+
+  it("falls all the way back to Inter and never aborts", async () => {
+    const fig = makeFigma();
+    fig.failFontKeys.push("Ghost/Regular");                      // both family attempts fail
+    await loadCode(fig);
+    const spec: DesignSpec = { frames: [{ name: "f", x: 0, y: 0, width: 300, height: 100, children: [
+      { type: "text", name: "t", x: 0, y: 0, width: 200, height: 40, characters: "x",
+        fontWeight: 400, fontFamily: "Ghost" },
+    ] }] };
+    await fig.__send({ type: "render", spec, jobId: "t2" });
+    const t = fig.currentPage.children.find((n) => n.name === "f")!.children[0]!;
+    expect(t.fontName).toEqual({ family: "Inter", style: "Regular" });
+    expect(t.characters).toBe("x");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fix 5 — graceful instance failure
 // ---------------------------------------------------------------------------
 describe("code.ts graceful instance failure (Fix 5)", () => {

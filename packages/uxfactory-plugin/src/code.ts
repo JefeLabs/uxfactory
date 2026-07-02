@@ -48,6 +48,8 @@ interface EditableNode {
   bottomLeftRadius?: number;
   /** Optional font descriptor; present on TEXT nodes. */
   fontName?: { family: string; style: string };
+  fontSize?: number;
+  lineHeight?: unknown;
   /** Text sublayer; present on STICKY and CONNECTOR nodes. */
   text?: { characters?: string };
   /** Present on COMPONENT nodes; clones into an INSTANCE. */
@@ -332,6 +334,44 @@ function toFigmaEffect(e: NonNullable<PlannedChild["effects"]>[number]): Record<
   };
 }
 
+// ---- typography helpers ----
+
+const WEIGHT_ENTRIES: [number, string][] = [
+  [300, "Light"],
+  [400, "Regular"],
+  [500, "Medium"],
+  [600, "Semi Bold"],
+  [700, "Bold"],
+  [800, "Extra Bold"],
+];
+
+export function weightToStyle(w: number): string {
+  let result = "Light"; // floor
+  for (const [key, style] of WEIGHT_ENTRIES) {
+    if (w >= key) result = style;
+    else break;
+  }
+  return result;
+}
+
+export async function loadFontFailSoft(
+  family: string,
+  style: string,
+): Promise<{ family: string; style: string }> {
+  try {
+    await fig.loadFontAsync({ family, style });
+    return { family, style };
+  } catch {
+    try {
+      await fig.loadFontAsync({ family, style: "Regular" });
+      return { family, style: "Regular" };
+    } catch {
+      await fig.loadFontAsync({ family: "Inter", style: "Regular" });
+      return { family: "Inter", style: "Regular" };
+    }
+  }
+}
+
 function applyEffects(node: EditableNode, effects: PlannedChild["effects"]): void {
   if (effects && effects.length > 0) node.effects = effects.map(toFigmaEffect);
 }
@@ -462,9 +502,21 @@ async function renderChild(
       // StickyNode.text is a TextSublayer — never use .characters directly.
       if (node.text !== undefined) node.text.characters = child.characters;
     } else if (child.kind === "text") {
-      // TextNode requires loadFontAsync before characters can be set.
-      await fig.loadFontAsync(node.fontName ?? { family: "Inter", style: "Regular" });
-      node.characters = child.characters;
+      if (child.fontFamily !== undefined || child.fontWeight !== undefined) {
+        // Typography: use fail-soft font chain, then apply all type fields.
+        const fn = await loadFontFailSoft(
+          child.fontFamily ?? "Inter",
+          child.fontWeight !== undefined ? weightToStyle(child.fontWeight) : "Regular",
+        );
+        node.fontName = fn;
+        node.characters = child.characters;
+        if (child.fontSize !== undefined) node.fontSize = child.fontSize;
+        if (child.lineHeight !== undefined) node.lineHeight = { value: child.lineHeight, unit: "PIXELS" };
+      } else {
+        // Font-less: keep existing path byte-identical.
+        await fig.loadFontAsync(node.fontName ?? { family: "Inter", style: "Regular" });
+        node.characters = child.characters;
+      }
     } else {
       // Shape / other: keep existing behaviour.
       node.characters = child.characters;

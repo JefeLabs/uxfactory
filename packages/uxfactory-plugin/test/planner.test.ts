@@ -125,6 +125,22 @@ describe("planRender", () => {
     expect(inst).toMatchObject({ kind: "component-instance", component: "button", overrides: { label: { characters: "Pay", fill: "#FFFFFF" } } });
   });
 
+  it("carries typography fields (fontSize/fontWeight/fontFamily/lineHeight) on a text child", () => {
+    const spec: DesignSpec = {
+      frames: [{ name: "f", x: 0, y: 0, width: 300, height: 100, children: [
+        { type: "text", name: "h1", x: 0, y: 0, width: 200, height: 40, characters: "Title",
+          fontSize: 28, fontWeight: 700, fontFamily: "Fraunces", lineHeight: 36 },
+      ] }],
+    };
+    const child = planRender(spec).frames[0]!.children[0]!;
+    expect(child.kind).toBe("text");
+    expect(child.characters).toBe("Title");
+    expect(child.fontSize).toBe(28);
+    expect(child.fontWeight).toBe(700);
+    expect(child.fontFamily).toBe("Fraunces");
+    expect(child.lineHeight).toBe(36);
+  });
+
   it("carries effects and object corner radius", () => {
     const spec: DesignSpec = {
       frames: [{ name: "f", x: 0, y: 0, width: 10, height: 10, children: [

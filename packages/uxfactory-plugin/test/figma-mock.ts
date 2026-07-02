@@ -15,6 +15,9 @@ export class FakeNode {
   rotation: number | undefined = undefined;
   visible: boolean | undefined = undefined;
   characters: string | undefined = undefined;
+  fontSize: number | undefined = undefined;
+  lineHeight: unknown = undefined;
+  fontName: { family: string; style: string } | undefined = undefined;
   connectorStart: unknown = undefined;
   connectorEnd: unknown = undefined;
   /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
@@ -104,6 +107,8 @@ export interface FakeFigma {
   loadFontAsync(name: { family: string; style: string }): Promise<void>;
   /** Recorded keys of every loadFontAsync call, as "family/style". */
   loadFontAsyncCalls: string[];
+  /** Font keys ("family/style") that loadFontAsync should reject. */
+  failFontKeys: string[];
   importComponentByKeyAsync(key: string): Promise<{ createInstance(): FakeNode }>;
   exportAsync(): Promise<Uint8Array>;
   ui: {
@@ -132,11 +137,13 @@ export function makeFigma(): FakeFigma {
   // ---- font-loading enforcement (Fix 2) ----
   const loadedFonts = new Set<string>();
   const loadFontAsyncCalls: string[] = [];
+  const failFontKeys: string[] = [];
 
   const loadFontAsync = async (name: { family: string; style: string }): Promise<void> => {
     const key = `${name.family}/${name.style}`;
+    loadFontAsyncCalls.push(key); // record BEFORE possible throw
+    if (failFontKeys.includes(key)) throw new Error("font unavailable: " + key);
     loadedFonts.add(key);
-    loadFontAsyncCalls.push(key);
   };
 
   /**
@@ -145,9 +152,8 @@ export function makeFigma(): FakeFigma {
    */
   const createText = (): FakeNode => {
     const node = create("TEXT");
-    const fontName = { family: "Inter", style: "Regular" };
-    // Expose fontName so code.ts can pass it to loadFontAsync.
-    (node as unknown as Record<string, unknown>).fontName = fontName;
+    // Set default fontName so code.ts can read and reassign it before setting characters.
+    node.fontName = { family: "Inter", style: "Regular" };
     // Remove the class-field `characters` and replace with an enforcing accessor.
     delete (node as unknown as Record<string, unknown>).characters;
     let _chars: string | undefined = undefined;
@@ -156,10 +162,12 @@ export function makeFigma(): FakeFigma {
         return _chars;
       },
       set(v: string | undefined) {
-        if (v !== undefined && !loadedFonts.has(`${fontName.family}/${fontName.style}`)) {
+        // Guard keys on the node's CURRENT fontName (may have been reassigned by code).
+        const fn = node.fontName ?? { family: "Inter", style: "Regular" };
+        if (v !== undefined && !loadedFonts.has(`${fn.family}/${fn.style}`)) {
           throw new Error(
             `figma.loadFontAsync must be called before setting TextNode.characters ` +
-              `(font: ${fontName.family} ${fontName.style})`,
+              `(font: ${fn.family} ${fn.style})`,
           );
         }
         _chars = v;
@@ -270,6 +278,7 @@ export function makeFigma(): FakeFigma {
     createPage,
     loadFontAsync,
     loadFontAsyncCalls,
+    failFontKeys,
     importComponentByKeyAsync: () => Promise.resolve({ createInstance: () => create("INSTANCE") }),
     exportAsync: () => Promise.resolve(new Uint8Array([1, 2, 3])),
     ui,

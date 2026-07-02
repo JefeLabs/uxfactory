@@ -31,6 +31,10 @@ export interface PlannedChild {
   rotation?: number;
   opacity?: number;
   characters?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  lineHeight?: number;
   asset?: string;
   effects?: Effect[];
   // kind === "frame":
@@ -135,6 +139,10 @@ function mapChild(child: FrameChild | SectionChild): PlannedChild {
   if ("rotation" in child && child.rotation !== undefined) out.rotation = child.rotation;
   if ("opacity" in child && child.opacity !== undefined) out.opacity = child.opacity;
   if ("characters" in child && child.characters !== undefined) out.characters = child.characters;
+  if ("fontSize" in child && child.fontSize !== undefined) out.fontSize = child.fontSize;
+  if ("fontWeight" in child && child.fontWeight !== undefined) out.fontWeight = child.fontWeight;
+  if ("fontFamily" in child && child.fontFamily !== undefined) out.fontFamily = child.fontFamily;
+  if ("lineHeight" in child && child.lineHeight !== undefined) out.lineHeight = child.lineHeight;
   if ("asset" in child && child.asset !== undefined) out.asset = child.asset;
   if ("effects" in child && child.effects !== undefined) out.effects = child.effects;
   return out;
