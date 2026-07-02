@@ -46,6 +46,10 @@ export interface TextNode extends Box {
   name: string;
   characters: string;
   fill?: HexColor;
+  fontSize?: number;
+  fontWeight?: number;
+  fontFamily?: string;
+  lineHeight?: number;
   rotation?: number;
   opacity?: number;
   effects?: Effect[];

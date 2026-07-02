@@ -236,4 +236,19 @@ export const cases: Case[] = [
         effects: [{ type: "glow", color: "#000000", x: 0, y: 0, blur: 1 }] }],
     },
   },
+  {
+    name: "text node with typography fields",
+    valid: true,
+    input: { frames: [{ name: "f", x: 0, y: 0, width: 100, height: 100, children: [
+      { type: "text", name: "h1", x: 0, y: 0, width: 90, height: 30, characters: "Hi",
+        fontSize: 24, fontWeight: 700, fontFamily: "Fraunces", lineHeight: 32 },
+    ] }] },
+  },
+  {
+    name: "invalid fontWeight is rejected",
+    valid: false,
+    input: { frames: [{ name: "f", x: 0, y: 0, width: 100, height: 100, children: [
+      { type: "text", name: "t", x: 0, y: 0, width: 90, height: 30, characters: "Hi", fontWeight: 0 },
+    ] }] },
+  },
 ];
