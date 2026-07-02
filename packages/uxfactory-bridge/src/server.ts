@@ -1,4 +1,6 @@
 import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { ServerResponse } from "node:http";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
@@ -9,6 +11,7 @@ import type { Spec } from "@uxfactory/spec";
 import { validate } from "@uxfactory/spec";
 import { BridgeStore } from "./store.js";
 import type { ReviewReportPayload, CanvasRequest, PipelineEvent } from "./store.js";
+import { projectPlugin } from "./project.js";
 
 /** Options for building a bridge. */
 export interface BridgeOptions {
@@ -23,6 +26,27 @@ const DEFAULT_TOLERANCE_PX = 0.5;
 const DEFAULT_PORT = 3779;
 /** SSE keep-alive comment cadence — keeps idle proxies/sockets from dropping the stream. */
 const SSE_KEEPALIVE_MS = 25_000;
+/** Maximum lines retained in the request log ring buffer. */
+const LOG_RING_CAP = 500;
+
+/**
+ * Read the bridge package.json version string.
+ * Tries source-relative path first (src/server.ts → ../package.json), then
+ * compiled-relative (dist/src/server.js → ../../package.json) so the same code
+ * works both in vitest (source) and in production builds (compiled).
+ */
+async function readBridgeVersion(): Promise<string> {
+  for (const rel of ["../package.json", "../../package.json"]) {
+    try {
+      const url = new URL(rel, import.meta.url);
+      const pkg = JSON.parse(
+        await readFile(fileURLToPath(url), "utf8"),
+      ) as { version?: string };
+      if (typeof pkg.version === "string") return pkg.version;
+    } catch { /* try next */ }
+  }
+  return "0.0.0";
+}
 
 /** A POST /edits caller awaiting the render keyed by the enqueued jobId. */
 interface EditWaiter {
@@ -33,14 +57,31 @@ interface EditWaiter {
 /** Build a configured (but not-yet-listening) Fastify bridge. */
 export async function createBridge(options: BridgeOptions = {}): Promise<FastifyInstance> {
   const dataDir = options.dataDir ?? path.resolve(process.cwd(), ".uxfactory");
+  // The served project root is the parent of the .uxfactory data directory.
+  const servedRoot = path.dirname(dataDir);
   // editTimeoutMs is consumed by POST /edits (Task 5).
   const editTimeoutMs = options.editTimeoutMs ?? DEFAULT_EDIT_TIMEOUT_MS;
+
+  // --- boot-time state for /stats and /logs ---
+  const bridgeVersion = await readBridgeVersion();
+  const shared = { startedAt: Date.now(), runsRelayed: 0 };
+  const logRing: string[] = [];
 
   const store = new BridgeStore(dataDir);
   await store.init();
 
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
+
+  // --- per-request log ring (500-line cap, "<METHOD> <url> <status>") ---
+  app.addHook("onResponse", async (req, reply) => {
+    const line = `${req.method} ${req.url} ${reply.statusCode}`;
+    logRing.push(line);
+    if (logRing.length > LOG_RING_CAP) logRing.splice(0, logRing.length - LOG_RING_CAP);
+  });
+
+  // --- project / panel routes (Task 3) ---
+  await app.register(projectPlugin, { servedRoot, dataDir, version: bridgeVersion, shared, logRing });
 
   const waiters = new Map<string, EditWaiter>();
 
@@ -199,6 +240,8 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
       return reply.code(400).send({ error: "status must be a number" });
     }
     await store.savePipelineResult(body.id, body.status, body.result);
+    // Increment the relayed-run counter surfaced via GET /stats.
+    shared.runsRelayed += 1;
     return { ok: true };
   });
 
