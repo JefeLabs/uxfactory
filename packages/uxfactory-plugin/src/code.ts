@@ -503,20 +503,20 @@ async function renderChild(
       if (node.text !== undefined) node.text.characters = child.characters;
     } else if (child.kind === "text") {
       if (child.fontFamily !== undefined || child.fontWeight !== undefined) {
-        // Typography: use fail-soft font chain, then apply all type fields.
+        // Typography: use fail-soft font chain.
         const fn = await loadFontFailSoft(
           child.fontFamily ?? "Inter",
           child.fontWeight !== undefined ? weightToStyle(child.fontWeight) : "Regular",
         );
         node.fontName = fn;
-        node.characters = child.characters;
-        if (child.fontSize !== undefined) node.fontSize = child.fontSize;
-        if (child.lineHeight !== undefined) node.lineHeight = { value: child.lineHeight, unit: "PIXELS" };
       } else {
         // Font-less: keep existing path byte-identical.
         await fig.loadFontAsync(node.fontName ?? { family: "Inter", style: "Regular" });
-        node.characters = child.characters;
       }
+      node.characters = child.characters;
+      // fontSize/lineHeight apply regardless of whether a font was specified.
+      if (child.fontSize !== undefined) node.fontSize = child.fontSize;
+      if (child.lineHeight !== undefined) node.lineHeight = { value: child.lineHeight, unit: "PIXELS" };
     } else {
       // Shape / other: keep existing behaviour.
       node.characters = child.characters;

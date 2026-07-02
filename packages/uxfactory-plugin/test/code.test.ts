@@ -468,6 +468,19 @@ describe("code.ts typography rendering (SP3c Task 6)", () => {
     expect(t.fontName).toEqual({ family: "Inter", style: "Regular" });
     expect(t.characters).toBe("x");
   });
+
+  it("applies fontSize/lineHeight even without a font family or weight", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = { frames: [{ name: "f", x: 0, y: 0, width: 300, height: 100, children: [
+      { type: "text", name: "t", x: 0, y: 0, width: 200, height: 40, characters: "x", fontSize: 18, lineHeight: 26 },
+    ] }] };
+    await fig.__send({ type: "render", spec, jobId: "t3" });
+    const t = fig.currentPage.children.find((n) => n.name === "f")!.children[0]!;
+    expect(t.fontName).toEqual({ family: "Inter", style: "Regular" });   // font-less path
+    expect(t.fontSize).toBe(18);
+    expect(t.lineHeight).toEqual({ value: 26, unit: "PIXELS" });
+  });
 });
 
 // ---------------------------------------------------------------------------
