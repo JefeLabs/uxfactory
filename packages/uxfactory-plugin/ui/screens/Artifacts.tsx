@@ -11,7 +11,7 @@
  *
  * Row anatomy: freshness dot · name · meta (monospace if file-ish) · trailing action
  *   - up-to-date/draft with path → "Open" button
- *   - draft (hover) → additional "Regenerate" secondary action
+ *   - draft with path → additional always-visible "Regenerate" secondary action
  *   - missing → "Create" primary button
  *   - generating → "generating…" replacing action
  *
@@ -76,8 +76,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const [openErrors, setOpenErrors] = useState<Record<string, string>>({});
   /** Highlighted artifact key (from focus intent). */
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
-  /** Currently hovered artifact key (for draft Regenerate reveal). */
-  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   /** DOM refs to each artifact row wrapper, keyed by artifact key. */
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -213,7 +211,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                   const isPending = pendingKeys.has(row.key);
                   const openError = openErrors[row.key];
                   const isHighlighted = highlightedKey === row.key;
-                  const isHovered = hoveredKey === row.key;
 
                   // Compute display meta: use row.meta if set, else derive from status
                   const displayMeta =
@@ -244,10 +241,10 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                       </button>
                     );
                   } else if (row.path !== null) {
-                    // up-to-date or draft — show Open; draft also shows Regenerate on hover
+                    // up-to-date or draft — show Open; draft with path also shows Regenerate
                     action = (
                       <div className="flex items-center gap-2">
-                        {row.status === "draft" && isHovered && (
+                        {row.status === "draft" && (
                           <button
                             type="button"
                             onClick={() => void handleGenerate(row)}
@@ -275,8 +272,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                       ref={(el) => {
                         rowRefs.current[row.key] = el;
                       }}
-                      onMouseEnter={() => setHoveredKey(row.key)}
-                      onMouseLeave={() => setHoveredKey(null)}
                     >
                       <Row
                         dot={statusToDot(row.status)}

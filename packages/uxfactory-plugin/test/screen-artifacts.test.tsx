@@ -741,3 +741,97 @@ describe("ExpandedHeader chip display values", () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+// ─── Regenerate button — WCAG 2.1.1 fix ──────────────────────────────────────
+
+describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () => {
+  it("draft Sitemap row shows Regenerate button without requiring hover", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    expect(
+      screen.getByRole("button", { name: /Regenerate Sitemap/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("clicking Regenerate calls enqueue with correct generate-artifact payload", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Regenerate Sitemap/i }));
+
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: { artifact: "sitemap" },
+    });
+  });
+
+  it("clicking Regenerate shows 'generating…' inline while enqueue is in flight", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Regenerate Sitemap/i }));
+
+    expect(screen.getByText("generating…")).toBeInTheDocument();
+  });
+
+  it("up-to-date rows have no Regenerate button", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    // Brief and Flows are up-to-date — neither should show Regenerate
+    expect(
+      screen.queryByRole("button", { name: /Regenerate Brief/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Regenerate Flows/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keyboard: Regenerate Sitemap is reachable via Tab and Enter activates it", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    // Tab past Open Brief, Open Requirements to reach Regenerate Sitemap
+    await user.tab(); // Open Brief
+    await user.tab(); // Open Requirements
+    await user.tab(); // Regenerate Sitemap
+
+    const regenerateBtn = screen.getByRole("button", { name: /Regenerate Sitemap/i });
+    expect(regenerateBtn).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: { artifact: "sitemap" },
+    });
+  });
+});
+
+// ─── Dial label coverage — Coverage and Style ─────────────────────────────────
+
+describe("quick-dial Segmented label coverage", () => {
+  it("Coverage dial shows Thin and Exhaustive labels", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Coverage/i }));
+
+    const group = screen.getByRole("radiogroup", { name: /Coverage fidelity/i });
+    expect(within(group).getByRole("radio", { name: "Thin" })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "Exhaustive" })).toBeInTheDocument();
+  });
+
+  it("Style dial shows Informal and Formal labels", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Style/i }));
+
+    const group = screen.getByRole("radiogroup", { name: /Style fidelity/i });
+    expect(within(group).getByRole("radio", { name: "Informal" })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "Formal" })).toBeInTheDocument();
+  });
+});
