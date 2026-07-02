@@ -27,6 +27,11 @@ export class FakeNode {
   paddingLeft: number | undefined = undefined;
   primaryAxisAlignItems: string | undefined = undefined;
   counterAxisAlignItems: string | undefined = undefined;
+  effects: unknown = undefined;
+  topLeftRadius: number | undefined = undefined;
+  topRightRadius: number | undefined = undefined;
+  bottomRightRadius: number | undefined = undefined;
+  bottomLeftRadius: number | undefined = undefined;
   _layoutSizingHorizontal: string | undefined = undefined;
   _layoutSizingVertical: string | undefined = undefined;
   /** Test probe: children length captured when layoutSizingHorizontal was set. */

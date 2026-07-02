@@ -227,6 +227,31 @@ describe("code.ts render", () => {
     expect(secondaryLabel.characters).toBe("Cancel");
   });
 
+  it("applies drop-shadow effects and per-corner radius", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      frames: [
+        { name: "f", x: 0, y: 0, width: 200, height: 200,
+          effects: [{ type: "drop-shadow", color: "#000000", opacity: 0.25, x: 0, y: 4, blur: 12, spread: 1 }],
+          children: [
+            { type: "shape", name: "card", x: 0, y: 0, width: 100, height: 60,
+              cornerRadius: { tl: 8, tr: 8, br: 0, bl: 0 } },
+          ] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j5" });
+    const frame = fig.currentPage.children.find((n) => n.name === "f")!;
+    expect(Array.isArray(frame.effects)).toBe(true);
+    const eff = (frame.effects as Array<Record<string, unknown>>)[0]!;
+    expect(eff.type).toBe("DROP_SHADOW");
+    expect(eff.radius).toBe(12);
+    expect(eff.offset).toEqual({ x: 0, y: 4 });
+    const card = frame.children.find((n) => n.name === "card")!;
+    expect(card.topLeftRadius).toBe(8);
+    expect(card.bottomRightRadius).toBe(0);
+  });
+
   it("skips a component-instance with an unknown component id without aborting", async () => {
     const fig = makeFigma();
     await loadCode(fig);

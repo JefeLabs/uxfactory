@@ -39,6 +39,11 @@ interface EditableNode {
   counterAxisAlignItems?: string;
   layoutSizingHorizontal?: string;
   layoutSizingVertical?: string;
+  effects?: unknown;
+  topLeftRadius?: number;
+  topRightRadius?: number;
+  bottomRightRadius?: number;
+  bottomLeftRadius?: number;
   /** Optional font descriptor; present on TEXT nodes. */
   fontName?: { family: string; style: string };
   /** Text sublayer; present on STICKY and CONNECTOR nodes. */
@@ -271,6 +276,8 @@ type PlannedFrameLike = {
   width: number;
   height: number;
   fill?: string;
+  effects?: PlannedChild["effects"];
+  cornerRadius?: PlannedChild["cornerRadius"];
   layout?: PlannedChild["layout"];
   sizing?: PlannedChild["sizing"];
   children: PlannedChild[];
@@ -308,6 +315,35 @@ function applyAutoLayout(node: EditableNode, layout: PlannedChild["layout"], siz
   if (sizing?.vertical !== undefined) node.layoutSizingVertical = SIZING[sizing.vertical];
 }
 
+function toFigmaEffect(e: NonNullable<PlannedChild["effects"]>[number]): Record<string, unknown> {
+  const { r, g, b } = hexToRgb(e.color);
+  return {
+    type: e.type === "inner-shadow" ? "INNER_SHADOW" : "DROP_SHADOW",
+    color: { r, g, b, a: e.opacity ?? 1 },
+    offset: { x: e.x, y: e.y },
+    radius: e.blur,
+    spread: e.spread ?? 0,
+    visible: true,
+    blendMode: "NORMAL",
+  };
+}
+
+function applyEffects(node: EditableNode, effects: PlannedChild["effects"]): void {
+  if (effects && effects.length > 0) node.effects = effects.map(toFigmaEffect);
+}
+
+function applyCornerRadius(node: EditableNode, cr: PlannedChild["cornerRadius"]): void {
+  if (cr === undefined) return;
+  if (typeof cr === "number") {
+    node.cornerRadius = cr;
+  } else {
+    node.topLeftRadius = cr.tl;
+    node.topRightRadius = cr.tr;
+    node.bottomRightRadius = cr.br;
+    node.bottomLeftRadius = cr.bl;
+  }
+}
+
 function applyInstanceOverrides(inst: EditableNode, overrides: NonNullable<PlannedChild["overrides"]>): void {
   for (const [descName, ov] of Object.entries(overrides)) {
     const target = findByName(inst, descName);
@@ -329,6 +365,8 @@ async function renderContainer(
   node.y = frame.y;
   node.resize(frame.width, frame.height);
   if (frame.fill !== undefined) node.fills = solidPaint(frame.fill);
+  applyEffects(node, frame.effects);
+  applyCornerRadius(node, frame.cornerRadius);
   parent.appendChild(node);
   ctx.byName.set(frame.name, node);
   for (const child of frame.children) {
@@ -409,7 +447,8 @@ async function renderChild(
   if (child.fill !== undefined) node.fills = solidPaint(child.fill);
   if (child.stroke !== undefined) node.strokes = solidPaint(child.stroke);
   if (child.strokeWidth !== undefined) node.strokeWeight = child.strokeWidth;
-  if (child.cornerRadius !== undefined && typeof child.cornerRadius === "number") node.cornerRadius = child.cornerRadius;
+  applyCornerRadius(node, child.cornerRadius);
+  applyEffects(node, child.effects);
   if (child.rotation !== undefined) node.rotation = child.rotation;
   if (child.opacity !== undefined) node.opacity = child.opacity;
 
@@ -468,6 +507,8 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
         master.name = def.name;
         master.resize(def.width, def.height);
         if (def.fill !== undefined) master.fills = solidPaint(def.fill);
+        applyEffects(master, def.effects);
+        applyCornerRadius(master, def.cornerRadius);
         for (const child of def.children) {
           await renderChild(child, master, ctx);
         }
