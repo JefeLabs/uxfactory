@@ -28,6 +28,7 @@ import {
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -35,7 +36,12 @@ import {
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
-import type { Bridge, ArtifactRow, ProjectSnapshot } from "../ui/lib/bridge.js";
+import type {
+  Bridge,
+  BridgeEvent,
+  ArtifactRow,
+  ProjectSnapshot,
+} from "../ui/lib/bridge.js";
 import { BridgeError } from "../ui/lib/bridge.js";
 import { Artifacts } from "../ui/screens/Artifacts.js";
 import { ExpandedHeader } from "../ui/components/ExpandedHeader.js";
@@ -258,6 +264,25 @@ function resetStores(snapshot?: ProjectSnapshot): void {
 beforeEach(() => resetStores());
 afterEach(cleanup);
 
+// ─── Dialog-flow helper ───────────────────────────────────────────────────────
+
+/**
+ * Click a Create/Regenerate row action, wait for the guided dialog, optionally
+ * type guidance, then click Generate.
+ */
+async function generateViaDialog(
+  user: ReturnType<typeof userEvent.setup>,
+  rowButtonName: RegExp,
+  guidance?: string,
+): Promise<void> {
+  await user.click(screen.getByRole("button", { name: rowButtonName }));
+  const dialog = await screen.findByRole("dialog");
+  if (guidance !== undefined && guidance !== "") {
+    await user.type(within(dialog).getByRole("textbox"), guidance);
+  }
+  await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+}
+
 // ─── AC-1: Inventory groups/rollup exact for Meridian-shaped snapshot ─────────
 
 describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () => {
@@ -385,23 +410,29 @@ describe("AC-2: Open calls openPath; BridgeError → row-level amber note", () =
 
 // ─── AC-3: Create enqueues, shows progress, flips green after snapshot update ─
 
-describe("AC-3: Create enqueues generate-artifact, shows generating…, flips green", () => {
-  it("Create on Illustrations calls enqueue with the correct payload", async () => {
+describe("AC-3: Create → dialog → Generate enqueues, shows generating…, flips green", () => {
+  it("Create on Illustrations opens the dialog; Generate enqueues with empty guidance", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
     render(<Artifacts bridge={bridge} />);
 
+    // Clicking Create alone does NOT enqueue — it opens the guided dialog
     await user.click(
       screen.getByRole("button", { name: /Create Illustrations/i }),
     );
+    expect(bridge.enqueue).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Generate with the textarea left empty is allowed
+    await user.click(screen.getByRole("button", { name: /^Generate$/i }));
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "illustrations" },
+      payload: { artifact: "illustrations", guidance: "" },
     });
   });
 
-  it("Create shows 'generating…' inline while enqueue is in flight", async () => {
+  it("Generate shows 'generating…' inline while enqueue is in flight", async () => {
     const user = userEvent.setup();
 
     // Enqueue never resolves during this test
@@ -410,9 +441,7 @@ describe("AC-3: Create enqueues generate-artifact, shows generating…, flips gr
     });
     render(<Artifacts bridge={bridge} />);
 
-    await user.click(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
-    );
+    await generateViaDialog(user, /Create Illustrations/i);
 
     expect(screen.getByText("generating…")).toBeInTheDocument();
   });
@@ -444,9 +473,7 @@ describe("AC-3: Create enqueues generate-artifact, shows generating…, flips gr
       screen.getByRole("button", { name: /Create Illustrations/i }),
     ).toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
-    );
+    await generateViaDialog(user, /Create Illustrations/i);
 
     // After enqueue + refreshSnapshot, the snapshot updates and the row flips
     await waitFor(() => {
@@ -752,27 +779,27 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     ).toBeInTheDocument();
   });
 
-  it("clicking Regenerate calls enqueue with correct generate-artifact payload", async () => {
+  it("Regenerate → dialog → Generate enqueues the correct generate-artifact payload", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
     render(<Artifacts bridge={bridge} />);
 
-    await user.click(screen.getByRole("button", { name: /Regenerate Sitemap/i }));
+    await generateViaDialog(user, /Regenerate Sitemap/i);
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "sitemap" },
+      payload: { artifact: "sitemap", guidance: "" },
     });
   });
 
-  it("clicking Regenerate shows 'generating…' inline while enqueue is in flight", async () => {
+  it("Regenerate → Generate shows 'generating…' inline while enqueue is in flight", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge({
       enqueue: vi.fn().mockReturnValue(new Promise(() => {})),
     });
     render(<Artifacts bridge={bridge} />);
 
-    await user.click(screen.getByRole("button", { name: /Regenerate Sitemap/i }));
+    await generateViaDialog(user, /Regenerate Sitemap/i);
 
     expect(screen.getByText("generating…")).toBeInTheDocument();
   });
@@ -788,7 +815,7 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     ).not.toBeInTheDocument();
   });
 
-  it("keyboard: Regenerate Sitemap is reachable via Tab and Enter activates it", async () => {
+  it("keyboard: Regenerate Sitemap is reachable via Tab and Enter opens the dialog", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
     render(<Artifacts bridge={bridge} />);
@@ -803,9 +830,13 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 
     await user.keyboard("{Enter}");
 
+    // Enter opens the guided dialog; Generate completes the enqueue
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "sitemap" },
+      payload: { artifact: "sitemap", guidance: "" },
     });
   });
 });
@@ -833,5 +864,265 @@ describe("quick-dial Segmented label coverage", () => {
     const group = screen.getByRole("radiogroup", { name: /Style fidelity/i });
     expect(within(group).getByRole("radio", { name: "Informal" })).toBeInTheDocument();
     expect(within(group).getByRole("radio", { name: "Formal" })).toBeInTheDocument();
+  });
+});
+
+// ─── Guided Create dialog ─────────────────────────────────────────────────────
+
+describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () => {
+  it("Create opens a dialog titled 'Create Illustrations' with artifact-specific copy", async () => {
+    const user = userEvent.setup();
+    render(<Artifacts bridge={makeBridge()} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Create Illustrations"),
+    ).toBeInTheDocument();
+    // Illustration-specific guiding copy above the textarea
+    expect(
+      within(dialog).getByText(/illustration style/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByPlaceholderText(
+        "Optional — leave empty to let the agent infer from the project",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("Regenerate Sitemap opens the dialog with sitemap-specific copy", async () => {
+    const user = userEvent.setup();
+    render(<Artifacts bridge={makeBridge()} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Regenerate Sitemap/i }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Sitemap")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/main areas or journeys/i),
+    ).toBeInTheDocument();
+  });
+
+  it("typed guidance is passed through in the enqueue payload", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await generateViaDialog(
+      user,
+      /Create Illustrations/i,
+      "flat geometric, warm palette",
+    );
+
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: {
+        artifact: "illustrations",
+        guidance: "flat geometric, warm palette",
+      },
+    });
+  });
+
+  it("Generate with empty guidance enqueues guidance: ''", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await generateViaDialog(user, /Create Illustrations/i);
+
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: { artifact: "illustrations", guidance: "" },
+    });
+  });
+
+  it("Cancel closes the dialog without enqueueing", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox"), "some guidance");
+    await user.click(within(dialog).getByRole("button", { name: /^Cancel$/i }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(bridge.enqueue).not.toHaveBeenCalled();
+    // Row is untouched — no pending state
+    expect(screen.queryByText("generating…")).not.toBeInTheDocument();
+  });
+});
+
+// ─── Failure surfacing — SSE failure events + pending timeout ─────────────────
+
+describe("Failure surfacing — SSE failure event clears pending + row error", () => {
+  function makeEventfulBridge(): {
+    bridge: Bridge;
+    emit: (ev: BridgeEvent) => void;
+  } {
+    let handler: ((ev: BridgeEvent) => void) | null = null;
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "req-9" }),
+      events: vi.fn((cb: (ev: BridgeEvent) => void) => {
+        handler = cb;
+        return () => {
+          handler = null;
+        };
+      }),
+    });
+    return {
+      bridge,
+      emit: (ev) => {
+        if (handler !== null) handler(ev);
+      },
+    };
+  }
+
+  it("adapter error frame for the tracked enqueue-id → row error, pending cleared", async () => {
+    const user = userEvent.setup();
+    const { bridge, emit } = makeEventfulBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await generateViaDialog(user, /Create Illustrations/i);
+    expect(screen.getByTestId("generating-illustrations")).toBeInTheDocument();
+
+    // Subscription is live while pending; enqueue-id req-9 is tracked
+    await waitFor(() => expect(bridge.events).toHaveBeenCalled());
+
+    act(() => {
+      emit({
+        requestId: "req-9",
+        event: {
+          type: "error",
+          error: { name: "AdapterError", message: "boom" },
+        },
+        seq: 1,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("generate-error-illustrations"),
+      ).toHaveTextContent(/Generation failed — see worker logs/);
+    });
+    expect(
+      screen.queryByTestId("generating-illustrations"),
+    ).not.toBeInTheDocument();
+    // The Create action returns so the user can try again
+    expect(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("terminal complete frame with failed status also surfaces the row error", async () => {
+    const user = userEvent.setup();
+    const { bridge, emit } = makeEventfulBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await generateViaDialog(user, /Create Illustrations/i);
+    await waitFor(() => expect(bridge.events).toHaveBeenCalled());
+
+    act(() => {
+      emit({
+        requestId: "req-9",
+        event: { type: "complete", status: "failed" },
+        seq: 1,
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("generate-error-illustrations"),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("generating-illustrations"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("frames for other request ids leave the pending row untouched", async () => {
+    const user = userEvent.setup();
+    const { bridge, emit } = makeEventfulBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await generateViaDialog(user, /Create Illustrations/i);
+    await waitFor(() => expect(bridge.events).toHaveBeenCalled());
+
+    act(() => {
+      emit({
+        requestId: "req-other",
+        event: { type: "error", error: { name: "X", message: "y" } },
+        seq: 1,
+      });
+    });
+
+    expect(screen.getByTestId("generating-illustrations")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("generate-error-illustrations"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Failure surfacing — 5-minute pending timeout with Retry", () => {
+  it("pending times out after 5 minutes → row error; Retry reopens the dialog", async () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = makeBridge({
+        enqueue: vi.fn().mockResolvedValue({ id: "req-42" }),
+      });
+      render(<Artifacts bridge={bridge} />);
+
+      // fireEvent (not userEvent) — fake timers stall userEvent's delays
+      fireEvent.click(
+        screen.getByRole("button", { name: /Create Illustrations/i }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Generate$/i }));
+      await act(async () => {}); // flush enqueue resolution
+
+      expect(
+        screen.getByTestId("generating-illustrations"),
+      ).toBeInTheDocument();
+
+      // Just before the 5-minute mark: still pending, no error
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000 - 1000);
+      });
+      expect(
+        screen.getByTestId("generating-illustrations"),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("generate-error-illustrations"),
+      ).not.toBeInTheDocument();
+
+      // Cross the 5-minute mark → error note with Retry
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(
+        screen.getByTestId("generate-error-illustrations"),
+      ).toHaveTextContent(/Generation failed — see worker logs/);
+      expect(
+        screen.queryByTestId("generating-illustrations"),
+      ).not.toBeInTheDocument();
+
+      // Retry clears the note and reopens the guided dialog
+      fireEvent.click(
+        screen.getByRole("button", { name: /Retry Illustrations/i }),
+      );
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("Create Illustrations")).toBeInTheDocument();
+      expect(
+        screen.queryByTestId("generate-error-illustrations"),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

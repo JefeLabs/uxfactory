@@ -16,9 +16,19 @@
  *   - generating → "generating…" replacing action
  *
  * Generate flow:
- *   Create/Regenerate → bridge.enqueue({kind:"generate-artifact", payload:{artifact:key}})
+ *   Create/Regenerate → CreateArtifactDialog (guiding copy + optional guidance)
+ *   → Generate → bridge.enqueue({kind:"generate-artifact", payload:{artifact:key, guidance}})
  *   → inline "generating…" + refreshSnapshot on enqueue-resolve + 3s delayed re-refresh
  *   → poll every 5s while any row pending → cleanup on unmount
+ *
+ * Failure surfacing (results do NOT flow on the SSE — POST /pipeline/result is
+ * stored, never broadcast; only worker-streamed /pipeline/event frames are):
+ *   - While any row is pending, subscribe to bridge.events(); a failure-shaped
+ *     frame for a tracked enqueue-id (adapter {type:"error"} chunk, or a
+ *     terminal complete/done/result frame with a failed/non-zero status) clears
+ *     pending and shows a row-level error note with Retry.
+ *   - Regardless, a 5-minute pending timeout converts the row to the same
+ *     error note (the reliable guard against the "stuck forever" spinner).
  *
  * Open: bridge.openPath(row.path) → BridgeError → row-level amber note (no modal)
  *
@@ -28,11 +38,12 @@
  * stable stored reference. Never return a new object literal from a selector.
  */
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import type { ArtifactGroup } from "../lib/bridge.js";
 import { Card, Row, SectionHeader } from "../components/index.js";
+import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { useAppStore } from "../stores/app.js";
 
 // ─── Group registry (fixed order per PRD §4) ─────────────────────────────────
@@ -59,6 +70,32 @@ function isFileMeta(meta: string): boolean {
   return /\.[a-z]{1,6}$/i.test(meta);
 }
 
+/** Pending rows flip to a row-level error after this long without resolution. */
+export const PENDING_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Row-level note shown when generation fails or times out. */
+const GENERATION_FAILED_MSG = "Generation failed — see worker logs";
+
+/**
+ * True when an SSE frame payload signals a failed generation.
+ *
+ * The bridge never broadcasts POST /pipeline/result on the SSE, so terminal
+ * status arrives opportunistically at best: an adapter {type:"error"} chunk
+ * today, or a worker-emitted terminal frame (complete/done/result carrying a
+ * failed/non-zero status) if one is ever added. Both shapes are handled; the
+ * 5-minute timeout remains the reliable guard.
+ */
+function isFailureEvent(event: unknown): boolean {
+  if (typeof event !== "object" || event === null) return false;
+  const e = event as { type?: unknown; status?: unknown; outcome?: unknown };
+  if (e.type === "error") return true;
+  if (e.type === "complete" || e.type === "done" || e.type === "result") {
+    if (e.outcome === "failed" || e.status === "failed") return true;
+    if (typeof e.status === "number" && e.status !== 0) return true;
+  }
+  return false;
+}
+
 // ─── Artifacts screen ─────────────────────────────────────────────────────────
 
 export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
@@ -74,11 +111,19 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   /** Row-level open errors: key → human-readable message. */
   const [openErrors, setOpenErrors] = useState<Record<string, string>>({});
+  /** Row-level generation errors (SSE failure or timeout): key → message. */
+  const [genErrors, setGenErrors] = useState<Record<string, string>>({});
+  /** Row whose guided-Create dialog is open (null = closed). */
+  const [dialogRow, setDialogRow] = useState<ArtifactRow | null>(null);
   /** Highlighted artifact key (from focus intent). */
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
 
   /** DOM refs to each artifact row wrapper, keyed by artifact key. */
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  /** Enqueue-id → artifact key for every in-flight generation. */
+  const pendingIdsRef = useRef<Record<string, string>>({});
+  /** Per-key 5-minute pending-timeout handles. */
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // ── Focus intent: scroll-to + highlight + clearFocus ────────────────────────
 
@@ -129,6 +174,65 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     return () => clearInterval(id);
   }, [pendingKeys.size, bridge, refreshSnapshot]);
 
+  // ── Failure surfacing: mark a pending generation as failed ──────────────────
+
+  /** Clear pending state for a key and surface the row-level error note. */
+  const failGeneration = useCallback((key: string): void => {
+    const timer = timersRef.current[key];
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      delete timersRef.current[key];
+    }
+    for (const [reqId, k] of Object.entries(pendingIdsRef.current)) {
+      if (k === key) delete pendingIdsRef.current[reqId];
+    }
+    setPendingKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    setGenErrors((prev) => ({ ...prev, [key]: GENERATION_FAILED_MSG }));
+  }, []);
+
+  // ── SSE: surface failed results for tracked enqueue-ids while pending ───────
+
+  const hasPending = pendingKeys.size > 0;
+
+  useEffect(() => {
+    if (!hasPending) return;
+
+    const teardown = bridge.events((ev) => {
+      const key = pendingIdsRef.current[ev.requestId];
+      if (key === undefined) return;
+      if (isFailureEvent(ev.event)) failGeneration(key);
+    });
+
+    return teardown;
+  }, [hasPending, bridge, failGeneration]);
+
+  // ── Prune timers/enqueue-ids for keys that resolved (left pendingKeys) ──────
+
+  useEffect(() => {
+    for (const [key, timer] of Object.entries(timersRef.current)) {
+      if (!pendingKeys.has(key)) {
+        clearTimeout(timer);
+        delete timersRef.current[key];
+      }
+    }
+    for (const [reqId, key] of Object.entries(pendingIdsRef.current)) {
+      if (!pendingKeys.has(key)) delete pendingIdsRef.current[reqId];
+    }
+  }, [pendingKeys]);
+
+  // Clear all outstanding timeout timers on unmount.
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of Object.values(timers)) clearTimeout(timer);
+    };
+  }, []);
+
   // ── Open file via bridge ─────────────────────────────────────────────────────
 
   async function handleOpen(row: ArtifactRow): Promise<void> {
@@ -144,20 +248,50 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     }
   }
 
-  // ── Enqueue generate-artifact job ────────────────────────────────────────────
+  // ── Enqueue generate-artifact job (from the dialog's Generate) ──────────────
 
-  async function handleGenerate(row: ArtifactRow): Promise<void> {
+  async function handleGenerate(row: ArtifactRow, guidance: string): Promise<void> {
+    setDialogRow(null);
+    setGenErrors((prev) => {
+      if (!(row.key in prev)) return prev;
+      const { [row.key]: _dropped, ...rest } = prev;
+      return rest;
+    });
     setPendingKeys((prev) => new Set([...prev, row.key]));
+
+    // "Stuck forever" guard: pending flips to a row-level error after 5 min.
+    const previousTimer = timersRef.current[row.key];
+    if (previousTimer !== undefined) clearTimeout(previousTimer);
+    timersRef.current[row.key] = setTimeout(
+      () => failGeneration(row.key),
+      PENDING_TIMEOUT_MS,
+    );
+
     try {
-      await bridge.enqueue({
+      const { id } = await bridge.enqueue({
         kind: "generate-artifact",
-        payload: { artifact: row.key },
+        payload: { artifact: row.key, guidance },
       });
+      pendingIdsRef.current[id] = row.key;
       void refreshSnapshot(bridge);
       setTimeout(() => void refreshSnapshot(bridge), 3000);
     } catch {
-      // Poll will pick up the result; keep pending state
+      // Enqueue failed silently — the 5-minute timeout surfaces the error
     }
+  }
+
+  // ── Dialog open/retry ────────────────────────────────────────────────────────
+
+  function openDialog(row: ArtifactRow): void {
+    setDialogRow(row);
+  }
+
+  function handleRetry(row: ArtifactRow): void {
+    setGenErrors((prev) => {
+      const { [row.key]: _dropped, ...rest } = prev;
+      return rest;
+    });
+    setDialogRow(row);
   }
 
   // ── Rollup ───────────────────────────────────────────────────────────────────
@@ -210,6 +344,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                 {rows.map((row) => {
                   const isPending = pendingKeys.has(row.key);
                   const openError = openErrors[row.key];
+                  const genError = genErrors[row.key];
                   const isHighlighted = highlightedKey === row.key;
 
                   // Compute display meta: use row.meta if set, else derive from status
@@ -233,7 +368,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                     action = (
                       <button
                         type="button"
-                        onClick={() => void handleGenerate(row)}
+                        onClick={() => openDialog(row)}
                         className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
                         aria-label={`Create ${row.label}`}
                       >
@@ -247,7 +382,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                         {row.status === "draft" && (
                           <button
                             type="button"
-                            onClick={() => void handleGenerate(row)}
+                            onClick={() => openDialog(row)}
                             className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
                             aria-label={`Regenerate ${row.label}`}
                           >
@@ -292,6 +427,25 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                           {openError}
                         </p>
                       )}
+
+                      {/* Row-level generation failure (amber note + Retry) */}
+                      {genError !== undefined && (
+                        <p
+                          className="text-xs text-warn-600 px-3 pb-2"
+                          role="alert"
+                          data-testid={`generate-error-${row.key}`}
+                        >
+                          {genError}{" "}
+                          <button
+                            type="button"
+                            onClick={() => handleRetry(row)}
+                            className="underline text-warn-600 hover:text-warn-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                            aria-label={`Retry ${row.label}`}
+                          >
+                            Retry
+                          </button>
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -300,6 +454,19 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
           );
         })}
       </div>
+
+      {/* Guided-Create dialog (one instance, driven per-row) */}
+      <CreateArtifactDialog
+        artifactKey={dialogRow?.key ?? ""}
+        artifactLabel={dialogRow?.label ?? ""}
+        open={dialogRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setDialogRow(null);
+        }}
+        onGenerate={(guidance) => {
+          if (dialogRow !== null) void handleGenerate(dialogRow, guidance);
+        }}
+      />
     </div>
   );
 }
