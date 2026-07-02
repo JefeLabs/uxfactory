@@ -76,6 +76,8 @@ describe("extractCmd", () => {
     expect(combined.frames).toHaveLength(1);
     const summary = JSON.parse(io.outText().trim().split("\n").at(-1)!);
     expect(summary.excluded).toEqual([{ page: "screens/checkout.html", view: "error", error: "boom" }]);
+    const perView = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/designspec/checkout-success.designspec.json"), "utf8"));
+    expect(perView.frames).toHaveLength(1);
   });
 
   it("exits 2 when screens/trace are not registered", async () => {

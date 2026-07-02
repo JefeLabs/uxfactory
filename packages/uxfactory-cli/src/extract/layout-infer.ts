@@ -31,8 +31,7 @@ function withOptional(base: AutoLayout, gap: number, padding: Padding,
   const out: AutoLayout = { mode: base.mode };
   if (gap !== 0) out.gap = gap;
   out.padding = padding;
-  if (primary !== undefined && primary !== "start") out.primaryAlign = primary;
-  else if (primary === "start") out.primaryAlign = "start";
+  if (primary !== undefined) out.primaryAlign = primary;
   if (counter !== undefined) out.counterAlign = counter;
   return out;
 }

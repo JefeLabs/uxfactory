@@ -90,13 +90,9 @@ export const EXTRACT_FN = `() => {
     };
     if (REPLACED.includes(tag)) return node;
     const elementChildren = [];
-    const textRuns = [];
     for (const child of el.childNodes) {
       if (child.nodeType === 1) {
         if (visible(child)) elementChildren.push(child);
-      } else if (child.nodeType === 3) {
-        const t = collapse(child.textContent || "");
-        if (t !== "") textRuns.push(child);
       }
     }
     if (elementChildren.length === 0) {
