@@ -1,0 +1,743 @@
+// @vitest-environment jsdom
+/**
+ * screen-artifacts.test.tsx — RTL tests for the Artifacts screen and
+ * ExpandedHeader component.
+ *
+ * Test names map 1-to-1 with PRD §6 acceptance criteria (AC-1 … AC-7).
+ *
+ * Fixture: MERIDIAN_SNAPSHOT — 12 registered concerns, 10 up-to-date,
+ * 1 draft (sitemap), 1 missing (illustrations). Matches the "10 of 12"
+ * rollup shown in the mock screenshot.
+ *
+ * Strategy:
+ *   - AC-1, 2, 3, 6, 7: drive <Artifacts> directly.
+ *   - AC-4, 5: drive <ExpandedHeader> directly.
+ *   - All store state set via setState; bridge is always a fake.
+ */
+
+import "@testing-library/jest-dom/vitest";
+import React from "react";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+
+import type { Bridge, ArtifactRow, ProjectSnapshot } from "../ui/lib/bridge.js";
+import { BridgeError } from "../ui/lib/bridge.js";
+import { Artifacts } from "../ui/screens/Artifacts.js";
+import { ExpandedHeader } from "../ui/components/ExpandedHeader.js";
+import { useAppStore } from "../ui/stores/app.js";
+import { useWizardStore } from "../ui/stores/wizard.js";
+
+// ─── Meridian fixture artifacts ───────────────────────────────────────────────
+// 12 registered concerns · 10 up-to-date · 1 draft · 1 missing = "10 of 12"
+
+const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
+  {
+    key: "brief",
+    group: "product",
+    label: "Brief",
+    status: "up-to-date",
+    meta: "brief.md",
+    path: "/home/user/meridian/brief.md",
+  },
+  {
+    key: "requirements",
+    group: "product",
+    label: "Requirements",
+    status: "up-to-date",
+    meta: "6 criteria",
+    path: "/home/user/meridian/design/acceptance-criteria.json",
+  },
+  {
+    key: "sitemap",
+    group: "ia-ux",
+    label: "Sitemap",
+    status: "draft",
+    meta: "draft",
+    path: "/home/user/meridian/design/sitemap.json",
+  },
+  {
+    key: "flows",
+    group: "ia-ux",
+    label: "Flows",
+    status: "up-to-date",
+    meta: "checkout, returns",
+    path: "/home/user/meridian/design/flows.json",
+  },
+  {
+    key: "brand-colors",
+    group: "design",
+    label: "Brand Colors",
+    status: "up-to-date",
+    meta: "",
+    path: "/home/user/meridian/design/design-system.json",
+  },
+  {
+    key: "palettes",
+    group: "design",
+    label: "Palettes",
+    status: "up-to-date",
+    meta: "",
+    path: "/home/user/meridian/design/design-system.json",
+  },
+  {
+    key: "fonts",
+    group: "design",
+    label: "Fonts",
+    status: "up-to-date",
+    meta: "",
+    path: "/home/user/meridian/design/design-system.json",
+  },
+  {
+    key: "grid",
+    group: "design",
+    label: "Grid",
+    status: "up-to-date",
+    meta: "",
+    path: "/home/user/meridian/design/design-system.json",
+  },
+  {
+    key: "tokens",
+    group: "design",
+    label: "Tokens",
+    status: "up-to-date",
+    meta: "1204 colors",
+    path: "/home/user/meridian/design/token-set.json",
+  },
+  {
+    key: "icons",
+    group: "assets",
+    label: "Icons",
+    status: "up-to-date",
+    meta: "",
+    path: "/home/user/meridian/design/assets/icons.json",
+  },
+  {
+    key: "photography",
+    group: "assets",
+    label: "Photography",
+    status: "up-to-date",
+    meta: "",
+    path: "/home/user/meridian/design/assets/photography.json",
+  },
+  {
+    key: "illustrations",
+    group: "assets",
+    label: "Illustrations",
+    status: "missing",
+    meta: "",
+    path: null,
+  },
+];
+
+// ─── Snapshot factories ───────────────────────────────────────────────────────
+
+function makeMeridianSnapshot(
+  overrides: Partial<ProjectSnapshot> = {},
+): ProjectSnapshot {
+  return {
+    name: "Meridian Health",
+    root: "/home/user/meridian",
+    hasClassification: true,
+    hasProfile: true,
+    classification: {
+      category: "ecommerce",
+      industry: "corporate",
+      locale: "en-US",
+      ageGroup: "18-39",
+      platforms: ["desktop", "mobile"],
+      layout: "responsive",
+      style: "mix",
+    },
+    profile: {
+      scope: {
+        visual: "high",
+        editorial: "medium",
+        flow: "low",
+        coverage: "medium",
+      },
+      experimental: {
+        coherence: "high",
+      },
+    },
+    artifacts: MERIDIAN_ARTIFACTS,
+    requirements: [],
+    ...overrides,
+  };
+}
+
+// ─── Fake bridge factory ──────────────────────────────────────────────────────
+
+function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
+  return {
+    health: vi.fn().mockResolvedValue({ ok: true }),
+    connectProject: vi.fn().mockResolvedValue({
+      ok: true,
+      snapshot: makeMeridianSnapshot(),
+    }),
+    snapshot: vi.fn().mockResolvedValue(makeMeridianSnapshot()),
+    putClassification: vi.fn().mockResolvedValue({ ok: true }),
+    putProfile: vi.fn().mockResolvedValue({ ok: true }),
+    getLinks: vi.fn().mockResolvedValue({ links: [] }),
+    putLinks: vi.fn().mockResolvedValue({ ok: true }),
+    openPath: vi.fn().mockResolvedValue({ ok: true }),
+    stats: vi.fn().mockResolvedValue({
+      version: "0.0.0",
+      uptimeMs: 0,
+      runsRelayed: 0,
+      tokenCount: null,
+    }),
+    logs: vi.fn().mockResolvedValue({ lines: [] }),
+    enqueue: vi.fn().mockResolvedValue({ id: "req-1" }),
+    events: vi.fn().mockReturnValue(() => {}),
+    latestRender: vi.fn().mockResolvedValue(null),
+    verify: vi.fn().mockResolvedValue(null),
+    ...overrides,
+  };
+}
+
+// ─── Store reset ──────────────────────────────────────────────────────────────
+
+function resetStores(snapshot?: ProjectSnapshot): void {
+  useAppStore.setState({
+    connection: {
+      status: "connected",
+      endpoint: "http://localhost:3779",
+      repoPath: "/home/user/meridian",
+      mode: "local",
+    },
+    fileInfo: { name: "Meridian Health", fileKey: "file-meridian" },
+    snapshot: snapshot ?? makeMeridianSnapshot(),
+    route: { screen: "tabs", tab: "artifacts" },
+    toasts: [],
+    focus: null,
+  });
+  useWizardStore.setState({
+    classification: {
+      category: "ecommerce",
+      industry: "corporate",
+      locale: "en-US",
+      platforms: ["desktop", "mobile"],
+      layout: "responsive",
+      ageGroup: "18-39",
+      startingMode: "start-fresh",
+    },
+    defaults: {
+      style: "mix",
+      visual: "high",
+      editorial: "medium",
+      flow: "low",
+      coverage: "medium",
+      coherence: "high",
+    },
+    userEdited: {
+      style: false,
+      visual: false,
+      editorial: false,
+      flow: false,
+      coverage: false,
+      coherence: false,
+    },
+  });
+}
+
+beforeEach(() => resetStores());
+afterEach(cleanup);
+
+// ─── AC-1: Inventory groups/rollup exact for Meridian-shaped snapshot ─────────
+
+describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () => {
+  it("renders the heading with the project name", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    expect(
+      screen.getByRole("heading", { name: /Meridian Health artifacts/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("displays '10 of 12 up to date' rollup", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    expect(screen.getByText(/10 of 12 up to date/i)).toBeInTheDocument();
+  });
+
+  it("renders the verbatim subcopy", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    expect(
+      screen.getByText(
+        "The specifications your designs are verified against.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders PRODUCT section with Brief and Requirements", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    const productSection = screen.getByRole("region", { name: "PRODUCT" });
+    expect(within(productSection).getByText("Brief")).toBeInTheDocument();
+    expect(within(productSection).getByText("Requirements")).toBeInTheDocument();
+  });
+
+  it("renders IA & UX section with Sitemap and Flows", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    const section = screen.getByRole("region", { name: "IA & UX" });
+    expect(within(section).getByText("Sitemap")).toBeInTheDocument();
+    expect(within(section).getByText("Flows")).toBeInTheDocument();
+  });
+
+  it("renders DESIGN section with Brand Colors, Palettes, Fonts, Grid, Tokens", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    const section = screen.getByRole("region", { name: "DESIGN" });
+    for (const label of [
+      "Brand Colors",
+      "Palettes",
+      "Fonts",
+      "Grid",
+      "Tokens",
+    ]) {
+      expect(within(section).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("renders ASSETS section with Icons, Photography, Illustrations", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    const section = screen.getByRole("region", { name: "ASSETS" });
+    for (const label of ["Icons", "Photography", "Illustrations"]) {
+      expect(within(section).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("shows 'Create' for missing Illustrations and 'Open' for up-to-date icons", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    expect(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Open Icons/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+// ─── AC-2: Open calls openPath; open-failure renders row-level note ───────────
+
+describe("AC-2: Open calls openPath; BridgeError → row-level amber note", () => {
+  it("Open button calls bridge.openPath with the artifact path", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+
+    expect(bridge.openPath).toHaveBeenCalledWith(
+      "/home/user/meridian/brief.md",
+    );
+  });
+
+  it("BridgeError on open renders a row-level alert (no modal)", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      openPath: vi
+        .fn()
+        .mockRejectedValue(new BridgeError(404, { error: "not found" })),
+    });
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    // Alert contains an error message mentioning status 404
+    expect(screen.getByRole("alert")).toHaveTextContent(/404/);
+
+    // No modal dialog should appear
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("non-BridgeError on open renders a generic row-level alert", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      openPath: vi.fn().mockRejectedValue(new Error("Network error")),
+    });
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(screen.getByRole("button", { name: /Open Requirements/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Could not open file/i,
+      );
+    });
+  });
+});
+
+// ─── AC-3: Create enqueues, shows progress, flips green after snapshot update ─
+
+describe("AC-3: Create enqueues generate-artifact, shows generating…, flips green", () => {
+  it("Create on Illustrations calls enqueue with the correct payload", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    );
+
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: { artifact: "illustrations" },
+    });
+  });
+
+  it("Create shows 'generating…' inline while enqueue is in flight", async () => {
+    const user = userEvent.setup();
+
+    // Enqueue never resolves during this test
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+    render(<Artifacts bridge={bridge} />);
+
+    await user.click(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    );
+
+    expect(screen.getByText("generating…")).toBeInTheDocument();
+  });
+
+  it("row flips to Open (green) after snapshot returns updated status", async () => {
+    const user = userEvent.setup();
+
+    const updatedSnapshot = makeMeridianSnapshot({
+      artifacts: MERIDIAN_ARTIFACTS.map((a) =>
+        a.key === "illustrations"
+          ? ({
+              ...a,
+              status: "up-to-date" as const,
+              path: "/home/user/meridian/design/assets/illustrations.json",
+            } satisfies ArtifactRow)
+          : a,
+      ),
+    });
+
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "req-1" }),
+      snapshot: vi.fn().mockResolvedValue(updatedSnapshot),
+    });
+
+    render(<Artifacts bridge={bridge} />);
+
+    // Initially "Create" is visible
+    expect(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /Create Illustrations/i }),
+    );
+
+    // After enqueue + refreshSnapshot, the snapshot updates and the row flips
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Open Illustrations/i }),
+      ).toBeInTheDocument();
+    });
+
+    // "Create" button should be gone
+    expect(
+      screen.queryByRole("button", { name: /Create Illustrations/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ─── AC-4: Quick dial — click Visual → Segmented → select Low → putProfile ────
+
+describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile({visual:'low'}) + toast", () => {
+  it("clicking a dial chip reveals the Segmented control", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    // Initially no radiogroup visible
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+
+    // Click the Visual chip
+    const visualChip = screen.getByRole("checkbox", { name: /Visual/i });
+    await user.click(visualChip);
+
+    // Quick-dial Segmented appears
+    expect(
+      screen.getByRole("radiogroup", { name: /Visual fidelity/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("Segmented shows Low/Medium/High options for Visual", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
+
+    const group = screen.getByRole("radiogroup", { name: /Visual fidelity/i });
+    expect(within(group).getByRole("radio", { name: "Low" })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "Medium" })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "High" })).toBeInTheDocument();
+  });
+
+  it("current engine value 'high' is reflected as selected in the Segmented", async () => {
+    const user = userEvent.setup();
+    // Fixture snapshot has profile.scope.visual = "high"
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
+
+    // "High" radio should be checked
+    const highRadio = screen.getByRole("radio", { name: "High" });
+    expect(highRadio).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("selecting Low calls putProfile with exact flat {visual:'low'}", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<ExpandedHeader bridge={bridge} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
+
+    const lowRadio = screen.getByRole("radio", { name: "Low" });
+    await user.click(lowRadio);
+
+    await waitFor(() => {
+      expect(bridge.putProfile).toHaveBeenCalledWith({ visual: "low" });
+    });
+  });
+
+  it("dial change fires toast 'Applies to new runs'", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<ExpandedHeader bridge={bridge} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
+    await user.click(screen.getByRole("radio", { name: "Low" }));
+
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Applies to new runs")).toBe(true);
+    });
+  });
+
+  it("clicking the same dial chip again collapses the quick-dial row", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    const visualChip = screen.getByRole("checkbox", { name: /Visual/i });
+    await user.click(visualChip); // open
+    expect(screen.getByRole("radiogroup")).toBeInTheDocument();
+
+    await user.click(visualChip); // close
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+
+  it("Flows dial uses Shallow/Medium/Deep labels (not Low/Medium/High)", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Flows/i }));
+
+    const group = screen.getByRole("radiogroup", { name: /Flows fidelity/i });
+    expect(within(group).getByRole("radio", { name: "Shallow" })).toBeInTheDocument();
+    expect(within(group).getByRole("radio", { name: "Deep" })).toBeInTheDocument();
+  });
+
+  it("putProfile for flows uses wire key 'flow' (not 'flows')", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    render(<ExpandedHeader bridge={bridge} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Flows/i }));
+    await user.click(screen.getByRole("radio", { name: "Deep" }));
+
+    await waitFor(() => {
+      expect(bridge.putProfile).toHaveBeenCalledWith({ flow: "high" });
+    });
+  });
+});
+
+// ─── AC-5: Classification chip click → prefillFrom + route setup-1 ────────────
+
+describe("AC-5: classification chip click → prefillFrom(snapshot) + goto('setup-1')", () => {
+  it("clicking Category chip prefills wizard from snapshot", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    const categoryChip = within(
+      screen.getByRole("group", { name: "Classification" }),
+    ).getByRole("checkbox", { name: /Category/i });
+
+    await user.click(categoryChip);
+
+    // Wizard classification should be prefilled from snapshot (category = "ecommerce")
+    expect(useWizardStore.getState().classification.category).toBe("ecommerce");
+  });
+
+  it("clicking any classification chip navigates to setup-1", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    const industryChip = within(
+      screen.getByRole("group", { name: "Classification" }),
+    ).getByRole("checkbox", { name: /Industry/i });
+
+    await user.click(industryChip);
+
+    expect(useAppStore.getState().route.screen).toBe("setup-1");
+  });
+
+  it("dial chip click does NOT navigate to setup-1", async () => {
+    const user = userEvent.setup();
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
+
+    // Route should stay on the tabs screen
+    expect(useAppStore.getState().route.screen).toBe("tabs");
+  });
+});
+
+// ─── AC-6: focus.artifactKey consumption ─────────────────────────────────────
+
+describe("AC-6: focus.artifactKey → row highlighted + clearFocus called", () => {
+  it("mounts with focus set → targeted row receives highlighted style", async () => {
+    // Set focus intent before render
+    useAppStore.setState({
+      ...useAppStore.getState(),
+      focus: { artifactKey: "illustrations" },
+    });
+
+    render(<Artifacts bridge={makeBridge()} />);
+
+    await act(async () => {});
+
+    // The illustrations row's outer div should contain a Row with bg-primary-50
+    const illustrationsLabel = screen.getByText("Illustrations");
+    // Row adds bg-primary-50 when highlighted=true
+    const rowEl = illustrationsLabel.closest(
+      '[class*="flex items-center"]',
+    );
+    expect(rowEl).toHaveClass("bg-primary-50");
+  });
+
+  it("mounts with focus set → clearFocus is called (focus becomes null)", async () => {
+    useAppStore.setState({
+      ...useAppStore.getState(),
+      focus: { artifactKey: "brief" },
+    });
+
+    render(<Artifacts bridge={makeBridge()} />);
+
+    await act(async () => {});
+
+    // clearFocus should have been called
+    expect(useAppStore.getState().focus).toBeNull();
+  });
+
+  it("no focus intent → no rows highlighted on mount", async () => {
+    // focus is already null from resetStores
+    render(<Artifacts bridge={makeBridge()} />);
+    await act(async () => {});
+
+    const highlightedRows = document.querySelectorAll(".bg-primary-50");
+    expect(highlightedRows).toHaveLength(0);
+  });
+});
+
+// ─── AC-7: Keyboard — rows focusable; sections are landmarks ─────────────────
+
+describe("AC-7: keyboard accessibility — rows focusable, sections are landmarks", () => {
+  it("section headers are role=region landmarks", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    for (const name of ["PRODUCT", "IA & UX", "DESIGN", "ASSETS"]) {
+      expect(screen.getByRole("region", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("Open buttons are keyboard-reachable (are <button> elements)", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    // All "Open …" buttons should be native buttons (focusable by default)
+    const openButtons = screen.getAllByRole("button", { name: /^Open /i });
+    expect(openButtons.length).toBeGreaterThan(0);
+    for (const btn of openButtons) {
+      expect(btn.tagName).toBe("BUTTON");
+    }
+  });
+
+  it("Create button is keyboard-reachable", () => {
+    render(<Artifacts bridge={makeBridge()} />);
+    const createBtn = screen.getByRole("button", { name: /Create Illustrations/i });
+    expect(createBtn.tagName).toBe("BUTTON");
+  });
+
+  it("ExpandedHeader dial chips are buttons with role=checkbox", () => {
+    render(<ExpandedHeader bridge={makeBridge()} />);
+    // Dial chips use role="checkbox" (per Chip component)
+    const dialGroup = screen.getByRole("group", { name: "Dials" });
+    const dialChips = within(dialGroup).getAllByRole("checkbox");
+    expect(dialChips.length).toBe(6); // style, visual, editorial, flows, coverage, coherence
+  });
+
+  it("classification chips are keyboard-reachable buttons", () => {
+    render(<ExpandedHeader bridge={makeBridge()} />);
+    const clsGroup = screen.getByRole("group", { name: "Classification" });
+    const chips = within(clsGroup).getAllByRole("checkbox");
+    expect(chips.length).toBe(6); // category, industry, locale, age, platforms, layout
+    for (const chip of chips) {
+      expect(chip.tagName).toBe("BUTTON");
+    }
+  });
+});
+
+// ─── ExpandedHeader renders expected chip values ──────────────────────────────
+
+describe("ExpandedHeader chip display values", () => {
+  it("renders classification chips with values from snapshot", () => {
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    const clsGroup = screen.getByRole("group", { name: "Classification" });
+    // "Category" chip shows "Ecommerce"
+    expect(within(clsGroup).getByText("Ecommerce")).toBeInTheDocument();
+    // "Industry" chip shows "Corporate"
+    expect(within(clsGroup).getByText("Corporate")).toBeInTheDocument();
+    // "Locale" chip shows "en-US"
+    expect(within(clsGroup).getByText("en-US")).toBeInTheDocument();
+  });
+
+  it("renders dial chips with mapped display labels from profile", () => {
+    render(<ExpandedHeader bridge={makeBridge()} />);
+
+    const dialGroup = screen.getByRole("group", { name: "Dials" });
+    // visual: "high" → "High"
+    expect(within(dialGroup).getAllByText("High").length).toBeGreaterThan(0);
+    // flow: "low" → "Shallow"
+    expect(within(dialGroup).getByText("Shallow")).toBeInTheDocument();
+    // coverage: "medium" → "Medium"
+    expect(within(dialGroup).getAllByText("Medium").length).toBeGreaterThan(0);
+  });
+
+  it("returns null when snapshot is not loaded", () => {
+    useAppStore.setState({
+      ...useAppStore.getState(),
+      snapshot: null,
+    });
+    const { container } = render(<ExpandedHeader bridge={makeBridge()} />);
+    expect(container.firstChild).toBeNull();
+  });
+});
