@@ -196,7 +196,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
       {/* Tab panels — real screens */}
       <Tabs.Content
         value="prompt"
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden flex flex-col"
         style={{ display: tab === "prompt" ? undefined : "none" }}
         forceMount
       >
@@ -205,7 +205,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
       <Tabs.Content
         value="artifacts"
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden flex flex-col"
         style={{ display: tab === "artifacts" ? undefined : "none" }}
         forceMount
       >
@@ -214,7 +214,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
       <Tabs.Content
         value="components"
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden flex flex-col"
         style={{ display: tab === "components" ? undefined : "none" }}
         forceMount
       >
@@ -223,7 +223,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
       <Tabs.Content
         value="assets"
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden flex flex-col"
         style={{ display: tab === "assets" ? undefined : "none" }}
         forceMount
       >
@@ -232,7 +232,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
       <Tabs.Content
         value="checks"
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden flex flex-col"
         style={{ display: tab === "checks" ? undefined : "none" }}
         forceMount
       >
@@ -241,7 +241,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
 
       <Tabs.Content
         value="settings"
-        className="flex-1 overflow-hidden"
+        className="flex-1 min-h-0 overflow-hidden flex flex-col"
         style={{ display: tab === "settings" ? undefined : "none" }}
         forceMount
       >
