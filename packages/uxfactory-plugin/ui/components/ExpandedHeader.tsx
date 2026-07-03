@@ -216,7 +216,9 @@ export function ExpandedHeader({ bridge }: { bridge: Bridge }): React.JSX.Elemen
 
   async function handleDialChange(key: DialKey, engineValue: string): Promise<void> {
     const cfg = DIAL_CONFIGS[key];
-    await putProfile.mutateAsync({ [cfg.wireKey]: engineValue });
+    // Failure surfaces via the mutation's onError toast; swallow the rejection
+    // so it doesn't propagate to the Segmented onChange caller unhandled.
+    await putProfile.mutateAsync({ [cfg.wireKey]: engineValue }).catch(() => {});
   }
 
   // ── Quick dial row rendering ────────────────────────────────────────────────
