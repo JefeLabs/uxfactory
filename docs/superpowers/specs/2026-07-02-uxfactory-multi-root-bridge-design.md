@@ -10,6 +10,8 @@ The bridge binds exactly one `servedRoot` at startup (`project.ts` — connect t
 
 ## 2. Design
 
+**Normative invariant (user, 2026-07-03): every file write lands inside the repo the requesting project is connected to — never another served root, never outside any root.** Concretely: each Figma file's connection pins one resolved root; all `/project/*` writes carry that root; path resolution + containment are enforced against that root per request. This is the property every other mechanism below serves, and the per-root isolation tests in §4 are its gate.
+
 ### Root registry (user-level, persisted)
 - `~/.uxfactory/repos.json`: `{ repos: [{ root, firstConnectedAt, lastConnectedAt }] }`, deduped by resolved absolute path, updated on every successful connect. Corrupt/missing file → treated as empty (never blocks the bridge).
 - On startup the bridge's launch cwd is auto-registered (the "launch root") — always servable, preserves today's behavior.
