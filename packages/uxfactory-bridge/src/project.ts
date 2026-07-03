@@ -526,6 +526,22 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 ) => {
   const { servedRoot, dataDir, version, shared, logRing, registry } = opts;
 
+  /**
+   * Resolve a request's ?root= to {root, dataDir} or send the 403/410 error.
+   * Returns null after sending an error reply — callers MUST `return` on null.
+   */
+  async function resolveRoot(
+    rawRoot: string | undefined,
+    reply: import("fastify").FastifyReply,
+  ): Promise<{ root: string; dataDir: string } | null> {
+    const resolution = await registry.resolveRequestRoot(rawRoot);
+    if (!resolution.ok) {
+      reply.code(resolution.code).send({ error: resolution.error });
+      return null;
+    }
+    return { root: resolution.root, dataDir: resolution.dataDir };
+  }
+
   // ── POST /project/connect ────────────────────────────────────────────────
   app.post<{ Body: { repoPath?: unknown } }>("/project/connect", async (req, reply) => {
     const repoPath = req.body?.repoPath;
@@ -569,15 +585,19 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   });
 
   // ── GET /project/snapshot ────────────────────────────────────────────────
-  app.get("/project/snapshot", async () => {
-    return buildSnapshot(servedRoot, dataDir);
+  app.get<{ Querystring: { root?: string } }>("/project/snapshot", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
+    return buildSnapshot(ctx.root, ctx.dataDir);
   });
 
   // ── PUT /project/classification ──────────────────────────────────────────
-  app.put("/project/classification", async (req) => {
+  app.put<{ Querystring: { root?: string } }>("/project/classification", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
     const body = req.body as Record<string, unknown>;
     await writeFile(
-      path.join(servedRoot, "uxfactory.classification.json"),
+      path.join(ctx.root, "uxfactory.classification.json"),
       `${JSON.stringify(body, null, 2)}\n`,
       "utf8",
     );
@@ -586,6 +606,7 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 
   // ── PUT /project/profile ─────────────────────────────────────────────────
   app.put<{
+    Querystring: { root?: string };
     Body: {
       visual?: string;
       editorial?: string;
@@ -594,9 +615,11 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       style?: string;
       coherence?: string;
     };
-  }>("/project/profile", async (req) => {
+  }>("/project/profile", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
     const body = req.body;
-    const profilePath = path.join(servedRoot, "uxfactory.profile.json");
+    const profilePath = path.join(ctx.root, "uxfactory.profile.json");
 
     // Read existing profile or start fresh.
     let profile: Record<string, unknown> = {};
@@ -633,7 +656,7 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 
     // Style also propagates into classification.json.
     if (body.style !== undefined) {
-      const classPath = path.join(servedRoot, "uxfactory.classification.json");
+      const classPath = path.join(ctx.root, "uxfactory.classification.json");
       let cls: Record<string, unknown> = {};
       try {
         cls = JSON.parse(await readFile(classPath, "utf8")) as Record<string, unknown>;
@@ -646,8 +669,10 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   });
 
   // ── GET /project/links ───────────────────────────────────────────────────
-  app.get("/project/links", async () => {
-    const linksPath = path.join(dataDir, "links.json");
+  app.get<{ Querystring: { root?: string } }>("/project/links", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
+    const linksPath = path.join(ctx.dataDir, "links.json");
     try {
       const raw = await readFile(linksPath, "utf8");
       const links = JSON.parse(raw) as Link[];
@@ -658,47 +683,62 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   });
 
   // ── PUT /project/links ───────────────────────────────────────────────────
-  app.put<{ Body: { links?: Link[] } }>("/project/links", async (req) => {
-    const links = req.body?.links ?? [];
-    const linksPath = path.join(dataDir, "links.json");
-    await writeFile(linksPath, `${JSON.stringify(links, null, 2)}\n`, "utf8");
-    return { ok: true };
-  });
+  app.put<{ Querystring: { root?: string }; Body: { links?: Link[] } }>(
+    "/project/links",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const links = req.body?.links ?? [];
+      const linksPath = path.join(ctx.dataDir, "links.json");
+      await mkdir(ctx.dataDir, { recursive: true });
+      await writeFile(linksPath, `${JSON.stringify(links, null, 2)}\n`, "utf8");
+      return { ok: true };
+    },
+  );
 
   // ── GET /project/artifact ────────────────────────────────────────────────
-  app.get<{ Querystring: { key?: string } }>("/project/artifact", async (req, reply) => {
-    const key = req.query.key;
-    if (typeof key !== "string" || key.trim() === "") {
-      return reply.code(400).send({ error: "key query param is required" });
-    }
-
-    const resolved = await resolveConcernPath(key, servedRoot);
-    if (resolved === null) {
-      return reply.code(400).send({ error: `unknown concern key: ${key}` });
-    }
-
-    // Containment check — the resolved path must be inside the served root
-    // (guards a crafted registry pointing outside; checked BEFORE existence so
-    // a traversal never even leaks whether the target file exists).
-    const rootWithSep = servedRoot.endsWith(path.sep) ? servedRoot : servedRoot + path.sep;
-    if (resolved.absolutePath !== servedRoot && !resolved.absolutePath.startsWith(rootWithSep)) {
-      return reply
-        .code(400)
-        .send({ error: "artifact path is outside the project root", key });
-    }
-
-    if (!resolved.exists) {
-      return reply.code(404).send({ error: `artifact not found: ${key}` });
-    }
-
-    const content = await readFile(resolved.absolutePath, "utf8");
-    return { key, path: resolved.relativePath, format: resolved.format, content };
-  });
-
-  // ── PUT /project/artifact ────────────────────────────────────────────────
-  app.put<{ Body: { key?: unknown; content?: unknown } }>(
+  app.get<{ Querystring: { key?: string; root?: string } }>(
     "/project/artifact",
     async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
+      const key = req.query.key;
+      if (typeof key !== "string" || key.trim() === "") {
+        return reply.code(400).send({ error: "key query param is required" });
+      }
+
+      const resolved = await resolveConcernPath(key, ctx.root);
+      if (resolved === null) {
+        return reply.code(400).send({ error: `unknown concern key: ${key}` });
+      }
+
+      // Containment check — the resolved path must be inside the resolved root
+      // (guards a crafted registry pointing outside; checked BEFORE existence so
+      // a traversal never even leaks whether the target file exists).
+      const rootWithSep = ctx.root.endsWith(path.sep) ? ctx.root : ctx.root + path.sep;
+      if (resolved.absolutePath !== ctx.root && !resolved.absolutePath.startsWith(rootWithSep)) {
+        return reply
+          .code(400)
+          .send({ error: "artifact path is outside the project root", key });
+      }
+
+      if (!resolved.exists) {
+        return reply.code(404).send({ error: `artifact not found: ${key}` });
+      }
+
+      const content = await readFile(resolved.absolutePath, "utf8");
+      return { key, path: resolved.relativePath, format: resolved.format, content };
+    },
+  );
+
+  // ── PUT /project/artifact ────────────────────────────────────────────────
+  app.put<{ Querystring: { root?: string }; Body: { key?: unknown; content?: unknown } }>(
+    "/project/artifact",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
       const { key, content } = (req.body ?? {}) as { key?: unknown; content?: unknown };
 
       if (typeof key !== "string" || key.trim() === "") {
@@ -708,14 +748,14 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
         return reply.code(400).send({ error: "content must be a string" });
       }
 
-      const resolved = await resolveConcernPath(key, servedRoot);
+      const resolved = await resolveConcernPath(key, ctx.root);
       if (resolved === null) {
         return reply.code(400).send({ error: `unknown concern key: ${key}` });
       }
 
       // Containment check — guard against a registry pointing outside root.
-      const rootWithSep = servedRoot.endsWith(path.sep) ? servedRoot : servedRoot + path.sep;
-      if (resolved.writePath !== servedRoot && !resolved.writePath.startsWith(rootWithSep)) {
+      const rootWithSep = ctx.root.endsWith(path.sep) ? ctx.root : ctx.root + path.sep;
+      if (resolved.writePath !== ctx.root && !resolved.writePath.startsWith(rootWithSep)) {
         return reply
           .code(400)
           .send({ error: "artifact path is outside the project root", key });
@@ -743,31 +783,37 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   );
 
   // ── POST /project/open ───────────────────────────────────────────────────
-  app.post<{ Body: { path?: unknown } }>("/project/open", async (req, reply) => {
-    const reqPath = req.body?.path;
-    if (typeof reqPath !== "string" || reqPath.trim() === "") {
-      return reply.code(400).send({ error: "path must be a non-empty string" });
-    }
+  app.post<{ Querystring: { root?: string }; Body: { path?: unknown } }>(
+    "/project/open",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
 
-    // Resolve relative to served root.
-    const abs = path.resolve(servedRoot, reqPath);
+      const reqPath = req.body?.path;
+      if (typeof reqPath !== "string" || reqPath.trim() === "") {
+        return reply.code(400).send({ error: "path must be a non-empty string" });
+      }
 
-    // Containment check: must be exactly servedRoot or start with servedRoot + sep.
-    const rootWithSep = servedRoot.endsWith(path.sep) ? servedRoot : servedRoot + path.sep;
-    if (abs !== servedRoot && !abs.startsWith(rootWithSep)) {
-      return reply
-        .code(400)
-        .send({ error: "path is outside the project root", resolved: abs, root: servedRoot });
-    }
+      // Resolve relative to the resolved root.
+      const abs = path.resolve(ctx.root, reqPath);
 
-    // Exec platform opener (skipped in test environments so tests never spawn OS processes).
-    if (process.env["NODE_ENV"] !== "test") {
-      const opener = platform === "darwin" ? "open" : "xdg-open";
-      await execFileAsync(opener, [abs]);
-    }
+      // Containment check: must be exactly ctx.root or start with ctx.root + sep.
+      const rootWithSep = ctx.root.endsWith(path.sep) ? ctx.root : ctx.root + path.sep;
+      if (abs !== ctx.root && !abs.startsWith(rootWithSep)) {
+        return reply
+          .code(400)
+          .send({ error: "path is outside the project root", resolved: abs, root: ctx.root });
+      }
 
-    return { ok: true };
-  });
+      // Exec platform opener (skipped in test environments so tests never spawn OS processes).
+      if (process.env["NODE_ENV"] !== "test") {
+        const opener = platform === "darwin" ? "open" : "xdg-open";
+        await execFileAsync(opener, [abs]);
+      }
+
+      return { ok: true };
+    },
+  );
 
   // ── GET /stats ───────────────────────────────────────────────────────────
   app.get("/stats", async () => {
