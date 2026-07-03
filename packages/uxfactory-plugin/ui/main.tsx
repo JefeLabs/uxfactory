@@ -19,7 +19,7 @@ import { createBus } from "./lib/plugin-bus.js";
 import { createBridge } from "./lib/bridge.js";
 import { useAppStore } from "./stores/app.js";
 import { useRunsStore } from "./stores/runs.js";
-import { makeQueryClient, queryKeys } from "./queries.js";
+import { makeQueryClient, queryKeys, activeRoot } from "./queries.js";
 import { createAppRouter } from "./router.js";
 
 interface StoredConnection {
@@ -67,7 +67,7 @@ async function boot(): Promise<void> {
       return;
     }
 
-    queryClient.setQueryData(queryKeys.snapshot, snapshot);
+    queryClient.setQueryData(queryKeys.snapshot(activeRoot(bridge)), snapshot);
     store.connectSucceeded(snapshot, stored.repoPath, (payload) => {
       bus.storageSet(connKey, payload).catch(() => {
         /* non-fatal */

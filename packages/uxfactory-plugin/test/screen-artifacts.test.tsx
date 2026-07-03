@@ -1256,7 +1256,7 @@ describe("Failure surfacing — 5-minute pending timeout with Retry", () => {
       // immediately — fake timers block React Query's internal setTimeout, which
       // would otherwise keep the component in "Loading…" state.
       const queryClient = makeQueryClient();
-      queryClient.setQueryData(queryKeys.snapshot, makeMeridianSnapshot());
+      queryClient.setQueryData(queryKeys.snapshot(null), makeMeridianSnapshot());
       await renderWithProviders(<Artifacts bridge={bridge} />, {
         initialEntries: ["/tabs/artifacts"],
         queryClient,

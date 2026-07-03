@@ -28,7 +28,7 @@ import type { Bridge, Link } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { Card } from "../components/index.js";
-import { linksQuery, putLinksMutation, enqueueMutation, queryKeys } from "../queries.js";
+import { linksQuery, putLinksMutation, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -87,11 +87,11 @@ export function Components({
   function commitLinks(next: Link[], failMsg = "Failed to save link — is the bridge running?"): void {
     // Cancel in-flight refetches first — a fetch resolving after the optimistic
     // write would clobber it (and a rollback could clobber a newer refetch).
-    void queryClient.cancelQueries({ queryKey: queryKeys.links });
-    queryClient.setQueryData(queryKeys.links, { links: next });
+    void queryClient.cancelQueries({ queryKey: queryKeys.links(activeRoot(bridge)) });
+    queryClient.setQueryData(queryKeys.links(activeRoot(bridge)), { links: next });
     putLinks.mutate(next, {
       onError: () => {
-        queryClient.setQueryData(queryKeys.links, { links });
+        queryClient.setQueryData(queryKeys.links(activeRoot(bridge)), { links });
         toast(failMsg);
       },
     });

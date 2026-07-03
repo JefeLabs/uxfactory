@@ -47,7 +47,7 @@ import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { ArtifactEditor } from "./ArtifactEditor.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { snapshotQuery, enqueueMutation, queryKeys } from "../queries.js";
+import { snapshotQuery, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 
 // Typed search access without importing artifactsRoute (router.tsx imports this
@@ -281,9 +281,9 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
         payload: { artifact: row.key, guidance },
       });
       pendingIdsRef.current[id] = row.key;
-      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
       setTimeout(
-        () => void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot }),
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) }),
         3000,
       );
     } catch {

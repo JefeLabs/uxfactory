@@ -17,7 +17,7 @@ import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { healthQuery, connectProjectMutation, queryKeys } from "../queries.js";
+import { healthQuery, connectProjectMutation, queryKeys, activeRoot } from "../queries.js";
 import { useAppStore } from "../stores/app.js";
 import { Card, Field, Segmented, StatusPill } from "../components/index.js";
 import type { SegmentedOption, StatusPillStatus } from "../components/index.js";
@@ -113,7 +113,7 @@ export function Connect({
       const capturedMode = mode;
       const capturedEndpoint = connectionEndpoint;
       const trimmed = repoPath.trim();
-      queryClient.setQueryData(queryKeys.snapshot, result.snapshot);
+      queryClient.setQueryData(queryKeys.snapshot(activeRoot(bridge)), result.snapshot);
       connectSucceeded(result.snapshot, trimmed, (payload) => {
         void bus.storageSet(storageKey, {
           ...payload,

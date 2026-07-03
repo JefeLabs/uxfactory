@@ -31,10 +31,11 @@ import type { Bridge } from "../ui/lib/bridge.js";
 // origin and forwards method/headers/body untouched. Anything else the client
 // puts on the wire (verb, body shape, content-type) reaches the real routes.
 
-function injectFetch(app: BridgeServer): typeof fetch {
+function injectFetch(app: BridgeServer, captured?: string[]): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const parsed = new URL(url);
+    captured?.push(`${parsed.pathname}${parsed.search}`);
     const res = await app.inject({
       method: init?.method ?? "GET",
       url: `${parsed.pathname}${parsed.search}`,
@@ -299,5 +300,61 @@ describe("contract: getCwd", () => {
   it("returns the bridge process cwd for the Connect screen hint", async () => {
     const res = await bridge.getCwd!();
     expect(res).toEqual({ cwd: process.cwd() });
+  });
+});
+
+// ─── root-carrying contract ───────────────────────────────────────────────────
+
+describe("contract: setProjectRoot appends ?root= to root-scoped verbs", () => {
+  it("every /project/* + enqueue call carries the encoded root; connect does not", async () => {
+    const captured: string[] = [];
+    const rooted = createBridgeClient(injectFetch(app, captured));
+    rooted.setProjectRoot!(root);
+
+    await rooted.snapshot();
+    await rooted.putClassification({ category: "x" });
+    await rooted.putProfile({ visual: "high" });
+    await rooted.getLinks();
+    await rooted.putLinks([]);
+    await rooted.putArtifact!("brief", "# b\n");
+    await rooted.getArtifact!("brief");
+    await rooted.enqueue({ kind: "k", payload: {} });
+
+    const enc = encodeURIComponent(root);
+    const rootedCalls = captured.filter(
+      (u) =>
+        u.startsWith("/project/snapshot") ||
+        u.startsWith("/project/classification") ||
+        u.startsWith("/project/profile") ||
+        u.startsWith("/project/links") ||
+        u.startsWith("/project/artifact") ||
+        u.startsWith("/pipeline/request"),
+    );
+    expect(rootedCalls.length).toBeGreaterThanOrEqual(8);
+    for (const u of rootedCalls) expect(u).toContain(`root=${enc}`);
+
+    // connect (registration) must NOT carry ?root=.
+    captured.length = 0;
+    await rooted.connectProject(root);
+    const connect = captured.find((u) => u.startsWith("/project/connect"))!;
+    expect(connect).not.toContain("root=");
+  });
+
+  it("getArtifact keeps its key param and adds root with &", async () => {
+    const captured: string[] = [];
+    const rooted = createBridgeClient(injectFetch(app, captured));
+    rooted.setProjectRoot!(root);
+    await rooted.getArtifact!("brief").catch(() => undefined);
+    const call = captured.find((u) => u.startsWith("/project/artifact"))!;
+    expect(call).toContain("key=brief");
+    expect(call).toContain(`root=${encodeURIComponent(root)}`);
+    expect(call.indexOf("&root=")).toBeGreaterThan(-1);
+  });
+
+  it("getRepos returns the ReposResponse shape from the real server", async () => {
+    const res = await bridge.getRepos!();
+    expect(res.cwd).toBe(root);
+    expect(Array.isArray(res.repos)).toBe(true);
+    expect(res.repos[0]!.root).toBe(root);
   });
 });

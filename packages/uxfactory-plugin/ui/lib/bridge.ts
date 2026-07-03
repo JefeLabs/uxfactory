@@ -93,6 +93,18 @@ export interface ArtifactContent {
   content: string;
 }
 
+export interface RepoListing {
+  root: string;
+  name: string;
+  lastConnectedAt: number;
+  live: boolean;
+}
+
+export interface ReposResponse {
+  cwd: string;
+  repos: RepoListing[];
+}
+
 export interface ConnectOk {
   ok: true;
   snapshot: ProjectSnapshot;
@@ -160,6 +172,12 @@ export interface Bridge {
   putArtifact?(key: string, content: string): Promise<{ ok: boolean }>;
   /** GET /fs/cwd — bridge working directory, the Connect repo-path hint (optional — absent in legacy bridge builds) */
   getCwd?(): Promise<{ cwd: string }>;
+  /** Set the active project root; appended as ?root= to root-scoped verbs. null clears it. */
+  setProjectRoot?(root: string | null): void;
+  /** The active project root, or null. Used to key root-scoped query cache entries. */
+  getProjectRoot?(): string | null;
+  /** GET /fs/repos — repo discovery list (optional — absent in legacy bridge builds). */
+  getRepos?(): Promise<ReposResponse>;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -175,6 +193,15 @@ export const BASE = "http://localhost:3779";
 export function createBridge(fetchImpl?: typeof fetch): Bridge {
   const doFetch = fetchImpl ?? fetch;
   const root = BASE.replace(/\/+$/, "");
+
+  let projectRoot: string | null = null;
+
+  /** Append ?root= / &root= to a path when a project root is set. */
+  function rooted(p: string): string {
+    if (projectRoot === null) return p;
+    const sep = p.includes("?") ? "&" : "?";
+    return `${p}${sep}root=${encodeURIComponent(projectRoot)}`;
+  }
 
   async function request<T>(
     path: string,
@@ -302,27 +329,27 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     },
 
     snapshot() {
-      return request<ProjectSnapshot>("/project/snapshot");
+      return request<ProjectSnapshot>(rooted("/project/snapshot"));
     },
 
     putClassification(body: Record<string, unknown>) {
-      return put<{ ok: boolean }>("/project/classification", body);
+      return put<{ ok: boolean }>(rooted("/project/classification"), body);
     },
 
     putProfile(body: Record<string, unknown>) {
-      return put<{ ok: boolean }>("/project/profile", body);
+      return put<{ ok: boolean }>(rooted("/project/profile"), body);
     },
 
     getLinks() {
-      return request<{ links: Link[] }>("/project/links");
+      return request<{ links: Link[] }>(rooted("/project/links"));
     },
 
     putLinks(links: Link[]) {
-      return put<{ ok: boolean }>("/project/links", { links });
+      return put<{ ok: boolean }>(rooted("/project/links"), { links });
     },
 
     openPath(path: string) {
-      return post<{ ok: boolean }>("/project/open", { path });
+      return post<{ ok: boolean }>(rooted("/project/open"), { path });
     },
 
     stats() {
@@ -339,7 +366,7 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     },
 
     enqueue(requestBody: PipelineEnqueueRequest) {
-      return post<PipelineEnqueueResponse>("/pipeline/request", requestBody);
+      return post<PipelineEnqueueResponse>(rooted("/pipeline/request"), requestBody);
     },
 
     events(onEvent: (event: BridgeEvent) => void) {
@@ -356,16 +383,28 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     getArtifact(key: string) {
       return request<ArtifactContent>(
-        `/project/artifact?key=${encodeURIComponent(key)}`,
+        rooted(`/project/artifact?key=${encodeURIComponent(key)}`),
       );
     },
 
     putArtifact(key: string, content: string) {
-      return put<{ ok: boolean }>("/project/artifact", { key, content });
+      return put<{ ok: boolean }>(rooted("/project/artifact"), { key, content });
     },
 
     getCwd() {
       return request<{ cwd: string }>("/fs/cwd");
+    },
+
+    setProjectRoot(next: string | null) {
+      projectRoot = next;
+    },
+
+    getProjectRoot() {
+      return projectRoot;
+    },
+
+    getRepos() {
+      return request<ReposResponse>("/fs/repos");
     },
   };
 }

@@ -50,7 +50,7 @@ import { BridgeError } from "../lib/bridge.js";
 import { sectionGuidanceFor } from "../lib/artifact-schemas.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { artifactQuery, putArtifactMutation, queryKeys } from "../queries.js";
+import { artifactQuery, putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -227,8 +227,8 @@ export function ArtifactEditor({
     ...putArtifactMutation(bridge),
     onSuccess: () => {
       setSections((prev) => prev.map((s) => ({ ...s, originalBody: s.currentBody })));
-      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.artifact(artifactKey) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifact(activeRoot(bridge), artifactKey) });
       toast("Saved");
     },
     onError: () => toast("Save failed — is the bridge running?"),

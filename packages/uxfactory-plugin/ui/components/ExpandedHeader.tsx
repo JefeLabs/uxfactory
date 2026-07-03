@@ -28,7 +28,7 @@ import { useWizardStore } from "../stores/wizard.js";
 import { engineToLabel, labelToEngine } from "../lib/dials.js";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { putProfileMutation, queryKeys } from "../queries.js";
+import { putProfileMutation, queryKeys, activeRoot } from "../queries.js";
 
 // ─── Dial configuration ───────────────────────────────────────────────────────
 
@@ -188,7 +188,7 @@ export function ExpandedHeader({ bridge }: { bridge: Bridge }): React.JSX.Elemen
   const putProfile = useMutation({
     ...putProfileMutation(bridge),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
       toast("Applies to new runs");
     },
   });

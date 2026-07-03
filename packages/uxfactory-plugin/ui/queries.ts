@@ -17,16 +17,21 @@ import type {
   PipelineEnqueueRequest,
 } from "./lib/bridge.js";
 
+/** The bridge's active project root (null on legacy fakes without the method). */
+export function activeRoot(bridge: Bridge): string | null {
+  return bridge.getProjectRoot?.() ?? null;
+}
+
 export const queryKeys = {
-  snapshot: ["snapshot"] as const,
+  snapshot: (root: string | null) => ["snapshot", root] as const,
   health: ["health"] as const,
   stats: ["stats"] as const,
   logs: (tail: number) => ["logs", tail] as const,
   skills: ["skills"] as const,
-  links: ["links"] as const,
+  links: (root: string | null) => ["links", root] as const,
   latestRender: (run: string | undefined) =>
     ["latestRender", run ?? null] as const,
-  artifact: (key: string) => ["artifact", key] as const,
+  artifact: (root: string | null, key: string) => ["artifact", root, key] as const,
 };
 
 /** QueryClient: queries retry once, mutations never retry. */
@@ -42,7 +47,7 @@ export function makeQueryClient(): QueryClient {
 
 export function snapshotQuery(bridge: Bridge) {
   return queryOptions({
-    queryKey: queryKeys.snapshot,
+    queryKey: queryKeys.snapshot(activeRoot(bridge)),
     queryFn: () => bridge.snapshot(),
     staleTime: 5_000,
   });
@@ -91,7 +96,7 @@ export function skillsQuery(bridge: Bridge) {
 
 export function linksQuery(bridge: Bridge) {
   return queryOptions({
-    queryKey: queryKeys.links,
+    queryKey: queryKeys.links(activeRoot(bridge)),
     queryFn: () => bridge.getLinks(),
     staleTime: 0,
   });
@@ -107,7 +112,7 @@ export function latestRenderQuery(bridge: Bridge, run: string | undefined) {
 
 export function artifactQuery(bridge: Bridge, key: string) {
   return queryOptions({
-    queryKey: queryKeys.artifact(key),
+    queryKey: queryKeys.artifact(activeRoot(bridge), key),
     queryFn: () => bridge.getArtifact!(key),
     enabled: typeof bridge.getArtifact === "function" && key !== "",
     retry: false,
