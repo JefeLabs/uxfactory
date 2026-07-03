@@ -10,7 +10,7 @@
 
 ## Global Constraints
 - Figma manifest (`packages/uxfactory-plugin/manifest.json`) is UNTOUCHABLE — `networkAccess` stays `localhost:3779` only.
-- `dist/ui.html` must remain fully self-contained (zero external URLs) and < 2MB (gz budget +~15KB vs baseline; baseline `ui.html` is 1,590,629 bytes — the Artifact Editor spec raised the budget from 1.5MB when MDXEditor landed).
+- `dist/ui.html` must remain fully self-contained (zero external URLs) and < 2MB (gz budget +~15KB vs baseline; baseline `ui.html` is 1,135,893 bytes — the Artifact Editor spec raised the budget from 1.5MB to 2MB headroom when MDXEditor landed).
 - Behavior-frozen refactor: every existing RTL screen test keeps passing with minimal MECHANICAL edits only (`render` → `renderWithProviders`; store-route asserts → router-location asserts). Tests that assert behavior must not weaken.
 - React 19 + Zustand discipline: `useAppStore` selectors return primitives or stable refs ONLY — never object literals.
 - Code-based route tree (`createRootRoute`/`createRoute`) — do NOT add the file-based routing Vite plugin.
@@ -2113,7 +2113,7 @@
   pnpm -r build
   ls -la packages/uxfactory-plugin/dist/ui.html
   ```
-  Expected: `ui.html` size < 2,097,152 bytes (2MB). Record the delta vs the 1,590,629-byte baseline in the commit body; the two TanStack libs are pure JS and should add well under the +~15KB gz budget. If over 2MB, STOP and investigate (do not commit) — the likely cause is an accidental non-tree-shaken import; both libs are ESM and side-effect-light.
+  Expected: `ui.html` size < 2,097,152 bytes (2MB). Record the delta vs the 1,135,893-byte baseline in the commit body; the two TanStack libs are pure JS and should add well under the +~15KB gz budget. If over 2MB, STOP and investigate (do not commit) — the likely cause is an accidental non-tree-shaken import; both libs are ESM and side-effect-light.
 
 - [ ] **Commit.**
   ```sh
