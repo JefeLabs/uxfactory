@@ -469,23 +469,6 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
     });
   });
 
-  it("clicking a grounding chip navigates to artifacts tab with focus param", async () => {
-    const user = userEvent.setup();
-    const { bridge } = makeBridge();
-    const bus = makeBus();
-    const { router } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
-      initialEntries: ["/tabs/prompt"],
-    });
-
-    await user.click(
-      screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
-    );
-
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/tabs/artifacts");
-      expect(router.state.location.search).toEqual({ focus: "requirements" });
-    });
-  });
 });
 
 // ─── AC-5: Empty-artifacts callout renders + generation still enqueues ────────

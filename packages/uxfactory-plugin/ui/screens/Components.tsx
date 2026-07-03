@@ -85,6 +85,9 @@ export function Components({
    * to the current `links` snapshot on error so the UI stays honest.
    */
   function commitLinks(next: Link[], failMsg = "Failed to save link — is the bridge running?"): void {
+    // Cancel in-flight refetches first — a fetch resolving after the optimistic
+    // write would clobber it (and a rollback could clobber a newer refetch).
+    void queryClient.cancelQueries({ queryKey: queryKeys.links });
     queryClient.setQueryData(queryKeys.links, { links: next });
     putLinks.mutate(next, {
       onError: () => {
