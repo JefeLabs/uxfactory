@@ -19,6 +19,8 @@ export interface PipelineRequest {
   kind: string;
   payload: unknown;
   createdAt: number;
+  /** Resolved project root this job is scoped to. */
+  root?: string;
 }
 
 /**
@@ -38,15 +40,21 @@ const SSE_RECONNECT_MS = 1000;
 
 export class WorkerBridgeClient implements BridgeLike {
   private readonly base: string;
+  private readonly projectRoot: string | null;
 
-  constructor(bridgeUrl: string) {
+  constructor(bridgeUrl: string, projectRoot?: string) {
     // Tolerate a trailing slash so `${base}/pipeline/...` never doubles up.
     this.base = bridgeUrl.replace(/\/+$/, '');
+    this.projectRoot = projectRoot ?? null;
   }
 
   /** Pull the next queued request (FIFO); null when the bridge returns 204. */
   async pullRequest(): Promise<PipelineRequest | null> {
-    const res = await fetch(`${this.base}/pipeline/request/next`);
+    const qs =
+      this.projectRoot !== null
+        ? `?root=${encodeURIComponent(this.projectRoot)}`
+        : '';
+    const res = await fetch(`${this.base}/pipeline/request/next${qs}`);
     if (res.status === 204) return null;
     if (!res.ok) {
       throw new Error(`pullRequest: bridge returned ${res.status} ${res.statusText}`);

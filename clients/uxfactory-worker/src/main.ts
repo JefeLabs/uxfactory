@@ -144,7 +144,7 @@ async function main(): Promise<void> {
   }
 
   const { createWorkerAdapter } = await import('./adapter.js');
-  const bridge = new WorkerBridgeClient(cfg.bridgeUrl);
+  const bridge = new WorkerBridgeClient(cfg.bridgeUrl, cfg.projectRoot);
   const cliBin = resolveCliBin(cfg);
   const ctx: DispatchCtx = { projectRoot: cfg.projectRoot, cliBin };
 

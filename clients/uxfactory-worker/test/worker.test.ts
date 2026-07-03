@@ -1523,6 +1523,63 @@ describe('WorkerBridgeClient (http)', () => {
     expect(wakes).toBeGreaterThanOrEqual(1);
     unsub();
   });
+
+  it('pullRequest appends ?root= when a projectRoot is set', async () => {
+    const seenUrls: string[] = [];
+    const server = http.createServer((req, res) => {
+      seenUrls.push(req.url ?? '');
+      if (req.url?.startsWith('/pipeline/request/next')) {
+        res.writeHead(204).end();
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const client = new WorkerBridgeClient(`http://127.0.0.1:${port}`, '/repo/alpha');
+      expect(await client.pullRequest()).toBeNull();
+      const pollUrl = seenUrls.find((u) => u.startsWith('/pipeline/request/next'))!;
+      expect(pollUrl).toContain(`root=${encodeURIComponent('/repo/alpha')}`);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('two pollers on different roots never claim each other\'s job', async () => {
+    // Per-root FIFO queues keyed by the ?root= query param.
+    const queues: Record<string, { id: string; kind: string; payload: unknown; createdAt: number; root: string }[]> = {
+      '/repo/alpha': [{ id: 'a1', kind: 'k', payload: {}, createdAt: 1, root: '/repo/alpha' }],
+      '/repo/beta': [{ id: 'b1', kind: 'k', payload: {}, createdAt: 1, root: '/repo/beta' }],
+    };
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url ?? '', 'http://x');
+      if (url.pathname === '/pipeline/request/next') {
+        const root = url.searchParams.get('root') ?? '';
+        const job = queues[root]?.shift() ?? null;
+        if (job === null) { res.writeHead(204).end(); return; }
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(job));
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const alpha = new WorkerBridgeClient(`http://127.0.0.1:${port}`, '/repo/alpha');
+      const beta = new WorkerBridgeClient(`http://127.0.0.1:${port}`, '/repo/beta');
+      const gotAlpha = await alpha.pullRequest();
+      const gotBeta = await beta.pullRequest();
+      expect(gotAlpha?.id).toBe('a1');
+      expect(gotAlpha?.root).toBe('/repo/alpha');
+      expect(gotBeta?.id).toBe('b1');
+      // Neither claimed the other's remaining work.
+      expect(await alpha.pullRequest()).toBeNull();
+      expect(await beta.pullRequest()).toBeNull();
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
