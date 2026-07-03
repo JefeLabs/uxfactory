@@ -150,7 +150,7 @@ function ContextBar() {
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
 const TAB_DEFS: { value: Tab; label: string }[] = [
-  { value: "prompt", label: "Prompt" },
+  { value: "prompt", label: "Generate" },
   { value: "artifacts", label: "Artifacts" },
   { value: "components", label: "Components" },
   { value: "assets", label: "Assets" },

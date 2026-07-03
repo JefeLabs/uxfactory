@@ -170,7 +170,7 @@ describe("boot path — tabs (stored connection + classified project)", () => {
 
   it("renders the Prompt tab label", () => {
     render(<App bridge={makeBridge()} bus={makeBus()} />);
-    expect(screen.getByRole("tab", { name: "Prompt" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
   });
 
   it("shows the context bar with StatusPill 'Connected'", () => {
@@ -187,7 +187,7 @@ describe("boot path — tabs (stored connection + classified project)", () => {
 
   it("shows the Prompt tab as active by default", () => {
     render(<App bridge={makeBridge()} bus={makeBus()} />);
-    expect(screen.getByRole("tab", { name: "Prompt" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 });
 
@@ -299,7 +299,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
 describe("tab navigation sets active tab", () => {
   beforeEach(() => resetToTabs(true));
 
-  const tabLabels = ["Prompt", "Artifacts", "Components", "Assets", "Checks", "Settings"] as const;
+  const tabLabels = ["Generate", "Artifacts", "Components", "Assets", "Checks", "Settings"] as const;
 
   for (const label of tabLabels) {
     it(`clicking '${label}' makes its tab trigger active`, async () => {

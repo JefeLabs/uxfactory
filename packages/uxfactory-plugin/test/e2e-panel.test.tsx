@@ -159,11 +159,11 @@ describe("E2E: tab navigation after connect", () => {
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     expect(tabList).toBeInTheDocument();
 
-    const tabs = ["Prompt", "Artifacts", "Components", "Assets", "Checks", "Settings"];
+    const tabs = ["Generate", "Artifacts", "Components", "Assets", "Checks", "Settings"];
     for (const label of tabs) {
       expect(screen.getByRole("tab", { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByRole("tab", { name: "Prompt" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 
   it("clicking Artifacts tab makes it active and updates the store", async () => {
@@ -323,6 +323,6 @@ describe("E2E: wizard walk — Connect → setup-1 → setup-2 → tabs", () => 
         screen.getByRole("tablist", { name: "Panel tabs" }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("tab", { name: "Prompt" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 });
