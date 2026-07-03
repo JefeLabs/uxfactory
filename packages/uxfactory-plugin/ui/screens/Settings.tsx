@@ -19,17 +19,18 @@
  * stable stored reference. Never return a new object literal from a selector.
  */
 
-import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useQuery } from "@tanstack/react-query";
 import type { Bridge, BridgeStats, SkillEntry } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { Card, SectionHeader } from "../components/index.js";
+import { statsQuery, skillsQuery, logsQuery } from "../queries.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STORAGE_BUDGET_BYTES = 100 * 1024; // 100 kb
-const STATS_INTERVAL_MS = 10_000;
 const LOGS_REPOLL_MS = 2_000;
 const RESTART_COMMAND = "uxfactory bridge";
 /** Known plugin storage key prefixes (the bus has no key-listing). */
@@ -89,42 +90,15 @@ interface LogsDrawerProps {
 }
 
 function LogsDrawer({ bridge, open, onClose }: LogsDrawerProps): React.JSX.Element {
-  const [lines, setLines] = useState<string[]>([]);
   const [autoRepoll, setAutoRepoll] = useState(false);
-  const repollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchLogs = useCallback(async (): Promise<void> => {
-    try {
-      const resp = await bridge.logs(200);
-      setLines(resp.lines);
-    } catch {
-      // non-fatal — keep showing whatever is cached
-    }
-  }, [bridge]);
-
-  // Fetch on open
-  useEffect(() => {
-    if (!open) return;
-    void fetchLogs();
-  }, [open, fetchLogs]);
-
-  // Auto-repoll (2s while Live toggle on and drawer open)
-  useEffect(() => {
-    if (!open || !autoRepoll) {
-      if (repollRef.current !== null) {
-        clearInterval(repollRef.current);
-        repollRef.current = null;
-      }
-      return;
-    }
-    repollRef.current = setInterval(() => void fetchLogs(), LOGS_REPOLL_MS);
-    return () => {
-      if (repollRef.current !== null) {
-        clearInterval(repollRef.current);
-        repollRef.current = null;
-      }
-    };
-  }, [open, autoRepoll, fetchLogs]);
+  const logsResult = useQuery(
+    logsQuery(bridge, 200, {
+      enabled: open,
+      refetchInterval: open && autoRepoll ? LOGS_REPOLL_MS : false,
+    }),
+  );
+  const lines = logsResult.data?.lines ?? [];
 
   return (
     <Dialog.Root
@@ -158,7 +132,7 @@ function LogsDrawer({ bridge, open, onClose }: LogsDrawerProps): React.JSX.Eleme
               </label>
               <button
                 type="button"
-                onClick={() => void fetchLogs()}
+                onClick={() => void logsResult.refetch()}
                 className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
               >
                 Refresh
@@ -203,12 +177,14 @@ export function Settings({
   const endpoint = useAppStore((s) => s.connection.endpoint);
   const toast = useAppStore((s) => s.toast);
 
-  // ── Stats state ────────────────────────────────────────────────────────────
-  const [stats, setStats] = useState<BridgeStats | null>(null);
-  const [statsError, setStatsError] = useState(false);
+  // ── Stats (Query-driven, 10s refetchInterval) ──────────────────────────────
+  const statsResult = useQuery(statsQuery(bridge));
+  const stats: BridgeStats | null = statsResult.data ?? null;
+  const statsError = statsResult.isError;
 
-  // ── Skills state ───────────────────────────────────────────────────────────
-  const [skills, setSkills] = useState<SkillEntry[]>([]);
+  // ── Skills (Query-driven, fetched once, 60s staleTime) ────────────────────
+  const skillsResult = useQuery(skillsQuery(bridge));
+  const skills: SkillEntry[] = skillsResult.data?.skills ?? [];
 
   // ── Storage state ──────────────────────────────────────────────────────────
   const [fileKey, setFileKey] = useState<string | null>(null);
@@ -234,52 +210,6 @@ export function Settings({
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
   }, [restartOpen]);
-
-  // ── Stats polling (every 10s, cleanup on unmount) ──────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-
-    const poll = async (): Promise<void> => {
-      try {
-        const s = await bridge.stats();
-        if (!cancelled) {
-          setStats(s);
-          setStatsError(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setStats(null);
-          setStatsError(true);
-        }
-      }
-    };
-
-    void poll(); // immediate first fetch
-    const interval = setInterval(() => void poll(), STATS_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [bridge]);
-
-  // ── Skills fetch (once on mount) ──────────────────────────────────────────
-  useEffect(() => {
-    const skillsFn = bridge.skills;
-    if (!skillsFn) return;
-    let cancelled = false;
-    skillsFn
-      .call(bridge)
-      .then((resp) => {
-        if (!cancelled) setSkills(resp.skills);
-      })
-      .catch(() => {
-        // non-fatal — show empty list
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [bridge]);
 
   // ── Storage meter computation ──────────────────────────────────────────────
   useEffect(() => {
