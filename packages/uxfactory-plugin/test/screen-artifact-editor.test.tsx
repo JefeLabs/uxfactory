@@ -315,6 +315,7 @@ describe("Save — dirty gating + byte-exact PUT", () => {
     );
 
     const textareas = screen.getAllByTestId("mdxeditor");
+    fireEvent.focus(textareas[0]!);
     fireEvent.change(textareas[0]!, { target: { value: "Edited overview.\n" } });
 
     expect(
@@ -333,6 +334,7 @@ describe("Save — dirty gating + byte-exact PUT", () => {
 
     // Edit the first section (Overview) body
     const textareas = screen.getAllByTestId("mdxeditor");
+    fireEvent.focus(textareas[0]!);
     fireEvent.change(textareas[0]!, { target: { value: "Edited overview.\n" } });
 
     await user.click(screen.getByRole("button", { name: /Save artifact/i }));
@@ -355,6 +357,7 @@ describe("Save — dirty gating + byte-exact PUT", () => {
     );
 
     const textareas = screen.getAllByTestId("mdxeditor");
+    fireEvent.focus(textareas[0]!);
     fireEvent.change(textareas[0]!, { target: { value: "Edited overview.\n" } });
     await user.click(screen.getByRole("button", { name: /Save artifact/i }));
 
@@ -385,6 +388,7 @@ describe("Save failure — toasts error + stays in editor", () => {
     );
 
     const textareas = screen.getAllByTestId("mdxeditor");
+    fireEvent.focus(textareas[0]!);
     fireEvent.change(textareas[0]!, { target: { value: "Edited.\n" } });
     await user.click(screen.getByRole("button", { name: /Save artifact/i }));
 
@@ -400,6 +404,75 @@ describe("Save failure — toasts error + stays in editor", () => {
 
 // ─── Back with dirty confirm ─────────────────────────────────────────────────
 
+// ─── Mount-time normalization must not dirty the editor ─────────────────────
+// The real MDXEditor fires onChange at mount when it normalizes the source
+// markdown (heading/table serialization, trailing newlines). A change arriving
+// before the user ever focused the section is that normalization: it must
+// re-baseline, not enable Save or arm the unsaved-changes prompt.
+
+describe("Mount-time normalization — onChange before focus does not dirty", () => {
+  it("change without prior focus keeps Save disabled", async () => {
+    render(<ArtifactEditor {...makeProps()} />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
+    );
+
+    // No focus event — this is the editor normalizing, not the user typing.
+    fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
+      target: { value: "Normalized overview.\n" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: /Save artifact/i }),
+    ).toBeDisabled();
+  });
+
+  it("change without prior focus does not arm the Back confirm", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const onBack = vi.fn();
+
+    render(<ArtifactEditor {...makeProps({ onBack })} />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
+    );
+
+    fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
+      target: { value: "Normalized overview.\n" },
+    });
+
+    await user.click(screen.getByRole("button", { name: /Back to artifacts/i }));
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onBack).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("user edit after focus still dirties (Save enabled)", async () => {
+    render(<ArtifactEditor {...makeProps()} />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
+    );
+
+    // Normalization first…
+    fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
+      target: { value: "Normalized overview.\n" },
+    });
+    // …then a real user edit.
+    fireEvent.focus(screen.getAllByTestId("mdxeditor")[0]!);
+    fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
+      target: { value: "User edited overview.\n" },
+    });
+
+    expect(
+      screen.getByRole("button", { name: /Save artifact/i }),
+    ).not.toBeDisabled();
+  });
+});
+
 describe("Back with dirty changes — window.confirm guard", () => {
   it("Back with unsaved changes prompts window.confirm", async () => {
     const user = userEvent.setup();
@@ -411,6 +484,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
     );
 
+    fireEvent.focus(screen.getAllByTestId("mdxeditor")[0]!);
     fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
       target: { value: "Dirty." },
     });
@@ -432,6 +506,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
     );
 
+    fireEvent.focus(screen.getAllByTestId("mdxeditor")[0]!);
     fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
       target: { value: "Dirty." },
     });
@@ -453,6 +528,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
     );
 
+    fireEvent.focus(screen.getAllByTestId("mdxeditor")[0]!);
     fireEvent.change(screen.getAllByTestId("mdxeditor")[0]!, {
       target: { value: "Dirty." },
     });

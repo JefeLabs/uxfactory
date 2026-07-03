@@ -29,7 +29,7 @@
  *   It is intentionally omitted here to avoid side-effect imports in tests.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   MDXEditor,
   headingsPlugin,
@@ -174,6 +174,11 @@ export function ArtifactEditor({
   const [sections, setSections] = useState<Section[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // Sections the user has actually focused. MDXEditor fires onChange at mount
+  // when it normalizes the source markdown — a change on a never-focused
+  // section is that normalization and must re-baseline, not dirty the editor.
+  const touchedSections = useRef<Set<number>>(new Set());
+
   const isDirty = sections.some((s) => s.currentBody !== s.originalBody);
 
   // ── Load artifact on mount / key change ─────────────────────────────────────
@@ -182,6 +187,7 @@ export function ArtifactEditor({
     let cancelled = false;
     setLoadState({ phase: "loading" });
     setSections([]);
+    touchedSections.current = new Set();
 
     if (!bridge.getArtifact) {
       setLoadState({
@@ -217,8 +223,16 @@ export function ArtifactEditor({
   // ── Section change handler ───────────────────────────────────────────────────
 
   const handleSectionChange = useCallback((index: number, newBody: string) => {
+    const isUserEdit = touchedSections.current.has(index);
     setSections((prev) =>
-      prev.map((s, i) => (i === index ? { ...s, currentBody: newBody } : s)),
+      prev.map((s, i) =>
+        i === index
+          ? isUserEdit
+            ? { ...s, currentBody: newBody }
+            : // Mount-time normalization — swap the baseline, stay clean.
+              { ...s, originalBody: newBody, currentBody: newBody }
+          : s,
+      ),
     );
   }, []);
 
@@ -421,7 +435,10 @@ export function ArtifactEditor({
               </div>
             )}
 
-            <div className="px-1 py-1">
+            <div
+              className="px-1 py-1"
+              onFocusCapture={() => touchedSections.current.add(i)}
+            >
               <MDXEditor
                 markdown={section.currentBody}
                 onChange={(val) => handleSectionChange(i, val)}
