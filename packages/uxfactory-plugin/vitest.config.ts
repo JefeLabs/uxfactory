@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
+import path from "node:path";
 
 // Package-scoped Vitest config so `pnpm --filter @uxfactory/plugin test`
 // runs the plugin suite (src + test) in isolation. Mirrors the root config's
@@ -11,6 +13,9 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "test/**/*.test.ts", "test/**/*.test.tsx"],
     environment: "node",
     setupFiles: ["./test/setup-ui.ts"],
+    env: {
+      UXFACTORY_REPOS_REGISTRY: path.join(os.tmpdir(), "uxfactory-test-repos.json"),
+    },
   },
   resolve: {
     alias: {

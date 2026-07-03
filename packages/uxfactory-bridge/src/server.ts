@@ -1,6 +1,8 @@
 import path from "node:path";
+import os from "node:os";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { RootRegistry } from "./roots.js";
 import type { ServerResponse } from "node:http";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
@@ -19,6 +21,12 @@ export interface BridgeOptions {
   dataDir?: string;
   /** How long POST /edits waits for the matching render before 504. Default 4000ms. */
   editTimeoutMs?: number;
+  /**
+   * User-level repo registry path. Default:
+   * process.env.UXFACTORY_REPOS_REGISTRY ?? ~/.uxfactory/repos.json.
+   * Injected in tests so no test writes the developer's real registry.
+   */
+  reposRegistryPath?: string;
 }
 
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
@@ -61,6 +69,17 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   const servedRoot = path.dirname(dataDir);
   // editTimeoutMs is consumed by POST /edits (Task 5).
   const editTimeoutMs = options.editTimeoutMs ?? DEFAULT_EDIT_TIMEOUT_MS;
+
+  const reposRegistryPath =
+    options.reposRegistryPath ??
+    process.env["UXFACTORY_REPOS_REGISTRY"] ??
+    path.join(os.homedir(), ".uxfactory", "repos.json");
+  const registry = new RootRegistry({
+    launchRoot: servedRoot,
+    launchDataDir: dataDir,
+    registryPath: reposRegistryPath,
+  });
+  await registry.init();
 
   // --- boot-time state for /stats and /logs ---
   const bridgeVersion = await readBridgeVersion();
@@ -125,6 +144,9 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   app.get("/fs/cwd", async () => {
     return { cwd: process.cwd() };
   });
+
+  // /fs/repos supersedes /fs/cwd for discovery (cwd stays for compat).
+  app.get("/fs/repos", async () => registry.listRepos());
 
   app.get("/next", async (_req, reply) => {
     store.markPluginSeen();

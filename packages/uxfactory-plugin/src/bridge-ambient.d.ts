@@ -28,11 +28,13 @@ declare module "@uxfactory/bridge" {
   export function createBridge(options?: {
     dataDir?: string;
     editTimeoutMs?: number;
+    reposRegistryPath?: string;
   }): Promise<BridgeServer>;
 
   export function startBridge(options?: {
     dataDir?: string;
     port?: number;
     editTimeoutMs?: number;
+    reposRegistryPath?: string;
   }): Promise<{ url: string; close: () => Promise<void> }>;
 }
