@@ -71,16 +71,18 @@ describe("app store — connectSucceeded routing", () => {
     });
   });
 
-  it("routes to 'tabs' when snapshot.hasClassification is true", () => {
+  it("does not change route.screen when hasClassification is true — navigation is caller's responsibility", () => {
     const snapshot = makeSnapshot({ hasClassification: true });
     useAppStore.getState().connectSucceeded(snapshot, "/repo");
-    expect(useAppStore.getState().route.screen).toBe("tabs");
+    // Task 4: connectSucceeded no longer sets route; Connect.tsx calls useNavigate() in onSuccess.
+    expect(useAppStore.getState().route.screen).toBe("connect");
   });
 
-  it("routes to 'setup-1' when snapshot.hasClassification is false", () => {
+  it("does not change route.screen when hasClassification is false — navigation is caller's responsibility", () => {
     const snapshot = makeSnapshot({ hasClassification: false });
     useAppStore.getState().connectSucceeded(snapshot, "/repo");
-    expect(useAppStore.getState().route.screen).toBe("setup-1");
+    // Task 4: connectSucceeded no longer sets route; Connect.tsx calls useNavigate() in onSuccess.
+    expect(useAppStore.getState().route.screen).toBe("connect");
   });
 
   it("stores the snapshot in state", () => {

@@ -153,12 +153,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   connectSucceeded(snapshot, repoPath, persist) {
     const { connection } = get();
-    const nextScreen: Screen = snapshot.hasClassification ? "tabs" : "setup-1";
 
     set((s) => ({
       snapshot,
       connection: { ...s.connection, status: "connected", repoPath },
-      route: { ...s.route, screen: nextScreen },
     }));
 
     if (persist) {

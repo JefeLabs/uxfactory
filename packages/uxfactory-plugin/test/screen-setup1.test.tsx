@@ -13,12 +13,13 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen, within, cleanup, act } from "@testing-library/react";
+import { screen, within, cleanup, act, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { Bridge, ProjectSnapshot } from "../ui/lib/bridge.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore } from "../ui/stores/wizard.js";
 import { SetupClassification } from "../ui/screens/SetupClassification.js";
+import { renderWithProviders } from "./test-utils.js";
 
 afterEach(cleanup);
 
@@ -109,8 +110,10 @@ function resetStores(snapshot: ProjectSnapshot | null = makeSnapshot()) {
 describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
   beforeEach(() => resetStores(makeSnapshot()));
 
-  it("Category 'Ecommerce' chip is selected", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Category 'Ecommerce' chip is selected", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Category" });
     expect(within(group).getByRole("radio", { name: "Ecommerce" })).toHaveAttribute(
       "data-state",
@@ -118,23 +121,29 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     );
   });
 
-  it("Industry select shows 'Corporate'", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Industry select shows 'Corporate'", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const select = screen.getByLabelText("Industry") as HTMLSelectElement;
     expect(select.value).toBe("corporate");
     // Displayed option text
     expect(screen.getByDisplayValue("Corporate")).toBeInTheDocument();
   });
 
-  it("Locale select shows 'English (US)'", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Locale select shows 'English (US)'", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const select = screen.getByLabelText("Locale") as HTMLSelectElement;
     expect(select.value).toBe("en-US");
     expect(screen.getByDisplayValue("English (US)")).toBeInTheDocument();
   });
 
-  it("Platforms: Desktop + Mobile selected, Tablet unselected", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Platforms: Desktop + Mobile selected, Tablet unselected", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const group = screen.getByRole("toolbar", { name: "Platforms" });
     expect(within(group).getByRole("button", { name: "Desktop" })).toHaveAttribute(
       "data-state",
@@ -150,8 +159,10 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     );
   });
 
-  it("Layout: Responsive selected", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Layout: Responsive selected", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Layout" });
     expect(within(group).getByRole("radio", { name: "Responsive" })).toHaveAttribute(
       "data-state",
@@ -159,15 +170,19 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     );
   });
 
-  it("Layout helper caption shows 'One fluid layout across your platforms'", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Layout helper caption shows 'One fluid layout across your platforms'", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     expect(
       screen.getByText("One fluid layout across your platforms"),
     ).toBeInTheDocument();
   });
 
-  it("Age group: 18–39 selected", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Age group: 18–39 selected", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Age group" });
     expect(within(group).getByRole("radio", { name: "18–39" })).toHaveAttribute(
       "data-state",
@@ -175,15 +190,19 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     );
   });
 
-  it("'Start fresh' radio card is selected with 'Detected — project is empty' badge", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("'Start fresh' radio card is selected with 'Detected — project is empty' badge", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const card = screen.getByRole("radio", { name: /Start fresh/i });
     expect(card).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("Detected — project is empty")).toBeInTheDocument();
   });
 
-  it("'Use existing work' card has dimmed wrapper (opacity-50) on empty repo but remains selectable", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("'Use existing work' card has dimmed wrapper (opacity-50) on empty repo but remains selectable", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const card = screen.getByRole("radio", { name: /Use existing work/i });
     // Card is wrapped in opacity-50 div — pointer events not disabled
     expect(card.parentElement).toHaveClass("opacity-50");
@@ -191,8 +210,10 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     expect(card).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  it("Continue button is enabled (Category is set)", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("Continue button is enabled (Category is set)", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const btn = screen.getByRole("button", { name: "Continue" });
     expect(btn).not.toBeDisabled();
     expect(btn).not.toHaveAttribute("aria-disabled", "true");
@@ -203,7 +224,9 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     useWizardStore.setState((s) => ({
       classification: { ...s.classification, category: "" as never },
     }));
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     const btn = screen.getByRole("button", { name: "Continue" });
     expect(btn).toHaveAttribute("aria-disabled", "true");
   });
@@ -217,7 +240,9 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
   it("calls putClassification with the correct field set (no style)", async () => {
     const user = userEvent.setup();
     const bridge = makeFakeBridge();
-    render(<SetupClassification bridge={bridge} />);
+    await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
@@ -237,11 +262,15 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
 
   it("routes to setup-2 after Continue", async () => {
     const user = userEvent.setup();
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    const { router } = await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(useAppStore.getState().route.screen).toBe("setup-2");
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/setup/defaults"),
+    );
   });
 });
 
@@ -255,11 +284,16 @@ describe("PRD §6.2 (error path) — failed bridge write stays on setup-1", () =
     const bridge = makeFakeBridge({
       putClassification: vi.fn(() => Promise.reject(new Error("network error"))),
     });
-    render(<SetupClassification bridge={bridge} />);
+    const { router } = await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(useAppStore.getState().route.screen).toBe("setup-1");
+    await waitFor(() =>
+      expect(useAppStore.getState().toasts.length).toBeGreaterThan(0),
+    );
+    expect(router.state.location.pathname).toBe("/setup/classification");
   });
 
   it("fires 'Could not save — is the bridge running?' toast when putClassification rejects", async () => {
@@ -267,12 +301,16 @@ describe("PRD §6.2 (error path) — failed bridge write stays on setup-1", () =
     const bridge = makeFakeBridge({
       putClassification: vi.fn(() => Promise.reject(new Error("network error"))),
     });
-    render(<SetupClassification bridge={bridge} />);
+    await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    const toasts = useAppStore.getState().toasts;
-    expect(toasts.some((t) => t.message === "Could not save — is the bridge running?")).toBe(true);
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Could not save — is the bridge running?")).toBe(true);
+    });
   });
 
   it("re-enables Continue button after putClassification rejects", async () => {
@@ -280,13 +318,17 @@ describe("PRD §6.2 (error path) — failed bridge write stays on setup-1", () =
     const bridge = makeFakeBridge({
       putClassification: vi.fn(() => Promise.reject(new Error("network error"))),
     });
-    render(<SetupClassification bridge={bridge} />);
+    await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     const btn = screen.getByRole("button", { name: "Continue" });
     await user.click(btn);
 
-    expect(btn).not.toBeDisabled();
-    expect(btn).not.toHaveAttribute("aria-disabled", "true");
+    await waitFor(() => {
+      expect(btn).not.toBeDisabled();
+      expect(btn).not.toHaveAttribute("aria-disabled", "true");
+    });
   });
 });
 
@@ -306,15 +348,19 @@ describe("PRD §6.3 — scan variant: 'found existing work' pre-selects use-exis
 
   beforeEach(() => resetStores(existingSnapshot));
 
-  it("heading shows 'We found existing work'", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("heading shows 'We found existing work'", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     expect(
       screen.getByRole("heading", { name: /We found existing work/i }),
     ).toBeInTheDocument();
   });
 
   it("'Use existing work' card is pre-selected after mount", async () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     // useEffect fires synchronously in act() during render
     await act(async () => {});
     const card = screen.getByRole("radio", { name: /Use existing work/i });
@@ -322,7 +368,9 @@ describe("PRD §6.3 — scan variant: 'found existing work' pre-selects use-exis
   });
 
   it("badge names detected artifacts (requirements + design tokens)", async () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     await act(async () => {});
     expect(
       screen.getByText("Detected — 2 requirements · design tokens"),
@@ -337,16 +385,22 @@ describe("PRD §6.4 — Back returns to connect without dropping entered values"
 
   it("clicking Back routes to 'connect'", async () => {
     const user = userEvent.setup();
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    const { router } = await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     await user.click(screen.getByRole("button", { name: /← Back/i }));
 
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/connect"),
+    );
   });
 
   it("wizard store classification is unchanged after Back", async () => {
     const user = userEvent.setup();
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     const beforeCategory = useWizardStore.getState().classification.category;
     await user.click(screen.getByRole("button", { name: /← Back/i }));
@@ -356,7 +410,9 @@ describe("PRD §6.4 — Back returns to connect without dropping entered values"
 
   it("wizard store platforms are unchanged after Back", async () => {
     const user = userEvent.setup();
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     const beforePlatforms = useWizardStore.getState().classification.platforms;
     await user.click(screen.getByRole("button", { name: /← Back/i }));
@@ -370,9 +426,11 @@ describe("PRD §6.4 — Back returns to connect without dropping entered values"
 describe("PRD §6.5 — no classification write when plugin closes mid-wizard", () => {
   beforeEach(() => resetStores());
 
-  it("putClassification is NOT called if the component is unmounted without clicking Continue", () => {
+  it("putClassification is NOT called if the component is unmounted without clicking Continue", async () => {
     const bridge = makeFakeBridge();
-    const { unmount } = render(<SetupClassification bridge={bridge} />);
+    const { unmount } = await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     unmount();
 
@@ -382,7 +440,9 @@ describe("PRD §6.5 — no classification write when plugin closes mid-wizard", 
   it("putClassification is NOT called when Back is clicked", async () => {
     const user = userEvent.setup();
     const bridge = makeFakeBridge();
-    render(<SetupClassification bridge={bridge} />);
+    await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
 
     await user.click(screen.getByRole("button", { name: /← Back/i }));
 
@@ -395,18 +455,24 @@ describe("PRD §6.5 — no classification write when plugin closes mid-wizard", 
 describe("Project header bar", () => {
   beforeEach(() => resetStores());
 
-  it("shows the project name", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("shows the project name", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     expect(screen.getAllByText("Demo Shop")[0]).toBeInTheDocument();
   });
 
-  it("shows the repo path in the header", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("shows the repo path in the header", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     expect(screen.getByText("/home/user/demo-shop")).toBeInTheDocument();
   });
 
-  it("shows a 'Connected' status pill", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("shows a 'Connected' status pill", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     expect(screen.getByRole("status")).toHaveTextContent("Connected");
   });
 });
@@ -421,8 +487,10 @@ describe("Layout caption swaps when Adaptive is selected", () => {
     }));
   });
 
-  it("shows 'Distinct layouts per platform' when Adaptive is active", () => {
-    render(<SetupClassification bridge={makeFakeBridge()} />);
+  it("shows 'Distinct layouts per platform' when Adaptive is active", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
     expect(screen.getByText("Distinct layouts per platform")).toBeInTheDocument();
   });
 });

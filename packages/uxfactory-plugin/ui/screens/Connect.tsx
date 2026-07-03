@@ -15,6 +15,9 @@ import React, { useEffect, useId, useState } from "react";
 import { Code } from "lucide-react";
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
+import { useNavigate } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { healthQuery, connectProjectMutation, queryKeys } from "../queries.js";
 import { useAppStore } from "../stores/app.js";
 import { Card, Field, Segmented, StatusPill } from "../components/index.js";
 import type { SegmentedOption, StatusPillStatus } from "../components/index.js";
@@ -72,12 +75,65 @@ export function Connect({
   const [repoPath, setRepoPath] = useState(connectionRepoPath);
   // isReturning: hide hero band for users who have connected before
   const [isReturning, setIsReturning] = useState(connectionRepoPath !== "");
-  const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>("checking");
   const [bridgeCwd, setBridgeCwd] = useState<string | null>(null);
   const [pathError, setPathError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const repoInputId = useId();
+
+  // ── Bridge health via query (3s refetchInterval, replaces manual poll) ───────
+  const healthResult = useQuery(healthQuery(bridge));
+  const bridgeStatus: BridgeStatus = healthResult.isPending
+    ? "checking"
+    : healthResult.data?.ok
+      ? "running"
+      : "down";
+
+  // ── Router + connect mutation ─────────────────────────────────────────────────
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const connect = useMutation({
+    ...connectProjectMutation(bridge),
+    onSuccess: (result) => {
+      if (!result.ok) {
+        let message: string;
+        if (result.reason === "not-found") message = "Path not found";
+        else if (result.reason === "not-a-root")
+          message =
+            "Not a repository root — pick the folder containing uxfactory.batch.json or .git";
+        else if (result.reason === "bridge-serves-different-root")
+          message = result.served
+            ? `This bridge serves ${result.served} — start \`uxfactory bridge\` in your repo or connect to that path`
+            : "Bridge serves a different repository root";
+        else message = "Connection failed";
+        setPathError(message);
+        setIsConnecting(false);
+        return;
+      }
+      const capturedMode = mode;
+      const capturedEndpoint = connectionEndpoint;
+      const trimmed = repoPath.trim();
+      queryClient.setQueryData(queryKeys.snapshot, result.snapshot);
+      connectSucceeded(result.snapshot, trimmed, (payload) => {
+        void bus.storageSet(storageKey, {
+          ...payload,
+          mode: capturedMode,
+          endpoint: capturedEndpoint,
+        });
+      });
+      void navigate({
+        to: result.snapshot.hasClassification
+          ? "/tabs/prompt"
+          : "/setup/classification",
+      });
+    },
+    onError: () => {
+      connectFailed(
+        `Bridge not reachable at ${connectionEndpoint} — start it with \`uxfactory bridge\``,
+      );
+      setIsConnecting(false);
+    },
+  });
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const storageKey = `connection:${fileKey}`;
@@ -126,28 +182,6 @@ export function Connect({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
-  // ── Bridge health polling (every 3s, cleanup on unmount) ────────────────────
-  useEffect(() => {
-    let cancelled = false;
-
-    const poll = async (): Promise<void> => {
-      try {
-        const result = await bridge.health();
-        if (!cancelled) setBridgeStatus(result.ok ? "running" : "down");
-      } catch {
-        if (!cancelled) setBridgeStatus("down");
-      }
-    };
-
-    void poll(); // immediate first check
-    const interval = setInterval(() => void poll(), 3_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [bridge]);
-
   // ── Cwd hint: the bridge's working directory is almost always the repo root ──
   useEffect(() => {
     if (bridgeStatus !== "running" || bridgeCwd !== null) return;
@@ -170,48 +204,10 @@ export function Connect({
 
   const handleConnect = async (): Promise<void> => {
     if (!ctaEnabled) return;
-
     setPathError(null);
     setIsConnecting(true);
     connectStart();
-
-    try {
-      const result = await bridge.connectProject(repoPath.trim());
-
-      if (result.ok) {
-        // Capture local state before the async store action changes it
-        const capturedMode = mode;
-        const capturedEndpoint = connectionEndpoint;
-
-        connectSucceeded(result.snapshot, repoPath.trim(), (payload) => {
-          void bus.storageSet(storageKey, {
-            ...payload,
-            mode: capturedMode,
-            endpoint: capturedEndpoint,
-          });
-        });
-        // Navigation happens via store; don't reset isConnecting — screen unmounts
-      } else {
-        let message: string;
-        if (result.reason === "not-found") {
-          message = "Path not found";
-        } else if (result.reason === "not-a-root") {
-          message =
-            "Not a repository root — pick the folder containing uxfactory.batch.json or .git";
-        } else if (result.reason === "bridge-serves-different-root") {
-          message = result.served
-            ? `This bridge serves ${result.served} — start \`uxfactory bridge\` in your repo or connect to that path`
-            : "Bridge serves a different repository root";
-        } else {
-          message = "Connection failed";
-        }
-        setPathError(message);
-        setIsConnecting(false);
-      }
-    } catch {
-      connectFailed(`Bridge not reachable at ${connectionEndpoint} — start it with \`uxfactory bridge\``);
-      setIsConnecting(false);
-    }
+    connect.mutate(repoPath.trim());
   };
 
   const handleCopyCommand = (): void => {

@@ -15,12 +15,13 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen, within, cleanup, fireEvent, act } from "@testing-library/react";
+import { screen, within, cleanup, fireEvent, act, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import type { Bridge, ProjectSnapshot } from "../ui/lib/bridge.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore } from "../ui/stores/wizard.js";
 import { SetupDefaults } from "../ui/screens/SetupDefaults.js";
+import { renderWithProviders } from "./test-utils.js";
 
 afterEach(cleanup);
 
@@ -112,8 +113,10 @@ function resetToFreshSetup() {
 describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", () => {
   beforeEach(resetToFreshSetup);
 
-  it("Style: 'Mix' is selected", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Style: 'Mix' is selected", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Style" });
     expect(within(group).getByRole("radio", { name: "Mix" })).toHaveAttribute(
       "data-state",
@@ -121,8 +124,10 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     );
   });
 
-  it("Visual fidelity: 'High' is selected", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Visual fidelity: 'High' is selected", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Visual fidelity" });
     expect(within(group).getByRole("radio", { name: "High" })).toHaveAttribute(
       "data-state",
@@ -130,8 +135,10 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     );
   });
 
-  it("Editorial fidelity: 'Medium' is selected", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Editorial fidelity: 'Medium' is selected", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Editorial fidelity" });
     expect(within(group).getByRole("radio", { name: "Medium" })).toHaveAttribute(
       "data-state",
@@ -139,8 +146,10 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     );
   });
 
-  it("Flows: 'Shallow' is selected (engine value: low)", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Flows: 'Shallow' is selected (engine value: low)", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Flows" });
     expect(within(group).getByRole("radio", { name: "Shallow" })).toHaveAttribute(
       "data-state",
@@ -148,8 +157,10 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     );
   });
 
-  it("Coverage: 'Medium' is selected", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Coverage: 'Medium' is selected", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Coverage" });
     expect(within(group).getByRole("radio", { name: "Medium" })).toHaveAttribute(
       "data-state",
@@ -157,8 +168,10 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     );
   });
 
-  it("Coherence: 'High' is selected", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Coherence: 'High' is selected", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const group = screen.getByRole("radiogroup", { name: "Coherence" });
     expect(within(group).getByRole("radio", { name: "High" })).toHaveAttribute(
       "data-state",
@@ -166,8 +179,10 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     );
   });
 
-  it("heading subcopy mentions the classification pair", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("heading subcopy mentions the classification pair", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     expect(screen.getByText(/Ecommerce · Corporate/)).toBeInTheDocument();
   });
 });
@@ -184,7 +199,9 @@ describe("PRD §6.2 — changed classification re-suggests unless userEdited", (
       classification: { ...s.classification, category: "webapp" },
     }));
 
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     // useEffect fires synchronously in act() during render
     await act(async () => {});
 
@@ -204,7 +221,9 @@ describe("PRD §6.2 — changed classification re-suggests unless userEdited", (
       classification: { ...s.classification, category: "webapp" },
     }));
 
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     await act(async () => {});
 
     const visualGroup = screen.getByRole("radiogroup", { name: "Visual fidelity" });
@@ -224,7 +243,9 @@ describe("PRD §6.3 — Save & continue writes engine-vocab profile body", () =>
   it("putProfile called with exact engine values for screenshot state (Ecommerce · Corporate)", async () => {
     const user = userEvent.setup();
     const bridge = makeFakeBridge();
-    render(<SetupDefaults bridge={bridge} />);
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /Save & continue/i }));
 
@@ -243,27 +264,37 @@ describe("PRD §6.3 — Save & continue writes engine-vocab profile body", () =>
 
   it("routes to 'tabs' after Save & continue", async () => {
     const user = userEvent.setup();
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    const { router } = await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /Save & continue/i }));
 
-    expect(useAppStore.getState().route.screen).toBe("tabs");
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/tabs/prompt"),
+    );
   });
 
   it("shows 'Applies to new runs' toast after Save & continue", async () => {
     const user = userEvent.setup();
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /Save & continue/i }));
 
-    const toasts = useAppStore.getState().toasts;
-    expect(toasts.some((t) => t.message === "Applies to new runs")).toBe(true);
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Applies to new runs")).toBe(true);
+    });
   });
 
   it("putProfile uses low|medium|high vocab only (no display labels in body)", async () => {
     const user = userEvent.setup();
     const bridge = makeFakeBridge();
-    render(<SetupDefaults bridge={bridge} />);
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /Save & continue/i }));
 
@@ -299,11 +330,16 @@ describe("PRD §6.3 (error path) — failed bridge write stays on setup-2", () =
     const bridge = makeFakeBridge({
       putProfile: vi.fn(() => Promise.reject(new Error("network error"))),
     });
-    render(<SetupDefaults bridge={bridge} />);
+    const { router } = await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /Save & continue/i }));
 
-    expect(useAppStore.getState().route.screen).toBe("setup-2");
+    await waitFor(() =>
+      expect(useAppStore.getState().toasts.length).toBeGreaterThan(0),
+    );
+    expect(router.state.location.pathname).toBe("/setup/defaults");
   });
 
   it("fires 'Could not save — is the bridge running?' toast when putProfile rejects", async () => {
@@ -311,12 +347,16 @@ describe("PRD §6.3 (error path) — failed bridge write stays on setup-2", () =
     const bridge = makeFakeBridge({
       putProfile: vi.fn(() => Promise.reject(new Error("network error"))),
     });
-    render(<SetupDefaults bridge={bridge} />);
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /Save & continue/i }));
 
-    const toasts = useAppStore.getState().toasts;
-    expect(toasts.some((t) => t.message === "Could not save — is the bridge running?")).toBe(true);
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Could not save — is the bridge running?")).toBe(true);
+    });
   });
 
   it("re-enables Save & continue button after putProfile rejects", async () => {
@@ -324,12 +364,16 @@ describe("PRD §6.3 (error path) — failed bridge write stays on setup-2", () =
     const bridge = makeFakeBridge({
       putProfile: vi.fn(() => Promise.reject(new Error("network error"))),
     });
-    render(<SetupDefaults bridge={bridge} />);
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     const btn = screen.getByRole("button", { name: /Save & continue/i });
     await user.click(btn);
 
-    expect(btn).not.toBeDisabled();
+    await waitFor(() => {
+      expect(btn).not.toBeDisabled();
+    });
   });
 });
 
@@ -381,7 +425,9 @@ describe("PRD §6.4 — re-entry shows persisted values, not re-suggested", () =
     // them as userEdited so applysuggestions does NOT overwrite them on re-mount.
     useWizardStore.getState().prefillFrom(useAppStore.getState().snapshot!);
 
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     await act(async () => {});
 
     // Persisted: visual=low, flow=high (different from ecommerce+corporate suggestions)
@@ -411,8 +457,10 @@ describe("PRD §6.4 — re-entry shows persisted values, not re-suggested", () =
 describe("PRD §6.5 — Coverage caption is present verbatim", () => {
   beforeEach(resetToFreshSetup);
 
-  it("renders the exact Coverage caption text", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("renders the exact Coverage caption text", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     expect(
       screen.getByText(
         "Floor for generation without specs — when requirements exist, they take precedence.",
@@ -426,8 +474,10 @@ describe("PRD §6.5 — Coverage caption is present verbatim", () => {
 describe("PRD §6.6 — tooltips on Visual and Coverage state binding consequences", () => {
   beforeEach(resetToFreshSetup);
 
-  it("Visual fidelity info button is present and carries binding consequence in label", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Visual fidelity info button is present and carries binding consequence in label", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     // The info button aria-label contains the binding consequence text
     const btn = screen.getByRole("button", {
       name: /a11y\/contrast\/token checks bind/i,
@@ -435,16 +485,20 @@ describe("PRD §6.6 — tooltips on Visual and Coverage state binding consequenc
     expect(btn).toBeInTheDocument();
   });
 
-  it("Coverage info button is present and carries precedence rule in label", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Coverage info button is present and carries precedence rule in label", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const btn = screen.getByRole("button", {
       name: /when requirements exist, they take precedence/i,
     });
     expect(btn).toBeInTheDocument();
   });
 
-  it("Coverage info button aria-label includes T1 binding line", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("Coverage info button aria-label includes T1 binding line", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const btn = screen.getByRole("button", {
       name: /coverage ≥ low → requirement coverage binds \(t1\)/i,
     });
@@ -457,17 +511,21 @@ describe("PRD §6.6 — tooltips on Visual and Coverage state binding consequenc
 describe("PRD §6.7 — keyboard: each Segmented is one radio group", () => {
   beforeEach(resetToFreshSetup);
 
-  it("each Segmented control has role=radiogroup (one tab-stop, arrow keys navigate within)", () => {
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+  it("each Segmented control has role=radiogroup (one tab-stop, arrow keys navigate within)", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
     const groups = screen.getAllByRole("radiogroup");
     // At least 6 radiogroups for the 6 dials
     expect(groups.length).toBeGreaterThanOrEqual(6);
   });
 
-  it("ArrowRight within Visual fidelity moves selection from High to next (wraps or stays)", () => {
+  it("ArrowRight within Visual fidelity moves selection from High to next (wraps or stays)", async () => {
     vi.useFakeTimers();
     try {
-      render(<SetupDefaults bridge={makeFakeBridge()} />);
+      await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+        initialEntries: ["/setup/defaults"],
+      });
       const group = screen.getByRole("radiogroup", { name: "Visual fidelity" });
       const highItem = within(group).getByRole("radio", { name: "High" });
 
@@ -493,17 +551,23 @@ describe("Back navigation", () => {
 
   it("Back routes to setup-1", async () => {
     const user = userEvent.setup();
-    render(<SetupDefaults bridge={makeFakeBridge()} />);
+    const { router } = await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /← Back/i }));
 
-    expect(useAppStore.getState().route.screen).toBe("setup-1");
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/setup/classification"),
+    );
   });
 
   it("Back does not write profile to bridge", async () => {
     const user = userEvent.setup();
     const bridge = makeFakeBridge();
-    render(<SetupDefaults bridge={bridge} />);
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
 
     await user.click(screen.getByRole("button", { name: /← Back/i }));
 

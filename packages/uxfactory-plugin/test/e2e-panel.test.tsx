@@ -144,9 +144,11 @@ describe("E2E: panel lifecycle — connect screen to tabs", () => {
     // Verify we start on connect screen
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
 
-    // Simulate successful connect (mirrors what Connect.tsx does on bridge success)
+    // Simulate successful connect: Task 4 — Connect.tsx calls connectSucceeded (state)
+    // then useNavigate() (router). Drive the same two steps here; goto triggers StoreRouteBridge.
     act(() => {
       useAppStore.getState().connectSucceeded(DEMO_SNAPSHOT, "/home/user/demo-shop");
+      useAppStore.getState().goto("tabs"); // mirrors useNavigate({ to: "/tabs/prompt" })
     });
 
     // StoreRouteBridge navigates to /tabs/prompt after store update
@@ -160,8 +162,10 @@ describe("E2E: panel lifecycle — connect screen to tabs", () => {
   it("shows the project name in the ContextBar after successful connect", async () => {
     await renderApp();
 
+    // Task 4: connectSucceeded no longer sets route; also call goto to drive StoreRouteBridge.
     act(() => {
       useAppStore.getState().connectSucceeded(DEMO_SNAPSHOT, "/home/user/demo-shop");
+      useAppStore.getState().goto("tabs"); // mirrors useNavigate({ to: "/tabs/prompt" })
     });
 
     await waitFor(() =>

@@ -12,6 +12,9 @@
 
 import React, { useEffect, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
+import { putClassificationMutation } from "../queries.js";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
@@ -145,8 +148,6 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const repoPath = useAppStore((s) => s.connection.repoPath);
   const snapshotName = useAppStore((s) => s.snapshot?.name ?? null);
   const fileInfoName = useAppStore((s) => s.fileInfo?.name ?? null);
-  const goto = useAppStore((s) => s.goto);
-
   const category = useWizardStore((s) => s.classification.category);
   const industry = useWizardStore((s) => s.classification.industry);
   const locale = useWizardStore((s) => s.classification.locale);
@@ -183,30 +184,29 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const localeId = useId();
   const [saving, setSaving] = useState(false);
 
+  // ── Router + mutation ─────────────────────────────────────────────────────────
+  const navigate = useNavigate();
+  const putClassification = useMutation({
+    ...putClassificationMutation(bridge),
+    onSuccess: () => {
+      applySuggestions({ category, industry });
+      void navigate({ to: "/setup/defaults" });
+    },
+    onError: () => {
+      toastFn("Could not save — is the bridge running?");
+      setSaving(false);
+    },
+  });
+
   // ── Handlers ────────────────────────────────────────────────────────────────
   async function handleContinue() {
     if (!canContinue || saving) return;
     setSaving(true);
-    try {
-      await bridge.putClassification({
-        category,
-        industry,
-        locale,
-        platforms,
-        layout,
-        ageGroup,
-      });
-      // Seed defaults for step 2 (respects userEdited flags).
-      applySuggestions({ category, industry });
-      goto("setup-2");
-    } catch {
-      toastFn("Could not save — is the bridge running?");
-      setSaving(false);
-    }
+    putClassification.mutate({ category, industry, locale, platforms, layout, ageGroup });
   }
 
   function handleBack() {
-    goto("connect");
+    void navigate({ to: "/connect" });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

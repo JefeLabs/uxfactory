@@ -23,7 +23,6 @@ import {
 import {
   act,
   cleanup,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
@@ -32,6 +31,7 @@ import type { Bridge, ProjectSnapshot } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { Connect } from "../ui/screens/Connect.js";
+import { renderWithProviders } from "./test-utils.js";
 
 // ─── Store reset ─────────────────────────────────────────────────────────────
 
@@ -115,9 +115,11 @@ describe("AC-1: happy connect — running bridge + valid path → routes per sna
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
-    // Wait for the first health poll to complete → pill shows Running
+    // Wait for the first health query to complete → pill shows Running
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );
@@ -132,9 +134,9 @@ describe("AC-1: happy connect — running bridge + valid path → routes per sna
     // connectProject should be called with the trimmed path
     expect(bridge.connectProject).toHaveBeenCalledWith("/home/user/demo-shop");
 
-    // Store should route to tabs (hasClassification: true)
+    // Router should navigate to tabs (hasClassification: true)
     await waitFor(() =>
-      expect(useAppStore.getState().route.screen).toBe("tabs"),
+      expect(router.state.location.pathname).toBe("/tabs/prompt"),
     );
   });
 
@@ -146,7 +148,9 @@ describe("AC-1: happy connect — running bridge + valid path → routes per sna
     });
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
@@ -156,7 +160,7 @@ describe("AC-1: happy connect — running bridge + valid path → routes per sna
     await user.click(screen.getByRole("button", { name: "Connect" }));
 
     await waitFor(() =>
-      expect(useAppStore.getState().route.screen).toBe("setup-1"),
+      expect(router.state.location.pathname).toBe("/setup/classification"),
     );
   });
 
@@ -165,7 +169,9 @@ describe("AC-1: happy connect — running bridge + valid path → routes per sna
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );
@@ -196,7 +202,9 @@ describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
       connection: { ...BASE_STORE.connection, repoPath: "/home/user/demo-shop" },
     });
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Not detected"),
@@ -226,20 +234,37 @@ describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
         connection: { ...BASE_STORE.connection, repoPath: "/home/user/demo-shop" },
       });
 
-      render(<Connect bridge={bridge} bus={bus} />);
+      await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+        initialEntries: ["/connect"],
+      });
 
-      // Flush the immediate poll() microtask chain
+      // TanStack Query v5 uses `notifyManager.batchCalls` which routes React
+      // re-renders through `setTimeout(fn, 0)` (the `systemSetTimeoutZero`
+      // scheduler). With fake timers this means two steps are required:
+      //
+      // Step 1: flush the bridge.health() Promise microtask so TanStack Query
+      //         processes the result and schedules setTimeout(notification, 0).
       await act(async () => {});
+      // Step 2: advance timers by 0 to fire that notification timer, triggering
+      //         the useSyncExternalStore subscriber → React re-render.
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
 
       expect(screen.getByRole("status")).toHaveTextContent("Not detected");
 
       // Flip bridge health to ok
       healthOk = true;
 
-      // Advance time by 3001ms — triggers the setInterval tick
-      // act(async) flushes the resulting microtasks (resolved bridge.health() promise)
+      // Advance 3001ms: fires the 3s refetchInterval at t=3000ms.
+      // act(async) then flushes the resulting bridge.health() microtask and
+      // TanStack Query schedules a new setTimeout(notification, 0).
       await act(async () => {
         vi.advanceTimersByTime(3_001);
+      });
+      // Fire the new notification timer so React re-renders with the updated state.
+      await act(async () => {
+        vi.advanceTimersByTime(0);
       });
 
       expect(screen.getByRole("status")).toHaveTextContent("Running");
@@ -262,7 +287,9 @@ describe("AC-3: invalid path → field-level error by kind, no partial persist",
     const user = userEvent.setup();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );
@@ -341,6 +368,24 @@ describe("AC-3: invalid path → field-level error by kind, no partial persist",
 
     expect(bus.storageSet).not.toHaveBeenCalled();
   });
+
+  it("failed connect (ok:false) does not navigate away from /connect", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      connectProject: vi.fn().mockResolvedValue({ ok: false, reason: "not-found" }),
+    });
+    const bus = makeBus();
+    const { router } = await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+    await user.type(screen.getByRole("textbox"), "/bad/path");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Path not found"));
+    expect(router.state.location.pathname).toBe("/connect");
+  });
 });
 
 // ─── AC-3b: Bridge throw — endpoint appears in toast error ───────────────────
@@ -356,7 +401,9 @@ describe("AC-3b: connectProject throws → connectFailed includes the endpoint U
     const bus = makeBus();
 
     // Store endpoint already set to the default value in BASE_STORE
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
@@ -387,7 +434,9 @@ describe("AC-4: prefill from stored connection", () => {
     const bus = makeBus({ "connection:file-abc": storedConn });
     const bridge = makeBridge();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     // Input should show the stored path after the storage effect resolves
     await waitFor(() =>
@@ -395,7 +444,7 @@ describe("AC-4: prefill from stored connection", () => {
     );
   });
 
-  it("compact hero (no hero band) when store already has repoPath", () => {
+  it("compact hero (no hero band) when store already has repoPath", async () => {
     useAppStore.setState({
       ...BASE_STORE,
       connection: { ...BASE_STORE.connection, repoPath: "/prev/repo" },
@@ -404,7 +453,9 @@ describe("AC-4: prefill from stored connection", () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     // Hero band bullets should NOT be visible
     expect(
@@ -416,7 +467,7 @@ describe("AC-4: prefill from stored connection", () => {
 // ─── AC-5: Headline shows live Figma file name ───────────────────────────────
 
 describe("AC-5: headline reflects live Figma file name", () => {
-  it("shows the file name from the store in the headline", () => {
+  it("shows the file name from the store in the headline", async () => {
     useAppStore.setState({
       ...BASE_STORE,
       fileInfo: { name: "Marketing Site", fileKey: "file-xyz" },
@@ -425,7 +476,9 @@ describe("AC-5: headline reflects live Figma file name", () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     expect(
       screen.getByText("Marketing Site", { exact: false }),
@@ -445,7 +498,9 @@ describe("AC-6: Cloud tab renders and is selectable — no dead-end", () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     const cloudOption = screen.getByRole("radio", { name: "Cloud" });
     await user.click(cloudOption);
@@ -460,7 +515,9 @@ describe("AC-6: Cloud tab renders and is selectable — no dead-end", () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     const cloudOption = screen.getByRole("radio", { name: "Cloud" });
     await user.click(cloudOption);
@@ -475,7 +532,9 @@ describe("AC-6: Cloud tab renders and is selectable — no dead-end", () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     await user.click(screen.getByRole("radio", { name: "Cloud" }));
 
@@ -488,33 +547,39 @@ describe("AC-6: Cloud tab renders and is selectable — no dead-end", () => {
 // ─── AC-7: Accessibility basics ──────────────────────────────────────────────
 
 describe("AC-7: a11y basics", () => {
-  it("repository input has an accessible label", () => {
+  it("repository input has an accessible label", async () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     // getByLabelText resolves via htmlFor link (Field passes id down to both
     // the <label> htmlFor and the children slot).
     expect(screen.getByLabelText("Repository:")).toBeInTheDocument();
   });
 
-  it("status pill carries role=status (aria-live region)", () => {
+  it("status pill carries role=status (aria-live region)", async () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     const pill = screen.getByRole("status");
     expect(pill).toBeInTheDocument();
     expect(pill).toHaveAttribute("aria-live", "polite");
   });
 
-  it("all interactive elements are keyboard-operable", () => {
+  it("all interactive elements are keyboard-operable", async () => {
     const bridge = makeBridge();
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     // Segmented renders as a Radix RadioGroup (role="radiogroup") containing
     // radio items. The group is reachable via Tab; items are navigable with
@@ -543,7 +608,9 @@ describe("AC-7: a11y basics", () => {
     });
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );
@@ -556,14 +623,16 @@ describe("AC-7: a11y basics", () => {
     );
   });
 
-  it("checking state shows 'Checking…' pill before health resolves", () => {
+  it("checking state shows 'Checking…' pill before health resolves", async () => {
     // Install a promise that never resolves so we stay in "checking" state
     const bridge = makeBridge({
       health: vi.fn().mockReturnValue(new Promise(() => {})),
     });
     const bus = makeBus();
 
-    render(<Connect bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
 
     expect(screen.getByRole("status")).toHaveTextContent("Checking…");
     // CTA should be disabled while checking
@@ -578,7 +647,9 @@ describe("cwd hint chip — one-click fill from the bridge's working directory",
     const user = userEvent.setup();
     const bridge = makeBridge();
 
-    render(<Connect bridge={bridge} bus={makeBus()} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );
@@ -600,7 +671,9 @@ describe("cwd hint chip — one-click fill from the bridge's working directory",
       connectProject: vi.fn().mockResolvedValue({ ok: false, reason: "not-found" }),
     });
 
-    render(<Connect bridge={bridge} bus={makeBus()} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );
@@ -617,7 +690,9 @@ describe("cwd hint chip — one-click fill from the bridge's working directory",
   it("omits the chip when the bridge build lacks getCwd", async () => {
     const bridge = makeBridge({ getCwd: undefined });
 
-    render(<Connect bridge={bridge} bus={makeBus()} />);
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("Running"),
     );

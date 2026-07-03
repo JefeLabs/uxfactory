@@ -13,6 +13,9 @@
 import React, { useEffect, useState } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Info } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
+import { putProfileMutation } from "../queries.js";
 import type { Bridge } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
@@ -115,7 +118,6 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   // ── Store selectors (primitives only) ───────────────────────────────────────
   const snapshotName = useAppStore((s) => s.snapshot?.name ?? null);
   const fileInfoName = useAppStore((s) => s.fileInfo?.name ?? null);
-  const goto = useAppStore((s) => s.goto);
   const toastFn = useAppStore((s) => s.toast);
 
   const category = useWizardStore((s) => s.classification.category);
@@ -130,6 +132,20 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   const applySuggestions = useWizardStore((s) => s.applySuggestions);
   const [saving, setSaving] = useState(false);
 
+  // ── Router + mutation ─────────────────────────────────────────────────────────
+  const navigate = useNavigate();
+  const putProfile = useMutation({
+    ...putProfileMutation(bridge),
+    onSuccess: () => {
+      toastFn("Applies to new runs");
+      void navigate({ to: "/tabs/prompt" });
+    },
+    onError: () => {
+      toastFn("Could not save — is the bridge running?");
+      setSaving(false);
+    },
+  });
+
   // ── Apply suggestions when classification changes ───────────────────────────
   // `applySuggestions` respects `userEdited` flags — it only overwrites fields
   // the user has NOT manually edited. On re-entry, `prefillFrom` marks persisted
@@ -143,24 +159,12 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   // ── Handlers ────────────────────────────────────────────────────────────────
   async function handleSave() {
     if (saving) return;
-    // Write profile with engine vocabulary (no label conversion needed — the
-    // wizard draft already stores engine values: low | medium | high).
-    // The bridge reads a FLAT body: {visual, editorial, coverage, flow, style?,
-    // coherence?}. It merges scope fields into profile.scope and coherence into
-    // profile.experimental, and style propagates to classification.json.
     setSaving(true);
-    try {
-      await bridge.putProfile({ style, visual, editorial, flow, coverage, coherence });
-      toastFn("Applies to new runs");
-      goto("tabs");
-    } catch {
-      toastFn("Could not save — is the bridge running?");
-      setSaving(false);
-    }
+    putProfile.mutate({ style, visual, editorial, flow, coverage, coherence });
   }
 
   function handleBack() {
-    goto("setup-1");
+    void navigate({ to: "/setup/classification" });
   }
 
   const projectName = snapshotName ?? fileInfoName ?? "Project";
