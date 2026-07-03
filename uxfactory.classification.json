@@ -1,0 +1,12 @@
+{
+  "category": "marketing",
+  "industry": "other",
+  "locale": "en-US",
+  "platforms": [
+    "desktop",
+    "mobile"
+  ],
+  "layout": "responsive",
+  "ageGroup": "18-39",
+  "style": "informal"
+}

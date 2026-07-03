@@ -1,0 +1,11 @@
+{
+  "scope": {
+    "visual": "high",
+    "editorial": "high",
+    "coverage": "low",
+    "flow": "low"
+  },
+  "experimental": {
+    "coherence": "medium"
+  }
+}
