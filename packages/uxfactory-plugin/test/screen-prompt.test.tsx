@@ -23,7 +23,6 @@ import {
 import {
   act,
   cleanup,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
@@ -33,6 +32,7 @@ import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useRunsStore } from "../ui/stores/runs.js";
 import { Prompt } from "../ui/screens/Prompt.js";
+import { renderWithProviders } from "./test-utils.js";
 
 // ─── Snapshot factory ─────────────────────────────────────────────────────────
 
@@ -153,7 +153,9 @@ describe("AC-1: submit enqueues exact payload, adds generating row, clears texta
     const { bridge } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // Type a prompt
     const textarea = screen.getByRole("textbox", { name: "Prompt" });
@@ -188,7 +190,9 @@ describe("AC-1: submit enqueues exact payload, adds generating row, clears texta
     const { bridge } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     const textarea = screen.getByRole("textbox", { name: "Prompt" });
     await user.type(textarea, "A hero section");
@@ -204,11 +208,13 @@ describe("AC-1: submit enqueues exact payload, adds generating row, clears texta
     expect(unitSelect.value).toBe("page");
   });
 
-  it("submit button is disabled when textarea is empty", () => {
+  it("submit button is disabled when textarea is empty", async () => {
     const { bridge } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(screen.getByRole("button", { name: "Generate design" })).toBeDisabled();
   });
@@ -222,7 +228,9 @@ describe("AC-2: completion event flips row to checked; View → checks tab", () 
     const { bridge, fireEvent } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // Submit a prompt
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "Homepage redesign");
@@ -244,12 +252,14 @@ describe("AC-2: completion event flips row to checked; View → checks tab", () 
     );
   });
 
-  it("View button sets focus.runId for run scoping and switches the active tab to checks", async () => {
+  it("View button navigates to /tabs/checks?run= and selects nodes on canvas", async () => {
     const user = userEvent.setup();
     const { bridge, fireEvent } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // Submit
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "Product page");
@@ -274,9 +284,11 @@ describe("AC-2: completion event flips row to checked; View → checks tab", () 
     // Click View
     await user.click(screen.getByRole("button", { name: "View" }));
 
-    // Focus intent set for the Checks screen + tab switched to checks
-    expect(useAppStore.getState().focus).toEqual({ runId: "run-001" });
-    expect(useAppStore.getState().route.tab).toBe("checks");
+    // Router navigates to /tabs/checks with run search param
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tabs/checks");
+      expect(router.state.location.search).toEqual({ run: "run-001" });
+    });
   });
 });
 
@@ -288,7 +300,9 @@ describe("AC-3: warnings mapping — N warnings shown where N = open findings co
     const { bridge, fireEvent } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "Cart page");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
@@ -318,7 +332,9 @@ describe("AC-3: warnings mapping — N warnings shown where N = open findings co
     const { bridge, fireEvent } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A broken run");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
@@ -342,7 +358,9 @@ describe("AC-3: warnings mapping — N warnings shown where N = open findings co
     const { bridge, fireEvent } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "Test run");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
@@ -367,7 +385,7 @@ describe("AC-3: warnings mapping — N warnings shown where N = open findings co
 // ─── AC-4: Grounding chips reflect artifact freshness + click → artifacts tab ─
 
 describe("AC-4: grounding chips reflect artifact freshness; clicking chip → artifacts tab", () => {
-  it("up-to-date artifact shows ✓ green chip", () => {
+  it("up-to-date artifact shows ✓ green chip", async () => {
     useAppStore.setState({
       ...BASE_APP_STATE,
       snapshot: makeSnapshot({
@@ -386,12 +404,14 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
 
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(screen.getByLabelText("Requirements — up to date")).toBeInTheDocument();
   });
 
-  it("draft artifact shows ! amber chip", () => {
+  it("draft artifact shows ! amber chip", async () => {
     useAppStore.setState({
       ...BASE_APP_STATE,
       snapshot: makeSnapshot({
@@ -410,16 +430,20 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
 
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(screen.getByLabelText("Brand colors — draft")).toBeInTheDocument();
   });
 
-  it("missing artifact shows hollow gray chip with defaults tooltip", () => {
+  it("missing artifact shows hollow gray chip with defaults tooltip", async () => {
     // Default snapshot has no artifacts → all missing
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // All grounding chips should be missing (hollow)
     expect(
@@ -427,30 +451,53 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
     ).toBeInTheDocument();
   });
 
-  it("clicking a grounding chip sets focus.artifactKey and switches to the artifacts tab", async () => {
+  it("grounding chip click navigates to /tabs/artifacts?focus=<key>", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     await user.click(
       screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
     );
 
-    // Focus intent anchors the Artifacts tab to the clicked artifact
-    expect(useAppStore.getState().focus).toEqual({ artifactKey: "requirements" });
-    expect(useAppStore.getState().route.tab).toBe("artifacts");
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tabs/artifacts");
+      expect(router.state.location.search).toEqual({ focus: "requirements" });
+    });
+  });
+
+  it("clicking a grounding chip navigates to artifacts tab with focus param", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    const { router } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    await user.click(
+      screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
+    );
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tabs/artifacts");
+      expect(router.state.location.search).toEqual({ focus: "requirements" });
+    });
   });
 });
 
 // ─── AC-5: Empty-artifacts callout renders + generation still enqueues ────────
 
 describe("AC-5: zero-artifacts callout renders; generation proceeds with defaults", () => {
-  it("renders the callout when all grounding artifacts are missing", () => {
+  it("renders the callout when all grounding artifacts are missing", async () => {
     // Default snapshot has no artifacts
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(
       screen.getByText(/No artifacts yet — designs will use generation defaults only/),
@@ -458,21 +505,28 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
     expect(screen.getByRole("button", { name: "Create artifacts →" })).toBeInTheDocument();
   });
 
-  it("'Create artifacts →' button switches to the artifacts tab", async () => {
+  it("'Create artifacts →' button navigates to the artifacts tab", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     await user.click(screen.getByRole("button", { name: "Create artifacts →" }));
-    expect(useAppStore.getState().route.tab).toBe("artifacts");
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tabs/artifacts");
+    });
   });
 
   it("callout does NOT block submission — generation still enqueues", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // Callout is visible
     expect(
@@ -489,7 +543,7 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
     );
   });
 
-  it("callout is absent when at least one artifact has a non-missing status", () => {
+  it("callout is absent when at least one artifact has a non-missing status", async () => {
     useAppStore.setState({
       ...BASE_APP_STATE,
       snapshot: makeSnapshot({
@@ -508,7 +562,9 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
 
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(
       screen.queryByText(/No artifacts yet/),
@@ -519,14 +575,16 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
 // ─── AC-6: SSE teardown on unmount ───────────────────────────────────────────
 
 describe("AC-6: SSE subscription tears down on unmount", () => {
-  it("bridge.events teardown is called when the component unmounts", () => {
+  it("bridge.events teardown is called when the component unmounts", async () => {
     const teardownFn = vi.fn();
     const { bridge } = makeBridge({
       events: vi.fn().mockReturnValue(teardownFn),
     });
     const bus = makeBus();
 
-    const { unmount } = render(<Prompt bridge={bridge} bus={bus} />);
+    const { unmount } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(bridge.events).toHaveBeenCalledOnce();
     expect(teardownFn).not.toHaveBeenCalled();
@@ -540,7 +598,7 @@ describe("AC-6: SSE subscription tears down on unmount", () => {
 // ─── AC-7: Composer chip state persists across remount ───────────────────────
 
 describe("AC-7: composer chip state persists across tab switches (remounts)", () => {
-  it("unit type selection survives unmount + remount within session", () => {
+  it("unit type selection survives unmount + remount within session", async () => {
     // Seed the runs store with a non-default unit type (simulating user already changed it)
     useRunsStore.setState({
       runs: [],
@@ -552,19 +610,23 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     const bus = makeBus();
 
     // First mount
-    const { unmount } = render(<Prompt bridge={bridge} bus={bus} />);
+    const { unmount } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
     const select = screen.getByLabelText("Unit type") as HTMLSelectElement;
     expect(select.value).toBe("molecule");
 
     unmount();
 
     // Second mount — store state is preserved
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
     const select2 = screen.getByLabelText("Unit type") as HTMLSelectElement;
     expect(select2.value).toBe("molecule");
   });
 
-  it("platform selection survives unmount + remount", () => {
+  it("platform selection survives unmount + remount", async () => {
     // Seed store: only "mobile" selected
     useRunsStore.setState({
       runs: [],
@@ -575,7 +637,9 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     const { bridge } = makeBridge();
     const bus = makeBus();
 
-    const { unmount } = render(<Prompt bridge={bridge} bus={bus} />);
+    const { unmount } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // Verify stored platform is used (select shows "mobile")
     const platformSelect = screen.getByLabelText("Platform target") as HTMLSelectElement;
@@ -584,7 +648,9 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     unmount();
 
     // Remount — store unchanged
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
     const platformSelect2 = screen.getByLabelText("Platform target") as HTMLSelectElement;
     expect(platformSelect2.value).toBe("mobile");
   });
@@ -594,7 +660,9 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     const { bridge } = makeBridge();
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     const unitSelect = screen.getByLabelText("Unit type") as HTMLSelectElement;
     await user.selectOptions(unitSelect, "organism");
@@ -613,7 +681,9 @@ describe("enqueue rejection: toast shown, composer preserved, no run row added",
     });
     const bus = makeBus();
 
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     const textarea = screen.getByRole("textbox", { name: "Prompt" });
     await user.type(textarea, "A run that cannot be enqueued");
@@ -658,7 +728,9 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
 
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     const platformSelect = screen.getByLabelText("Platform target") as HTMLSelectElement;
     expect(platformSelect.value).toBe("mobile");
@@ -675,7 +747,9 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     // Default composerPlatforms is [] (the __all__ sentinel)
     expect(useRunsStore.getState().composerPlatforms).toEqual([]);
@@ -701,10 +775,12 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
 // ─── Footer hint ─────────────────────────────────────────────────────────────
 
 describe("Footer hint line", () => {
-  it("renders the verbatim footer hint", () => {
+  it("renders the verbatim footer hint", async () => {
     const { bridge } = makeBridge();
     const bus = makeBus();
-    render(<Prompt bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
 
     expect(
       screen.getByText(

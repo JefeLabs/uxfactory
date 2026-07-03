@@ -32,6 +32,7 @@
 
 import React, { useEffect, useState } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { useMutation } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowDown,
@@ -88,6 +89,7 @@ import {
   DEFAULT_ICON_NAMES,
   FULL_ICON_SET,
 } from "../fixtures/assets.js";
+import { enqueueMutation } from "../queries.js";
 
 // ─── Icon registry (curated lucide subset — NO wildcard import) ───────────────
 
@@ -199,6 +201,8 @@ export function Assets({
   const snapshot = useAppStore((s) => s.snapshot);
   const toast = useAppStore((s) => s.toast);
 
+  const enqueue = useMutation(enqueueMutation(bridge));
+
   // ── Local state ───────────────────────────────────────────────────────────
 
   const [search, setSearch] = useState("");
@@ -293,7 +297,7 @@ export function Assets({
   async function handleCreate(): Promise<void> {
     setIllusGenerating(true);
     try {
-      await bridge.enqueue({
+      await enqueue.mutateAsync({
         kind: "generate-artifact",
         payload: { artifact: "illustrations" },
       });

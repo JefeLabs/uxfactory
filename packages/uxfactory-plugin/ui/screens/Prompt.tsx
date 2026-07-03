@@ -25,12 +25,15 @@
 
 import React, { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { useRunsStore } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
+import { enqueueMutation } from "../queries.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -251,9 +254,10 @@ export function Prompt({
   // Zustand does not create new objects on unchanged state, so this is stable.
   const snapshotClassification = useAppStore((s) => s.snapshot?.classification ?? null);
   const snapshotArtifacts = useAppStore((s) => s.snapshot?.artifacts ?? null);
-  const setTab = useAppStore((s) => s.setTab);
-  const setFocus = useAppStore((s) => s.setFocus);
   const toast = useAppStore((s) => s.toast);
+
+  const navigate = useNavigate();
+  const enqueue = useMutation(enqueueMutation(bridge));
 
   const runs = useRunsStore((s) => s.runs);
   const composerUnitType = useRunsStore((s) => s.composerUnitType);
@@ -361,7 +365,7 @@ export function Prompt({
 
     setIsSubmitting(true);
     try {
-      const { id } = await bridge.enqueue({
+      const { id } = await enqueue.mutateAsync({
         kind: "generate-design",
         payload: { prompt: trimmed, unitType, platforms },
       });
@@ -467,9 +471,7 @@ export function Prompt({
                 label={label}
                 artifactStatus={status}
                 onClick={() => {
-                  // Anchor the Artifacts tab to this artifact (AC-4).
-                  setFocus({ artifactKey: key });
-                  setTab("artifacts");
+                  void navigate({ to: "/tabs/artifacts", search: { focus: key } });
                 }}
               />
             ))}
@@ -481,7 +483,7 @@ export function Prompt({
               No artifacts yet — designs will use generation defaults only.{" "}
               <button
                 type="button"
-                onClick={() => setTab("artifacts")}
+                onClick={() => void navigate({ to: "/tabs/artifacts", search: {} })}
                 className="text-primary-600 hover:underline font-medium"
               >
                 Create artifacts →
@@ -509,12 +511,11 @@ export function Prompt({
                     <span className="flex-1 text-sm text-gray-800 truncate">
                       {run.prompt}
                     </span>
-                    {/* View → focus intent (consumed by Checks) + tab switch + canvas select. */}
+                    {/* View → navigate to Checks scoped to this run + canvas select. */}
                     <button
                       type="button"
                       onClick={() => {
-                        setFocus({ runId: run.id });
-                        setTab("checks");
+                        void navigate({ to: "/tabs/checks", search: { run: run.id } });
                         // Zoom the canvas to the generated nodes if available.
                         if (run.nodeIds && run.nodeIds.length > 0) {
                           bus.selectNodes(run.nodeIds);

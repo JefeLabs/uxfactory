@@ -7,9 +7,9 @@
  *   AC-2  Link creates + persists via putLinks body assert + rollup updates.
  *   AC-3  Unlink removes from putLinks body.
  *   AC-4  Duplicate-pair is disabled (Link button disabled).
- *   AC-5  Zero-AC callout renders and "Artifacts →" triggers setTab("artifacts").
+ *   AC-5  Zero-AC callout renders and "Artifacts →" navigates to /tabs/artifacts.
  *   AC-6  SKIP — missing-node row flag deferred (requires canvas lookup API).
- *   AC-7  Check CTA enqueues with linked ids, sets focus, switches tab.
+ *   AC-7  Check CTA enqueues with linked ids, navigates to /tabs/checks?run=.
  *   AC-8  AC id click opens requirements path via bridge.openPath.
  *   AC-9  Unit-type change persists on linked rows (putLinks body updated).
  *
@@ -20,13 +20,14 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
 import type { Bridge, Link, ProjectSnapshot } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { Components } from "../ui/screens/Components.js";
 import { useAppStore } from "../ui/stores/app.js";
+import { renderWithProviders } from "./test-utils.js";
 
 // ─── Fake bus ─────────────────────────────────────────────────────────────────
 
@@ -173,7 +174,9 @@ describe("AC-1: Selection card", () => {
     const bus = makeBus();
     const bridge = makeBridge();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
 
     // Wait for mount effects (getLinks) to settle.
     await waitFor(() => {
@@ -214,7 +217,9 @@ describe("AC-2: Link creation", () => {
     const bridge = makeBridge();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
     await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
 
     // Fire selection — wait for unique node id text (not unit name, which may appear in multiple places).
@@ -274,7 +279,9 @@ describe("AC-3: Unlink", () => {
     const bus = makeBus();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
 
     // Wait for initial links to load and render.
     await waitFor(() => {
@@ -322,7 +329,9 @@ describe("AC-4: Duplicate pair", () => {
     const bus = makeBus();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
     await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
 
     // Fire selection matching the existing link's nodeId.
@@ -351,13 +360,15 @@ describe("AC-4: Duplicate pair", () => {
 // ─── AC-5: Zero-AC callout ────────────────────────────────────────────────────
 
 describe("AC-5: Zero-AC callout", () => {
-  it("renders callout and setTab('artifacts') on click when no requirements exist", async () => {
+  it("renders callout and navigates to /tabs/artifacts on click when no requirements exist", async () => {
     resetStores({ requirements: [] });
     const bridge = makeBridge();
     const bus = makeBus();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
     await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
 
     // Callout is visible.
@@ -369,8 +380,10 @@ describe("AC-5: Zero-AC callout", () => {
     const artifactsBtn = screen.getByRole("button", { name: /Artifacts →/i });
     await user.click(artifactsBtn);
 
-    // Store tab should be "artifacts".
-    expect(useAppStore.getState().route.tab).toBe("artifacts");
+    // Router navigates to /tabs/artifacts.
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tabs/artifacts");
+    });
   });
 });
 
@@ -388,7 +401,7 @@ describe("AC-6: Missing-node row (SKIP)", () => {
 // ─── AC-7: Check my design CTA ────────────────────────────────────────────────
 
 describe("AC-7: Check my design", () => {
-  it("enqueues check-design with linked nodeIds, sets runId focus, and switches to checks", async () => {
+  it("enqueues check-design with linked nodeIds and navigates to /tabs/checks?run=", async () => {
     const existingLinks: Link[] = [
       { nodeId: "12:100", unitName: "Checkout / Default", unitType: "Page", acId: "AC-101" },
       { nodeId: "12:101", unitName: "Checkout / Loading", unitType: "Template", acId: "AC-102" },
@@ -399,7 +412,9 @@ describe("AC-7: Check my design", () => {
     const bus = makeBus();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    const { router } = await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
 
     // Wait for links to load.
     await waitFor(() => {
@@ -420,13 +435,11 @@ describe("AC-7: Check my design", () => {
       });
     });
 
-    // Store focus set to runId returned by enqueue.
+    // Router navigates to /tabs/checks with the run id as search param.
     await waitFor(() => {
-      expect(useAppStore.getState().focus).toEqual({ runId: "run-abc" });
+      expect(router.state.location.pathname).toBe("/tabs/checks");
+      expect(router.state.location.search).toEqual({ run: "run-abc" });
     });
-
-    // Tab switched to checks.
-    expect(useAppStore.getState().route.tab).toBe("checks");
   });
 });
 
@@ -446,7 +459,9 @@ describe("AC-8: AC id click", () => {
     const bus = makeBus();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
 
     await waitFor(() => {
       expect(screen.getByText("AC-101")).toBeInTheDocument();
@@ -477,7 +492,9 @@ describe("AC-9: Unit-type change persists on linked row", () => {
     const bus = makeBus();
     const user = userEvent.setup();
 
-    render(<Components bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
 
     // Load links + fire selection for the linked node.
     await waitFor(() =>

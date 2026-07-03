@@ -22,10 +22,13 @@
  */
 
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Bridge, Link } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { Card } from "../components/index.js";
+import { linksQuery, putLinksMutation, enqueueMutation, queryKeys } from "../queries.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -66,27 +69,37 @@ export function Components({
 }): React.JSX.Element {
   // ── Store selectors — single primitives / stable stored refs only ──────────
   const snapshot = useAppStore((s) => s.snapshot);
-  const setTab = useAppStore((s) => s.setTab);
-  const setFocus = useAppStore((s) => s.setFocus);
   const toast = useAppStore((s) => s.toast);
+
+  const navigate = useNavigate();
+
+  // ── Server state — links via TanStack Query ───────────────────────────────
+  const queryClient = useQueryClient();
+  const linksResult = useQuery(linksQuery(bridge));
+  const links = linksResult.data?.links ?? [];
+  const putLinks = useMutation({ ...putLinksMutation(bridge) });
+  const enqueue = useMutation(enqueueMutation(bridge));
+
+  /**
+   * Optimistic write: update cache immediately, persist via mutation, roll back
+   * to the current `links` snapshot on error so the UI stays honest.
+   */
+  function commitLinks(next: Link[], failMsg = "Failed to save link — is the bridge running?"): void {
+    queryClient.setQueryData(queryKeys.links, { links: next });
+    putLinks.mutate(next, {
+      onError: () => {
+        queryClient.setQueryData(queryKeys.links, { links });
+        toast(failMsg);
+      },
+    });
+  }
 
   // ── Local state ───────────────────────────────────────────────────────────
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
-  const [links, setLinks] = useState<Link[]>([]);
   const [selectedAcId, setSelectedAcId] = useState("");
   const [unitType, setUnitType] = useState("Page");
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [isCheckLoading, setIsCheckLoading] = useState(false);
-
-  // ── Load links on mount ───────────────────────────────────────────────────
-  useEffect(() => {
-    void bridge
-      .getLinks()
-      .then(({ links: loaded }) => setLinks(loaded))
-      .catch(() => {
-        /* non-fatal — bridge may be offline */
-      });
-  }, [bridge]);
 
   // ── Subscribe to canvas selection ─────────────────────────────────────────
   useEffect(() => {
@@ -120,7 +133,7 @@ export function Components({
   const canLink = primaryNode !== null && selectedAcId !== "" && !isDuplicate;
 
   // ── Link handler ──────────────────────────────────────────────────────────
-  async function handleLink(): Promise<void> {
+  function handleLink(): void {
     if (!canLink || primaryNode === null) return;
 
     const newLink: Link = {
@@ -129,30 +142,19 @@ export function Components({
       unitType,
       acId: selectedAcId,
     };
-    const nextLinks = [...links, newLink];
-    try {
-      await bridge.putLinks(nextLinks);
-      setLinks(nextLinks);
-    } catch {
-      toast("Failed to save link — is the bridge running?");
-    }
+    commitLinks([...links, newLink]);
   }
 
   // ── Unlink handler ────────────────────────────────────────────────────────
-  async function handleUnlink(link: Link): Promise<void> {
+  function handleUnlink(link: Link): void {
     const nextLinks = links.filter(
       (l) => !(l.nodeId === link.nodeId && l.acId === link.acId),
     );
-    try {
-      await bridge.putLinks(nextLinks);
-      setLinks(nextLinks);
-    } catch {
-      toast("Failed to remove link — is the bridge running?");
-    }
+    commitLinks(nextLinks, "Failed to remove link — is the bridge running?");
   }
 
   // ── Unit-type change: persist on any linked rows for this node ─────────────
-  async function handleUnitTypeChange(newType: string): Promise<void> {
+  function handleUnitTypeChange(newType: string): void {
     setUnitType(newType);
     if (primaryNode === null) return;
 
@@ -162,12 +164,7 @@ export function Components({
     const nextLinks = links.map((l) =>
       l.nodeId === primaryNode.id ? { ...l, unitType: newType } : l,
     );
-    try {
-      await bridge.putLinks(nextLinks);
-      setLinks(nextLinks);
-    } catch {
-      toast("Failed to update link — is the bridge running?");
-    }
+    commitLinks(nextLinks, "Failed to update link — is the bridge running?");
   }
 
   // ── Check my design ────────────────────────────────────────────────────────
@@ -175,10 +172,9 @@ export function Components({
     const nodeIds = [...new Set(links.map((l) => l.nodeId))];
     setIsCheckLoading(true);
     try {
-        // NOTE: no worker handler for "check-design" yet (PP2) — the job enqueues and waits; Checks still shows the latest render's verification.
-      const { id } = await bridge.enqueue({ kind: "check-design", payload: { nodeIds } });
-      setFocus({ runId: id });
-      setTab("checks");
+      // NOTE: no worker handler for "check-design" yet (PP2) — the job enqueues and waits; Checks still shows the latest render's verification.
+      const { id } = await enqueue.mutateAsync({ kind: "check-design", payload: { nodeIds } });
+      void navigate({ to: "/tabs/checks", search: { run: id } });
     } catch {
       toast("Check failed to enqueue — is the bridge running?");
     } finally {
@@ -271,7 +267,7 @@ export function Components({
             No requirements yet — create them in{" "}
             <button
               type="button"
-              onClick={() => setTab("artifacts")}
+              onClick={() => void navigate({ to: "/tabs/artifacts", search: {} })}
               className="text-primary-600 hover:underline font-medium"
             >
               Artifacts →
