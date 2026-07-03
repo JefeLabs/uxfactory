@@ -320,16 +320,36 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     ? (artifacts.find((r) => r.key === editingKey) ?? null)
     : null;
 
+  // One dialog instance shared by BOTH branches — the editor branch returns
+  // early, so mounting the dialog only in the inventory branch would orphan
+  // the editor's Regenerate (state set, nothing rendered).
+  const createDialog = (
+    <CreateArtifactDialog
+      artifactKey={dialogRow?.key ?? ""}
+      artifactLabel={dialogRow?.label ?? ""}
+      open={dialogRow !== null}
+      onOpenChange={(open) => {
+        if (!open) setDialogRow(null);
+      }}
+      onGenerate={(guidance) => {
+        if (dialogRow !== null) void handleGenerate(dialogRow, guidance);
+      }}
+    />
+  );
+
   if (editingRow !== null) {
     return (
-      <ArtifactEditor
-        artifactKey={editingRow.key}
-        label={editingRow.label}
-        status={editingRow.status}
-        bridge={bridge}
-        onBack={() => setEditingKey(null)}
-        onRegenerate={() => openDialog(editingRow)}
-      />
+      <div className="flex flex-col flex-1 min-h-0">
+        <ArtifactEditor
+          artifactKey={editingRow.key}
+          label={editingRow.label}
+          status={editingRow.status}
+          bridge={bridge}
+          onBack={() => setEditingKey(null)}
+          onRegenerate={() => openDialog(editingRow)}
+        />
+        {createDialog}
+      </div>
     );
   }
 
@@ -489,17 +509,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       </div>
 
       {/* Guided-Create dialog (one instance, driven per-row) */}
-      <CreateArtifactDialog
-        artifactKey={dialogRow?.key ?? ""}
-        artifactLabel={dialogRow?.label ?? ""}
-        open={dialogRow !== null}
-        onOpenChange={(open) => {
-          if (!open) setDialogRow(null);
-        }}
-        onGenerate={(guidance) => {
-          if (dialogRow !== null) void handleGenerate(dialogRow, guidance);
-        }}
-      />
+      {createDialog}
     </div>
   );
 }

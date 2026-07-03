@@ -429,6 +429,29 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     });
   });
 
+  it("Regenerate inside the editor opens the guided dialog", async () => {
+    // Regression: the dialog was only mounted in the inventory branch — the
+    // editor branch returned early, so Regenerate set state into a void.
+    const user = userEvent.setup();
+    render(<Artifacts bridge={makeBridge()} />);
+
+    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Back to artifacts/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /^Regenerate$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(
+        screen.getByRole("textbox", { name: /Guidance for Brief/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("Back button in editor returns to inventory", async () => {
     const user = userEvent.setup();
     render(<Artifacts bridge={makeBridge()} />);
