@@ -639,6 +639,80 @@ describe("AC-7: a11y basics", () => {
   });
 });
 
+// ─── Repo chip list (multi-root) ─────────────────────────────────────────────
+
+describe("repo chip list (multi-root)", () => {
+  it("renders chips from getRepos, cwd/live first, most-recent-first, and click fills the field", async () => {
+    const setProjectRoot = vi.fn();
+    const getRepos = vi.fn().mockResolvedValue({
+      cwd: "/repos/demo-shop",
+      repos: [
+        { root: "/repos/demo-shop", name: "demo-shop", lastConnectedAt: 30, live: true },
+        { root: "/repos/newer", name: "newer", lastConnectedAt: 20, live: true },
+        { root: "/repos/older", name: "older", lastConnectedAt: 10, live: true },
+      ],
+    });
+    const bridge = makeBridge({ getRepos, setProjectRoot, getProjectRoot: () => null });
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
+
+    // Chips are rendered after getRepos resolves (gated on bridgeStatus running)
+    const demo = await screen.findByRole("button", { name: "demo-shop" });
+    const input = screen.getByRole("textbox");
+    await userEvent.click(demo);
+    expect((input as HTMLInputElement).value).toBe("/repos/demo-shop");
+  });
+
+  it("falls back to the single getCwd chip when getRepos is absent (old bridge)", async () => {
+    const bridge = makeBridge({
+      getRepos: undefined,
+      getCwd: vi.fn().mockResolvedValue({ cwd: "/repos/demo-shop" }),
+    });
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
+    // The existing cwd-hint affordance still appears.
+    expect(await screen.findByText(/repos\/demo-shop/)).toBeInTheDocument();
+  });
+
+  it("renders no repo chips when neither getRepos nor getCwd is available", async () => {
+    const bridge = makeBridge({ getRepos: undefined, getCwd: undefined });
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
+    // No throw, connect field still present.
+    expect(await screen.findByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("on connect success stores the RESOLVED root and calls setProjectRoot", async () => {
+    const setProjectRoot = vi.fn();
+    const snapshot = { ...BASE_SNAPSHOT, root: "/resolved/abs/path", hasClassification: true };
+    const bridge = makeBridge({
+      connectProject: vi.fn().mockResolvedValue({ ok: true, snapshot }),
+      setProjectRoot,
+      getProjectRoot: () => null,
+    });
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+
+    const input = screen.getByRole("textbox");
+    await userEvent.clear(input);
+    await userEvent.type(input, "~/typed/path");
+    await userEvent.click(screen.getByRole("button", { name: /^Connect$/ }));
+
+    await waitFor(() => expect(setProjectRoot).toHaveBeenCalledWith("/resolved/abs/path"));
+    await waitFor(() =>
+      expect(useAppStore.getState().connection.repoPath).toBe("/resolved/abs/path"),
+    );
+  });
+});
+
 // ─── Cwd hint chip ───────────────────────────────────────────────────────────
 
 describe("cwd hint chip — one-click fill from the bridge's working directory", () => {

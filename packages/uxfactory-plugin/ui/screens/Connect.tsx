@@ -89,6 +89,18 @@ export function Connect({
       ? "running"
       : "down";
 
+  // ── Repo list query (three-tier degradation: getRepos → getCwd → nothing) ───
+  const reposResult = useQuery({
+    queryKey: ["repos"],
+    queryFn: () => bridge.getRepos!(),
+    enabled: typeof bridge.getRepos === "function" && bridgeStatus === "running",
+    staleTime: 5_000,
+  });
+  const repos = reposResult.data?.repos ?? [];
+  // Server order is authoritative (cwd pinned first, most-recent-first); only hide the
+  // chip whose root already matches the current field value.
+  const visibleRepos = repos.filter((r) => r.root !== repoPath.trim());
+
   // ── Router + connect mutation ─────────────────────────────────────────────────
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -112,9 +124,13 @@ export function Connect({
       }
       const capturedMode = mode;
       const capturedEndpoint = connectionEndpoint;
-      const trimmed = repoPath.trim();
+      // Use the resolved absolute root from the server, not the raw typed path.
+      // setProjectRoot must run BEFORE setQueryData so the seed lands under the
+      // rooted key that subsequent reads will use.
+      const resolvedRoot = result.snapshot.root;
+      bridge.setProjectRoot?.(resolvedRoot);
       queryClient.setQueryData(queryKeys.snapshot(activeRoot(bridge)), result.snapshot);
-      connectSucceeded(result.snapshot, trimmed, (payload) => {
+      connectSucceeded(result.snapshot, resolvedRoot, (payload) => {
         void bus.storageSet(storageKey, {
           ...payload,
           mode: capturedMode,
@@ -329,8 +345,36 @@ export function Connect({
               />
             </Field>
 
-            {/* Cwd hint chip — one-click fill from the bridge's directory */}
-            {bridgeCwd !== null && repoPath.trim() !== bridgeCwd && (
+            {/* Tier-1: Repo chip list from getRepos — server-ordered (cwd first, most-recent-first).
+                Dead (live:false) repos are visually muted but remain clickable.
+                Hides when Tier 1 has no chips remaining (all already match the field). */}
+            {visibleRepos.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {visibleRepos.map((r) => (
+                  <button
+                    key={r.root}
+                    type="button"
+                    onClick={() => {
+                      setRepoPath(r.root);
+                      if (pathError) setPathError(null);
+                    }}
+                    className={[
+                      "text-xs px-2 py-1 rounded-[var(--radius-card)] border transition-colors",
+                      r.live
+                        ? "text-primary-700 bg-primary-50 border-primary-100 hover:bg-primary-100"
+                        : "text-gray-400 bg-gray-50 border-gray-200",
+                    ].join(" ")}
+                    title={r.root}
+                  >
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Tier-2: Cwd hint chip — single-chip fallback when getRepos is unavailable.
+                Suppressed when Tier-1 chips are present (repos.length > 0). */}
+            {repos.length === 0 && bridgeCwd !== null && repoPath.trim() !== bridgeCwd && (
               <button
                 type="button"
                 onClick={() => {

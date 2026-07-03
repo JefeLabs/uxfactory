@@ -60,6 +60,9 @@ async function boot(): Promise<void> {
       },
     }));
 
+    // Set the client root BEFORE fetching — the snapshot and subsequent reads
+    // must share the same rooted query key that Connect persisted (snapshot.root).
+    bridge.setProjectRoot?.(stored.repoPath);
     const [, snapshot] = await Promise.all([bridge.health(), bridge.snapshot()]);
 
     // Race guard: user may have clicked Cancel while awaiting (status flips).
