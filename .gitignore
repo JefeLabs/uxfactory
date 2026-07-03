@@ -1,7 +1,10 @@
 node_modules/
 dist/
 coverage/
-.uxfactory/
+# Bridge runtime state stays local; .uxfactory/artifacts is the project's
+# versioned spec inventory and IS tracked.
+.uxfactory/*
+!.uxfactory/artifacts/
 *.log
 .DS_Store
 .idea/

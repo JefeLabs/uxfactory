@@ -518,21 +518,25 @@ interface PanelArtifactEntry {
  * `packages/uxfactory-bridge/src/project.ts`.
  */
 const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
-  brief: { label: 'Product Brief', path: 'brief.md' },
-  sitemap: { label: 'Sitemap', path: 'design/sitemap.json' },
-  flows: { label: 'Flows', path: 'design/flows.json' },
+  brief: { label: 'Product Brief', path: '.uxfactory/artifacts/brief.md' },
+  sitemap: { label: 'Sitemap', path: '.uxfactory/artifacts/sitemap.json' },
+  flows: { label: 'Flows', path: '.uxfactory/artifacts/flows.json' },
   'brand-colors': {
     label: 'Brand Colors',
-    path: 'design/design-system.json',
+    path: '.uxfactory/artifacts/design-system.json',
     sectionKey: 'brand-colors',
   },
-  palettes: { label: 'Palettes', path: 'design/design-system.json', sectionKey: 'palettes' },
-  fonts: { label: 'Fonts', path: 'design/design-system.json', sectionKey: 'fonts' },
-  grid: { label: 'Grid', path: 'design/design-system.json', sectionKey: 'grid' },
+  palettes: {
+    label: 'Palettes',
+    path: '.uxfactory/artifacts/design-system.json',
+    sectionKey: 'palettes',
+  },
+  fonts: { label: 'Fonts', path: '.uxfactory/artifacts/design-system.json', sectionKey: 'fonts' },
+  grid: { label: 'Grid', path: '.uxfactory/artifacts/design-system.json', sectionKey: 'grid' },
   tokens: { label: 'Tokens', path: 'design/token-set.json' },
-  icons: { label: 'Icons', path: 'design/assets/icons.json' },
-  photography: { label: 'Photography', path: 'design/assets/photography.json' },
-  illustrations: { label: 'Illustrations', path: 'design/assets/illustrations.json' },
+  icons: { label: 'Icons', path: '.uxfactory/artifacts/assets/icons.json' },
+  photography: { label: 'Photography', path: '.uxfactory/artifacts/assets/photography.json' },
+  illustrations: { label: 'Illustrations', path: '.uxfactory/artifacts/assets/illustrations.json' },
 };
 
 /** Narrow an opaque value to a known `PanelArtifactKey`. */
@@ -591,7 +595,10 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
       const sectionNote =
         entry.sectionKey !== undefined
           ? ` Merge ONLY the '${entry.sectionKey}' section into ${entry.path}` +
-            ` (create the file if absent, preserve all other sections).`
+            ` (create the file if absent, preserve all other sections).` +
+            ` MIGRATION: if ${entry.path} does not exist but design/design-system.json does,` +
+            ` first move design/design-system.json to ${entry.path}, then merge —` +
+            ` never lose existing sections.`
           : '';
       // Brief content rule (Artifact Editor v1 spec §2 Worker): the brief carries
       // exactly the panel's section schema, never parrots the pinned setup values,

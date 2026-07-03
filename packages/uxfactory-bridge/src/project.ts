@@ -23,6 +23,7 @@ import {
   readdir,
   access,
   stat,
+  rm,
 } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -100,26 +101,64 @@ export interface ProjectPluginOptions {
 
 const STORIES_PATH = "design/acceptance-criteria.json";
 const TOKENS_PATH = "design/token-set.json";
-const DESIGN_SYSTEM_PATH = "design/design-system.json";
 
 /**
- * Canonical write-path for each panel concern key. Used when no existing file
- * is found during path resolution (the "create new" case for GET 404 / PUT mkdir).
+ * Work directory where panel artifacts LIVE (user decision 2026-07-03):
+ * one well-known location so bridge-called agents and SKILL.md flows can find
+ * artifacts deterministically, instead of files scattered at the repo root
+ * and design/. Engine gate inputs (requirements, tokens) keep their
+ * engine-conventional design/ paths — the deterministic gate falls back to
+ * those when no registry entry overrides.
+ */
+const ARTIFACTS_DIR = ".uxfactory/artifacts";
+const DESIGN_SYSTEM_PATH = `${ARTIFACTS_DIR}/design-system.json`;
+const LEGACY_DESIGN_SYSTEM_PATH = "design/design-system.json";
+
+/**
+ * Canonical path for each panel concern key — where new files are created and
+ * where ALL writes land (writes migrate-on-touch; see PUT /project/artifact).
  */
 const CONCERN_CANONICAL: Record<string, string> = {
-  brief: "brief.md",
+  brief: `${ARTIFACTS_DIR}/brief.md`,
   requirements: STORIES_PATH,
-  sitemap: "design/sitemap.json",
-  flows: "design/flows.json",
+  sitemap: `${ARTIFACTS_DIR}/sitemap.json`,
+  flows: `${ARTIFACTS_DIR}/flows.json`,
   "brand-colors": DESIGN_SYSTEM_PATH,
   palettes: DESIGN_SYSTEM_PATH,
   fonts: DESIGN_SYSTEM_PATH,
   grid: DESIGN_SYSTEM_PATH,
   tokens: TOKENS_PATH,
-  icons: "design/assets/icons.json",
-  photography: "design/assets/photography.json",
-  illustrations: "design/assets/illustrations.json",
+  icons: `${ARTIFACTS_DIR}/assets/icons.json`,
+  photography: `${ARTIFACTS_DIR}/assets/photography.json`,
+  illustrations: `${ARTIFACTS_DIR}/assets/illustrations.json`,
 };
+
+/**
+ * Legacy locations (searched after the canonical) so existing projects keep
+ * READING files where they already live. Writes always land canonical and
+ * remove the legacy copy, so a project converges the first time an artifact
+ * is touched.
+ */
+const CONCERN_LEGACY: Record<string, string[]> = {
+  brief: ["brief.md", "design/brief.md"],
+  "brand-colors": [LEGACY_DESIGN_SYSTEM_PATH],
+  palettes: [LEGACY_DESIGN_SYSTEM_PATH],
+  fonts: [LEGACY_DESIGN_SYSTEM_PATH],
+  grid: [LEGACY_DESIGN_SYSTEM_PATH],
+  icons: ["design/assets/icons.json"],
+  photography: ["design/assets/photography.json"],
+  illustrations: ["design/assets/illustrations.json"],
+};
+
+/** First accessible path among the concern's canonical + legacy locations. */
+async function findConcernFile(root: string, key: string): Promise<string | null> {
+  const candidates = [CONCERN_CANONICAL[key]!, ...(CONCERN_LEGACY[key] ?? [])];
+  for (const rel of candidates) {
+    const abs = path.join(root, rel);
+    if (await fileAccessible(abs)) return abs;
+  }
+  return null;
+}
 
 // ─── Utility helpers ─────────────────────────────────────────────────────────
 
@@ -223,21 +262,23 @@ async function resolveInputPaths(
 
 /** Shape returned by {@link resolveConcernPath}. */
 interface ConcernPath {
-  /** Absolute path to the artifact file. */
+  /** Absolute path the artifact READS from (canonical, else legacy match). */
   absolutePath: string;
+  /** Absolute canonical path — where every WRITE lands (migrate-on-touch). */
+  writePath: string;
   /** Root-relative path string (for the response body). */
   relativePath: string;
   /** Format inferred from the file extension. */
   format: "markdown" | "json";
-  /** Whether the file currently exists on disk. */
+  /** Whether the file currently exists on disk (at absolutePath). */
   exists: boolean;
 }
 
 /**
  * Resolve a panel concern key to its artifact path, mirroring the same logic as
- * `buildArtifacts` (registry-aware for tokens/requirements; prefix-search for
- * sitemap/flows; two-candidate search for brief). Returns `null` for unknown
- * keys. Never throws.
+ * `buildArtifacts` (registry-aware for tokens/requirements; canonical-then-
+ * legacy-prefix search for sitemap/flows; canonical-then-legacy candidates for
+ * the rest). Returns `null` for unknown keys. Never throws.
  */
 async function resolveConcernPath(
   key: string,
@@ -246,44 +287,42 @@ async function resolveConcernPath(
   if (!Object.prototype.hasOwnProperty.call(CONCERN_CANONICAL, key)) return null;
 
   let absolutePath: string;
+  let writePath = path.join(root, CONCERN_CANONICAL[key]!);
   let exists = false;
 
-  if (key === "brief") {
-    // Mirror buildArtifacts: check brief.md first, then design/brief.md.
-    let found: string | null = null;
-    for (const rel of ["brief.md", "design/brief.md"]) {
-      const abs = path.join(root, rel);
-      if (await fileAccessible(abs)) {
-        found = abs;
-        break;
-      }
-    }
-    absolutePath = found ?? path.join(root, "brief.md");
-    exists = found !== null;
-  } else if (key === "requirements") {
+  if (key === "requirements") {
+    // Engine gate input — registry-first; reads and writes share one path.
     const { storiesPath } = await resolveInputPaths(root);
     absolutePath = storiesPath;
+    writePath = storiesPath;
     exists = await fileAccessible(absolutePath);
   } else if (key === "tokens") {
     const { tokensPath } = await resolveInputPaths(root);
     absolutePath = tokensPath;
+    writePath = tokensPath;
     exists = await fileAccessible(absolutePath);
   } else if (key === "sitemap" || key === "flows") {
-    const designDir = path.join(root, "design");
-    const found = await findByPrefix(designDir, key);
-    absolutePath = found ?? path.join(root, CONCERN_CANONICAL[key]!);
-    exists = found !== null;
+    // Canonical exact path first, then the legacy design/ prefix search.
+    if (await fileAccessible(writePath)) {
+      absolutePath = writePath;
+      exists = true;
+    } else {
+      const found = await findByPrefix(path.join(root, "design"), key);
+      absolutePath = found ?? writePath;
+      exists = found !== null;
+    }
   } else {
-    // All remaining keys (design-system sections, assets) have a single conventional path.
-    absolutePath = path.join(root, CONCERN_CANONICAL[key]!);
-    exists = await fileAccessible(absolutePath);
+    // brief, design-system sections, assets: canonical then legacy candidates.
+    const found = await findConcernFile(root, key);
+    absolutePath = found ?? writePath;
+    exists = found !== null;
   }
 
   const relativePath = path.relative(root, absolutePath);
   const ext = path.extname(absolutePath).toLowerCase();
   const format: "markdown" | "json" = ext === ".md" ? "markdown" : "json";
 
-  return { absolutePath, relativePath, format, exists };
+  return { absolutePath, writePath, relativePath, format, exists };
 }
 
 /** True when `dir` has a `.git` directory or a `uxfactory.batch.json` file. */
@@ -305,14 +344,7 @@ async function buildArtifacts(
 
   // ── product: brief ────────────────────────────────────────────────────────
   {
-    let foundPath: string | null = null;
-    for (const rel of ["brief.md", "design/brief.md"]) {
-      const abs = path.join(root, rel);
-      if (await fileAccessible(abs)) {
-        foundPath = abs;
-        break;
-      }
-    }
+    const foundPath = await findConcernFile(root, "brief");
     rows.push({
       key: "brief",
       group: "product",
@@ -329,28 +361,19 @@ async function buildArtifacts(
     rows.push({ key: "requirements", group: "product", label: "Requirements", ...r });
   }
 
-  // ── ia-ux: sitemap ────────────────────────────────────────────────────────
-  {
-    const designDir = path.join(root, "design");
-    const match = await findByPrefix(designDir, "sitemap");
+  // ── ia-ux: sitemap + flows (canonical exact, then legacy design/ prefix) ──
+  for (const { key, label } of [
+    { key: "sitemap", label: "Sitemap" },
+    { key: "flows", label: "Flows" },
+  ] as const) {
+    const canonical = path.join(root, CONCERN_CANONICAL[key]!);
+    const match = (await fileAccessible(canonical))
+      ? canonical
+      : await findByPrefix(path.join(root, "design"), key);
     rows.push({
-      key: "sitemap",
+      key,
       group: "ia-ux",
-      label: "Sitemap",
-      status: match !== null ? "up-to-date" : "missing",
-      meta: "",
-      path: match,
-    });
-  }
-
-  // ── ia-ux: flows ──────────────────────────────────────────────────────────
-  {
-    const designDir = path.join(root, "design");
-    const match = await findByPrefix(designDir, "flows");
-    rows.push({
-      key: "flows",
-      group: "ia-ux",
-      label: "Flows",
+      label,
       status: match !== null ? "up-to-date" : "missing",
       meta: "",
       path: match,
@@ -359,8 +382,9 @@ async function buildArtifacts(
 
   // ── design: brand-colors, palettes, fonts, grid (from design-system.json) ─
   {
-    const abs = path.join(root, DESIGN_SYSTEM_PATH);
-    const exists = await fileAccessible(abs);
+    const found = await findConcernFile(root, "brand-colors");
+    const abs = found ?? path.join(root, DESIGN_SYSTEM_PATH);
+    const exists = found !== null;
     let dsData: Record<string, unknown> | null = null;
     let dsDraft = false;
     if (exists) {
@@ -426,13 +450,14 @@ async function buildArtifacts(
 
   // ── assets: icons, photography, illustrations ─────────────────────────────
   const assetDefs = [
-    { key: "icons", label: "Icons", rel: "design/assets/icons.json" },
-    { key: "photography", label: "Photography", rel: "design/assets/photography.json" },
-    { key: "illustrations", label: "Illustrations", rel: "design/assets/illustrations.json" },
+    { key: "icons", label: "Icons" },
+    { key: "photography", label: "Photography" },
+    { key: "illustrations", label: "Illustrations" },
   ] as const;
 
-  for (const { key, label, rel } of assetDefs) {
-    const abs = path.join(root, rel);
+  for (const { key, label } of assetDefs) {
+    const abs =
+      (await findConcernFile(root, key)) ?? path.join(root, CONCERN_CANONICAL[key]!);
     const r = await checkJsonArtifact(abs);
     rows.push({ key, group: "assets", label, ...r });
   }
@@ -698,15 +723,28 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 
       // Containment check — guard against a registry pointing outside root.
       const rootWithSep = servedRoot.endsWith(path.sep) ? servedRoot : servedRoot + path.sep;
-      if (resolved.absolutePath !== servedRoot && !resolved.absolutePath.startsWith(rootWithSep)) {
+      if (resolved.writePath !== servedRoot && !resolved.writePath.startsWith(rootWithSep)) {
         return reply
           .code(400)
           .send({ error: "artifact path is outside the project root", key });
       }
 
-      // mkdir -p the parent directory so writing to a new location always succeeds.
-      await mkdir(path.dirname(resolved.absolutePath), { recursive: true });
-      await writeFile(resolved.absolutePath, content, "utf8");
+      // Writes ALWAYS land at the canonical path (.uxfactory/artifacts/…) so
+      // agents and SKILL.md flows have one deterministic location. mkdir -p the
+      // parent so writing to a new location always succeeds.
+      await mkdir(path.dirname(resolved.writePath), { recursive: true });
+      await writeFile(resolved.writePath, content, "utf8");
+
+      // Migrate-on-touch: the concern previously lived at a legacy path —
+      // remove that copy so the project converges on the canonical location.
+      if (resolved.exists && resolved.absolutePath !== resolved.writePath) {
+        try {
+          await rm(resolved.absolutePath);
+        } catch {
+          // Best-effort: a surviving legacy copy is shadowed by the canonical
+          // one on every future read, so failure here is not an error.
+        }
+      }
 
       return { ok: true };
     },

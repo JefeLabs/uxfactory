@@ -907,9 +907,9 @@ describe('runGenerative', () => {
     expect(out.status).toBe(0);
     expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('generate'));
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('brief.md');
+    expect(user).toContain('.uxfactory/artifacts/brief.md');
     expect(user).toContain('target enterprise SaaS customers');
-    expect((out.result as { artifactPath: string }).artifactPath).toBe('brief.md');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe('.uxfactory/artifacts/brief.md');
   });
 
   it('generate-artifact artifact:brief omits USER GUIDANCE clause when guidance is absent', async () => {
@@ -929,7 +929,7 @@ describe('runGenerative', () => {
     );
 
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('brief.md');
+    expect(user).toContain('.uxfactory/artifacts/brief.md');
     expect(user).not.toContain('USER GUIDANCE');
   });
 
@@ -1001,11 +1001,11 @@ describe('runGenerative', () => {
 
     expect(out.status).toBe(0);
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('design/design-system.json');
+    expect(user).toContain('.uxfactory/artifacts/design-system.json');
     expect(user).toContain('brand-colors');
     // section-merge instruction is present for shared-file section keys.
     expect(user).toContain('Merge ONLY');
-    expect((out.result as { artifactPath: string }).artifactPath).toBe('design/design-system.json');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe('.uxfactory/artifacts/design-system.json');
   });
 
   // ── Brief content rule: five schema sections + no-restatement ─────────────

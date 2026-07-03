@@ -46,6 +46,8 @@
 ## Decisions (2026-07-03)
 
 5. **Prompt tab renamed to "Generate"** — visible label only; the internal tab value/route key stays `prompt` (no store or deep-link migration).
+5a. **Artifacts work directory** (2026-07-03): panel artifacts live in **`.uxfactory/artifacts/`** — one deterministic location for the panel, bridge-called agents, and SKILL.md flows. Reads fall back to legacy paths; writes migrate-on-touch. Engine gate inputs (acceptance-criteria, token-set) stay at their `design/` conventional paths (registry-overridable). Applies to the artifact-registry catalog when that feature lands.
+
 6. **Queue tab added** (position: between Checks and Settings) — see [09-queue-PRD.md](09-queue-PRD.md). Restores the bridge→canvas landing path the legacy pipeline panel owned: CI/offline publishes surface as previews + specs, applied sequentially by the user (per-item or Render All). Listing is non-destructive; no auto-drain in v1.
 
 ## Cross-screen conventions

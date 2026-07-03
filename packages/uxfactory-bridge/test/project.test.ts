@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -964,6 +964,40 @@ describe("GET /project/artifact", () => {
     app = await createBridge({ dataDir });
   });
 
+  it("legacy read: a brief at the repo root still resolves (no migration on GET)", async () => {
+    const legacy = path.join(root, "brief.md");
+    await writeFile(legacy, "# Legacy Brief\n", "utf8");
+
+    const get = await app.inject({ method: "GET", url: "/project/artifact?key=brief" });
+    expect(get.statusCode).toBe(200);
+    const body = get.json() as { path: string; content: string };
+    expect(body.path).toBe("brief.md"); // reads stay where the file lives
+    expect(body.content).toBe("# Legacy Brief\n");
+    // GET must not move anything.
+    await expect(readFile(legacy, "utf8")).resolves.toBe("# Legacy Brief\n");
+  });
+
+  it("migrate-on-touch: PUT moves a legacy brief into .uxfactory/artifacts", async () => {
+    const legacy = path.join(root, "brief.md");
+    await writeFile(legacy, "# Legacy Brief\n", "utf8");
+
+    const put = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "brief", content: "# Updated Brief\n" },
+    });
+    expect(put.statusCode).toBe(200);
+
+    // Canonical file created with the new content; legacy copy removed.
+    const canonical = path.join(root, ".uxfactory/artifacts/brief.md");
+    await expect(readFile(canonical, "utf8")).resolves.toBe("# Updated Brief\n");
+    await expect(readFile(legacy, "utf8")).rejects.toThrow();
+
+    // Subsequent GET serves the canonical location.
+    const get = await app.inject({ method: "GET", url: "/project/artifact?key=brief" });
+    expect((get.json() as { path: string }).path).toBe(".uxfactory/artifacts/brief.md");
+  });
+
   it("round-trip: PUT brief → GET returns content + path + format", async () => {
     const briefContent = "# My Brief\n\n## Overview\nGreat product.\n";
 
@@ -989,7 +1023,7 @@ describe("GET /project/artifact", () => {
       content: string;
     };
     expect(body.key).toBe("brief");
-    expect(body.path).toBe("brief.md");
+    expect(body.path).toBe(".uxfactory/artifacts/brief.md");
     expect(body.format).toBe("markdown");
     expect(body.content).toBe(briefContent);
   });

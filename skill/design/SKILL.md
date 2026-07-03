@@ -15,6 +15,7 @@ The loop is: **author HTML → gate (render + check) → read the report → rev
 - **`design/acceptance-criteria.json`** — the stories: `{ "stories": [ { "id", "role", "goal", "benefit", "acceptanceCriteria": [ { "statement", "impliedState" } ] } ] }`. `impliedState` ∈ `empty · loading · error · success · edge`. These are the requirements you must cover.
 - **`uxfactory.profile.json`** — the pinned scope dials (`visual`/`editorial`/`coverage`/`flow`, each `low|medium|high`) + constraints. At `visual ≥ medium` the `a11y`, `contrast`, and `token-conformance` gates bind; honor every constraint.
 - **`uxfactory.batch.json`** — `maxIterations` (your budget) and `inputs` (registry paths: `inputs.stories`, `inputs.tokens`, `inputs.screens`, `inputs.trace`). Write artifacts to the registered paths.
+- **`.uxfactory/artifacts/`** — the project's panel-authored artifacts (brief.md, sitemap.json, flows.json, design-system.json, assets/*.json). Ground your design decisions in these when present; gate inputs (acceptance-criteria, token-set) stay at their registry/`design/` paths.
 
 ## Step 1 — Author REAL HTML screens (one file per page)
 

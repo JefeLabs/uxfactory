@@ -26,6 +26,8 @@ When `seedRefs` are given (e.g. story ids `S-1`, `S-2`), every criterion or jour
 
 Read the project's classification and derived profile so your draft matches the scope and constraints:
 
+Project artifacts live in **`.uxfactory/artifacts/`** (brief.md, sitemap.json, flows.json, design-system.json, assets/*.json) — read them for grounding when present. Gate inputs (acceptance-criteria, token-set) resolve registry-first, falling back to their conventional `design/` paths. Always write to the **target path you were handed** — it already reflects this layout.
+
 ```bash
 uxfactory classify --json   # GateProfile: scope (four dials) + manifest + constraints
 ```
