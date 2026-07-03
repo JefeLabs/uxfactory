@@ -689,6 +689,7 @@ describe("GET /stats", () => {
   });
 
   it("runsRelayed increments when POST /pipeline/result is called", async () => {
+    await addGitMarker(root);
     app = await createBridge({ dataDir });
 
     // Enqueue a request first so we have a known id.

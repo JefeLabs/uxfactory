@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -23,20 +23,20 @@ describe("BridgeStore pipeline queue/result (unit)", () => {
   });
 
   it("enqueue→dequeue is FIFO and returns the full request", async () => {
-    const a = await store.enqueuePipelineRequest("classify", { n: 1 }, 1000);
-    const b = await store.enqueuePipelineRequest("batch", { n: 2 }, 1001);
+    const a = await store.enqueuePipelineRequest("classify", { n: 1 }, 1000, "/proj");
+    const b = await store.enqueuePipelineRequest("batch", { n: 2 }, 1001, "/proj");
     expect(a.id).toMatch(/^pr_/);
     expect(a.kind).toBe("classify");
     expect(a.payload).toEqual({ n: 1 });
     expect(a.createdAt).toBe(1000);
     expect(a.id).not.toBe(b.id);
 
-    const first = await store.dequeuePipelineRequest();
+    const first = await store.dequeuePipelineRequest("/proj");
     expect(first?.id).toBe(a.id);
     expect(first?.kind).toBe("classify");
-    const second = await store.dequeuePipelineRequest();
+    const second = await store.dequeuePipelineRequest("/proj");
     expect(second?.id).toBe(b.id);
-    expect(await store.dequeuePipelineRequest()).toBeNull();
+    expect(await store.dequeuePipelineRequest("/proj")).toBeNull();
   });
 
   it("result roundtrip: save then get, null when unknown", async () => {
@@ -67,15 +67,20 @@ describe("BridgeStore pipeline queue/result (unit)", () => {
 describe("pipeline REST relay (inject)", () => {
   let app: FastifyInstance;
   let dataDir: string;
+  let launchRoot: string;
+  let registryPath: string;
 
   beforeEach(async () => {
-    dataDir = await mkdtemp(path.join(os.tmpdir(), "uxf-bridge-pipeline-"));
-    app = await createBridge({ dataDir });
+    launchRoot = await mkdtemp(path.join(os.tmpdir(), "uxf-bridge-pipeline-"));
+    await mkdir(path.join(launchRoot, ".git"), { recursive: true });
+    dataDir = path.join(launchRoot, ".uxfactory");
+    registryPath = path.join(launchRoot, "repos-registry.json");
+    app = await createBridge({ dataDir, reposRegistryPath: registryPath });
   });
 
   afterEach(async () => {
     await app.close();
-    await rm(dataDir, { recursive: true, force: true });
+    await rm(launchRoot, { recursive: true, force: true });
   });
 
   it("POST /pipeline/request enqueues and returns an id", async () => {
@@ -194,6 +199,79 @@ describe("pipeline REST relay (inject)", () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ ok: true });
   });
+
+  describe("pipeline root-tagging", () => {
+    it("enqueue with no ?root= stamps the launch root; next with no ?root= claims it", async () => {
+      const enq = await app.inject({
+        method: "POST",
+        url: "/pipeline/request",
+        payload: { kind: "generate-artifact", payload: { artifact: "brief" } },
+      });
+      expect(enq.statusCode).toBe(200);
+      const next = await app.inject({ method: "GET", url: "/pipeline/request/next" });
+      expect(next.statusCode).toBe(200);
+      const req = next.json() as { id: string; root: string };
+      expect(req.root).toBe(path.resolve(launchRoot));
+    });
+
+    it("a poll for a foreign root never claims a launch-root job", async () => {
+      const other = await mkdtemp(path.join(os.tmpdir(), "uxf-pipe-other-"));
+      await mkdir(path.join(other, ".git"), { recursive: true });
+      try {
+        await app.inject({ method: "POST", url: "/project/connect", payload: { repoPath: other } });
+
+        // Enqueue a launch-root job (no ?root=).
+        await app.inject({
+          method: "POST",
+          url: "/pipeline/request",
+          payload: { kind: "generate-artifact", payload: {} },
+        });
+
+        // Worker for `other` polls: 204 (launch job is not its work).
+        const foreign = await app.inject({
+          method: "GET",
+          url: `/pipeline/request/next?root=${encodeURIComponent(other)}`,
+        });
+        expect(foreign.statusCode).toBe(204);
+
+        // Launch-root poll still gets it.
+        const own = await app.inject({ method: "GET", url: "/pipeline/request/next" });
+        expect(own.statusCode).toBe(200);
+        expect((own.json() as { root: string }).root).toBe(path.resolve(launchRoot));
+      } finally {
+        await rm(other, { recursive: true, force: true });
+      }
+    });
+
+    it("per-root FIFO: A and B jobs interleave without cross-claiming", async () => {
+      const other = await mkdtemp(path.join(os.tmpdir(), "uxf-pipe-B-"));
+      await mkdir(path.join(other, ".git"), { recursive: true });
+      try {
+        await app.inject({ method: "POST", url: "/project/connect", payload: { repoPath: other } });
+        const enc = (p: string) => encodeURIComponent(p);
+
+        // launch, other, launch — enqueued in that order.
+        await app.inject({ method: "POST", url: "/pipeline/request", payload: { kind: "k", payload: { n: 1 } } });
+        await app.inject({ method: "POST", url: `/pipeline/request?root=${enc(other)}`, payload: { kind: "k", payload: { n: 2 } } });
+        await app.inject({ method: "POST", url: "/pipeline/request", payload: { kind: "k", payload: { n: 3 } } });
+
+        // `other` poll gets only n:2.
+        const b1 = (await app.inject({ method: "GET", url: `/pipeline/request/next?root=${enc(other)}` })).json() as { payload: { n: number }; root: string };
+        expect(b1.payload.n).toBe(2);
+        expect(b1.root).toBe(path.resolve(other));
+        const b2 = await app.inject({ method: "GET", url: `/pipeline/request/next?root=${enc(other)}` });
+        expect(b2.statusCode).toBe(204);
+
+        // launch poll drains n:1 then n:3 (FIFO).
+        const a1 = (await app.inject({ method: "GET", url: "/pipeline/request/next" })).json() as { payload: { n: number } };
+        expect(a1.payload.n).toBe(1);
+        const a2 = (await app.inject({ method: "GET", url: "/pipeline/request/next" })).json() as { payload: { n: number } };
+        expect(a2.payload.n).toBe(3);
+      } finally {
+        await rm(other, { recursive: true, force: true });
+      }
+    });
+  });
 });
 
 // --- SSE: live broadcast + replay over a real socket ---
@@ -235,6 +313,7 @@ describe("GET /pipeline/events SSE stream", () => {
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "uxf-bridge-sse-"));
+    await mkdir(path.join(root, ".git"), { recursive: true });
     handle = await startBridge({ dataDir: path.join(root, ".uxfactory"), port: 0 });
   });
 

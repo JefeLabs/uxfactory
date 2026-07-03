@@ -233,27 +233,42 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   // No @uxfactory/cli import; kind/payload/result/event are all opaque to the bridge.
 
   // Plugin enqueues a request for the worker to fulfil.
-  app.post("/pipeline/request", async (req, reply) => {
+  // ?root= is bridge-stamped (resolved here); clients never hand-author the tag.
+  app.post<{ Querystring: { root?: string } }>("/pipeline/request", async (req, reply) => {
     const body = req.body as { kind?: unknown; payload?: unknown };
     if (typeof body?.kind !== "string" || body.kind.trim() === "") {
       return reply.code(400).send({ error: "kind must be a non-empty string" });
     }
+    const resolution = await registry.resolveRequestRoot(req.query.root);
+    if (!resolution.ok) return reply.code(resolution.code).send({ error: resolution.error });
+
     // Date.now() lives here (the server), not in the store.
-    const request = await store.enqueuePipelineRequest(body.kind, body.payload, Date.now());
+    const request = await store.enqueuePipelineRequest(
+      body.kind,
+      body.payload,
+      Date.now(),
+      resolution.root,
+    );
     pipelineRequestIds.add(request.id);
     // Wake any idle worker. A request enqueued while the worker is IDLE has no
     // other wake signal (deterministic dispatch emits no events), so broadcast a
     // lightweight wake frame — seq'd and landed in the replay ring like any event.
     // The worker just needs a `data:` frame; it then FIFO-drains via
     // GET /pipeline/request/next. Payload stays opaque (no @uxfactory/cli import).
-    const wake = store.appendPipelineEvent(request.id, { type: "pipeline-request", id: request.id });
+    const wake = store.appendPipelineEvent(request.id, {
+      type: "pipeline-request",
+      id: request.id,
+    });
     broadcastPipelineFrame(wake);
     return { id: request.id };
   });
 
-  // Worker pulls the next queued request (FIFO); 204 when the queue is empty.
-  app.get("/pipeline/request/next", async (_req, reply) => {
-    const request = await store.dequeuePipelineRequest();
+  // Worker pulls the next queued request for its root (FIFO within that root); 204 when none.
+  // A poll without ?root= claims launch-root jobs only (legacy worker compat).
+  app.get<{ Querystring: { root?: string } }>("/pipeline/request/next", async (req, reply) => {
+    const resolution = await registry.resolveRequestRoot(req.query.root);
+    if (!resolution.ok) return reply.code(resolution.code).send({ error: resolution.error });
+    const request = await store.dequeuePipelineRequest(resolution.root);
     if (request === null) return reply.code(204).send();
     return request;
   });

@@ -51,6 +51,8 @@ export interface PipelineRequest {
   kind: string;
   payload: unknown;
   createdAt: number;
+  /** Resolved project root this job is scoped to (spec §2: workers claim only matching roots). */
+  root: string;
 }
 
 /** A worker-posted result for a pipeline request. `result` is opaque. */
@@ -435,20 +437,25 @@ export class BridgeStore {
     kind: string,
     payload: unknown,
     createdAt: number,
+    root: string,
   ): Promise<PipelineRequest> {
     const request: PipelineRequest = {
       id: this.newPipelineRequestId(createdAt),
       kind,
       payload,
       createdAt,
+      root,
     };
     this.pipelineQueue.push(request);
     return request;
   }
 
-  /** Pop the oldest queued pipeline request (FIFO), or null when the queue is empty. */
-  async dequeuePipelineRequest(): Promise<PipelineRequest | null> {
-    return this.pipelineQueue.shift() ?? null;
+  /** Pop the oldest queued request whose root matches; null if none match. */
+  async dequeuePipelineRequest(root: string): Promise<PipelineRequest | null> {
+    const idx = this.pipelineQueue.findIndex((r) => r.root === root);
+    if (idx === -1) return null;
+    const [request] = this.pipelineQueue.splice(idx, 1);
+    return request ?? null;
   }
 
   /** Store the worker's result for a request id (latest write wins). */

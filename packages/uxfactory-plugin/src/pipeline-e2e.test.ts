@@ -8,7 +8,7 @@
 // store transitions AND the rendered DOM at each step. NO real LLM/worker — every
 // result/event the panel sees is canned data the fake worker posts.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { startBridge } from "@uxfactory/bridge";
@@ -166,6 +166,7 @@ describe("pipeline panel e2e (in-process bridge + fake worker)", () => {
 
   beforeEach(async () => {
     dataRoot = await mkdtemp(path.join(os.tmpdir(), "uxf-plugin-e2e-"));
+    await mkdir(path.join(dataRoot, ".git"), { recursive: true });
     bridge = await startBridge({ dataDir: path.join(dataRoot, ".uxfactory"), port: 0 });
     worker = startFakeWorker(bridge.url);
   });
