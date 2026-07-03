@@ -25,6 +25,8 @@ import {
   type NavigateOptions,
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { snapshotQuery } from "./queries.js";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
@@ -105,6 +107,20 @@ function StoreRouteBridge(): null {
   useEffect(() => {
     void navigate(mapStoreRouteToLocation(screen, tab, focus));
   }, [screen, tab, focus, navigate]);
+  return null;
+}
+
+function SnapshotSync({ bridge }: { bridge: Bridge }): null {
+  const status = useAppStore((s) => s.connection.status);
+  const screen = useAppStore((s) => s.route.screen);
+  // Only sync while on the main tabs — during the setup wizard the snapshot
+  // set by connectSucceeded is authoritative (controls new-project heading
+  // etc.) and must not be overwritten by a background refetch.
+  const enabled = (status === "connected" || status === "reconnecting") && screen === "tabs";
+  const { data } = useQuery({ ...snapshotQuery(bridge), enabled });
+  useEffect(() => {
+    if (data) useAppStore.setState({ snapshot: data });
+  }, [data]);
   return null;
 }
 
@@ -302,9 +318,11 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 });
 
 function RootLayout(): React.JSX.Element {
+  const { bridge } = rootRoute.useRouteContext();
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
       <StoreRouteBridge />
+      <SnapshotSync bridge={bridge} />
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         <Outlet />
       </div>

@@ -55,6 +55,8 @@ import { Artifacts } from "../ui/screens/Artifacts.js";
 import { ExpandedHeader } from "../ui/components/ExpandedHeader.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore } from "../ui/stores/wizard.js";
+import { renderWithProviders } from "./test-utils.js";
+import { makeQueryClient, queryKeys } from "../ui/queries.js";
 
 // ─── MDXEditor mock ──────────────────────────────────────────────────────────
 // ArtifactEditor (mounted when "Open" is clicked) imports @mdxeditor/editor.
@@ -330,7 +332,8 @@ async function generateViaDialog(
   rowButtonName: RegExp,
   guidance?: string,
 ): Promise<void> {
-  await user.click(screen.getByRole("button", { name: rowButtonName }));
+  const button = await screen.findByRole("button", { name: rowButtonName });
+  await user.click(button);
   const dialog = await screen.findByRole("dialog");
   if (guidance !== undefined && guidance !== "") {
     await user.type(within(dialog).getByRole("textbox"), guidance);
@@ -338,74 +341,108 @@ async function generateViaDialog(
   await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
 }
 
+// ─── TanStack: invalidates snapshot query after Generate ──────────────────────
+
+describe("TanStack: snapshot query invalidation after Generate", () => {
+  it("invalidates the snapshot query after Generate resolves (refetch)", async () => {
+    const user = userEvent.setup();
+    const snapshotMock = vi.fn().mockResolvedValue(makeMeridianSnapshot());
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "req-1" }),
+      snapshot: snapshotMock,
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await generateViaDialog(user, /Create Illustrations/i);
+    await waitFor(() => expect(snapshotMock).toHaveBeenCalled());
+  });
+});
+
 // ─── AC-1: Inventory groups/rollup exact for Meridian-shaped snapshot ─────────
 
 describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () => {
-  it("renders the heading with the project name", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    expect(
-      screen.getByRole("heading", { name: /Meridian Health artifacts/i }),
-    ).toBeInTheDocument();
+  it("renders the heading with the project name", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /Meridian Health artifacts/i }),
+      ).toBeInTheDocument(),
+    );
   });
 
-  it("displays '10 of 12 up to date' rollup", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    expect(screen.getByText(/10 of 12 up to date/i)).toBeInTheDocument();
+  it("displays '10 of 12 up to date' rollup", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() =>
+      expect(screen.getByText(/10 of 12 up to date/i)).toBeInTheDocument(),
+    );
   });
 
-  it("renders the verbatim subcopy", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    expect(
-      screen.getByText(
-        "The specifications your designs are verified against.",
-      ),
-    ).toBeInTheDocument();
+  it("renders the verbatim subcopy", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "The specifications your designs are verified against.",
+        ),
+      ).toBeInTheDocument(),
+    );
   });
 
-  it("renders PRODUCT section with Brief and Requirements", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    const productSection = screen.getByRole("region", { name: "PRODUCT" });
-    expect(within(productSection).getByText("Brief")).toBeInTheDocument();
-    expect(within(productSection).getByText("Requirements")).toBeInTheDocument();
+  it("renders PRODUCT section with Brief and Requirements", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => {
+      const productSection = screen.getByRole("region", { name: "PRODUCT" });
+      expect(within(productSection).getByText("Brief")).toBeInTheDocument();
+      expect(within(productSection).getByText("Requirements")).toBeInTheDocument();
+    });
   });
 
-  it("renders IA & UX section with Sitemap and Flows", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    const section = screen.getByRole("region", { name: "IA & UX" });
-    expect(within(section).getByText("Sitemap")).toBeInTheDocument();
-    expect(within(section).getByText("Flows")).toBeInTheDocument();
+  it("renders IA & UX section with Sitemap and Flows", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => {
+      const section = screen.getByRole("region", { name: "IA & UX" });
+      expect(within(section).getByText("Sitemap")).toBeInTheDocument();
+      expect(within(section).getByText("Flows")).toBeInTheDocument();
+    });
   });
 
-  it("renders DESIGN section with Brand Colors, Palettes, Fonts, Grid, Tokens", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    const section = screen.getByRole("region", { name: "DESIGN" });
-    for (const label of [
-      "Brand Colors",
-      "Palettes",
-      "Fonts",
-      "Grid",
-      "Tokens",
-    ]) {
-      expect(within(section).getByText(label)).toBeInTheDocument();
-    }
+  it("renders DESIGN section with Brand Colors, Palettes, Fonts, Grid, Tokens", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => {
+      const section = screen.getByRole("region", { name: "DESIGN" });
+      for (const label of [
+        "Brand Colors",
+        "Palettes",
+        "Fonts",
+        "Grid",
+        "Tokens",
+      ]) {
+        expect(within(section).getByText(label)).toBeInTheDocument();
+      }
+    });
   });
 
-  it("renders ASSETS section with Icons, Photography, Illustrations", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    const section = screen.getByRole("region", { name: "ASSETS" });
-    for (const label of ["Icons", "Photography", "Illustrations"]) {
-      expect(within(section).getByText(label)).toBeInTheDocument();
-    }
+  it("renders ASSETS section with Icons, Photography, Illustrations", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => {
+      const section = screen.getByRole("region", { name: "ASSETS" });
+      for (const label of ["Icons", "Photography", "Illustrations"]) {
+        expect(within(section).getByText(label)).toBeInTheDocument();
+      }
+    });
   });
 
-  it("shows 'Create' for missing Illustrations and 'Open' for up-to-date icons", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    expect(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /Open Icons/i }),
-    ).toBeInTheDocument();
+  it("shows 'Create' for missing Illustrations and 'Open' for up-to-date icons", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Create Illustrations/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Open Icons/i }),
+      ).toBeInTheDocument();
+    });
   });
 });
 
@@ -417,9 +454,9 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
   it("Open button mounts the ArtifactEditor (shows Back button)", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /Open Brief/i }));
 
     // ArtifactEditor header has a "Back to artifacts" button
     await waitFor(() => {
@@ -433,9 +470,9 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     // Regression: the dialog was only mounted in the inventory branch — the
     // editor branch returned early, so Regenerate set state into a void.
     const user = userEvent.setup();
-    render(<Artifacts bridge={makeBridge()} />);
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /Open Brief/i }));
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: /Back to artifacts/i }),
@@ -454,9 +491,9 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
 
   it("Back button in editor returns to inventory", async () => {
     const user = userEvent.setup();
-    render(<Artifacts bridge={makeBridge()} />);
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(screen.getByRole("button", { name: /Open Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /Open Brief/i }));
 
     await waitFor(() => {
       expect(
@@ -477,9 +514,9 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
   it("↗ icon button calls bridge.openPath with the artifact path (external open)", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    const externalButtons = screen.getAllByRole("button", {
+    const externalButtons = await screen.findAllByRole("button", {
       name: /Open in external editor/i,
     });
     // Click the first one (Brief row)
@@ -497,9 +534,9 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
         .fn()
         .mockRejectedValue(new BridgeError(404, { error: "not found" })),
     });
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    const externalButtons = screen.getAllByRole("button", {
+    const externalButtons = await screen.findAllByRole("button", {
       name: /Open in external editor/i,
     });
     await user.click(externalButtons[0]!);
@@ -520,9 +557,9 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     const bridge = makeBridge({
       openPath: vi.fn().mockRejectedValue(new Error("Network error")),
     });
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    const externalButtons = screen.getAllByRole("button", {
+    const externalButtons = await screen.findAllByRole("button", {
       name: /Open in external editor/i,
     });
     // Click the second one (Requirements row)
@@ -542,11 +579,11 @@ describe("AC-3: Create → dialog → Generate enqueues, shows generating…, fl
   it("Create on Illustrations opens the dialog; Generate enqueues with empty guidance", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     // Clicking Create alone does NOT enqueue — it opens the guided dialog
     await user.click(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
+      await screen.findByRole("button", { name: /Create Illustrations/i }),
     );
     expect(bridge.enqueue).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -567,7 +604,7 @@ describe("AC-3: Create → dialog → Generate enqueues, shows generating…, fl
     const bridge = makeBridge({
       enqueue: vi.fn().mockReturnValue(new Promise(() => {})),
     });
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Create Illustrations/i);
 
@@ -591,15 +628,20 @@ describe("AC-3: Create → dialog → Generate enqueues, shows generating…, fl
 
     const bridge = makeBridge({
       enqueue: vi.fn().mockResolvedValue({ id: "req-1" }),
-      snapshot: vi.fn().mockResolvedValue(updatedSnapshot),
+      // First call returns base snapshot (illustrations missing); subsequent calls return updated
+      snapshot: vi.fn()
+        .mockResolvedValueOnce(makeMeridianSnapshot())
+        .mockResolvedValue(updatedSnapshot),
     });
 
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    // Initially "Create" is visible
-    expect(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
-    ).toBeInTheDocument();
+    // Initially "Create" is visible (initial snapshot has illustrations missing)
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Create Illustrations/i }),
+      ).toBeInTheDocument(),
+    );
 
     await generateViaDialog(user, /Create Illustrations/i);
 
@@ -622,7 +664,7 @@ describe("AC-3: Create → dialog → Generate enqueues, shows generating…, fl
 describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile({visual:'low'}) + toast", () => {
   it("clicking a dial chip reveals the Segmented control", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     // Initially no radiogroup visible
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
@@ -639,7 +681,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
 
   it("Segmented shows Low/Medium/High options for Visual", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
 
@@ -652,7 +694,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
   it("current engine value 'high' is reflected as selected in the Segmented", async () => {
     const user = userEvent.setup();
     // Fixture snapshot has profile.scope.visual = "high"
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
 
@@ -664,7 +706,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
   it("selecting Low calls putProfile with exact flat {visual:'low'}", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<ExpandedHeader bridge={bridge} />);
+    await renderWithProviders(<ExpandedHeader bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
 
@@ -679,7 +721,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
   it("dial change fires toast 'Applies to new runs'", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<ExpandedHeader bridge={bridge} />);
+    await renderWithProviders(<ExpandedHeader bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
     await user.click(screen.getByRole("radio", { name: "Low" }));
@@ -692,7 +734,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
 
   it("clicking the same dial chip again collapses the quick-dial row", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     const visualChip = screen.getByRole("checkbox", { name: /Visual/i });
     await user.click(visualChip); // open
@@ -704,7 +746,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
 
   it("Flows dial uses Shallow/Medium/Deep labels (not Low/Medium/High)", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Flows/i }));
 
@@ -716,7 +758,7 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
   it("putProfile for flows uses wire key 'flow' (not 'flows')", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<ExpandedHeader bridge={bridge} />);
+    await renderWithProviders(<ExpandedHeader bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Flows/i }));
     await user.click(screen.getByRole("radio", { name: "Deep" }));
@@ -729,10 +771,10 @@ describe("AC-4: quick dial — Visual chip → Segmented → Low → putProfile(
 
 // ─── AC-5: Classification chip click → prefillFrom + route setup-1 ────────────
 
-describe("AC-5: classification chip click → prefillFrom(snapshot) + goto('setup-1')", () => {
+describe("AC-5: classification chip click → prefillFrom(snapshot) + navigate('/setup/classification')", () => {
   it("clicking Category chip prefills wizard from snapshot", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     const categoryChip = within(
       screen.getByRole("group", { name: "Classification" }),
@@ -744,9 +786,9 @@ describe("AC-5: classification chip click → prefillFrom(snapshot) + goto('setu
     expect(useWizardStore.getState().classification.category).toBe("ecommerce");
   });
 
-  it("clicking any classification chip navigates to setup-1", async () => {
+  it("clicking any classification chip navigates to /setup/classification", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    const result = await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     const industryChip = within(
       screen.getByRole("group", { name: "Classification" }),
@@ -754,61 +796,57 @@ describe("AC-5: classification chip click → prefillFrom(snapshot) + goto('setu
 
     await user.click(industryChip);
 
-    expect(useAppStore.getState().route.screen).toBe("setup-1");
+    await waitFor(() =>
+      expect(result.router.state.location.pathname).toBe("/setup/classification"),
+    );
   });
 
   it("dial chip click does NOT navigate to setup-1", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    const result = await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Visual/i }));
 
-    // Route should stay on the tabs screen
-    expect(useAppStore.getState().route.screen).toBe("tabs");
+    // Route should stay on the artifacts tab
+    expect(result.router.state.location.pathname).toBe("/tabs/artifacts");
   });
 });
 
 // ─── AC-6: focus.artifactKey consumption ─────────────────────────────────────
 
-describe("AC-6: focus.artifactKey → row highlighted + clearFocus called", () => {
+describe("AC-6: focus search param → row highlighted + search cleared", () => {
   it("mounts with focus set → targeted row receives highlighted style", async () => {
-    // Set focus intent before render
-    useAppStore.setState({
-      ...useAppStore.getState(),
-      focus: { artifactKey: "illustrations" },
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts?focus=illustrations"],
     });
 
-    render(<Artifacts bridge={makeBridge()} />);
-
-    await act(async () => {});
-
-    // The illustrations row's outer div should contain a Row with bg-primary-50
-    const illustrationsLabel = screen.getByText("Illustrations");
-    // Row adds bg-primary-50 when highlighted=true
-    const rowEl = illustrationsLabel.closest(
-      '[class*="flex items-center"]',
-    );
-    expect(rowEl).toHaveClass("bg-primary-50");
+    // Wait for snapshot to load and highlight to be applied
+    await waitFor(() => {
+      const illustrationsLabel = screen.getByText("Illustrations");
+      // Row adds bg-primary-50 when highlighted=true
+      const rowEl = illustrationsLabel.closest(
+        '[class*="flex items-center"]',
+      );
+      expect(rowEl).toHaveClass("bg-primary-50");
+    });
   });
 
-  it("mounts with focus set → clearFocus is called (focus becomes null)", async () => {
-    useAppStore.setState({
-      ...useAppStore.getState(),
-      focus: { artifactKey: "brief" },
+  it("mounts with focus set → search param cleared after focus consumed", async () => {
+    const result = await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts?focus=brief"],
     });
 
-    render(<Artifacts bridge={makeBridge()} />);
-
-    await act(async () => {});
-
-    // clearFocus should have been called
-    expect(useAppStore.getState().focus).toBeNull();
+    // After focus is consumed, navigate clears the search param
+    await waitFor(() =>
+      expect(result.router.state.location.search).toEqual({}),
+    );
   });
 
   it("no focus intent → no rows highlighted on mount", async () => {
-    // focus is already null from resetStores
-    render(<Artifacts bridge={makeBridge()} />);
-    await act(async () => {});
+    // focus is already null from resetStores; no search param
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    // Wait for inventory to load
+    await waitFor(() => screen.getByText("Illustrations"));
 
     const highlightedRows = document.querySelectorAll(".bg-primary-50");
     expect(highlightedRows).toHaveLength(0);
@@ -818,39 +856,41 @@ describe("AC-6: focus.artifactKey → row highlighted + clearFocus called", () =
 // ─── AC-7: Keyboard — rows focusable; sections are landmarks ─────────────────
 
 describe("AC-7: keyboard accessibility — rows focusable, sections are landmarks", () => {
-  it("section headers are role=region landmarks", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    for (const name of ["PRODUCT", "IA & UX", "DESIGN", "ASSETS"]) {
-      expect(screen.getByRole("region", { name })).toBeInTheDocument();
-    }
+  it("section headers are role=region landmarks", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => {
+      for (const name of ["PRODUCT", "IA & UX", "DESIGN", "ASSETS"]) {
+        expect(screen.getByRole("region", { name })).toBeInTheDocument();
+      }
+    });
   });
 
-  it("Open buttons are keyboard-reachable (are <button> elements)", () => {
-    render(<Artifacts bridge={makeBridge()} />);
+  it("Open buttons are keyboard-reachable (are <button> elements)", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     // All "Open …" buttons should be native buttons (focusable by default)
-    const openButtons = screen.getAllByRole("button", { name: /^Open /i });
+    const openButtons = await screen.findAllByRole("button", { name: /^Open /i });
     expect(openButtons.length).toBeGreaterThan(0);
     for (const btn of openButtons) {
       expect(btn.tagName).toBe("BUTTON");
     }
   });
 
-  it("Create button is keyboard-reachable", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    const createBtn = screen.getByRole("button", { name: /Create Illustrations/i });
+  it("Create button is keyboard-reachable", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    const createBtn = await screen.findByRole("button", { name: /Create Illustrations/i });
     expect(createBtn.tagName).toBe("BUTTON");
   });
 
-  it("ExpandedHeader dial chips are buttons with role=checkbox", () => {
-    render(<ExpandedHeader bridge={makeBridge()} />);
+  it("ExpandedHeader dial chips are buttons with role=checkbox", async () => {
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     // Dial chips use role="checkbox" (per Chip component)
     const dialGroup = screen.getByRole("group", { name: "Dials" });
     const dialChips = within(dialGroup).getAllByRole("checkbox");
     expect(dialChips.length).toBe(6); // style, visual, editorial, flows, coverage, coherence
   });
 
-  it("classification chips are keyboard-reachable buttons", () => {
-    render(<ExpandedHeader bridge={makeBridge()} />);
+  it("classification chips are keyboard-reachable buttons", async () => {
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     const clsGroup = screen.getByRole("group", { name: "Classification" });
     const chips = within(clsGroup).getAllByRole("checkbox");
     expect(chips.length).toBe(6); // category, industry, locale, age, platforms, layout
@@ -863,8 +903,8 @@ describe("AC-7: keyboard accessibility — rows focusable, sections are landmark
 // ─── ExpandedHeader renders expected chip values ──────────────────────────────
 
 describe("ExpandedHeader chip display values", () => {
-  it("renders classification chips with values from snapshot", () => {
-    render(<ExpandedHeader bridge={makeBridge()} />);
+  it("renders classification chips with values from snapshot", async () => {
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     const clsGroup = screen.getByRole("group", { name: "Classification" });
     // "Category" chip shows "Ecommerce"
@@ -875,8 +915,8 @@ describe("ExpandedHeader chip display values", () => {
     expect(within(clsGroup).getByText("en-US")).toBeInTheDocument();
   });
 
-  it("renders dial chips with mapped display labels from profile", () => {
-    render(<ExpandedHeader bridge={makeBridge()} />);
+  it("renders dial chips with mapped display labels from profile", async () => {
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     const dialGroup = screen.getByRole("group", { name: "Dials" });
     // visual: "high" → "High"
@@ -887,12 +927,12 @@ describe("ExpandedHeader chip display values", () => {
     expect(within(dialGroup).getAllByText("Medium").length).toBeGreaterThan(0);
   });
 
-  it("returns null when snapshot is not loaded", () => {
+  it("returns null when snapshot is not loaded", async () => {
     useAppStore.setState({
       ...useAppStore.getState(),
       snapshot: null,
     });
-    const { container } = render(<ExpandedHeader bridge={makeBridge()} />);
+    const { container } = await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     expect(container.firstChild).toBeNull();
   });
 });
@@ -900,17 +940,19 @@ describe("ExpandedHeader chip display values", () => {
 // ─── Regenerate button — WCAG 2.1.1 fix ──────────────────────────────────────
 
 describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () => {
-  it("draft Sitemap row shows Regenerate button without requiring hover", () => {
-    render(<Artifacts bridge={makeBridge()} />);
-    expect(
-      screen.getByRole("button", { name: /Regenerate Sitemap/i }),
-    ).toBeInTheDocument();
+  it("draft Sitemap row shows Regenerate button without requiring hover", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Regenerate Sitemap/i }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("Regenerate → dialog → Generate enqueues the correct generate-artifact payload", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Regenerate Sitemap/i);
 
@@ -925,15 +967,17 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     const bridge = makeBridge({
       enqueue: vi.fn().mockReturnValue(new Promise(() => {})),
     });
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Regenerate Sitemap/i);
 
     expect(screen.getByText("generating…")).toBeInTheDocument();
   });
 
-  it("up-to-date rows have no Regenerate button", () => {
-    render(<Artifacts bridge={makeBridge()} />);
+  it("up-to-date rows have no Regenerate button", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    // Wait for inventory to load, then verify no Regenerate for up-to-date rows
+    await waitFor(() => screen.getByText("Brief"));
     // Brief and Flows are up-to-date — neither should show Regenerate
     expect(
       screen.queryByRole("button", { name: /Regenerate Brief/i }),
@@ -946,7 +990,9 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
   it("keyboard: Regenerate Sitemap is reachable via Tab and Enter opens the dialog", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    // Wait for inventory to load before tabbing
+    await waitFor(() => screen.getByRole("button", { name: /Regenerate Sitemap/i }));
 
     // Tab order now includes ↗ buttons after each Open button:
     //   Open Brief → ↗ Brief → Open Requirements → ↗ Requirements → Regenerate Sitemap
@@ -977,7 +1023,7 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 describe("quick-dial Segmented label coverage", () => {
   it("Coverage dial shows Thin and Exhaustive labels", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Coverage/i }));
 
@@ -988,7 +1034,7 @@ describe("quick-dial Segmented label coverage", () => {
 
   it("Style dial shows Informal and Formal labels", async () => {
     const user = userEvent.setup();
-    render(<ExpandedHeader bridge={makeBridge()} />);
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(screen.getByRole("checkbox", { name: /Style/i }));
 
@@ -1003,10 +1049,10 @@ describe("quick-dial Segmented label coverage", () => {
 describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () => {
   it("Create opens a dialog titled 'Create Illustrations' with artifact-specific copy", async () => {
     const user = userEvent.setup();
-    render(<Artifacts bridge={makeBridge()} />);
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
+      await screen.findByRole("button", { name: /Create Illustrations/i }),
     );
 
     const dialog = await screen.findByRole("dialog");
@@ -1026,10 +1072,10 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
 
   it("Regenerate Sitemap opens the dialog with sitemap-specific copy", async () => {
     const user = userEvent.setup();
-    render(<Artifacts bridge={makeBridge()} />);
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(
-      screen.getByRole("button", { name: /Regenerate Sitemap/i }),
+      await screen.findByRole("button", { name: /Regenerate Sitemap/i }),
     );
 
     const dialog = await screen.findByRole("dialog");
@@ -1042,7 +1088,7 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
   it("typed guidance is passed through in the enqueue payload", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(
       user,
@@ -1062,7 +1108,7 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
   it("Generate with empty guidance enqueues guidance: ''", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Create Illustrations/i);
 
@@ -1075,10 +1121,10 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
   it("Cancel closes the dialog without enqueueing", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(
-      screen.getByRole("button", { name: /Create Illustrations/i }),
+      await screen.findByRole("button", { name: /Create Illustrations/i }),
     );
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByRole("textbox"), "some guidance");
@@ -1119,7 +1165,7 @@ describe("Failure surfacing — SSE failure event clears pending + row error", (
   it("adapter error frame for the tracked enqueue-id → row error, pending cleared", async () => {
     const user = userEvent.setup();
     const { bridge, emit } = makeEventfulBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Create Illustrations/i);
     expect(screen.getByTestId("generating-illustrations")).toBeInTheDocument();
@@ -1155,7 +1201,7 @@ describe("Failure surfacing — SSE failure event clears pending + row error", (
   it("terminal complete frame with failed status also surfaces the row error", async () => {
     const user = userEvent.setup();
     const { bridge, emit } = makeEventfulBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Create Illustrations/i);
     await waitFor(() => expect(bridge.events).toHaveBeenCalled());
@@ -1181,7 +1227,7 @@ describe("Failure surfacing — SSE failure event clears pending + row error", (
   it("frames for other request ids leave the pending row untouched", async () => {
     const user = userEvent.setup();
     const { bridge, emit } = makeEventfulBridge();
-    render(<Artifacts bridge={bridge} />);
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await generateViaDialog(user, /Create Illustrations/i);
     await waitFor(() => expect(bridge.events).toHaveBeenCalled());
@@ -1208,7 +1254,15 @@ describe("Failure surfacing — 5-minute pending timeout with Retry", () => {
       const bridge = makeBridge({
         enqueue: vi.fn().mockResolvedValue({ id: "req-42" }),
       });
-      render(<Artifacts bridge={bridge} />);
+      // Pre-seed the QueryClient with snapshot data so the component is ready
+      // immediately — fake timers block React Query's internal setTimeout, which
+      // would otherwise keep the component in "Loading…" state.
+      const queryClient = makeQueryClient();
+      queryClient.setQueryData(queryKeys.snapshot, makeMeridianSnapshot());
+      await renderWithProviders(<Artifacts bridge={bridge} />, {
+        initialEntries: ["/tabs/artifacts"],
+        queryClient,
+      });
 
       // fireEvent (not userEvent) — fake timers stall userEvent's delays
       fireEvent.click(

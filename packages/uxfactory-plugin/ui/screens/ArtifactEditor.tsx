@@ -49,6 +49,8 @@ import type { Bridge, ArtifactStatus, ArtifactContent } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import { sectionGuidanceFor } from "../lib/artifact-schemas.js";
 import { useAppStore } from "../stores/app.js";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { artifactQuery, putArtifactMutation, queryKeys } from "../queries.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -169,10 +171,21 @@ export function ArtifactEditor({
   onRegenerate,
 }: ArtifactEditorProps): React.JSX.Element {
   const toast = useAppStore((s) => s.toast);
+  const queryClient = useQueryClient();
+  const artifactResult = useQuery(artifactQuery(bridge, artifactKey));
 
-  const [loadState, setLoadState] = useState<LoadState>({ phase: "loading" });
+  const loadState: LoadState = !bridge.getArtifact
+    ? { phase: "error", message: "Artifact editing requires a newer bridge version." }
+    : artifactResult.isPending
+      ? { phase: "loading" }
+      : artifactResult.isError
+        ? artifactResult.error instanceof BridgeError &&
+          artifactResult.error.status === 404
+          ? { phase: "not-found" }
+          : { phase: "error", message: "Failed to load artifact." }
+        : { phase: "ready", artifact: artifactResult.data };
+
   const [sections, setSections] = useState<Section[]>([]);
-  const [saving, setSaving] = useState(false);
 
   // Sections the user has actually focused. MDXEditor fires onChange at mount
   // when it normalizes the source markdown — a change on a never-focused
@@ -181,44 +194,16 @@ export function ArtifactEditor({
 
   const isDirty = sections.some((s) => s.currentBody !== s.originalBody);
 
-  // ── Load artifact on mount / key change ─────────────────────────────────────
+  // ── Seed sections when artifact data arrives (also resets touchedSections) ───
 
   useEffect(() => {
-    let cancelled = false;
-    setLoadState({ phase: "loading" });
-    setSections([]);
     touchedSections.current = new Set();
-
-    if (!bridge.getArtifact) {
-      setLoadState({
-        phase: "error",
-        message: "Artifact editing requires a newer bridge version.",
-      });
-      return;
+    if (artifactResult.data && artifactResult.data.format === "markdown") {
+      setSections(parseSections(artifactResult.data.content));
+    } else {
+      setSections([]);
     }
-
-    bridge.getArtifact(artifactKey).then(
-      (artifact) => {
-        if (cancelled) return;
-        setLoadState({ phase: "ready", artifact });
-        if (artifact.format === "markdown") {
-          setSections(parseSections(artifact.content));
-        }
-      },
-      (err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof BridgeError && err.status === 404) {
-          setLoadState({ phase: "not-found" });
-        } else {
-          setLoadState({ phase: "error", message: "Failed to load artifact." });
-        }
-      },
-    );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [artifactKey, bridge]);
+  }, [artifactResult.data]);
 
   // ── Section change handler ───────────────────────────────────────────────────
 
@@ -236,24 +221,26 @@ export function ArtifactEditor({
     );
   }, []);
 
-  // ── Save ─────────────────────────────────────────────────────────────────────
+  // ── Save via mutation ─────────────────────────────────────────────────────────
+
+  const save = useMutation({
+    ...putArtifactMutation(bridge),
+    onSuccess: () => {
+      setSections((prev) => prev.map((s) => ({ ...s, originalBody: s.currentBody })));
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifact(artifactKey) });
+      toast("Saved");
+    },
+    onError: () => toast("Save failed — is the bridge running?"),
+  });
+  const saving = save.isPending;
 
   async function handleSave(): Promise<void> {
     if (!isDirty || saving || !bridge.putArtifact) return;
-    setSaving(true);
-    try {
-      const content = assembleSections(sections);
-      await bridge.putArtifact(artifactKey, content);
-      // Clear dirty state: original catches up to current
-      setSections((prev) =>
-        prev.map((s) => ({ ...s, originalBody: s.currentBody })),
-      );
-      toast("Saved");
-    } catch {
-      toast("Save failed — is the bridge running?");
-    } finally {
-      setSaving(false);
-    }
+    const content = assembleSections(sections);
+    await save.mutateAsync({ key: artifactKey, content }).catch(() => {
+      /* onError handled the toast */
+    });
   }
 
   // ── Back with dirty guard ────────────────────────────────────────────────────

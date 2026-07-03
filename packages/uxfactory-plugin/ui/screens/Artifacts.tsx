@@ -18,8 +18,8 @@
  * Generate flow:
  *   Create/Regenerate → CreateArtifactDialog (guiding copy + optional guidance)
  *   → Generate → bridge.enqueue({kind:"generate-artifact", payload:{artifact:key, guidance}})
- *   → inline "generating…" + refreshSnapshot on enqueue-resolve + 3s delayed re-refresh
- *   → poll every 5s while any row pending → cleanup on unmount
+ *   → inline "generating…" + invalidateQueries on enqueue-resolve + 3s delayed re-invalidate
+ *   → refetchInterval while pending rows exist → cleanup on unmount
  *
  * Failure surfacing (results do NOT flow on the SSE — POST /pipeline/result is
  * stored, never broadcast; only worker-streamed /pipeline/event frames are):
@@ -32,7 +32,7 @@
  *
  * Open: bridge.openPath(row.path) → BridgeError → row-level amber note (no modal)
  *
- * Focus: focus.artifactKey (from app store) → scroll-to + highlight that row → clearFocus()
+ * Focus: ?focus=<key> search param → scroll-to + highlight that row → clear search
  *
  * SELECTOR DISCIPLINE: every useAppStore call selects a single primitive or
  * stable stored reference. Never return a new object literal from a selector.
@@ -46,6 +46,9 @@ import { Card, Row, SectionHeader } from "../components/index.js";
 import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { ArtifactEditor } from "./ArtifactEditor.js";
 import { useAppStore } from "../stores/app.js";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { snapshotQuery, enqueueMutation, queryKeys } from "../queries.js";
+import { useSearch, useNavigate } from "@tanstack/react-router";
 
 // ─── Group registry (fixed order per PRD §4) ─────────────────────────────────
 
@@ -101,15 +104,22 @@ function isFailureEvent(event: unknown): boolean {
 
 export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   // SELECTOR DISCIPLINE: single primitive/stable reference per selector
-  const snapshot = useAppStore((s) => s.snapshot);
-  const refreshSnapshot = useAppStore((s) => s.refreshSnapshot);
-  const focusArtifactKey = useAppStore((s) => s.focus?.artifactKey);
-  const clearFocus = useAppStore((s) => s.clearFocus);
+  const queryClient = useQueryClient();
+  const hasPendingRef = useRef(false); // set below from pendingKeys.size
+  const snapshotResult = useQuery({
+    ...snapshotQuery(bridge),
+    refetchInterval: () => (hasPendingRef.current ? 5000 : false),
+  });
+  const snapshot = snapshotResult.data ?? null;
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as { focus?: string };
+  const focusArtifactKey = search.focus;
 
   // ── Local state ─────────────────────────────────────────────────────────────
 
   /** Artifact keys currently being generated (enqueue in flight). */
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+  hasPendingRef.current = pendingKeys.size > 0;
   /** Row-level open errors: key → human-readable message. */
   const [openErrors, setOpenErrors] = useState<Record<string, string>>({});
   /** Row-level generation errors (SSE failure or timeout): key → message. */
@@ -128,7 +138,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   /** Per-key 5-minute pending-timeout handles. */
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // ── Focus intent: scroll-to + highlight + clearFocus ────────────────────────
+  // ── Focus intent: scroll-to + highlight + clear search param ────────────────
 
   useEffect(() => {
     if (!focusArtifactKey) return;
@@ -140,12 +150,12 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
-    clearFocus();
+    void navigate({ to: "/tabs/artifacts", search: {} });
 
     // Fade highlight after 2s
     const timer = setTimeout(() => setHighlightedKey(null), 2000);
     return () => clearTimeout(timer);
-  }, [focusArtifactKey, clearFocus]);
+  }, [focusArtifactKey, navigate]);
 
   // ── Pending cleanup when snapshot updates ────────────────────────────────────
 
@@ -164,18 +174,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       setPendingKeys(stillPending);
     }
   }, [snapshot, pendingKeys]);
-
-  // ── Poll every 5s while any artifact is pending ──────────────────────────────
-
-  useEffect(() => {
-    if (pendingKeys.size === 0) return;
-
-    const id = setInterval(() => {
-      void refreshSnapshot(bridge);
-    }, 5000);
-
-    return () => clearInterval(id);
-  }, [pendingKeys.size, bridge, refreshSnapshot]);
 
   // ── Failure surfacing: mark a pending generation as failed ──────────────────
 
@@ -236,6 +234,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     };
   }, []);
 
+  const enqueue = useMutation(enqueueMutation(bridge));
+
   // ── Open artifact in external editor via bridge (the ↗ icon button) ──────────
 
   async function handleExternalOpen(row: ArtifactRow): Promise<void> {
@@ -271,13 +271,16 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     );
 
     try {
-      const { id } = await bridge.enqueue({
+      const { id } = await enqueue.mutateAsync({
         kind: "generate-artifact",
         payload: { artifact: row.key, guidance },
       });
       pendingIdsRef.current[id] = row.key;
-      void refreshSnapshot(bridge);
-      setTimeout(() => void refreshSnapshot(bridge), 3000);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot });
+      setTimeout(
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot }),
+        3000,
+      );
     } catch {
       // Enqueue failed silently — the 5-minute timeout surfaces the error
     }

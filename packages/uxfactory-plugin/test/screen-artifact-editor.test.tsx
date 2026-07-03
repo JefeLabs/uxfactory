@@ -30,6 +30,7 @@ import { BridgeError } from "../ui/lib/bridge.js";
 import { ArtifactEditor, parseSections, assembleSections } from "../ui/screens/ArtifactEditor.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { ARTIFACT_SECTIONS, GENERIC_SECTION_GUIDANCE } from "../ui/lib/artifact-schemas.js";
+import { renderWithProviders } from "./test-utils.js";
 
 // ─── MDXEditor mock ──────────────────────────────────────────────────────────
 // A thin textarea stub: wires markdown → value and onChange.  Replaces the
@@ -227,7 +228,7 @@ describe("Loading state", () => {
     const bridge = makeBridge({
       getArtifact: vi.fn().mockReturnValue(new Promise(() => {})),
     });
-    render(<ArtifactEditor {...makeProps({ bridge })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
     expect(screen.getByTestId("artifact-editor-loading")).toBeInTheDocument();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
@@ -237,7 +238,7 @@ describe("Loading state", () => {
 
 describe("Loads and renders brief sections with schema guidance", () => {
   it("renders five section cards after brief artifact loads", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getByTestId("section-card-Overview")).toBeInTheDocument();
@@ -249,7 +250,7 @@ describe("Loads and renders brief sections with schema guidance", () => {
   });
 
   it("each section card shows the schema guidance text", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getByTestId("section-card-Overview")).toBeInTheDocument();
@@ -261,7 +262,7 @@ describe("Loads and renders brief sections with schema guidance", () => {
   });
 
   it("renders one MDXEditor textarea per section (5 total)", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5);
@@ -269,7 +270,7 @@ describe("Loads and renders brief sections with schema guidance", () => {
   });
 
   it("first textarea value matches parsed Overview body", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       const textareas = screen.getAllByTestId("mdxeditor");
@@ -285,7 +286,7 @@ describe("Loads and renders brief sections with schema guidance", () => {
         content: unknownSectionContent,
       }),
     });
-    render(<ArtifactEditor {...makeProps({ bridge })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getByText(GENERIC_SECTION_GUIDANCE)).toBeInTheDocument();
@@ -297,7 +298,7 @@ describe("Loads and renders brief sections with schema guidance", () => {
 
 describe("Save — dirty gating + byte-exact PUT", () => {
   it("Save button is disabled when no edits have been made", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -308,7 +309,7 @@ describe("Save — dirty gating + byte-exact PUT", () => {
   });
 
   it("editing a section enables the Save button", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -326,7 +327,7 @@ describe("Save — dirty gating + byte-exact PUT", () => {
   it("Save calls putArtifact with byte-exact reassembled markdown", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<ArtifactEditor {...makeProps({ bridge })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -350,7 +351,7 @@ describe("Save — dirty gating + byte-exact PUT", () => {
   it("successful Save fires 'Saved' toast and disables the Save button", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
-    render(<ArtifactEditor {...makeProps({ bridge })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -381,7 +382,7 @@ describe("Save failure — toasts error + stays in editor", () => {
     const bridge = makeBridge({
       putArtifact: vi.fn().mockRejectedValue(new Error("network error")),
     });
-    render(<ArtifactEditor {...makeProps({ bridge })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -412,7 +413,7 @@ describe("Save failure — toasts error + stays in editor", () => {
 
 describe("Mount-time normalization — onChange before focus does not dirty", () => {
   it("change without prior focus keeps Save disabled", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -433,7 +434,7 @@ describe("Mount-time normalization — onChange before focus does not dirty", ()
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     const onBack = vi.fn();
 
-    render(<ArtifactEditor {...makeProps({ onBack })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ onBack })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -451,7 +452,7 @@ describe("Mount-time normalization — onChange before focus does not dirty", ()
   });
 
   it("user edit after focus still dirties (Save enabled)", async () => {
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -478,7 +479,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
-    render(<ArtifactEditor {...makeProps()} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -500,7 +501,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const onBack = vi.fn();
 
-    render(<ArtifactEditor {...makeProps({ onBack })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ onBack })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -522,7 +523,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     const onBack = vi.fn();
 
-    render(<ArtifactEditor {...makeProps({ onBack })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ onBack })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -546,7 +547,7 @@ describe("Back with dirty changes — window.confirm guard", () => {
     const confirmSpy = vi.spyOn(window, "confirm");
     const onBack = vi.fn();
 
-    render(<ArtifactEditor {...makeProps({ onBack })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ onBack })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),
@@ -568,10 +569,11 @@ describe("JSON artifact — read-only pretty view", () => {
       getArtifact: vi.fn().mockResolvedValue(JSON_ARTIFACT),
     });
 
-    render(
+    await renderWithProviders(
       <ArtifactEditor
         {...makeProps({ artifactKey: "tokens", label: "Tokens", bridge })}
       />,
+      { initialEntries: ["/tabs/artifacts"] },
     );
 
     await waitFor(() => {
@@ -587,10 +589,11 @@ describe("JSON artifact — read-only pretty view", () => {
       getArtifact: vi.fn().mockResolvedValue(JSON_ARTIFACT),
     });
 
-    render(
+    await renderWithProviders(
       <ArtifactEditor
         {...makeProps({ artifactKey: "tokens", label: "Tokens", bridge })}
       />,
+      { initialEntries: ["/tabs/artifacts"] },
     );
 
     await waitFor(() => {
@@ -603,10 +606,11 @@ describe("JSON artifact — read-only pretty view", () => {
       getArtifact: vi.fn().mockResolvedValue(JSON_ARTIFACT),
     });
 
-    render(
+    await renderWithProviders(
       <ArtifactEditor
         {...makeProps({ artifactKey: "tokens", label: "Tokens", bridge })}
       />,
+      { initialEntries: ["/tabs/artifacts"] },
     );
 
     await waitFor(() =>
@@ -623,10 +627,11 @@ describe("JSON artifact — read-only pretty view", () => {
       getArtifact: vi.fn().mockResolvedValue(JSON_ARTIFACT),
     });
 
-    render(
+    await renderWithProviders(
       <ArtifactEditor
         {...makeProps({ artifactKey: "tokens", label: "Tokens", bridge, onRegenerate })}
       />,
+      { initialEntries: ["/tabs/artifacts"] },
     );
 
     await waitFor(() =>
@@ -648,7 +653,7 @@ describe("404 (missing artifact) — Create affordance", () => {
         .mockRejectedValue(new BridgeError(404, { error: "not found" })),
     });
 
-    render(<ArtifactEditor {...makeProps({ bridge })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getByTestId("not-created-yet")).toBeInTheDocument();
@@ -666,7 +671,7 @@ describe("404 (missing artifact) — Create affordance", () => {
         .mockRejectedValue(new BridgeError(404, { error: "not found" })),
     });
 
-    render(<ArtifactEditor {...makeProps({ bridge, onRegenerate })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ bridge, onRegenerate })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Create Brief/i })).toBeInTheDocument();
@@ -683,7 +688,7 @@ describe("Regenerate button (markdown editor)", () => {
   it("clicking Regenerate calls onRegenerate", async () => {
     const user = userEvent.setup();
     const onRegenerate = vi.fn();
-    render(<ArtifactEditor {...makeProps({ onRegenerate })} />);
+    await renderWithProviders(<ArtifactEditor {...makeProps({ onRegenerate })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() =>
       expect(screen.getAllByTestId("mdxeditor")).toHaveLength(5),

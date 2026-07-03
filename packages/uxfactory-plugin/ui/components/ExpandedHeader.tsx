@@ -26,6 +26,9 @@ import type { SegmentedOption } from "./index.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
 import { engineToLabel, labelToEngine } from "../lib/dials.js";
+import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { putProfileMutation, queryKeys } from "../queries.js";
 
 // ─── Dial configuration ───────────────────────────────────────────────────────
 
@@ -178,10 +181,17 @@ function classChipsFrom(snapshot: ProjectSnapshot): ClassChip[] {
 export function ExpandedHeader({ bridge }: { bridge: Bridge }): React.JSX.Element | null {
   // SELECTOR DISCIPLINE: single primitive / stable reference per selector
   const snapshot = useAppStore((s) => s.snapshot);
-  const refreshSnapshot = useAppStore((s) => s.refreshSnapshot);
-  const goto = useAppStore((s) => s.goto);
   const toast = useAppStore((s) => s.toast);
   const prefillFrom = useWizardStore((s) => s.prefillFrom);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const putProfile = useMutation({
+    ...putProfileMutation(bridge),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot });
+      toast("Applies to new runs");
+    },
+  });
 
   const [activeDialKey, setActiveDialKey] = useState<DialKey | null>(null);
 
@@ -193,7 +203,7 @@ export function ExpandedHeader({ bridge }: { bridge: Bridge }): React.JSX.Elemen
 
   function handleClassificationClick(): void {
     prefillFrom(snapshot!);
-    goto("setup-1");
+    void navigate({ to: "/setup/classification" });
   }
 
   // ── Dial chip click → toggle quick-dial row ─────────────────────────────────
@@ -202,13 +212,11 @@ export function ExpandedHeader({ bridge }: { bridge: Bridge }): React.JSX.Elemen
     setActiveDialKey((prev) => (prev === key ? null : key));
   }
 
-  // ── Dial value change → putProfile (flat, single-field) + refresh + toast ───
+  // ── Dial value change → putProfile mutation (flat, single-field) + invalidate ─
 
   async function handleDialChange(key: DialKey, engineValue: string): Promise<void> {
     const cfg = DIAL_CONFIGS[key];
-    await bridge.putProfile({ [cfg.wireKey]: engineValue });
-    await refreshSnapshot(bridge);
-    toast("Applies to new runs");
+    await putProfile.mutateAsync({ [cfg.wireKey]: engineValue });
   }
 
   // ── Quick dial row rendering ────────────────────────────────────────────────
