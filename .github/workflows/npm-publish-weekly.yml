@@ -1,25 +1,23 @@
 name: Weekly npm publish
 
 # Sunday evening (US): 01:00 UTC Monday = 5pm PT / 8pm ET Sunday.
-# Publishes only public packages whose directories changed since the last
-# npm-publish/* tag, plus their workspace dependents (exact-pin cascade).
-# The plugin and clients/* are private:true — pnpm skips them automatically.
+# Changesets-driven: pending .changeset/*.md files declare what ships and at
+# which semver level; `changeset version` applies bumps + changelogs (and
+# patch-bumps workspace dependents), `changeset publish` publishes whatever
+# isn't on the registry yet and tags per package. No pending changesets →
+# exits green. private:true packages never publish.
 on:
   schedule:
     - cron: "0 1 * * 1"
   workflow_dispatch:
     inputs:
-      force-all:
-        description: "Publish every public package regardless of changes"
-        type: boolean
-        default: false
       dry-run:
-        description: "Plan + build + test, but do not publish/tag/push"
+        description: "Version + build + test, but do not publish/tag/push"
         type: boolean
         default: false
 
 permissions:
-  contents: write   # push version-bump commit + npm-publish/* tag
+  contents: write   # push version commit + per-package tags
   id-token: write   # npm provenance attestation
 
 concurrency:
@@ -30,7 +28,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository (full history for tags/diff)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -50,48 +48,48 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Select changed packages and bump versions
-        id: select
-        env:
-          FORCE_ALL: ${{ inputs.force-all && '1' || '' }}
-        run: node scripts/select-publish-bumps.mjs
+      - name: Detect pending changesets
+        id: pending
+        run: |
+          COUNT=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Pending changesets: ${COUNT}"
 
       - name: Nothing to publish
-        if: steps.select.outputs.selected == ''
-        run: echo "No public package changed since the last publish tag — exiting green."
+        if: steps.pending.outputs.count == '0'
+        run: echo "No pending changesets — exiting green."
+
+      - name: Apply versions and changelogs
+        if: steps.pending.outputs.count != '0'
+        run: pnpm exec changeset version
 
       - name: Build all packages
-        if: steps.select.outputs.selected != ''
+        if: steps.pending.outputs.count != '0'
         run: pnpm -r build
 
       - name: Test published packages
-        if: steps.select.outputs.selected != ''
+        if: steps.pending.outputs.count != '0'
         run: pnpm --filter @uxfactory/spec --filter @uxfactory/gate --filter @uxfactory/bridge --filter @uxfactory/cli test
 
       - name: Publish to npm
-        if: steps.select.outputs.selected != '' && !inputs.dry-run
+        if: steps.pending.outputs.count != '0' && !inputs.dry-run
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
-        run: pnpm -r publish --access public --no-git-checks
+        run: pnpm exec changeset publish
 
-      - name: Commit bumps, tag, and push
-        if: steps.select.outputs.selected != '' && !inputs.dry-run
-        env:
-          SELECTED: ${{ steps.select.outputs.selected }}
+      - name: Commit version bumps and push with tags
+        if: steps.pending.outputs.count != '0' && !inputs.dry-run
         run: |
-          STAMP=$(date -u +%Y-%m-%d)
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add packages/*/package.json
-          git commit -m "chore(release): weekly npm publish ${STAMP} [skip ci]" -m "Published: ${SELECTED}"
-          git tag "npm-publish/${STAMP}-${GITHUB_RUN_NUMBER}"
-          git push origin HEAD:main --tags
+          git add .changeset packages/*/package.json packages/*/CHANGELOG.md pnpm-lock.yaml
+          git commit -m "chore(release): version packages [skip ci]"
+          git push origin HEAD:main --follow-tags
 
       - name: Dry-run summary
-        if: steps.select.outputs.selected != '' && inputs.dry-run
-        env:
-          SELECTED: ${{ steps.select.outputs.selected }}
+        if: steps.pending.outputs.count != '0' && inputs.dry-run
         run: |
-          echo "DRY RUN — would have published: ${SELECTED}"
+          echo "DRY RUN — versions that would ship:"
           git diff --stat packages/*/package.json
+          git diff packages/*/package.json | grep -E '^[+-]\s*"version"' || true
