@@ -711,6 +711,69 @@ describe("repo chip list (multi-root)", () => {
       expect(useAppStore.getState().connection.repoPath).toBe("/resolved/abs/path"),
     );
   });
+
+  it("setProjectRoot fires BEFORE the snapshot cache seed (key must be rooted)", async () => {
+    // Review obligation (Task 5→6): a seed keyed before the root is set lands
+    // under the null-root key — a silent cache miss. Guard the invocation order.
+    const setProjectRoot = vi.fn();
+    const snapshot = { ...BASE_SNAPSHOT, root: "/resolved/abs/path", hasClassification: true };
+    const bridge = makeBridge({
+      connectProject: vi.fn().mockResolvedValue({ ok: true, snapshot }),
+      setProjectRoot,
+      getProjectRoot: () => null,
+    });
+    const { queryClient } = await renderWithProviders(
+      <Connect bridge={bridge} bus={makeBus()} />,
+      { initialEntries: ["/connect"] },
+    );
+    const setQueryData = vi.spyOn(queryClient, "setQueryData");
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Running"),
+    );
+    await userEvent.type(screen.getByRole("textbox"), "/repos/demo-shop");
+    await userEvent.click(screen.getByRole("button", { name: /^Connect$/ }));
+
+    await waitFor(() => expect(setQueryData).toHaveBeenCalled());
+    expect(setProjectRoot).toHaveBeenCalled();
+    expect(setProjectRoot.mock.invocationCallOrder[0]!).toBeLessThan(
+      setQueryData.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("falls back to the cwd chip when getRepos exists but rejects (404 old-route bridge)", async () => {
+    const bridge = makeBridge({
+      getRepos: vi.fn().mockRejectedValue(new Error("404")),
+      getCwd: vi.fn().mockResolvedValue({ cwd: "/repos/demo-shop" }),
+    });
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
+    expect(await screen.findByText(/repos\/demo-shop/)).toBeInTheDocument();
+  });
+
+  it("renders repo chips in server order (cwd pinned, then most-recent-first)", async () => {
+    const getRepos = vi.fn().mockResolvedValue({
+      cwd: "/repos/demo-shop",
+      repos: [
+        { root: "/repos/demo-shop", name: "demo-shop", lastConnectedAt: 30, live: true },
+        { root: "/repos/newer", name: "newer", lastConnectedAt: 20, live: true },
+        { root: "/repos/older", name: "older", lastConnectedAt: 10, live: false },
+      ],
+    });
+    const bridge = makeBridge({ getRepos, getProjectRoot: () => null });
+    await renderWithProviders(<Connect bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/connect"],
+    });
+
+    await screen.findByRole("button", { name: "demo-shop" });
+    const chipNames = ["demo-shop", "newer", "older"];
+    const buttons = screen
+      .getAllByRole("button")
+      .filter((b) => chipNames.includes(b.textContent ?? ""))
+      .map((b) => b.textContent);
+    expect(buttons).toEqual(chipNames);
+  });
 });
 
 // ─── Cwd hint chip ───────────────────────────────────────────────────────────
