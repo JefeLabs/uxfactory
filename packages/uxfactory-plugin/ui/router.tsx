@@ -255,7 +255,7 @@ function TabNav(): React.JSX.Element {
     >
       <Tabs.List
         aria-label="Panel tabs"
-        className="flex border-b border-gray-200 bg-white shrink-0 overflow-x-auto"
+        className="flex border-b border-gray-200 bg-white shrink-0 overflow-x-auto overflow-y-hidden"
       >
         {TAB_DEFS.map(({ value, label }) => (
           <Tabs.Trigger
@@ -273,7 +273,10 @@ function TabNav(): React.JSX.Element {
           </Tabs.Trigger>
         ))}
       </Tabs.List>
-      <div className="flex-1 overflow-hidden">
+      {/* Must be a flex column with min-h-0: a plain block gives the screen
+          auto height, so its own overflow-y-auto never activates (clipped,
+          unscrollable) — the tab-panel bug fixed pre-migration in app.tsx. */}
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <Outlet />
       </div>
     </Tabs.Root>
@@ -286,8 +289,29 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 });
 
+/** Plugin-window size per route family — posted to the main thread, which
+ * calls figma.ui.resize (code.ts opens at a small placeholder 540×220). */
+const RESIZE_MAP: Array<[prefix: string, w: number, h: number]> = [
+  ["/tabs", 560, 640],
+  ["/connect", 540, 760],
+  ["/setup", 540, 760],
+];
+
 function RootLayout(): React.JSX.Element {
   const { bridge } = rootRoute.useRouteContext();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Resize the plugin window when the route family changes. Dropped in the
+  // app.tsx → router.tsx move (T1) and caught by the live smoke: without it
+  // the window stays at the 540×220 boot placeholder.
+  useEffect(() => {
+    const entry = RESIZE_MAP.find(([p]) => pathname.startsWith(p)) ?? RESIZE_MAP[1]!;
+    const [, w, h] = entry;
+    if (typeof parent !== "undefined" && parent !== window) {
+      parent.postMessage({ pluginMessage: { type: "resize", width: w, height: h } }, "*");
+    }
+  }, [pathname]);
+
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
       <SnapshotSync bridge={bridge} />
