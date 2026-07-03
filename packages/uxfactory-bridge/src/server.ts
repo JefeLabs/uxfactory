@@ -100,7 +100,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   });
 
   // --- project / panel routes (Task 3) ---
-  await app.register(projectPlugin, { servedRoot, dataDir, version: bridgeVersion, shared, logRing });
+  await app.register(projectPlugin, { servedRoot, dataDir, version: bridgeVersion, shared, logRing, registry });
 
   const waiters = new Map<string, EditWaiter>();
 

@@ -177,11 +177,10 @@ describe("POST /project/connect", () => {
     expect((res.json() as { ok: boolean }).ok).toBe(true);
   });
 
-  it("bridge-serves-different-root — a different valid root", async () => {
+  it("a different valid root → ok:true, snapshot rooted there, and registered", async () => {
     await addGitMarker(root);
     app = await createBridge({ dataDir });
 
-    // Create a second temp dir that IS a valid root.
     const other = await mkRoot();
     try {
       await addGitMarker(other);
@@ -191,10 +190,12 @@ describe("POST /project/connect", () => {
         payload: { repoPath: other },
       });
       expect(res.statusCode).toBe(200);
-      const body = res.json() as { ok: boolean; reason?: string; served?: string };
-      expect(body.ok).toBe(false);
-      expect(body.reason).toBe("bridge-serves-different-root");
-      expect(body.served).toBe(root);
+      const body = res.json() as { ok: boolean; snapshot: { root: string } };
+      expect(body.ok).toBe(true);
+      expect(body.snapshot.root).toBe(path.resolve(other));
+
+      // Now served: a root-scoped snapshot for `other` resolves (Task 3 wires
+      // the routes; here we assert connect returned the other root's snapshot).
     } finally {
       await rm(other, { recursive: true, force: true });
     }
@@ -249,7 +250,7 @@ describe("POST /project/connect", () => {
     expect(res.json()).toEqual({ ok: false, reason: "not-found" });
   });
 
-  it("tilde expansion — ~/valid-but-different-root → bridge-serves-different-root with served", async () => {
+  it("tilde expansion — ~/valid-but-different-root → ok:true rooted at the resolved path", async () => {
     // Served root is the shared `root` (a tmpdir, not under home).
     await addGitMarker(root);
     app = await createBridge({ dataDir });
@@ -267,10 +268,9 @@ describe("POST /project/connect", () => {
         payload: { repoPath: tildePath },
       });
       expect(res.statusCode).toBe(200);
-      const body = res.json() as { ok: boolean; reason?: string; served?: string };
-      expect(body.ok).toBe(false);
-      expect(body.reason).toBe("bridge-serves-different-root");
-      expect(body.served).toBe(root);
+      const body = res.json() as { ok: boolean; snapshot?: { root: string } };
+      expect(body.ok).toBe(true);
+      expect(body.snapshot?.root).toBe(homeRoot);
     } finally {
       await rm(homeRoot, { recursive: true, force: true });
     }

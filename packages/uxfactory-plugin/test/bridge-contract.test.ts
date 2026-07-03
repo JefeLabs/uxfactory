@@ -121,7 +121,10 @@ beforeEach(async () => {
   await mkdir(path.join(root, "skill", "craft-review"), { recursive: true });
   await writeFile(path.join(root, "skill", "craft-review", "SKILL.md"), SKILL_MD, "utf8");
 
-  app = await createBridgeServer({ dataDir });
+  app = await createBridgeServer({
+    dataDir,
+    reposRegistryPath: path.join(root, "repos-registry.json"),
+  });
   bridge = createBridgeClient(injectFetch(app));
 });
 
@@ -146,15 +149,14 @@ describe("contract: connectProject", () => {
     expect(result.snapshot.requirements).toHaveLength(3);
   });
 
-  it("a different valid root → ok:false bridge-serves-different-root + served", async () => {
+  it("a different valid root → ok:true with that root's snapshot (registered)", async () => {
     const other = await mkdtemp(path.join(os.tmpdir(), "uxf-contract-other-"));
     try {
       await mkdir(path.join(other, ".git"), { recursive: true });
       const result = await bridge.connectProject(other);
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error("unreachable");
-      expect(result.reason).toBe("bridge-serves-different-root");
-      expect(result.served).toBe(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      expect(result.snapshot.root).toBe(other);
     } finally {
       await rm(other, { recursive: true, force: true });
     }

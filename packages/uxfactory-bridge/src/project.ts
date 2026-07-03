@@ -31,6 +31,7 @@ import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
+import { isProjectRoot, type RootRegistry } from "./roots.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,9 +86,9 @@ export interface SkillEntry {
 }
 
 export interface ProjectPluginOptions {
-  /** Project root (parent of dataDir). */
+  /** Launch project root (parent of dataDir) — used by /stats, /skills, /logs. */
   servedRoot: string;
-  /** The .uxfactory data directory path. */
+  /** The launch .uxfactory data directory path. */
   dataDir: string;
   /** Bridge package.json version string. */
   version: string;
@@ -95,6 +96,8 @@ export interface ProjectPluginOptions {
   shared: ProjectShared;
   /** 500-line ring buffer appended by the server.ts onResponse hook. */
   logRing: string[];
+  /** Multi-root registry (served set + per-request root resolution). */
+  registry: RootRegistry;
 }
 
 // ─── Fixed v1 artifact concern registry paths (conventional fallbacks) ───────
@@ -325,14 +328,6 @@ async function resolveConcernPath(
   return { absolutePath, writePath, relativePath, format, exists };
 }
 
-/** True when `dir` has a `.git` directory or a `uxfactory.batch.json` file. */
-async function isProjectRoot(dir: string): Promise<boolean> {
-  return (
-    (await fileAccessible(path.join(dir, ".git"))) ||
-    (await fileAccessible(path.join(dir, "uxfactory.batch.json")))
-  );
-}
-
 // ─── Snapshot builder ────────────────────────────────────────────────────────
 
 async function buildArtifacts(
@@ -529,7 +524,7 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   app,
   opts,
 ) => {
-  const { servedRoot, dataDir, version, shared, logRing } = opts;
+  const { servedRoot, dataDir, version, shared, logRing, registry } = opts;
 
   // ── POST /project/connect ────────────────────────────────────────────────
   app.post<{ Body: { repoPath?: unknown } }>("/project/connect", async (req, reply) => {
@@ -566,13 +561,10 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       return { ok: false, reason: "not-a-root" };
     }
 
-    // 3. Does it match the served root?
-    if (resolved !== servedRoot) {
-      return { ok: false, reason: "bridge-serves-different-root", served: servedRoot };
-    }
-
-    // All checks passed → return the snapshot.
-    const snapshot = await buildSnapshot(servedRoot, dataDir);
+    // 3. Register + serve this root (deduped in the user-level registry),
+    //    then return ITS snapshot. Any valid project root is servable now.
+    await registry.register(resolved);
+    const snapshot = await buildSnapshot(resolved, registry.dataDirFor(resolved));
     return { ok: true, snapshot };
   });
 
