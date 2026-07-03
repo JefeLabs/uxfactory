@@ -29,7 +29,7 @@
  */
 
 import React, { useEffect, useId, useState } from "react";
-import { useSearch } from "@tanstack/react-router";
+import { getRouteApi } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
@@ -39,6 +39,11 @@ import { useAppStore } from "../stores/app.js";
 import { useRunsStore } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { latestRenderQuery } from "../queries.js";
+
+// Typed search access without importing checksRoute (router.tsx imports this
+// screen — a route-object import would be circular). getRouteApi resolves the
+// route by path through the Register augmentation, so `run` stays typed.
+const checksRouteApi = getRouteApi("/tabs/checks");
 
 // ─── Mirrored type (do not import from src/) ────────────────────────────────
 
@@ -544,7 +549,7 @@ export function Checks({
 }): React.JSX.Element {
   // Store selectors — single primitives only
   const setTab = useAppStore((s) => s.setTab); // still used by onComponentsLink until Task 6/7
-  const search = useSearch({ strict: false }) as { run?: string };
+  const search = checksRouteApi.useSearch();
   const run = search.run;
   const renderResult = useQuery(latestRenderQuery(bridge, run));
 
