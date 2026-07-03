@@ -35,6 +35,7 @@ import type { ChecksViewProps, HistoryEntry } from "../ui/screens/Checks.js";
 import { Checks } from "../ui/screens/Checks.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useRunsStore } from "../ui/stores/runs.js";
+import { renderWithProviders } from "./test-utils.js";
 
 // ─── Store reset ─────────────────────────────────────────────────────────────
 
@@ -394,7 +395,7 @@ describe("I-2: annotation routing — coverage vs element finding fields", () =>
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Annotate/i })).toBeInTheDocument(),
@@ -433,7 +434,7 @@ describe("I-2: annotation routing — coverage vs element finding fields", () =>
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Annotate/i })).toBeInTheDocument(),
@@ -476,7 +477,7 @@ describe("I-3: isAnnotating removed — annotate button is fire-and-forget", () 
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     const btn = await screen.findByRole("button", { name: /Annotate/i });
     expect(btn).not.toBeDisabled();
@@ -522,7 +523,7 @@ describe("M-3: annotate toast 'M placeable · K without canvas targets' when K>0
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(
@@ -562,7 +563,7 @@ describe("M-3: annotate toast 'M placeable · K without canvas targets' when K>0
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /Annotate/i })).toBeInTheDocument(),
@@ -607,7 +608,7 @@ describe("M-5: runNumber from persisted monotonic counter (not history.length + 
     });
     const bus = makeBus({ "checks:v1:file-abc": storedPayload });
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     // Run #43 should appear in the banner (from persisted counter, not history.length+1=3)
     await waitFor(() =>
@@ -624,7 +625,7 @@ describe("M-5: runNumber from persisted monotonic counter (not history.length + 
     const bridge = makeBridge({ latestRender: vi.fn().mockResolvedValue(null) });
     const bus = makeBus({ "checks:v1:file-abc": storedHistory });
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(
@@ -651,7 +652,7 @@ describe("M-5: runNumber from persisted monotonic counter (not history.length + 
     });
     const bus = makeBus({ "checks:v1:file-abc": storedPayload });
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     // Banner should show run #10 (from persisted counter)
     await waitFor(() =>
@@ -694,7 +695,7 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     // Wait for the annotate button to appear (data loaded)
     await waitFor(() =>
@@ -731,7 +732,7 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(
@@ -814,7 +815,7 @@ describe("AC-2: Annotate N failures posts review message + idempotent second pre
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(
@@ -915,7 +916,7 @@ describe("AC-4: Copy report writes a deterministic markdown report to clipboard"
     });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(
@@ -999,7 +1000,7 @@ describe("AC-6: History dropdown renders last 20 run entries; selecting one load
     const bridge = makeBridge({ latestRender: vi.fn().mockResolvedValue(null) });
     const bus = makeBus({ "checks:v1:file-abc": storedHistory });
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await waitFor(() =>
       expect(
@@ -1087,7 +1088,7 @@ describe("Empty state: no runs yet", () => {
     const bridge = makeBridge({ latestRender: vi.fn().mockResolvedValue(null) });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     // After data fetch resolves, should still show empty state
     await act(async () => {});
@@ -1111,7 +1112,7 @@ describe("Empty state: no runs yet", () => {
     const bridge = makeBridge({ latestRender: vi.fn().mockResolvedValue(null) });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await act(async () => {});
 
@@ -1174,29 +1175,21 @@ describe("Tier row expand/collapse", () => {
   });
 });
 
-// ─── Focus-driven refresh (generate→Checks navigation) ────────────────────────
+// ─── Search-param-driven refresh (generate→Checks navigation) ─────────────────
 
 describe("focus.runId intent — Checks refetches on navigate from generate", () => {
-  it("re-fetches latestRender when focus.runId intent arrives", async () => {
+  it("re-fetches latestRender when the run search param changes", async () => {
     const latestRender = vi.fn().mockResolvedValue(null);
     const bridge = makeBridge({ latestRender });
     const bus = makeBus();
-
-    render(<Checks bridge={bridge} bus={bus} />);
-
-    // Wait for the initial mount fetch to complete
-    await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(1));
-
-    // Simulate the generate→Checks leg: producer sets focus.runId before setTab
-    act(() => {
-      useAppStore.getState().setFocus({ runId: "run-gen-1" });
+    const { router } = await renderWithProviders(<Checks bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/checks"],
     });
-
-    // Checks must refetch latestRender after the intent arrives
+    await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await router.navigate({ to: "/tabs/checks", search: { run: "run-gen-1" } });
+    });
     await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(2));
-
-    // clearFocus() must have been called — focus is null again
-    expect(useAppStore.getState().focus).toBeNull();
   });
 
   it("Refresh button triggers refetch of latestRender", async () => {
@@ -1205,7 +1198,7 @@ describe("focus.runId intent — Checks refetches on navigate from generate", ()
     const bridge = makeBridge({ latestRender });
     const bus = makeBus();
 
-    render(<Checks bridge={bridge} bus={bus} />);
+    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     // Wait for the mount fetch (empty state — latestRender returns null)
     await waitFor(() => expect(latestRender).toHaveBeenCalledTimes(1));

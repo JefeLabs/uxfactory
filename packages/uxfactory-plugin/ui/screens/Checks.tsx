@@ -29,6 +29,8 @@
  */
 
 import React, { useEffect, useId, useState } from "react";
+import { useSearch } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { toTierModel } from "../lib/tiers.js";
@@ -36,6 +38,7 @@ import type { TierId, TierFinding, TierModel, TierRowModel } from "../lib/tiers.
 import { useAppStore } from "../stores/app.js";
 import { useRunsStore } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
+import { latestRenderQuery } from "../queries.js";
 
 // ─── Mirrored type (do not import from src/) ────────────────────────────────
 
@@ -540,11 +543,10 @@ export function Checks({
   bus: PluginBus;
 }): React.JSX.Element {
   // Store selectors — single primitives only
-  const setTab = useAppStore((s) => s.setTab);
-  // focus?.runId: Checks refetches when a runId intent arrives (generate→Checks
-  // navigation). clearFocus is called synchronously so the effect doesn't re-fire.
-  const focusRunId = useAppStore((s) => s.focus?.runId);
-  const clearFocus = useAppStore((s) => s.clearFocus);
+  const setTab = useAppStore((s) => s.setTab); // still used by onComponentsLink until Task 6/7
+  const search = useSearch({ strict: false }) as { run?: string };
+  const run = search.run;
+  const renderResult = useQuery(latestRenderQuery(bridge, run));
 
   // Local state
   const [model, setModel] = useState<TierModel>(() => toTierModel({}));
@@ -556,23 +558,13 @@ export function Checks({
   // I-3: isAnnotating state removed — post is fire-and-forget; annotate button is
   // never disabled. Removing avoids the phantom reset bug (was always set to false).
 
-  // Fetch live data on mount
   useEffect(() => {
-    void init();
+    if (renderResult.isPending) return;
+    void applyRender(renderResult.data);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [renderResult.data, renderResult.isPending, renderResult.dataUpdatedAt]);
 
-  // Re-fetch when a runId focus intent arrives (generate→Checks navigation).
-  // clearFocus() is called synchronously to prevent the effect from re-firing.
-  useEffect(() => {
-    if (focusRunId !== undefined) {
-      void init();
-      clearFocus();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusRunId]);
-
-  async function init(): Promise<void> {
+  async function applyRender(raw: unknown): Promise<void> {
     // Resolve fileKey for storage
     let fk: string | undefined;
     try {
@@ -615,37 +607,19 @@ export function Checks({
       }
     }
 
-    // Fetch the latest render report from the bridge.
-    // V1 seam: the render report (GET /rendered) is the only bridge-served data
-    // source today. We try to parse it as both a GateResult (T3) and a BatchReport
-    // (T1/T2). Batch + craft reports are not served — those rows will be "pending".
-    //
-    // AC-5 live tier streaming: deferred to T14/PP2 (run-event plumbing).
-    // When T14 adds bridge.events(), a streaming subscription would be established
-    // here to receive tier updates in real-time as each tier completes.
     let gotLiveData = false;
     let liveTierModel: TierModel | null = null;
-    try {
-      const raw = await bridge.latestRender();
-      if (raw !== null && raw !== undefined) {
-        liveTierModel = toTierModel({
-          batchReport: raw,
-          verifyResult: raw,
-        });
-        setModel(liveTierModel);
-        setIsEmpty(false);
-        gotLiveData = true;
-
-        // Derive run metadata — read store imperatively to avoid stale closure
-        const latestRunUnitType = useRunsStore.getState().runs[0]?.unitType;
-        setRunMeta({
-          unit: latestRunUnitType,
-          escalationSkipped: true,
-          runNumber: runCounter, // M-5: use persisted counter
-        });
-      }
-    } catch {
-      /* keep pending model */
+    if (raw !== null && raw !== undefined) {
+      liveTierModel = toTierModel({ batchReport: raw, verifyResult: raw });
+      setModel(liveTierModel);
+      setIsEmpty(false);
+      gotLiveData = true;
+      const latestRunUnitType = useRunsStore.getState().runs[0]?.unitType;
+      setRunMeta({
+        unit: latestRunUnitType,
+        escalationSkipped: true,
+        runNumber: runCounter,
+      });
     }
 
     // M-5: on live data, persist the incremented counter + new history entry.
@@ -794,7 +768,7 @@ export function Checks({
       onNodeRef={handleNodeRef}
       onComponentsLink={() => setTab("components")}
       onSelectHistory={handleSelectHistory}
-      onRefresh={() => void init()}
+      onRefresh={() => void renderResult.refetch()}
     />
   );
 }
