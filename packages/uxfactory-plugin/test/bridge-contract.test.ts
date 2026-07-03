@@ -351,6 +351,26 @@ describe("contract: setProjectRoot appends ?root= to root-scoped verbs", () => {
     expect(call.indexOf("&root=")).toBeGreaterThan(-1);
   });
 
+  it("with NO project root set, scoped verbs emit byte-identical legacy URLs (no root=)", async () => {
+    // The old-bridge compat row: an unrooted client's wire must be exactly
+    // today's — a stray root= (even root=null) would break legacy bridges.
+    const captured: string[] = [];
+    const unrooted = createBridgeClient(injectFetch(app, captured));
+
+    await unrooted.snapshot();
+    await unrooted.putClassification({ category: "x" });
+    await unrooted.putProfile({ visual: "high" });
+    await unrooted.getLinks();
+    await unrooted.getArtifact!("brief").catch(() => undefined);
+    await unrooted.enqueue({ kind: "k", payload: {} });
+
+    expect(captured.length).toBeGreaterThanOrEqual(6);
+    for (const u of captured) expect(u).not.toContain("root=");
+    // Spot-check exact legacy shapes for a bare and a query-carrying verb.
+    expect(captured).toContain("/project/snapshot");
+    expect(captured).toContain("/project/artifact?key=brief");
+  });
+
   it("getRepos returns the ReposResponse shape from the real server", async () => {
     const res = await bridge.getRepos!();
     expect(res.cwd).toBe(root);
