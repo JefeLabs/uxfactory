@@ -44,7 +44,6 @@ const BASE_STORE = {
   },
   fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
   snapshot: null,
-  route: { screen: "connect" as const, tab: "prompt" as const },
   toasts: [],
 };
 

@@ -125,9 +125,7 @@ function resetStores(snapshot?: ProjectSnapshot): void {
     },
     fileInfo: { name: "Meridian Health", fileKey: "file-meridian" },
     snapshot: snapshot ?? makeMeridianSnapshot(),
-    route: { screen: "tabs", tab: "assets" },
     toasts: [],
-    focus: null,
   });
 }
 

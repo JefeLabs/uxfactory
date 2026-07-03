@@ -5,9 +5,9 @@
  * The iframe has no URL bar, so we mount on memory history today; the same
  * tree runs on browser history in the future web shell.
  *
- * StoreRouteBridge is a TEMPORARY bridge: it mirrors the still-present
- * app-store route/focus into router navigation so screens not yet migrated
- * keep driving navigation. Deleted in Task 7 with the store route/focus.
+ * The router is the sole source of navigation truth. The app store holds only
+ * client-side state (connection, snapshot, toasts). SnapshotSync polls while
+ * the router is on /tabs/* and syncs the result into the store.
  *
  * SELECTOR DISCIPLINE: every useAppStore() call selects a single primitive or
  * a stable stored reference. Never return a new object literal from a selector.
@@ -22,7 +22,6 @@ import {
   Outlet,
   useNavigate,
   useRouterState,
-  type NavigateOptions,
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
@@ -30,7 +29,7 @@ import { snapshotQuery } from "./queries.js";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
-import type { Tab, FocusIntent } from "./stores/app.js";
+import type { Tab } from "./stores/app.js";
 import { Chip, StatusPill } from "./components/index.js";
 import type { StatusPillStatus } from "./components/index.js";
 import type { Bridge } from "./lib/bridge.js";
@@ -74,49 +73,15 @@ export function validateArtifactsSearch(
   return { focus: typeof search.focus === "string" ? search.focus : undefined };
 }
 
-// ─── Interim store→router bridge (removed in Task 7) ──────────────────────────
-
-export function mapStoreRouteToLocation(
-  screen: "connect" | "setup-1" | "setup-2" | "tabs",
-  tab: Tab,
-  focus: FocusIntent | null,
-): NavigateOptions {
-  if (screen === "connect") return { to: "/connect" };
-  if (screen === "setup-1") return { to: "/setup/classification" };
-  if (screen === "setup-2") return { to: "/setup/defaults" };
-  if (tab === "checks") {
-    return {
-      to: "/tabs/checks",
-      search: focus?.runId ? { run: focus.runId } : {},
-    };
-  }
-  if (tab === "artifacts") {
-    return {
-      to: "/tabs/artifacts",
-      search: focus?.artifactKey ? { focus: focus.artifactKey } : {},
-    };
-  }
-  return { to: `/tabs/${tab}` };
-}
-
-function StoreRouteBridge(): null {
-  const navigate = useNavigate();
-  const screen = useAppStore((s) => s.route.screen);
-  const tab = useAppStore((s) => s.route.tab);
-  const focus = useAppStore((s) => s.focus);
-  useEffect(() => {
-    void navigate(mapStoreRouteToLocation(screen, tab, focus));
-  }, [screen, tab, focus, navigate]);
-  return null;
-}
-
 function SnapshotSync({ bridge }: { bridge: Bridge }): null {
   const status = useAppStore((s) => s.connection.status);
-  const screen = useAppStore((s) => s.route.screen);
-  // Only sync while on the main tabs — during the setup wizard the snapshot
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Only sync while on the main tabs — during /connect and /setup/* the snapshot
   // set by connectSucceeded is authoritative (controls new-project heading
   // etc.) and must not be overwritten by a background refetch.
-  const enabled = (status === "connected" || status === "reconnecting") && screen === "tabs";
+  const enabled =
+    (status === "connected" || status === "reconnecting") &&
+    pathname.startsWith("/tabs");
   const { data } = useQuery({ ...snapshotQuery(bridge), enabled });
   useEffect(() => {
     if (data) useAppStore.setState({ snapshot: data });
@@ -176,6 +141,7 @@ function ContextBar(): React.JSX.Element {
   const connection = useAppStore((s) => s.connection);
   const snapshot = useAppStore((s) => s.snapshot);
   const cancelReconnect = useAppStore((s) => s.cancelReconnect);
+  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
   const pillStatus = connectionStatusToPill(connection.status);
@@ -207,7 +173,10 @@ function ContextBar(): React.JSX.Element {
         <StatusPill status="reconnecting" />
         <button
           type="button"
-          onClick={cancelReconnect}
+          onClick={() => {
+            cancelReconnect();
+            void navigate({ to: "/connect" });
+          }}
           className="ml-auto text-xs text-gray-500 hover:text-gray-700 underline"
           aria-label="Cancel reconnect"
         >
@@ -321,7 +290,6 @@ function RootLayout(): React.JSX.Element {
   const { bridge } = rootRoute.useRouteContext();
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
-      <StoreRouteBridge />
       <SnapshotSync bridge={bridge} />
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         <Outlet />

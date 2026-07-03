@@ -67,9 +67,7 @@ const BASE_APP_STATE = {
   },
   fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
   snapshot: makeSnapshot(),
-  route: { screen: "tabs" as const, tab: "prompt" as const },
   toasts: [],
-  focus: null,
 };
 
 function resetStores(snapshotOverride?: Partial<ProjectSnapshot>) {

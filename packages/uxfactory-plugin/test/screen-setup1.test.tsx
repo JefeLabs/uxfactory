@@ -73,7 +73,6 @@ function resetStores(snapshot: ProjectSnapshot | null = makeSnapshot()) {
     },
     fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
     snapshot,
-    route: { screen: "setup-1", tab: "prompt" },
     toasts: [],
   });
   useWizardStore.setState({

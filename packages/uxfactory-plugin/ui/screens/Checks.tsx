@@ -29,7 +29,7 @@
  */
 
 import React, { useEffect, useId, useState } from "react";
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
@@ -548,7 +548,7 @@ export function Checks({
   bus: PluginBus;
 }): React.JSX.Element {
   // Store selectors — single primitives only
-  const setTab = useAppStore((s) => s.setTab); // still used by onComponentsLink until Task 6/7
+  const navigate = useNavigate();
   const search = checksRouteApi.useSearch();
   const run = search.run;
   const renderResult = useQuery(latestRenderQuery(bridge, run));
@@ -771,7 +771,7 @@ export function Checks({
       onAnnotate={handleAnnotate}
       onClearAnnotations={handleClearAnnotations}
       onNodeRef={handleNodeRef}
-      onComponentsLink={() => setTab("components")}
+      onComponentsLink={() => void navigate({ to: "/tabs/components" })}
       onSelectHistory={handleSelectHistory}
       onRefresh={() => void renderResult.refetch()}
     />

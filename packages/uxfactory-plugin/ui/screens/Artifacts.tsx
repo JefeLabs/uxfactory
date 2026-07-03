@@ -48,7 +48,12 @@ import { ArtifactEditor } from "./ArtifactEditor.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { snapshotQuery, enqueueMutation, queryKeys } from "../queries.js";
-import { useSearch, useNavigate } from "@tanstack/react-router";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
+
+// Typed search access without importing artifactsRoute (router.tsx imports this
+// screen — a route-object import would be circular). getRouteApi resolves the
+// route by path through the Register augmentation, so `focus` stays typed.
+const artifactsRouteApi = getRouteApi("/tabs/artifacts");
 
 // ─── Group registry (fixed order per PRD §4) ─────────────────────────────────
 
@@ -112,7 +117,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   });
   const snapshot = snapshotResult.data ?? null;
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { focus?: string };
+  const search = artifactsRouteApi.useSearch();
   const focusArtifactKey = search.focus;
 
   // ── Local state ─────────────────────────────────────────────────────────────

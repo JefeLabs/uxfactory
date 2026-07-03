@@ -121,9 +121,7 @@ const BASE_APP_STATE = {
   },
   fileInfo: null,
   snapshot: makeSnapshot(),
-  route: { screen: "tabs" as const, tab: "components" as const },
   toasts: [],
-  focus: null,
 };
 
 function resetStores(snapshotOverride?: Partial<ProjectSnapshot>): void {

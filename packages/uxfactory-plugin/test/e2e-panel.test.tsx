@@ -97,25 +97,19 @@ function resetToConnect() {
     connection: { status: "none", endpoint: "http://localhost:3779", repoPath: "", mode: "local" },
     fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
     snapshot: null,
-    route: { screen: "connect", tab: "prompt" },
     toasts: [],
   });
 }
 
 // ─── renderApp helper: seed router from current store state ──────────────────
 
+// Navigation is owned by the router — derive initial path from connection state.
 function initialPathFromStore(): string {
-  const { route, focus } = useAppStore.getState();
-  if (route.screen === "connect") return "/connect";
-  if (route.screen === "setup-1") return "/setup/classification";
-  if (route.screen === "setup-2") return "/setup/defaults";
-  if (route.tab === "checks")
-    return focus?.runId ? `/tabs/checks?run=${focus.runId}` : "/tabs/checks";
-  if (route.tab === "artifacts")
-    return focus?.artifactKey
-      ? `/tabs/artifacts?focus=${focus.artifactKey}`
-      : "/tabs/artifacts";
-  return `/tabs/${route.tab}`;
+  const { connection, snapshot } = useAppStore.getState();
+  if (connection.status === "reconnecting") return "/connect";
+  if (connection.status !== "connected") return "/connect";
+  if (snapshot && !snapshot.hasClassification) return "/setup/classification";
+  return "/tabs/prompt";
 }
 
 async function renderApp(bridge = makeBridge(), bus = makeBus()) {
@@ -139,19 +133,17 @@ describe("E2E: panel lifecycle — connect screen to tabs", () => {
   });
 
   it("transitions to the Tabs screen when connectSucceeded is dispatched", async () => {
-    await renderApp();
+    const { router } = await renderApp();
 
     // Verify we start on connect screen
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
 
-    // Simulate successful connect: Task 4 — Connect.tsx calls connectSucceeded (state)
-    // then useNavigate() (router). Drive the same two steps here; goto triggers StoreRouteBridge.
+    // Simulate successful connect: store update + router navigation (mirrors Connect.tsx onSuccess).
     act(() => {
       useAppStore.getState().connectSucceeded(DEMO_SNAPSHOT, "/home/user/demo-shop");
-      useAppStore.getState().goto("tabs"); // mirrors useNavigate({ to: "/tabs/prompt" })
     });
+    await act(async () => { await router.navigate({ to: "/tabs/prompt" }); });
 
-    // StoreRouteBridge navigates to /tabs/prompt after store update
     await waitFor(() =>
       expect(screen.getByRole("tablist", { name: "Panel tabs" })).toBeInTheDocument(),
     );
@@ -160,13 +152,13 @@ describe("E2E: panel lifecycle — connect screen to tabs", () => {
   });
 
   it("shows the project name in the ContextBar after successful connect", async () => {
-    await renderApp();
+    const { router } = await renderApp();
 
-    // Task 4: connectSucceeded no longer sets route; also call goto to drive StoreRouteBridge.
+    // Simulate successful connect: store update + router navigation (mirrors Connect.tsx onSuccess).
     act(() => {
       useAppStore.getState().connectSucceeded(DEMO_SNAPSHOT, "/home/user/demo-shop");
-      useAppStore.getState().goto("tabs"); // mirrors useNavigate({ to: "/tabs/prompt" })
     });
+    await act(async () => { await router.navigate({ to: "/tabs/prompt" }); });
 
     await waitFor(() =>
       expect(screen.getByText("Demo Shop")).toBeInTheDocument(),
@@ -183,7 +175,6 @@ describe("E2E: tab navigation after connect", () => {
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
       fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
       snapshot: DEMO_SNAPSHOT,
-      route: { screen: "tabs", tab: "prompt" },
       toasts: [],
     });
   });
@@ -229,7 +220,6 @@ describe("E2E: reconnect then cancel", () => {
       connection: { status: "reconnecting", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
       fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
       snapshot: null,
-      route: { screen: "connect", tab: "prompt" },
       toasts: [],
     });
   });

@@ -52,9 +52,7 @@ const BASE_STORE = {
   },
   fileInfo: { name: "Meridian Health", fileKey: "file-abc" },
   snapshot: null,
-  route: { screen: "tabs" as const, tab: "settings" as const },
   toasts: [],
-  focus: null,
 };
 
 beforeEach(() => useAppStore.setState(BASE_STORE));

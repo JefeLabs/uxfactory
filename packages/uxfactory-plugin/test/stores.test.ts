@@ -1,6 +1,6 @@
 /**
  * stores.test.ts — Unit tests for the Zustand stores:
- *   - app.ts  (routing decisions including hasClassification fork)
+ *   - app.ts  (connection decisions; navigation is now owned by the router)
  *   - wizard.ts (suggestFor, userEdited guard)
  *   - runs.ts  (cap 20, persist roundtrip via fake bus)
  */
@@ -52,9 +52,10 @@ function makeFakeBus(initialStorage: Record<string, unknown> = {}): {
   return { bus, storage };
 }
 
-// ─── App store — connection / routing ────────────────────────────────────────
+// ─── App store — connection ────────────────────────────────────────────────────
+// Navigation is owned by the router; these tests only verify store state changes.
 
-describe("app store — connectSucceeded routing", () => {
+describe("app store — connectSucceeded", () => {
   beforeEach(() => {
     // Reset to a clean initial state before each test.
     useAppStore.setState({
@@ -66,23 +67,20 @@ describe("app store — connectSucceeded routing", () => {
       },
       fileInfo: null,
       snapshot: null,
-      route: { screen: "connect", tab: "prompt" },
       toasts: [],
     });
   });
 
-  it("does not change route.screen when hasClassification is true — navigation is caller's responsibility", () => {
+  it("stores the snapshot and marks connected when hasClassification is true", () => {
     const snapshot = makeSnapshot({ hasClassification: true });
     useAppStore.getState().connectSucceeded(snapshot, "/repo");
-    // Task 4: connectSucceeded no longer sets route; Connect.tsx calls useNavigate() in onSuccess.
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    expect(useAppStore.getState().connection.status).toBe("connected");
   });
 
-  it("does not change route.screen when hasClassification is false — navigation is caller's responsibility", () => {
+  it("stores the snapshot and marks connected when hasClassification is false", () => {
     const snapshot = makeSnapshot({ hasClassification: false });
     useAppStore.getState().connectSucceeded(snapshot, "/repo");
-    // Task 4: connectSucceeded no longer sets route; Connect.tsx calls useNavigate() in onSuccess.
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    expect(useAppStore.getState().connection.status).toBe("connected");
   });
 
   it("stores the snapshot in state", () => {
@@ -141,19 +139,8 @@ describe("app store — misc actions", () => {
       connection: { status: "none", endpoint: "http://localhost:3779", repoPath: "", mode: "local" },
       fileInfo: null,
       snapshot: null,
-      route: { screen: "connect", tab: "prompt" },
       toasts: [],
     });
-  });
-
-  it("goto changes route.screen", () => {
-    useAppStore.getState().goto("setup-2");
-    expect(useAppStore.getState().route.screen).toBe("setup-2");
-  });
-
-  it("setTab changes route.tab", () => {
-    useAppStore.getState().setTab("artifacts");
-    expect(useAppStore.getState().route.tab).toBe("artifacts");
   });
 
   it("dismissToast removes the correct toast", () => {
@@ -169,49 +156,6 @@ describe("app store — misc actions", () => {
   });
 });
 
-describe("app store — focus intent", () => {
-  beforeEach(() => {
-    useAppStore.setState({
-      connection: { status: "none", endpoint: "http://localhost:3779", repoPath: "", mode: "local" },
-      fileInfo: null,
-      snapshot: null,
-      route: { screen: "connect", tab: "prompt" },
-      toasts: [],
-      focus: null,
-    });
-  });
-
-  it("focus starts null", () => {
-    expect(useAppStore.getState().focus).toBeNull();
-  });
-
-  it("setFocus stores a runId intent (consumed by Checks)", () => {
-    useAppStore.getState().setFocus({ runId: "run-42" });
-    expect(useAppStore.getState().focus).toEqual({ runId: "run-42" });
-  });
-
-  it("setFocus stores an artifactKey intent (consumed by Artifacts)", () => {
-    useAppStore.getState().setFocus({ artifactKey: "brand-colors" });
-    expect(useAppStore.getState().focus).toEqual({ artifactKey: "brand-colors" });
-  });
-
-  it("setFocus replaces a previous intent", () => {
-    useAppStore.getState().setFocus({ runId: "run-1" });
-    useAppStore.getState().setFocus({ artifactKey: "fonts" });
-    expect(useAppStore.getState().focus).toEqual({ artifactKey: "fonts" });
-  });
-
-  it("clearFocus resets focus to null", () => {
-    useAppStore.getState().setFocus({ runId: "run-1" });
-    useAppStore.getState().clearFocus();
-    expect(useAppStore.getState().focus).toBeNull();
-  });
-
-  it("setFocus does not change the active tab (setTab keeps its own behavior)", () => {
-    useAppStore.getState().setFocus({ runId: "run-1" });
-    expect(useAppStore.getState().route.tab).toBe("prompt");
-  });
-});
 
 describe("app store — cancelReconnect", () => {
   beforeEach(() => {
@@ -224,7 +168,6 @@ describe("app store — cancelReconnect", () => {
       },
       fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
       snapshot: null,
-      route: { screen: "connect", tab: "prompt" },
       toasts: [],
     });
   });
@@ -232,11 +175,6 @@ describe("app store — cancelReconnect", () => {
   it("sets connection.status to 'none'", () => {
     useAppStore.getState().cancelReconnect();
     expect(useAppStore.getState().connection.status).toBe("none");
-  });
-
-  it("sets route.screen to 'connect'", () => {
-    useAppStore.getState().cancelReconnect();
-    expect(useAppStore.getState().route.screen).toBe("connect");
   });
 
   it("preserves other connection fields (endpoint, repoPath, mode)", () => {
@@ -253,8 +191,7 @@ describe("app store — cancelReconnect", () => {
     if (useAppStore.getState().connection.status === "reconnecting") {
       useAppStore.getState().connectSucceeded(makeSnapshot({ hasClassification: true }), "/repo");
     }
-    // Guard should have prevented any state change
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    // Guard should have prevented connectSucceeded from running
     expect(useAppStore.getState().connection.status).toBe("none");
   });
 });

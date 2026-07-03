@@ -173,9 +173,7 @@ beforeEach(() => {
     },
     fileInfo: null,
     snapshot: null,
-    route: { screen: "tabs", tab: "artifacts" },
     toasts: [],
-    focus: null,
   });
 });
 

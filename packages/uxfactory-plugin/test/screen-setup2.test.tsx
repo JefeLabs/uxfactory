@@ -76,7 +76,6 @@ function resetToFreshSetup() {
     },
     fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
     snapshot: makeSnapshot(),
-    route: { screen: "setup-2", tab: "prompt" },
     toasts: [],
   });
   useWizardStore.setState({
@@ -393,7 +392,6 @@ describe("PRD §6.4 — re-entry shows persisted values, not re-suggested", () =
           experimental: { coherence: "low" },
         },
       }),
-      route: { screen: "setup-2", tab: "prompt" },
       toasts: [],
     });
 

@@ -8,12 +8,12 @@
  *   export function ExpandedHeader({bridge}: {bridge: Bridge})
  *
  * Classification chips (Category/Industry/Locale/Age/Platforms/Layout):
- *   click → wizard.prefillFrom(snapshot) + goto("setup-1") (edit mode)
+ *   click → wizard.prefillFrom(snapshot) + navigate to /setup/classification (edit mode)
  *
  * Dial chips (Style/Visual/Editorial/Flows/Coverage/Coherence):
  *   click → toggles inline Segmented for that dial
  *   Segmented change → bridge.putProfile({<wireKey>: <engineValue>}) (flat, single-field)
- *                     + refreshSnapshot(bridge) + toast("Applies to new runs")
+ *                     + invalidateQueries(snapshotQuery) + toast("Applies to new runs")
  *
  * SELECTOR DISCIPLINE: every useAppStore/useWizardStore call selects a single
  * primitive or stable stored reference. Never return a new object literal.

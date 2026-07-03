@@ -87,7 +87,6 @@ function resetToConnect() {
     },
     fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
     snapshot: null,
-    route: { screen: "connect", tab: "prompt" },
     toasts: [],
   });
 }
@@ -118,7 +117,6 @@ function resetToTabs(hasClassification = true) {
       artifacts: [],
       requirements: [],
     },
-    route: { screen: "tabs", tab: "prompt" },
     toasts: [],
   });
 }
@@ -133,27 +131,20 @@ function resetToReconnecting() {
     },
     fileInfo: { name: "Demo Shop", fileKey: "file-abc" },
     snapshot: null,
-    route: { screen: "connect", tab: "prompt" },
     toasts: [],
   });
 }
 
 // ─── renderApp helper: seed router from current store state ──────────────────
 
-// Seed the router's initial location from the store state the test set up,
-// so the interim StoreRouteBridge and the router agree on first paint.
+// Seed the router's initial location from the connection state set up by the test.
+// Navigation is owned by the router — no route/focus fields on the store.
 function initialPathFromStore(): string {
-  const { route, focus } = useAppStore.getState();
-  if (route.screen === "connect") return "/connect";
-  if (route.screen === "setup-1") return "/setup/classification";
-  if (route.screen === "setup-2") return "/setup/defaults";
-  if (route.tab === "checks")
-    return focus?.runId ? `/tabs/checks?run=${focus.runId}` : "/tabs/checks";
-  if (route.tab === "artifacts")
-    return focus?.artifactKey
-      ? `/tabs/artifacts?focus=${focus.artifactKey}`
-      : "/tabs/artifacts";
-  return `/tabs/${route.tab}`;
+  const { connection, snapshot } = useAppStore.getState();
+  if (connection.status === "reconnecting") return "/connect";
+  if (connection.status !== "connected") return "/connect";
+  if (snapshot && !snapshot.hasClassification) return "/setup/classification";
+  return "/tabs/prompt";
 }
 
 async function renderApp(bridge = makeBridge(), bus = makeBus()) {
@@ -364,10 +355,11 @@ describe("setup-1 screen", () => {
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
       snapshot: null,
-      route: { screen: "setup-1", tab: "prompt" },
       toasts: [],
     });
-    await renderApp();
+    const queryClient = makeQueryClient();
+    const router = createAppRouter({ bridge: makeBridge(), bus: makeBus(), queryClient }, ["/setup/classification"]);
+    await renderWithProviders(null, { router, queryClient });
     // SetupClassification renders a "Starting mode" radiogroup
     expect(screen.getByRole("radiogroup", { name: /Starting mode/i })).toBeInTheDocument();
   });
@@ -377,10 +369,11 @@ describe("setup-1 screen", () => {
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
       snapshot: null,
-      route: { screen: "setup-1", tab: "prompt" },
       toasts: [],
     });
-    await renderApp();
+    const queryClient = makeQueryClient();
+    const router = createAppRouter({ bridge: makeBridge(), bus: makeBus(), queryClient }, ["/setup/classification"]);
+    await renderWithProviders(null, { router, queryClient });
     // The ContextBar's expand/collapse chevron button is unique to the shell ContextBar.
     // Setup screens own their own project header (which may include a status pill of its own),
     // so we assert the shell-specific expand button is absent — not the pill.
@@ -394,10 +387,11 @@ describe("setup-2 screen", () => {
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
       snapshot: null,
-      route: { screen: "setup-2", tab: "prompt" },
       toasts: [],
     });
-    await renderApp();
+    const queryClient = makeQueryClient();
+    const router = createAppRouter({ bridge: makeBridge(), bus: makeBus(), queryClient }, ["/setup/defaults"]);
+    await renderWithProviders(null, { router, queryClient });
     // SetupDefaults renders buttons with aria-labels for each defaults field
     // Check for the "Back" navigation button which is always rendered
     expect(screen.getByRole("button", { name: /Back/i })).toBeInTheDocument();
@@ -408,10 +402,11 @@ describe("setup-2 screen", () => {
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
       snapshot: null,
-      route: { screen: "setup-2", tab: "prompt" },
       toasts: [],
     });
-    await renderApp();
+    const queryClient = makeQueryClient();
+    const router = createAppRouter({ bridge: makeBridge(), bus: makeBus(), queryClient }, ["/setup/defaults"]);
+    await renderWithProviders(null, { router, queryClient });
     // The ContextBar's expand/collapse chevron button is unique to the shell ContextBar.
     // Setup screens own their own project header (which may include a status pill of its own),
     // so we assert the shell-specific expand button is absent — not the pill.

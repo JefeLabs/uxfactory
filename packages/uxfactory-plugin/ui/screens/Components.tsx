@@ -10,7 +10,7 @@
  * - Link composer: creates unit↔AC pairs via bridge.putLinks (whole-set write)
  * - Linked components list: green/hollow dots, rollup, unlink on hover
  * - Zero-ACs callout when snapshot.requirements is empty → links to Artifacts
- * - Sticky footer "Check my design" → enqueue check-design job → setFocus + setTab
+ * - Sticky footer "Check my design" → enqueue check-design job → navigate to /tabs/checks?run=<id>
  *
  * V1 seams (documented per spec honesty table):
  * - Sync badge is always "not mapped" (no bridge read for drift state in v1)

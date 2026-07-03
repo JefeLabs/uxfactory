@@ -57,7 +57,6 @@ const BASE_APP_STATE = {
     artifacts: [],
     requirements: [],
   },
-  route: { screen: "tabs" as const, tab: "checks" as const },
   toasts: [],
 };
 
@@ -1112,13 +1111,13 @@ describe("Empty state: no runs yet", () => {
     const bridge = makeBridge({ latestRender: vi.fn().mockResolvedValue(null) });
     const bus = makeBus();
 
-    await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
+    const { router } = await renderWithProviders(<Checks bridge={bridge} bus={bus} />, { initialEntries: ["/tabs/checks"] });
 
     await act(async () => {});
 
     await user.click(screen.getByRole("button", { name: /Go to Components/i }));
 
-    expect(useAppStore.getState().route.tab).toBe("components");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/components"));
   });
 });
 
