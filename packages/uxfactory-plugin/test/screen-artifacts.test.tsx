@@ -84,6 +84,10 @@ vi.mock("@mdxeditor/editor", async () => {
     listsPlugin: () => ({}),
     quotePlugin: () => ({}),
     linkPlugin: () => ({}),
+    tablePlugin: () => ({}),
+    thematicBreakPlugin: () => ({}),
+    codeBlockPlugin: () => ({}),
+    useCodeBlockEditorContext: () => ({ setCode: () => {} }),
     markdownShortcutPlugin: () => ({}),
   };
 });

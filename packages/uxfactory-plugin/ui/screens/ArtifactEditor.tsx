@@ -36,7 +36,12 @@ import {
   listsPlugin,
   quotePlugin,
   linkPlugin,
+  tablePlugin,
+  thematicBreakPlugin,
+  codeBlockPlugin,
   markdownShortcutPlugin,
+  useCodeBlockEditorContext,
+  type CodeBlockEditorDescriptor,
 } from "@mdxeditor/editor";
 // Editor styling — vite inlines this into the singlefile ui.html (vitest stubs css imports).
 import "@mdxeditor/editor/style.css";
@@ -47,12 +52,37 @@ import { useAppStore } from "../stores/app.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Plugins used by every section editor (defined once; no per-render recreation). */
+/** Fenced code blocks edit as a plain textarea — codeMirrorPlugin would inline
+ * all of CodeMirror (~1.7MB) into ui.html and blow the 2MB singlefile budget. */
+const plainTextCodeEditor: CodeBlockEditorDescriptor = {
+  match: () => true,
+  priority: 0,
+  Editor: (props) => {
+    const { setCode } = useCodeBlockEditorContext();
+    return (
+      <div onKeyDown={(e) => e.nativeEvent.stopImmediatePropagation()}>
+        <textarea
+          className="w-full font-mono text-xs bg-gray-50 border border-gray-200 rounded p-2"
+          rows={Math.max(3, props.code.split("\n").length)}
+          defaultValue={props.code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+      </div>
+    );
+  },
+};
+
+/** Plugins used by every section editor (defined once; no per-render recreation).
+ * Must cover every construct generated artifacts contain — a construct without
+ * its plugin renders as raw source text (tables did, before tablePlugin). */
 const EDITOR_PLUGINS = [
   headingsPlugin(),
   listsPlugin(),
   quotePlugin(),
   linkPlugin(),
+  tablePlugin(),
+  thematicBreakPlugin(),
+  codeBlockPlugin({ codeBlockEditorDescriptors: [plainTextCodeEditor] }),
   markdownShortcutPlugin(),
 ];
 
