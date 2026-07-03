@@ -7,3 +7,8 @@ coverage/
 .idea/
 playground/
 .superpowers/sdd/
+
+# Local agent/session tooling (never committed)
+.claude/
+.claude.json
+.playwright-mcp/
