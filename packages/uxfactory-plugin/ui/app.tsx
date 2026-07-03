@@ -174,7 +174,7 @@ function TabNav({ bridge, bus }: { bridge: Bridge; bus: PluginBus }) {
       {/* Tab list */}
       <Tabs.List
         aria-label="Panel tabs"
-        className="flex border-b border-gray-200 bg-white shrink-0 overflow-x-auto"
+        className="flex border-b border-gray-200 bg-white shrink-0 overflow-x-auto overflow-y-hidden"
       >
         {TAB_DEFS.map(({ value, label }) => (
           <Tabs.Trigger

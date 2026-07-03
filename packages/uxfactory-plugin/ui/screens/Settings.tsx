@@ -175,7 +175,7 @@ function LogsDrawer({ bridge, open, onClose }: LogsDrawerProps): React.JSX.Eleme
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 font-mono">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 font-mono">
             {lines.length === 0 ? (
               <p className="text-xs text-gray-400">No logs yet.</p>
             ) : (
@@ -352,7 +352,7 @@ export function Settings({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-gray-50">
+    <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-3 p-4">
 
         {/* ── Card 1: Bridge daemon ─────────────────────────────────────────── */}

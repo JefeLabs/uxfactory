@@ -177,7 +177,7 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
       </div>
 
       {/* Scrollable form body */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="px-4 py-5 space-y-6">
           {/* Heading block */}
           <div>

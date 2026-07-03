@@ -382,7 +382,7 @@ export function ArtifactEditor({
       <div className="flex flex-col flex-1 min-h-0">
         <EditorHeader />
 
-        <div className="flex flex-col flex-1 min-h-0 overflow-y-auto p-4 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <p className="text-xs text-gray-400 italic" data-testid="json-editing-note">
             JSON editing arrives later.
           </p>
@@ -403,7 +403,7 @@ export function ArtifactEditor({
     <div className="flex flex-col flex-1 min-h-0">
       <EditorHeader showSave />
 
-      <div className="flex flex-col flex-1 min-h-0 overflow-y-auto p-4 gap-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
         {sections.map((section, i) => (
           <div
             key={i}
