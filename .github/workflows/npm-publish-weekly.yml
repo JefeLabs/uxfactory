@@ -1,0 +1,97 @@
+name: Weekly npm publish
+
+# Sunday evening (US): 01:00 UTC Monday = 5pm PT / 8pm ET Sunday.
+# Publishes only public packages whose directories changed since the last
+# npm-publish/* tag, plus their workspace dependents (exact-pin cascade).
+# The plugin and clients/* are private:true — pnpm skips them automatically.
+on:
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+    inputs:
+      force-all:
+        description: "Publish every public package regardless of changes"
+        type: boolean
+        default: false
+      dry-run:
+        description: "Plan + build + test, but do not publish/tag/push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # push version-bump commit + npm-publish/* tag
+  id-token: write   # npm provenance attestation
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history for tags/diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Select changed packages and bump versions
+        id: select
+        env:
+          FORCE_ALL: ${{ inputs.force-all && '1' || '' }}
+        run: node scripts/select-publish-bumps.mjs
+
+      - name: Nothing to publish
+        if: steps.select.outputs.selected == ''
+        run: echo "No public package changed since the last publish tag — exiting green."
+
+      - name: Build all packages
+        if: steps.select.outputs.selected != ''
+        run: pnpm -r build
+
+      - name: Test published packages
+        if: steps.select.outputs.selected != ''
+        run: pnpm --filter @uxfactory/spec --filter @uxfactory/gate --filter @uxfactory/bridge --filter @uxfactory/cli test
+
+      - name: Publish to npm
+        if: steps.select.outputs.selected != '' && !inputs.dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: pnpm -r publish --access public --no-git-checks
+
+      - name: Commit bumps, tag, and push
+        if: steps.select.outputs.selected != '' && !inputs.dry-run
+        env:
+          SELECTED: ${{ steps.select.outputs.selected }}
+        run: |
+          STAMP=$(date -u +%Y-%m-%d)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/*/package.json
+          git commit -m "chore(release): weekly npm publish ${STAMP} [skip ci]" -m "Published: ${SELECTED}"
+          git tag "npm-publish/${STAMP}-${GITHUB_RUN_NUMBER}"
+          git push origin HEAD:main --tags
+
+      - name: Dry-run summary
+        if: steps.select.outputs.selected != '' && inputs.dry-run
+        env:
+          SELECTED: ${{ steps.select.outputs.selected }}
+        run: |
+          echo "DRY RUN — would have published: ${SELECTED}"
+          git diff --stat packages/*/package.json
