@@ -65,7 +65,10 @@ describe("write isolation (NORMATIVE INVARIANT)", () => {
       url: `/project/profile?root=${enc(rootA)}`,
       payload: { visual: "high" },
     });
-    await expect(access(path.join(rootA, "uxfactory.profile.json"))).resolves.toBeUndefined();
+    const profileA = JSON.parse(
+      await readFile(path.join(rootA, "uxfactory.profile.json"), "utf8"),
+    ) as { scope?: { visual?: string } };
+    expect(profileA.scope?.visual).toBe("high");
     await expect(access(path.join(rootB, "uxfactory.profile.json"))).rejects.toBeTruthy();
   });
 
