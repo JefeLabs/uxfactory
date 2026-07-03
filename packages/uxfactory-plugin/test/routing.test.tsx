@@ -4,16 +4,18 @@
  *
  * Rather than importing main.tsx (which runs boot eagerly on import), we drive
  * the app store directly to place the app into the state that each boot path
- * would produce, then render <App/> and assert on visible DOM.
+ * would produce, then render the app router and assert on visible DOM.
  */
 
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen, within, cleanup, act } from "@testing-library/react";
+import { screen, within, cleanup, act, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useAppStore } from "../ui/stores/app.js";
-import { App } from "../ui/app.js";
+import { renderWithProviders } from "./test-utils.js";
+import { createAppRouter } from "../ui/router.js";
+import { makeQueryClient } from "../ui/queries.js";
 import type { Bridge } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 
@@ -136,19 +138,45 @@ function resetToReconnecting() {
   });
 }
 
+// ─── renderApp helper: seed router from current store state ──────────────────
+
+// Seed the router's initial location from the store state the test set up,
+// so the interim StoreRouteBridge and the router agree on first paint.
+function initialPathFromStore(): string {
+  const { route, focus } = useAppStore.getState();
+  if (route.screen === "connect") return "/connect";
+  if (route.screen === "setup-1") return "/setup/classification";
+  if (route.screen === "setup-2") return "/setup/defaults";
+  if (route.tab === "checks")
+    return focus?.runId ? `/tabs/checks?run=${focus.runId}` : "/tabs/checks";
+  if (route.tab === "artifacts")
+    return focus?.artifactKey
+      ? `/tabs/artifacts?focus=${focus.artifactKey}`
+      : "/tabs/artifacts";
+  return `/tabs/${route.tab}`;
+}
+
+async function renderApp(bridge = makeBridge(), bus = makeBus()) {
+  const queryClient = makeQueryClient();
+  const router = createAppRouter({ bridge, bus, queryClient }, [
+    initialPathFromStore(),
+  ]);
+  return renderWithProviders(null, { router, queryClient });
+}
+
 // ─── Boot path: connect screen ────────────────────────────────────────────────
 
 describe("boot path — connect screen (no stored connection)", () => {
   beforeEach(resetToConnect);
 
-  it("renders the Connect screen when screen is 'connect'", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("renders the Connect screen when screen is 'connect'", async () => {
+    await renderApp();
     // Connect screen renders a repo-path input
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
   });
 
-  it("does not show the context bar on the plain connect screen", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("does not show the context bar on the plain connect screen", async () => {
+    await renderApp();
     // The ContextBar has an expand/collapse button unique to it — absent on connect screen.
     // (The Connect screen renders its own bridge-health StatusPill, so we check by
     //  the ContextBar's expand button rather than role="status".)
@@ -161,32 +189,32 @@ describe("boot path — connect screen (no stored connection)", () => {
 describe("boot path — tabs (stored connection + classified project)", () => {
   beforeEach(() => resetToTabs(true));
 
-  it("renders the tab list with all 6 tabs", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("renders the tab list with all 6 tabs", async () => {
+    await renderApp();
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     const tabs = within(tabList).getAllByRole("tab");
     expect(tabs).toHaveLength(6);
   });
 
-  it("renders the Prompt tab label", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("renders the Prompt tab label", async () => {
+    await renderApp();
     expect(screen.getByRole("tab", { name: "Generate" })).toBeInTheDocument();
   });
 
-  it("shows the context bar with StatusPill 'Connected'", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows the context bar with StatusPill 'Connected'", async () => {
+    await renderApp();
     // The ContextBar connection status shows "Connected" (aria-label is unique
     // vs the Connect screen's bridge-health labels "Running"/"Not detected"/"Checking…")
     expect(screen.getByRole("status", { name: "Connected" })).toBeInTheDocument();
   });
 
-  it("shows the project name in the context bar", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows the project name in the context bar", async () => {
+    await renderApp();
     expect(screen.getByText("Demo Shop")).toBeInTheDocument();
   });
 
-  it("shows the Prompt tab as active by default", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows the Prompt tab as active by default", async () => {
+    await renderApp();
     expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 });
@@ -196,32 +224,32 @@ describe("boot path — tabs (stored connection + classified project)", () => {
 describe("reconnect-cancel path", () => {
   beforeEach(resetToReconnecting);
 
-  it("shows 'Reconnecting…' status pill when connection.status is reconnecting", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows 'Reconnecting…' status pill when connection.status is reconnecting", async () => {
+    await renderApp();
     // Use aria-label to target specifically the ContextBar reconnecting pill (not Connect's bridge-health pill)
     expect(screen.getByRole("status", { name: "Reconnecting…" })).toBeInTheDocument();
   });
 
-  it("shows a Cancel button during reconnect", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows a Cancel button during reconnect", async () => {
+    await renderApp();
     expect(screen.getByRole("button", { name: /Cancel reconnect/i })).toBeInTheDocument();
   });
 
   it("clicking Cancel routes to the connect screen", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    const { router } = await renderApp();
 
     await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
 
-    // After cancel, route.screen should be "connect"
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    // After cancel, router location should be "/connect"
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connect"));
     // Connect screen renders its repo-path input
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
   });
 
   it("clicking Cancel resets connection.status to 'none' and hides the ContextBar", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    await renderApp();
 
     // Before cancel: ContextBar reconnect StatusPill is visible
     expect(screen.getByRole("status", { name: "Reconnecting…" })).toBeInTheDocument();
@@ -231,8 +259,8 @@ describe("reconnect-cancel path", () => {
     // connection.status must be "none" (not just a screen change)
     expect(useAppStore.getState().connection.status).toBe("none");
 
-    // ContextBar is suppressed: showContextBar = (screen === "tabs" || (screen === "connect" && status === "reconnecting"))
-    // With screen="connect" and status="none", the ContextBar reconnecting pill should be gone.
+    // ContextBar is suppressed: ConnectRoute renders ContextBar only when status === "reconnecting".
+    // With status="none", the ContextBar reconnecting pill should be gone.
     expect(screen.queryByRole("status", { name: "Reconnecting…" })).not.toBeInTheDocument();
   });
 });
@@ -244,7 +272,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
 
   it("resolving health/snapshot after cancel does not yank user to tabs", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    const { router } = await renderApp();
 
     // Create a controlled promise simulating the hanging Promise.all in boot.
     let resolveAll!: () => void;
@@ -275,7 +303,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
     await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
 
     expect(useAppStore.getState().connection.status).toBe("none");
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connect"));
 
     // Late bridge reply arrives — resolve the hanging promises.
     await act(async () => {
@@ -284,7 +312,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
     });
 
     // The race guard must have prevented the yank to "tabs".
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connect"));
     expect(useAppStore.getState().connection.status).toBe("none");
     // ContextBar connection StatusPill must still be absent (no "Connected" pill).
     expect(screen.queryByRole("status", { name: "Connected" })).not.toBeInTheDocument();
@@ -292,9 +320,9 @@ describe("boot race guard — late bridge reply after cancel", () => {
 });
 
 // ─── Each tab click changes active tab ───────────────────────────────────────
-// Note: TabNav uses forceMount + display:none so ALL panels are in the DOM at
-// once. The active tab is identified by data-state="active" on the tab trigger,
-// not by unique panel content.
+// Note: TabNav uses Outlet so only the active panel is mounted.
+// The active tab is identified by data-state="active" on the tab trigger,
+// derived from the router location pathname.
 
 describe("tab navigation sets active tab", () => {
   beforeEach(() => resetToTabs(true));
@@ -304,7 +332,7 @@ describe("tab navigation sets active tab", () => {
   for (const label of tabLabels) {
     it(`clicking '${label}' makes its tab trigger active`, async () => {
       const user = userEvent.setup();
-      render(<App bridge={makeBridge()} bus={makeBus()} />);
+      await renderApp();
 
       const tabEl = screen.getByRole("tab", { name: label });
       await user.click(tabEl);
@@ -314,24 +342,24 @@ describe("tab navigation sets active tab", () => {
   }
 });
 
-// ─── Tab state is stored in the app store ────────────────────────────────────
+// ─── Tab state is reflected in the router location ────────────────────────────
 
 describe("tab store binding", () => {
   beforeEach(() => resetToTabs(true));
 
-  it("clicking a tab updates route.tab in the store", async () => {
+  it("clicking a tab updates router location", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    const { router } = await renderApp();
 
     await user.click(screen.getByRole("tab", { name: "Artifacts" }));
-    expect(useAppStore.getState().route.tab).toBe("artifacts");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/artifacts"));
   });
 });
 
 // ─── Setup screens ────────────────────────────────────────────────────────────
 
 describe("setup-1 screen", () => {
-  it("renders the SetupClassification screen", () => {
+  it("renders the SetupClassification screen", async () => {
     useAppStore.setState({
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
@@ -339,12 +367,12 @@ describe("setup-1 screen", () => {
       route: { screen: "setup-1", tab: "prompt" },
       toasts: [],
     });
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    await renderApp();
     // SetupClassification renders a "Starting mode" radiogroup
     expect(screen.getByRole("radiogroup", { name: /Starting mode/i })).toBeInTheDocument();
   });
 
-  it("does NOT show the shell ContextBar on setup-1 (screen owns its own project header)", () => {
+  it("does NOT show the shell ContextBar on setup-1 (screen owns its own project header)", async () => {
     useAppStore.setState({
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
@@ -352,7 +380,7 @@ describe("setup-1 screen", () => {
       route: { screen: "setup-1", tab: "prompt" },
       toasts: [],
     });
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    await renderApp();
     // The ContextBar's expand/collapse chevron button is unique to the shell ContextBar.
     // Setup screens own their own project header (which may include a status pill of its own),
     // so we assert the shell-specific expand button is absent — not the pill.
@@ -361,7 +389,7 @@ describe("setup-1 screen", () => {
 });
 
 describe("setup-2 screen", () => {
-  it("renders the SetupDefaults screen", () => {
+  it("renders the SetupDefaults screen", async () => {
     useAppStore.setState({
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
@@ -369,13 +397,13 @@ describe("setup-2 screen", () => {
       route: { screen: "setup-2", tab: "prompt" },
       toasts: [],
     });
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    await renderApp();
     // SetupDefaults renders buttons with aria-labels for each defaults field
     // Check for the "Back" navigation button which is always rendered
     expect(screen.getByRole("button", { name: /Back/i })).toBeInTheDocument();
   });
 
-  it("does NOT show the shell ContextBar on setup-2 (screen owns its own project header)", () => {
+  it("does NOT show the shell ContextBar on setup-2 (screen owns its own project header)", async () => {
     useAppStore.setState({
       connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo", mode: "local" },
       fileInfo: { name: "Test", fileKey: "k" },
@@ -383,7 +411,7 @@ describe("setup-2 screen", () => {
       route: { screen: "setup-2", tab: "prompt" },
       toasts: [],
     });
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    await renderApp();
     // The ContextBar's expand/collapse chevron button is unique to the shell ContextBar.
     // Setup screens own their own project header (which may include a status pill of its own),
     // so we assert the shell-specific expand button is absent — not the pill.
@@ -396,8 +424,8 @@ describe("setup-2 screen", () => {
 describe("toast system", () => {
   beforeEach(resetToConnect);
 
-  it("shows a toast message when one is added", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows a toast message when one is added", async () => {
+    await renderApp();
     act(() => {
       useAppStore.getState().toast("Bridge not reachable");
     });
@@ -406,7 +434,7 @@ describe("toast system", () => {
 
   it("dismiss button removes the toast", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    await renderApp();
     act(() => {
       useAppStore.getState().toast("Some message");
     });

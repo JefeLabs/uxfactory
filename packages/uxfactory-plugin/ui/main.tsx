@@ -1,26 +1,26 @@
 /**
  * main.tsx — Plugin UI entry point.
  *
- * Boot sequence (PRD 00 §5):
- * 1. createBus() + createBridge() — constructed at module scope so the App
- *    receives stable references before boot completes.
- * 2. bus.fileInfo() → get {name, fileKey} for this Figma file.
- * 3. bus.storageGet("conn:v1:"+fileKey) → check for a previously persisted connection.
- *    • None → route to connect screen.
- *    • Found → set status "reconnecting" → GET /health + GET /project/snapshot.
- *              Success → route per snapshot.hasClassification.
- *              Failure → connect screen + toast "Could not reconnect — check bridge".
- * 4. Any unhandled boot error → connect screen + toast. Never white-screens.
+ * Boot sequence (unchanged semantics; ends in router.navigate):
+ * 1. createBus() + createBridge() + makeQueryClient() + createAppRouter().
+ * 2. bus.fileInfo() → set file identity.
+ * 3. bus.storageGet(conn key) → no prior connection ⇒ stay on /connect.
+ * 4. else reconnecting → health + snapshot; race guard aborts if the user
+ *    cancelled (connection.status left "reconnecting"); on success seed the
+ *    snapshot query cache and navigate per hasClassification.
+ * 5. Any boot error → /connect + toast. Never white-screens.
  */
-
 import "./panel.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { createBus } from "./lib/plugin-bus.js";
 import { createBridge } from "./lib/bridge.js";
 import { useAppStore } from "./stores/app.js";
 import { useRunsStore } from "./stores/runs.js";
-import { App } from "./app.js";
+import { makeQueryClient, queryKeys } from "./queries.js";
+import { createAppRouter } from "./router.js";
 
 interface StoredConnection {
   mode: "local" | "cloud";
@@ -28,35 +28,28 @@ interface StoredConnection {
   repoPath: string;
 }
 
-// ── Construct ONE bus and ONE bridge at module scope ──────────────────────────
-// Both are stable references passed to <App> — creating them here avoids
-// re-creating them on every render and ensures boot() and the App share the
-// same instances.
-
 const bus = createBus();
 const bridge = createBridge();
+const queryClient = makeQueryClient();
+const router = createAppRouter({ bridge, bus, queryClient }, ["/connect"]);
 
 async function boot(): Promise<void> {
   const store = useAppStore.getState();
-
   try {
-    // ── Step 1: Get file identity ─────────────────────────────────────────────
     const fi = await bus.fileInfo();
     store.setFileInfo(fi);
 
-    // ── Step 2: Hydrate runs store (non-blocking, errors tolerated) ───────────
-    useRunsStore.getState().hydrate(bus).catch(() => { /* non-fatal */ });
+    useRunsStore.getState().hydrate(bus).catch(() => {
+      /* non-fatal */
+    });
 
-    // ── Step 3: Check for stored connection ───────────────────────────────────
     const connKey = `conn:v1:${fi.fileKey}`;
     const stored = await bus.storageGet<StoredConnection>(connKey);
 
     if (!stored || typeof stored.repoPath !== "string") {
-      // No prior connection — show connect screen (default route is already "connect")
-      return;
+      return; // default route is /connect
     }
 
-    // ── Step 4: Auto-reconnect with a visible "Reconnecting…" state ──────────
     useAppStore.setState((s) => ({
       connection: {
         ...s.connection,
@@ -67,35 +60,33 @@ async function boot(): Promise<void> {
       },
     }));
 
-    // health + snapshot in parallel for speed
-    const [, snapshot] = await Promise.all([
-      bridge.health(),
-      bridge.snapshot(),
-    ]);
+    const [, snapshot] = await Promise.all([bridge.health(), bridge.snapshot()]);
 
-    // Race guard: the user may have clicked Cancel while we were awaiting.
-    // If status is no longer "reconnecting", skip connectSucceeded to avoid
-    // yanking them off the Connect screen.
+    // Race guard: user may have clicked Cancel while awaiting (status flips).
     if (useAppStore.getState().connection.status !== "reconnecting") {
       return;
     }
 
+    queryClient.setQueryData(queryKeys.snapshot, snapshot);
     store.connectSucceeded(snapshot, stored.repoPath, (payload) => {
-      bus.storageSet(connKey, payload).catch(() => { /* non-fatal */ });
+      bus.storageSet(connKey, payload).catch(() => {
+        /* non-fatal */
+      });
+    });
+    void router.navigate({
+      to: snapshot.hasClassification ? "/tabs/prompt" : "/setup/classification",
     });
   } catch (err) {
-    // Any boot failure → connect screen + toast so the user can recover
     useAppStore.setState((s) => ({
       connection: { ...s.connection, status: "error" },
-      route: { ...s.route, screen: "connect" },
     }));
+    void router.navigate({ to: "/connect" });
     const msg =
       err instanceof Error ? err.message : "Boot failed — check the bridge";
     useAppStore.getState().toast(msg);
   }
 }
 
-// Kick off boot (errors are fully handled inside).
 void boot();
 
 const rootEl = document.getElementById("root");
@@ -103,6 +94,8 @@ if (!rootEl) throw new Error("Missing #root element");
 
 createRoot(rootEl).render(
   <StrictMode>
-    <App bridge={bridge} bus={bus} />
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   </StrictMode>,
 );

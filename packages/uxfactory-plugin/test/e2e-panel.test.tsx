@@ -2,7 +2,7 @@
 /**
  * e2e-panel.test.tsx — Lightweight integration smoke test for the App shell.
  *
- * Drives the full App component (real screens, real store) to verify that
+ * Drives the full app router (real screens, real store) to verify that
  * the connect→tabs routing, tab switching, and reconnect/cancel flow all
  * wire together correctly end-to-end.
  *
@@ -15,11 +15,13 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, act, cleanup, waitFor } from "@testing-library/react";
+import { screen, act, cleanup, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore } from "../ui/stores/wizard.js";
-import { App } from "../ui/app.js";
+import { renderWithProviders } from "./test-utils.js";
+import { createAppRouter } from "../ui/router.js";
+import { makeQueryClient } from "../ui/queries.js";
 import type { Bridge } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 
@@ -100,20 +102,44 @@ function resetToConnect() {
   });
 }
 
+// ─── renderApp helper: seed router from current store state ──────────────────
+
+function initialPathFromStore(): string {
+  const { route, focus } = useAppStore.getState();
+  if (route.screen === "connect") return "/connect";
+  if (route.screen === "setup-1") return "/setup/classification";
+  if (route.screen === "setup-2") return "/setup/defaults";
+  if (route.tab === "checks")
+    return focus?.runId ? `/tabs/checks?run=${focus.runId}` : "/tabs/checks";
+  if (route.tab === "artifacts")
+    return focus?.artifactKey
+      ? `/tabs/artifacts?focus=${focus.artifactKey}`
+      : "/tabs/artifacts";
+  return `/tabs/${route.tab}`;
+}
+
+async function renderApp(bridge = makeBridge(), bus = makeBus()) {
+  const queryClient = makeQueryClient();
+  const router = createAppRouter({ bridge, bus, queryClient }, [
+    initialPathFromStore(),
+  ]);
+  return renderWithProviders(null, { router, queryClient });
+}
+
 // ─── E2E: Connect → Tabs routing ─────────────────────────────────────────────
 
 describe("E2E: panel lifecycle — connect screen to tabs", () => {
   beforeEach(resetToConnect);
 
-  it("renders the Connect screen with repo-path input on initial load", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("renders the Connect screen with repo-path input on initial load", async () => {
+    await renderApp();
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
     // No tabs visible on connect screen
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
-  it("transitions to the Tabs screen when connectSucceeded is dispatched", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("transitions to the Tabs screen when connectSucceeded is dispatched", async () => {
+    await renderApp();
 
     // Verify we start on connect screen
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
@@ -123,20 +149,24 @@ describe("E2E: panel lifecycle — connect screen to tabs", () => {
       useAppStore.getState().connectSucceeded(DEMO_SNAPSHOT, "/home/user/demo-shop");
     });
 
-    // Should now show the tab list
-    expect(screen.getByRole("tablist", { name: "Panel tabs" })).toBeInTheDocument();
+    // StoreRouteBridge navigates to /tabs/prompt after store update
+    await waitFor(() =>
+      expect(screen.getByRole("tablist", { name: "Panel tabs" })).toBeInTheDocument(),
+    );
     // Connect input should be gone
     expect(screen.queryByPlaceholderText("~/path/to/repo")).not.toBeInTheDocument();
   });
 
-  it("shows the project name in the ContextBar after successful connect", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows the project name in the ContextBar after successful connect", async () => {
+    await renderApp();
 
     act(() => {
       useAppStore.getState().connectSucceeded(DEMO_SNAPSHOT, "/home/user/demo-shop");
     });
 
-    expect(screen.getByText("Demo Shop")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText("Demo Shop")).toBeInTheDocument(),
+    );
     expect(screen.getByRole("status", { name: "Connected" })).toBeInTheDocument();
   });
 });
@@ -154,8 +184,8 @@ describe("E2E: tab navigation after connect", () => {
     });
   });
 
-  it("renders all 6 tabs and Prompt is active by default", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("renders all 6 tabs and Prompt is active by default", async () => {
+    await renderApp();
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     expect(tabList).toBeInTheDocument();
 
@@ -166,24 +196,24 @@ describe("E2E: tab navigation after connect", () => {
     expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 
-  it("clicking Artifacts tab makes it active and updates the store", async () => {
+  it("clicking Artifacts tab makes it active and updates the router location", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    const { router } = await renderApp();
 
     await user.click(screen.getByRole("tab", { name: "Artifacts" }));
 
     expect(screen.getByRole("tab", { name: "Artifacts" })).toHaveAttribute("data-state", "active");
-    expect(useAppStore.getState().route.tab).toBe("artifacts");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/artifacts"));
   });
 
   it("clicking Settings tab makes it active", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    const { router } = await renderApp();
 
     await user.click(screen.getByRole("tab", { name: "Settings" }));
 
     expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute("data-state", "active");
-    expect(useAppStore.getState().route.tab).toBe("settings");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/settings"));
   });
 });
 
@@ -200,19 +230,19 @@ describe("E2E: reconnect then cancel", () => {
     });
   });
 
-  it("shows the Reconnecting status pill and Cancel button", () => {
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+  it("shows the Reconnecting status pill and Cancel button", async () => {
+    await renderApp();
     expect(screen.getByRole("status", { name: /Reconnecting/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cancel reconnect/i })).toBeInTheDocument();
   });
 
   it("Cancel routes back to connect screen and clears connection status", async () => {
     const user = userEvent.setup();
-    render(<App bridge={makeBridge()} bus={makeBus()} />);
+    const { router } = await renderApp();
 
     await user.click(screen.getByRole("button", { name: /Cancel reconnect/i }));
 
-    expect(useAppStore.getState().route.screen).toBe("connect");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connect"));
     expect(useAppStore.getState().connection.status).toBe("none");
     // Reconnecting/Connected pill from ContextBar should be gone
     expect(screen.queryByRole("status", { name: /Reconnecting|Connected/i })).not.toBeInTheDocument();
@@ -278,7 +308,7 @@ describe("E2E: wizard walk — Connect → setup-1 → setup-2 → tabs", () => 
 
     const bus = makeBus();
 
-    render(<App bridge={bridge} bus={bus} />);
+    await renderApp(bridge, bus);
 
     // Boot: connect screen visible, no tabs
     expect(screen.getByPlaceholderText("~/path/to/repo")).toBeInTheDocument();
