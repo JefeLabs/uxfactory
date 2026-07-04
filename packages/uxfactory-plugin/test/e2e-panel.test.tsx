@@ -238,6 +238,8 @@ describe("E2E: tab navigation after connect", () => {
     await renderApp();
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     expect(tabList).toBeInTheDocument();
+    // The tab bar carries the primary background for emphasis.
+    expect(tabList.className).toContain("bg-primary-600");
 
     const tabs = ["Generate", "Artifacts", "Components", "Assets", "Checks", "Settings"];
     for (const label of tabs) {

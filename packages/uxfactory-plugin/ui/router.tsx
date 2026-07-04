@@ -278,7 +278,7 @@ function TabNav(): React.JSX.Element {
     >
       <Tabs.List
         aria-label="Panel tabs"
-        className="flex border-b border-gray-200 bg-white shrink-0 overflow-x-auto overflow-y-hidden"
+        className="flex border-b border-primary-700 bg-primary-600 shrink-0 overflow-x-auto overflow-y-hidden"
       >
         {TAB_DEFS.map(({ value, label }) => (
           <Tabs.Trigger
@@ -287,9 +287,9 @@ function TabNav(): React.JSX.Element {
             className={[
               "px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
               "border-b-2 -mb-px",
-              "data-[state=active]:border-primary-600 data-[state=active]:text-primary-600",
-              "data-[state=inactive]:border-transparent data-[state=inactive]:text-gray-500",
-              "data-[state=inactive]:hover:text-gray-700",
+              "data-[state=active]:border-white data-[state=active]:text-white data-[state=active]:font-semibold",
+              "data-[state=inactive]:border-transparent data-[state=inactive]:text-white/70",
+              "data-[state=inactive]:hover:text-white",
             ].join(" ")}
           >
             {label}
