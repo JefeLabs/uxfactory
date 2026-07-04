@@ -403,6 +403,7 @@ const RENDER_POLL_MS = 2_000;
  */
 function RenderRelay(): null {
   const { bridge, bus } = tabsRoute.useRouteContext();
+  const toast = useAppStore((s) => s.toast);
   useEffect(() => {
     if (bridge.nextRenderJob === undefined || bus.postRender === undefined) return;
     let cancelled = false;
@@ -419,17 +420,24 @@ function RenderRelay(): null {
     const timer = setInterval(() => void tick(), RENDER_POLL_MS);
 
     const offRendered = bus.onRendered?.((report) => {
+      // The canvas render already happened — a lost report must not be silent,
+      // or downstream verify gates run against stale state with no explanation.
       void bridge.postRenderReport?.(report).catch(() => {
-        // Report delivery is best-effort; the canvas render already happened.
+        toast("Render report failed to reach the bridge");
       });
+    });
+
+    const offRenderError = bus.onRenderError?.((message) => {
+      toast(`Canvas render failed: ${message}`);
     });
 
     return () => {
       cancelled = true;
       clearInterval(timer);
       offRendered?.();
+      offRenderError?.();
     };
-  }, [bridge, bus]);
+  }, [bridge, bus, toast]);
   return null;
 }
 

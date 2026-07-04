@@ -25,6 +25,8 @@ export interface PluginBus {
   postRender?(spec: unknown, jobId?: string): void;
   /** Subscribes to MainToUi "rendered" reports. Returns an unsubscribe function. */
   onRendered?(cb: (report: unknown) => void): () => void;
+  /** Subscribes to MainToUi "render-error" messages. Returns an unsubscribe function. */
+  onRenderError?(cb: (message: string) => void): () => void;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -107,8 +109,9 @@ export function createBus(
   // Set of active selection listeners.
   const selectionListeners = new Set<(sel: unknown) => void>();
 
-  // Set of active rendered-report listeners (the render relay).
+  // Sets of active render-relay listeners.
   const renderedListeners = new Set<(report: unknown) => void>();
+  const renderErrorListeners = new Set<(message: string) => void>();
 
   subscribe((raw: unknown) => {
     if (!raw || typeof raw !== "object") return;
@@ -132,6 +135,8 @@ export function createBus(
       for (const cb of selectionListeners) cb(sel);
     } else if (msg.type === "rendered") {
       for (const cb of renderedListeners) cb(msg.report);
+    } else if (msg.type === "render-error") {
+      for (const cb of renderErrorListeners) cb(msg.message);
     }
   });
 
@@ -238,6 +243,11 @@ export function createBus(
     onRendered(cb: (report: unknown) => void): () => void {
       renderedListeners.add(cb);
       return () => renderedListeners.delete(cb);
+    },
+
+    onRenderError(cb: (message: string) => void): () => void {
+      renderErrorListeners.add(cb);
+      return () => renderErrorListeners.delete(cb);
     },
   };
 }

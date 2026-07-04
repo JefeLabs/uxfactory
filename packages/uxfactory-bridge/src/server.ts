@@ -405,7 +405,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
 
   // --- verify ---
 
-  app.post("/verify", async (req, reply) => {
+  app.post<{ Querystring: { root?: string } }>("/verify", async (req, reply) => {
     const body = req.body as {
       spec?: unknown;
       renderId?: string;
@@ -418,12 +418,16 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
       return reply.code(400).send({ error: "invalid spec", details: result.errors });
     }
 
+    // ?root= gates against that root's own render reports (see resolveRelayStore).
+    const relay = await resolveRelayStore(req.query.root);
+    if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+
     let report: RenderReport | null;
     if (body.renderId !== undefined) {
-      report = await store.getReport(body.renderId);
+      report = await relay.store.getReport(body.renderId);
       if (report === null) return reply.code(404).send({ error: "unknown renderId" });
     } else {
-      report = await store.getReport();
+      report = await relay.store.getReport();
     }
     if (report === null) {
       if (!store.pluginSeen) return reply.code(503).send({ error: "plugin has never connected" });

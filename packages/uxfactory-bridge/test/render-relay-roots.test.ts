@@ -100,6 +100,52 @@ describe("GET /next?root=", () => {
   });
 });
 
+describe("POST /verify?root=", () => {
+  it("gates against the root's own render report", async () => {
+    const spec = {
+      editor: "figma",
+      frames: [
+        {
+          name: "f", x: 0, y: 0, width: 200, height: 200,
+          children: [
+            { type: "shape", name: "box", x: 10, y: 20, width: 30, height: 40, fill: "#1E88E5" },
+          ],
+        },
+      ],
+    };
+    const report = {
+      renderId: "",
+      editor: "figma",
+      page: "p",
+      pageKey: "0:1",
+      fileName: "F",
+      fileKey: "k",
+      counts: { frames: 1, sections: 0, objects: 1, connectors: 0 },
+      nodes: [{ id: "1:2", name: "box", type: "shape", x: 10, y: 20, w: 30, h: 40, fill: "#1e88e5" }],
+    };
+
+    // Report lives in root B's store only.
+    await app.inject({
+      method: "POST",
+      url: `/rendered?root=${encodeURIComponent(rootB)}`,
+      payload: report,
+    });
+
+    // Rooted verify gates against it.
+    const scoped = await app.inject({
+      method: "POST",
+      url: `/verify?root=${encodeURIComponent(rootB)}`,
+      payload: { spec },
+    });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json().status).toBe("PASS");
+
+    // Unrooted verify sees no launch-store report → 409.
+    const legacy = await app.inject({ method: "POST", url: "/verify", payload: { spec } });
+    expect(legacy.statusCode).toBe(409);
+  });
+});
+
 describe("POST/GET /rendered?root=", () => {
   it("reports are stored and read per root; the launch report store is isolated", async () => {
     const report = {

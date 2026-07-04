@@ -60,8 +60,10 @@ function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
 function makeBus(): PluginBus & {
   postRender: ReturnType<typeof vi.fn>;
   firedRendered: (report: unknown) => void;
+  firedRenderError: (message: string) => void;
 } {
   const renderedListeners = new Set<(report: unknown) => void>();
+  const errorListeners = new Set<(message: string) => void>();
   return {
     storageGet: vi.fn().mockResolvedValue(undefined),
     storageSet: vi.fn().mockResolvedValue(undefined),
@@ -77,8 +79,15 @@ function makeBus(): PluginBus & {
       renderedListeners.add(cb);
       return () => renderedListeners.delete(cb);
     }),
+    onRenderError: vi.fn().mockImplementation((cb: (message: string) => void) => {
+      errorListeners.add(cb);
+      return () => errorListeners.delete(cb);
+    }),
     firedRendered(report: unknown) {
       for (const cb of renderedListeners) cb(report);
+    },
+    firedRenderError(message: string) {
+      for (const cb of errorListeners) cb(message);
     },
   };
 }
@@ -134,5 +143,41 @@ describe("render relay: tabs shell ↔ bridge render queue", () => {
     act(() => bus.firedRendered(report));
 
     await waitFor(() => expect(bridge.postRenderReport).toHaveBeenCalledWith(report));
+  });
+
+  it("surfaces a main-thread render-error as a toast (never silent)", async () => {
+    const bridge = makeBridge();
+    const bus = makeBus();
+
+    await renderShell(bridge, bus);
+
+    act(() => bus.firedRenderError("createConnector is FigJam-only"));
+
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .toasts.some((t) => t.message.includes("createConnector is FigJam-only")),
+      ).toBe(true),
+    );
+  });
+
+  it("surfaces a failed report delivery as a toast (never silent)", async () => {
+    const bridge = makeBridge({
+      postRenderReport: vi.fn().mockRejectedValue(new Error("403")),
+    });
+    const bus = makeBus();
+
+    await renderShell(bridge, bus);
+
+    act(() => bus.firedRendered({ ok: true }));
+
+    await waitFor(() =>
+      expect(
+        useAppStore
+          .getState()
+          .toasts.some((t) => t.message.includes("Render report failed to reach the bridge")),
+      ).toBe(true),
+    );
   });
 });
