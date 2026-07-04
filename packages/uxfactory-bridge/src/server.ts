@@ -259,12 +259,22 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
       const view = at === -1 ? rest : rest.slice(0, at);
       const vp = at === -1 ? null : rest.slice(at + 1);
       const base = path.basename(name.slice(0, lastSlash), ".html");
+      // Frame names come from queued job files (external input): every path
+      // segment must match the extract naming charset — anything else (e.g. a
+      // ".." viewport) would let a crafted spec read outside previews/.
+      const SAFE_SEGMENT = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/;
+      if (!SAFE_SEGMENT.test(view) || !SAFE_SEGMENT.test(base) || (vp !== null && !SAFE_SEGMENT.test(vp))) {
+        return reply.code(404).send({ error: "no preview" });
+      }
       const previewsDir = path.join(relay.store.dataDir, "batch", "previews");
+      const containedIn = previewsDir + path.sep;
       const candidates = [
         ...(vp !== null ? [path.join(previewsDir, vp, `${base}-${view}.png`)] : []),
         path.join(previewsDir, `${base}-${view}.png`),
       ];
       for (const candidate of candidates) {
+        // Belt and braces alongside the charset allowlist above.
+        if (!path.resolve(candidate).startsWith(containedIn)) continue;
         try {
           const buf = await readFile(candidate);
           return reply.type("image/png").send(buf);

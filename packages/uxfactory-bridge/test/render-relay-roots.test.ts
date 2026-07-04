@@ -195,6 +195,25 @@ describe("approval queue: /queue list + approve/discard + preview", () => {
     });
     expect(missing.statusCode).toBe(404);
   });
+
+  it("traversal-safe: a crafted frame name cannot read outside the previews dir", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    // Bait file one level ABOVE previews/ — a ".." viewport segment would
+    // resolve previews/../secret-file.png straight to it.
+    await writeFile(path.join(rootB, ".uxfactory", "batch", "secret-file.png"), "TOP SECRET");
+    await seed.enqueue(
+      { editor: "figma", frames: [{ name: "secret.html/file@..", x: 0, y: 0, width: 10, height: 10, children: [] }] },
+      "job_evil",
+    );
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/queue/job_evil/preview?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.rawPayload.toString()).not.toContain("TOP SECRET");
+  });
 });
 
 describe("POST /verify?root=", () => {
