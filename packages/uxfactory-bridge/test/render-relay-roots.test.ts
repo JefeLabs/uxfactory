@@ -8,7 +8,7 @@
  * re-validation, no wire change.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -97,6 +97,103 @@ describe("GET /next?root=", () => {
     const res = await app.inject({ method: "GET", url: "/next" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ jobId: "job_launch", spec: SPEC });
+  });
+});
+
+describe("approval queue: /queue list + approve/discard + preview", () => {
+  it("GET /queue lists pending jobs non-destructively with frame summaries", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    await seed.enqueue(
+      { editor: "figma", frames: [{ name: "screens/home.html/success@desktop", x: 0, y: 0, width: 1440, height: 900, children: [] }] },
+      "job_a",
+    );
+    await seed.enqueue(SPEC, "job_b");
+
+    const res = await app.inject({ method: "GET", url: `/queue?root=${encodeURIComponent(rootB)}` });
+    expect(res.statusCode).toBe(200);
+    const jobs = res.json().jobs as Array<{ jobId: string; queuedAt: number; frames: unknown[] }>;
+    expect(jobs.map((j) => j.jobId).sort()).toEqual(["job_a", "job_b"]);
+    const jobA = jobs.find((j) => j.jobId === "job_a")!;
+    expect(jobA.frames).toEqual([
+      { name: "screens/home.html/success@desktop", width: 1440, height: 900 },
+    ]);
+    expect(typeof jobA.queuedAt).toBe("number");
+
+    // Listing is non-destructive: both jobs still pending.
+    const again = await app.inject({ method: "GET", url: `/queue?root=${encodeURIComponent(rootB)}` });
+    expect(again.json().jobs).toHaveLength(2);
+  });
+
+  it("POST /queue/:id/approve dequeues exactly that job and returns its spec", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    await seed.enqueue(SPEC, "job_first");
+    await seed.enqueue(SPEC, "job_second");
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/queue/job_second/approve?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ jobId: "job_second", spec: SPEC });
+
+    // Only job_first remains; approving job_second again → 404.
+    const list = await app.inject({ method: "GET", url: `/queue?root=${encodeURIComponent(rootB)}` });
+    expect(list.json().jobs.map((j: { jobId: string }) => j.jobId)).toEqual(["job_first"]);
+    const gone = await app.inject({
+      method: "POST",
+      url: `/queue/job_second/approve?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(gone.statusCode).toBe(404);
+  });
+
+  it("POST /queue/:id/discard removes the job without rendering", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    await seed.enqueue(SPEC, "job_reject");
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/queue/job_reject/discard?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+
+    const list = await app.inject({ method: "GET", url: `/queue?root=${encodeURIComponent(rootB)}` });
+    expect(list.json().jobs).toEqual([]);
+    // Discarded jobs never reach the render poll.
+    const next = await app.inject({ method: "GET", url: `/next?root=${encodeURIComponent(rootB)}` });
+    expect(next.statusCode).toBe(204);
+  });
+
+  it("GET /queue/:id/preview serves the matching batch screenshot", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    await seed.enqueue(
+      { editor: "figma", frames: [{ name: "screens/home.html/success@desktop", x: 0, y: 0, width: 1440, height: 900, children: [] }] },
+      "job_prev",
+    );
+    // The extract/gate pipeline writes previews/<viewport>/<base>-<view>.png.
+    const previewDir = path.join(rootB, ".uxfactory", "batch", "previews", "desktop");
+    await mkdir(previewDir, { recursive: true });
+    const PNG = Buffer.from("89504e470d0a1a0a", "hex"); // magic bytes suffice
+    await writeFile(path.join(previewDir, "home-success.png"), PNG);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/queue/job_prev/preview?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("image/png");
+    expect(res.rawPayload.subarray(0, 8)).toEqual(PNG);
+
+    // Unknown job → 404.
+    const missing = await app.inject({
+      method: "GET",
+      url: `/queue/nope/preview?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(missing.statusCode).toBe(404);
   });
 });
 

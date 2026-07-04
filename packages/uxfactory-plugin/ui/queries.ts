@@ -32,6 +32,7 @@ export const queryKeys = {
   latestRender: (run: string | undefined) =>
     ["latestRender", run ?? null] as const,
   artifact: (root: string | null, key: string) => ["artifact", root, key] as const,
+  renderQueue: (root: string | null) => ["renderQueue", root] as const,
 };
 
 /** QueryClient: queries retry once, mutations never retry. */
@@ -50,6 +51,17 @@ export function snapshotQuery(bridge: Bridge) {
     queryKey: queryKeys.snapshot(activeRoot(bridge)),
     queryFn: () => bridge.snapshot(),
     staleTime: 5_000,
+  });
+}
+
+/** Pending render jobs awaiting approval — polled so the badge stays live. */
+export function renderQueueQuery(bridge: Bridge) {
+  return queryOptions({
+    queryKey: queryKeys.renderQueue(activeRoot(bridge)),
+    queryFn: () => bridge.listRenderQueue!(),
+    enabled: typeof bridge.listRenderQueue === "function",
+    staleTime: 0,
+    refetchInterval: 5_000,
   });
 }
 

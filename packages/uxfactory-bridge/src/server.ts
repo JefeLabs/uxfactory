@@ -186,6 +186,96 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     return { jobId: job.jobId, spec: job.spec };
   });
 
+  // --- approval queue (panel reviews queued specs before they render) ---
+
+  /** Frame summaries for the queue list — name + declared geometry only. */
+  function frameSummaries(spec: unknown): Array<{ name: string; width: number; height: number }> {
+    const frames = (spec as { frames?: unknown }).frames;
+    if (!Array.isArray(frames)) return [];
+    return frames.flatMap((f) =>
+      f !== null && typeof f === "object" && typeof (f as { name?: unknown }).name === "string"
+        ? [{
+            name: (f as { name: string }).name,
+            width: Number((f as { width?: unknown }).width ?? 0),
+            height: Number((f as { height?: unknown }).height ?? 0),
+          }]
+        : [],
+    );
+  }
+
+  app.get<{ Querystring: { root?: string } }>("/queue", async (req, reply) => {
+    store.markPluginSeen();
+    const relay = await resolveRelayStore(req.query.root);
+    if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+    const entries = await relay.store.listQueue();
+    return {
+      jobs: entries.map((e) => ({
+        jobId: e.jobId,
+        queuedAt: e.mtimeMs,
+        frames: frameSummaries(e.spec),
+      })),
+    };
+  });
+
+  app.post<{ Params: { id: string }; Querystring: { root?: string } }>(
+    "/queue/:id/approve",
+    async (req, reply) => {
+      store.markPluginSeen();
+      const relay = await resolveRelayStore(req.query.root);
+      if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+      const job = await relay.store.dequeueById(req.params.id);
+      if (job === null) return reply.code(404).send({ error: "unknown jobId" });
+      return { jobId: job.jobId, spec: job.spec };
+    },
+  );
+
+  app.post<{ Params: { id: string }; Querystring: { root?: string } }>(
+    "/queue/:id/discard",
+    async (req, reply) => {
+      store.markPluginSeen();
+      const relay = await resolveRelayStore(req.query.root);
+      if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+      const ok = await relay.store.discardById(req.params.id);
+      if (!ok) return reply.code(404).send({ error: "unknown jobId" });
+      return { ok: true };
+    },
+  );
+
+  // Best-effort preview: reverse the extract naming convention —
+  // frame "screens/<page>.html/<view>@<vp>" → previews/<vp>/<page>-<view>.png.
+  app.get<{ Params: { id: string }; Querystring: { root?: string } }>(
+    "/queue/:id/preview",
+    async (req, reply) => {
+      const relay = await resolveRelayStore(req.query.root);
+      if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+      const job = (await relay.store.listQueue()).find((j) => j.jobId === req.params.id);
+      if (job === undefined) return reply.code(404).send({ error: "unknown jobId" });
+      const frame = (job.spec as { frames?: Array<{ name?: unknown }> }).frames?.[0];
+      const name = typeof frame?.name === "string" ? frame.name : null;
+      if (name === null) return reply.code(404).send({ error: "no preview" });
+      const lastSlash = name.lastIndexOf("/");
+      const rest = name.slice(lastSlash + 1);
+      const at = rest.lastIndexOf("@");
+      const view = at === -1 ? rest : rest.slice(0, at);
+      const vp = at === -1 ? null : rest.slice(at + 1);
+      const base = path.basename(name.slice(0, lastSlash), ".html");
+      const previewsDir = path.join(relay.store.dataDir, "batch", "previews");
+      const candidates = [
+        ...(vp !== null ? [path.join(previewsDir, vp, `${base}-${view}.png`)] : []),
+        path.join(previewsDir, `${base}-${view}.png`),
+      ];
+      for (const candidate of candidates) {
+        try {
+          const buf = await readFile(candidate);
+          return reply.type("image/png").send(buf);
+        } catch {
+          // try the next candidate
+        }
+      }
+      return reply.code(404).send({ error: "no preview" });
+    },
+  );
+
   // --- render reports ---
 
   app.post<{ Querystring: { root?: string } }>("/rendered", async (req, reply) => {

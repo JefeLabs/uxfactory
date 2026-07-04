@@ -119,18 +119,23 @@ async function renderShell(bridge: Bridge, bus: PluginBus) {
 }
 
 describe("render relay: tabs shell ↔ bridge render queue", () => {
-  it("polls nextRenderJob on mount and forwards the job to the main thread", async () => {
+  it("queued jobs are NOT auto-rendered — approval owns the canvas", async () => {
     const bridge = makeBridge({
       nextRenderJob: vi
         .fn()
-        .mockResolvedValueOnce({ jobId: "job_1", spec: JOB_SPEC })
-        .mockResolvedValue(null),
+        .mockResolvedValue({ jobId: "job_1", spec: JOB_SPEC }),
+      listRenderQueue: vi.fn().mockResolvedValue({
+        jobs: [{ jobId: "job_1", queuedAt: 1, frames: [] }],
+      }),
     });
     const bus = makeBus();
 
     await renderShell(bridge, bus);
 
-    await waitFor(() => expect(bus.postRender).toHaveBeenCalledWith(JOB_SPEC, "job_1"));
+    // The report/error bridge still runs, but no render is forwarded unbidden.
+    await act(async () => {});
+    expect(bus.postRender).not.toHaveBeenCalled();
+    expect(bridge.nextRenderJob).not.toHaveBeenCalled();
   });
 
   it("forwards the main thread's rendered report back to the bridge", async () => {

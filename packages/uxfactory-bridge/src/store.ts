@@ -83,6 +83,7 @@ export class BridgeStore {
   private readonly queueDir: string;
   private readonly processedDir: string;
   private readonly failedDir: string;
+  private readonly discardedDir: string;
   private readonly rendersDir: string;
   private readonly verifyDir: string;
   private readonly batchDir: string;
@@ -107,6 +108,7 @@ export class BridgeStore {
     this.queueDir = path.join(dataDir, "queue");
     this.processedDir = path.join(this.queueDir, "processed");
     this.failedDir = path.join(this.queueDir, "failed");
+    this.discardedDir = path.join(this.queueDir, "discarded");
     this.rendersDir = path.join(dataDir, "renders");
     this.verifyDir = path.join(this.rendersDir, "verify");
     this.batchDir = path.join(dataDir, "batch");
@@ -119,6 +121,7 @@ export class BridgeStore {
   async init(): Promise<void> {
     await mkdir(this.processedDir, { recursive: true });
     await mkdir(this.failedDir, { recursive: true });
+    await mkdir(this.discardedDir, { recursive: true });
     await mkdir(this.verifyDir, { recursive: true });
     await mkdir(this.batchDir, { recursive: true });
     await mkdir(this.reviewDir, { recursive: true });
@@ -215,6 +218,57 @@ export class BridgeStore {
       return { jobId, spec };
     }
     return null;
+  }
+
+  /**
+   * Non-destructive queue listing, oldest first — the approval UI renders this.
+   * Malformed files are skipped here (dequeueNext owns quarantining them).
+   */
+  async listQueue(): Promise<Array<{ jobId: string; spec: unknown; mtimeMs: number }>> {
+    const entries = await readdir(this.queueDir, { withFileTypes: true });
+    const names = entries.filter((e) => e.isFile() && e.name.endsWith(".json")).map((e) => e.name);
+    const out: Array<{ jobId: string; spec: unknown; mtimeMs: number }> = [];
+    for (const name of names) {
+      const p = path.join(this.queueDir, name);
+      try {
+        const raw = await readFile(p, "utf8");
+        out.push({
+          jobId: name.replace(/\.json$/, ""),
+          spec: JSON.parse(raw) as unknown,
+          mtimeMs: (await stat(p)).mtimeMs,
+        });
+      } catch {
+        // Unreadable/malformed — leave for dequeueNext's quarantine path.
+      }
+    }
+    out.sort((a, b) => a.mtimeMs - b.mtimeMs || a.jobId.localeCompare(b.jobId));
+    return out;
+  }
+
+  /** Dequeue a SPECIFIC job (approval flow): parse it, move it to processed/. */
+  async dequeueById(jobId: string): Promise<{ jobId: string; spec: unknown } | null> {
+    if (!isSafeId(jobId)) return null;
+    const src = path.join(this.queueDir, `${jobId}.json`);
+    let spec: unknown;
+    try {
+      spec = JSON.parse(await readFile(src, "utf8")) as unknown;
+    } catch {
+      return null;
+    }
+    await rename(src, path.join(this.processedDir, `${jobId}-${this.stamp()}.json`));
+    return { jobId, spec };
+  }
+
+  /** Discard a job without rendering (approval flow reject). False when absent. */
+  async discardById(jobId: string): Promise<boolean> {
+    if (!isSafeId(jobId)) return false;
+    const src = path.join(this.queueDir, `${jobId}.json`);
+    try {
+      await rename(src, path.join(this.discardedDir, `${jobId}-${this.stamp()}.json`));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // --- render reports ---

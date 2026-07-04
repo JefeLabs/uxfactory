@@ -275,6 +275,23 @@ describe("E2E: tab navigation after connect", () => {
     expect(indicator).not.toHaveTextContent("Connected");
   });
 
+  it("the queue icon shows the pending count and opens the Queue screen", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    (bridge as Bridge).listRenderQueue = vi.fn().mockResolvedValue({
+      jobs: [
+        { jobId: "pub_1", queuedAt: 1, frames: [] },
+        { jobId: "pub_2", queuedAt: 2, frames: [] },
+      ],
+    });
+    const { router } = await renderApp(bridge);
+
+    const queueButton = await screen.findByRole("button", { name: "Render queue (2)" });
+    await user.click(queueButton);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/queue"));
+  });
+
   it("the Disconnect button clears the connection and returns to Connect", async () => {
     const user = userEvent.setup();
     const { router } = await renderApp();

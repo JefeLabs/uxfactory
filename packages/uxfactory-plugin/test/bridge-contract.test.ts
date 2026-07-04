@@ -384,6 +384,21 @@ describe("contract: setProjectRoot appends ?root= to root-scoped verbs", () => {
     expect(captured.find((u) => u.startsWith("/rendered"))).toContain(`root=${enc}`);
   });
 
+  it("approval queue verbs carry ?root= when rooted", async () => {
+    const captured: string[] = [];
+    const client = createBridgeClient(injectFetch(app, captured));
+    client.setProjectRoot!(root);
+
+    await client.listRenderQueue!().catch(() => null);
+    await client.approveRenderJob!("job_x").catch(() => null);
+    await client.discardRenderJob!("job_x").catch(() => null);
+
+    const enc = encodeURIComponent(root);
+    expect(captured.find((u) => u.startsWith("/queue?"))).toContain(`root=${enc}`);
+    expect(captured.find((u) => u.startsWith("/queue/job_x/approve"))).toContain(`root=${enc}`);
+    expect(captured.find((u) => u.startsWith("/queue/job_x/discard"))).toContain(`root=${enc}`);
+  });
+
   it("render relay verbs stay byte-identical legacy when unrooted", async () => {
     const captured: string[] = [];
     const unrooted = createBridgeClient(injectFetch(app, captured));

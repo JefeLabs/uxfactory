@@ -100,6 +100,11 @@ function makeHarnessRouter(
     path: "settings",
     component: renderUi,
   });
+  const queueRoute = createRoute({
+    getParentRoute: () => tabsRoute,
+    path: "queue",
+    component: renderUi,
+  });
   const routeTree = root.addChildren([
     indexRoute,
     connectRoute,
@@ -112,6 +117,7 @@ function makeHarnessRouter(
       assetsRoute,
       checksRoute,
       settingsRoute,
+      queueRoute,
     ]),
   ]);
   return createRouter({

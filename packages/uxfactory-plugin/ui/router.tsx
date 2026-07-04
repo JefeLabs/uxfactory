@@ -25,9 +25,9 @@ import {
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
-import { snapshotQuery } from "./queries.js";
+import { snapshotQuery, renderQueueQuery } from "./queries.js";
 import * as Tabs from "@radix-ui/react-tabs";
-import { ChevronDown, ChevronUp, Settings as SettingsIcon, Unplug } from "lucide-react";
+import { ChevronDown, ChevronUp, Inbox, Settings as SettingsIcon, Unplug } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
 import type { Tab } from "./stores/app.js";
 import { Chip, StatusPill } from "./components/index.js";
@@ -44,6 +44,7 @@ import { Components } from "./screens/Components.js";
 import { Assets } from "./screens/Assets.js";
 import { Checks } from "./screens/Checks.js";
 import { Settings } from "./screens/Settings.js";
+import { Queue } from "./screens/Queue.js";
 
 // ─── Router context ───────────────────────────────────────────────────────────
 
@@ -161,6 +162,9 @@ function ConnectionDot({ status }: { status: StatusPillStatus }): React.JSX.Elem
 
 function ContextBar(): React.JSX.Element {
   const { bridge } = rootRoute.useRouteContext();
+  // Pending approvals badge — polls the root-scoped render queue.
+  const queueResult = useQuery(renderQueueQuery(bridge));
+  const queueCount = queueResult.data?.jobs.length ?? 0;
   const connection = useAppStore((s) => s.connection);
   const snapshot = useAppStore((s) => s.snapshot);
   const fileName = useAppStore((s) => s.fileInfo?.name);
@@ -240,6 +244,23 @@ function ContextBar(): React.JSX.Element {
         <ConnectionDot status={pillStatus} />
         <button
           type="button"
+          aria-label={queueCount > 0 ? `Render queue (${queueCount})` : "Render queue"}
+          title="Render queue"
+          onClick={() => void navigate({ to: "/tabs/queue" })}
+          className="relative p-1 text-gray-400 hover:text-gray-600 shrink-0"
+        >
+          <Inbox size={14} />
+          {queueCount > 0 && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-primary-600 text-white text-[9px] font-semibold flex items-center justify-center"
+            >
+              {queueCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
           aria-label="Settings"
           title="Settings"
           onClick={() => void navigate({ to: "/tabs/settings" })}
@@ -311,9 +332,9 @@ function deriveTab(pathname: string): Tab {
   const rest = pathname.startsWith("/tabs/")
     ? pathname.slice("/tabs/".length)
     : "prompt";
-  // "settings" is a valid /tabs route without a trigger: Tabs.Root holds the
-  // value and simply highlights no tab while the Settings screen is open.
-  const known = [...TAB_DEFS.map((t) => t.value), "settings"] as string[];
+  // "settings"/"queue" are valid /tabs routes without triggers: Tabs.Root holds
+  // the value and simply highlights no tab while those screens are open.
+  const known = [...TAB_DEFS.map((t) => t.value), "settings", "queue"] as string[];
   return (known.includes(rest) ? rest : "prompt") as Tab;
 }
 
@@ -439,37 +460,19 @@ const tabsRoute = createRoute({
   component: TabsLayout,
 });
 
-/** Render-queue poll cadence while the tabs shell is mounted. */
-const RENDER_POLL_MS = 2_000;
-
 /**
- * RenderRelay — bridges the bridge's render queue to the plugin main thread.
- * Polls GET /next (root-scoped via the client's rooted() wire) while the tabs
- * shell is mounted, forwards jobs as {type:"render"} bus messages, and posts
- * the main thread's {type:"rendered"} reports back to POST /rendered.
+ * RenderRelay — the report/error half of the render pipeline.
  *
- * This loop lived in the legacy src/ui.ts pill panel; the React panel rewrite
- * dropped it. Both bridge methods and bus hooks are optional (fixture/legacy
- * compat) — the relay quietly no-ops when either side is absent.
+ * Jobs REACH the canvas only through the Queue screen's explicit Approve
+ * (bridge.approveRenderJob → bus.postRender) — the panel never auto-renders
+ * queued work. This relay handles what comes back from the main thread:
+ * {type:"rendered"} reports forward to POST /rendered (rooted wire), and
+ * {type:"render-error"} messages surface as toasts, never silently.
  */
 function RenderRelay(): null {
   const { bridge, bus } = tabsRoute.useRouteContext();
   const toast = useAppStore((s) => s.toast);
   useEffect(() => {
-    if (bridge.nextRenderJob === undefined || bus.postRender === undefined) return;
-    let cancelled = false;
-
-    const tick = async (): Promise<void> => {
-      try {
-        const job = await bridge.nextRenderJob!();
-        if (!cancelled && job !== null) bus.postRender!(job.spec, job.jobId);
-      } catch {
-        // Bridge down / root gone — the health pill owns surfacing that.
-      }
-    };
-    void tick();
-    const timer = setInterval(() => void tick(), RENDER_POLL_MS);
-
     const offRendered = bus.onRendered?.((report) => {
       // The canvas render already happened — a lost report must not be silent,
       // or downstream verify gates run against stale state with no explanation.
@@ -483,8 +486,6 @@ function RenderRelay(): null {
     });
 
     return () => {
-      cancelled = true;
-      clearInterval(timer);
       offRendered?.();
       offRenderError?.();
     };
@@ -572,6 +573,16 @@ function SettingsRoute(): React.JSX.Element {
   return <Settings bridge={bridge} bus={bus} />;
 }
 
+const queueRoute = createRoute({
+  getParentRoute: () => tabsRoute,
+  path: "queue",
+  component: QueueRoute,
+});
+function QueueRoute(): React.JSX.Element {
+  const { bridge, bus } = queueRoute.useRouteContext();
+  return <Queue bridge={bridge} bus={bus} />;
+}
+
 const routeTree = rootRoute.addChildren([
   connectRoute,
   setupClassificationRoute,
@@ -584,6 +595,7 @@ const routeTree = rootRoute.addChildren([
     assetsRoute,
     checksRoute,
     settingsRoute,
+    queueRoute,
   ]),
 ]);
 

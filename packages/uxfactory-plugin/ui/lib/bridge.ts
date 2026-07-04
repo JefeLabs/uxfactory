@@ -182,6 +182,21 @@ export interface Bridge {
   nextRenderJob?(): Promise<{ jobId?: string; spec: unknown } | null>;
   /** POST /rendered — forward the main thread's render report to the bridge. */
   postRenderReport?(report: unknown): Promise<{ renderId: string }>;
+  /** GET /queue — pending render jobs awaiting approval (non-destructive). */
+  listRenderQueue?(): Promise<{ jobs: RenderQueueJob[] }>;
+  /** POST /queue/:id/approve — claim exactly this job for rendering. */
+  approveRenderJob?(jobId: string): Promise<{ jobId: string; spec: unknown }>;
+  /** POST /queue/:id/discard — reject this job without rendering. */
+  discardRenderJob?(jobId: string): Promise<{ ok: boolean }>;
+  /** GET /queue/:id/preview — the job's batch screenshot, or null when absent. */
+  fetchRenderJobPreview?(jobId: string): Promise<Blob | null>;
+}
+
+/** One pending render job in the approval queue. */
+export interface RenderQueueJob {
+  jobId: string;
+  queuedAt: number;
+  frames: { name: string; width: number; height: number }[];
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -423,6 +438,35 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     postRenderReport(report: unknown) {
       return post<{ renderId: string }>(rooted("/rendered"), report);
+    },
+
+    listRenderQueue() {
+      return request<{ jobs: RenderQueueJob[] }>(rooted("/queue"));
+    },
+
+    approveRenderJob(jobId: string) {
+      return post<{ jobId: string; spec: unknown }>(
+        rooted(`/queue/${encodeURIComponent(jobId)}/approve`),
+        {},
+      );
+    },
+
+    discardRenderJob(jobId: string) {
+      return post<{ ok: boolean }>(
+        rooted(`/queue/${encodeURIComponent(jobId)}/discard`),
+        {},
+      );
+    },
+
+    async fetchRenderJobPreview(jobId: string) {
+      const res = await doFetch(
+        `${root}${rooted(`/queue/${encodeURIComponent(jobId)}/preview`)}`,
+      );
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        throw new BridgeError(res.status, await res.text().catch(() => null));
+      }
+      return res.blob();
     },
   };
 }
