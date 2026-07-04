@@ -127,3 +127,56 @@ describe("extractCmd", () => {
     expect(summary.componentize).toBeNull();
   });
 });
+
+describe("extractCmd — registry viewports", () => {
+  it("extracts once per viewport: suffixed views, offset frames, per-viewport files", async () => {
+    await writeFile(path.join(root, "uxfactory.batch.json"), JSON.stringify({
+      version: 1,
+      inputs: { screens: "design/screens", trace: "design/trace.json" },
+      viewports: [
+        { name: "desktop", width: 1440, height: 900 },
+        { name: "mobile-portrait", width: 390, height: 844 },
+      ],
+    }));
+    const io = makeIO();
+    const seen: { width: number; height: number }[] = [];
+    const code = await extractCmd(
+      "design",
+      { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root },
+      io,
+      {
+        renderViews: async (r) => {
+          seen.push(r.viewport);
+          return [{ ...snap("success"), viewport: r.viewport }];
+        },
+      },
+    );
+    expect(code).toBe(EXIT.OK);
+    // One DOM-capturing render pass per registry viewport, at its size.
+    expect(seen).toEqual([
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]);
+
+    const combined = JSON.parse(
+      await readFile(path.join(root, ".uxfactory/batch/designspec/design.designspec.json"), "utf8"),
+    );
+    expect(validate(combined).valid).toBe(true);
+    const byName = Object.fromEntries(
+      combined.frames.map((f: { name: string; x: number }) => [f.name, f.x]),
+    );
+    // Views are viewport-suffixed and frames tile left-to-right (width + gutter).
+    expect(byName["screens/checkout.html/success@desktop"]).toBe(0);
+    expect(byName["screens/checkout.html/success@mobile-portrait"]).toBe(1540);
+
+    const desk = JSON.parse(
+      await readFile(path.join(root, ".uxfactory/batch/designspec/checkout-success@desktop.designspec.json"), "utf8"),
+    );
+    expect(desk.frames[0].x).toBe(0);
+    const mob = JSON.parse(
+      await readFile(path.join(root, ".uxfactory/batch/designspec/checkout-success@mobile-portrait.designspec.json"), "utf8"),
+    );
+    // Per-view specs keep the offset so published frames land side by side.
+    expect(mob.frames[0].x).toBe(1540);
+  });
+});

@@ -9,6 +9,7 @@ import { validate } from "@uxfactory/spec";
 import type { DesignSpec, Frame, FrameChild, ComponentInstanceNode } from "@uxfactory/spec";
 import { EXIT } from "../exit.js";
 import { readRegistry } from "../batch/registry.js";
+import type { RegistryViewport } from "../batch/registry.js";
 import { readTrace } from "../batch/trace.js";
 import { renderHtml, type HtmlRenderDeps } from "../render/html-render.js";
 import { extractDesignSpec, type ExtractedView } from "../extract/dom-to-designspec.js";
@@ -16,6 +17,8 @@ import { componentize, type ComponentizeStats } from "../extract/componentize.js
 import type { IO } from "../io.js";
 
 const DEFAULT_VIEWPORT = { width: 390, height: 844 };
+/** Horizontal gap between per-viewport frames on the canvas. */
+const VIEWPORT_GUTTER = 100;
 
 export interface ExtractFlags {
   json?: boolean;
@@ -41,30 +44,43 @@ export async function extractCmd(
   const traceResult = await readTrace(reg.inputs.trace);
   if (!traceResult.ok) { io.err(traceResult.message); return EXIT.TRANSPORT; }
 
-  const previewDir = path.join(flags.dataDir, "batch", "previews");
-  await mkdir(previewDir, { recursive: true });
-  let snapshots;
+  // Registry viewports (stamped by the worker) each get their own DOM-capturing
+  // render pass; view ids are viewport-suffixed so every (view, viewport) pair
+  // becomes its own frame. Absent → the legacy single default-viewport extract.
+  const multiViewport =
+    reg.registry.viewports !== undefined && reg.registry.viewports.length > 0;
+  const targets: RegistryViewport[] = multiViewport
+    ? reg.registry.viewports!
+    : [{ name: "default", ...DEFAULT_VIEWPORT }];
+
+  const basePreviewDir = path.join(flags.dataDir, "batch", "previews");
+  const views: ExtractedView[] = [];
+  const excluded: { page: string; view: string; error: string }[] = [];
   try {
-    snapshots = await renderHtml(
-      {
-        baseDir: path.dirname(reg.inputs.trace), trace: traceResult.trace,
-        previewDir, viewport: DEFAULT_VIEWPORT, captureDom: true,
-      },
-      deps,
-    );
+    for (const vp of targets) {
+      const previewDir = multiViewport
+        ? path.join(basePreviewDir, vp.name)
+        : basePreviewDir;
+      await mkdir(previewDir, { recursive: true });
+      const snapshots = await renderHtml(
+        {
+          baseDir: path.dirname(reg.inputs.trace), trace: traceResult.trace,
+          previewDir, viewport: { width: vp.width, height: vp.height }, captureDom: true,
+        },
+        deps,
+      );
+      for (const s of snapshots) {
+        const viewId = multiViewport ? `${s.view}@${vp.name}` : s.view;
+        if (s.ok && s.domTree !== undefined) {
+          views.push({ page: s.page, view: viewId, viewport: s.viewport, tree: s.domTree });
+        } else {
+          excluded.push({ page: s.page, view: viewId, error: s.error ?? "no DOM tree captured" });
+        }
+      }
+    }
   } catch (err) {
     io.err(`extract: renderer unavailable — ${(err as Error).message}`);
     return EXIT.TRANSPORT;
-  }
-
-  const views: ExtractedView[] = [];
-  const excluded: { page: string; view: string; error: string }[] = [];
-  for (const s of snapshots) {
-    if (s.ok && s.domTree !== undefined) {
-      views.push({ page: s.page, view: s.view, viewport: s.viewport, tree: s.domTree });
-    } else {
-      excluded.push({ page: s.page, view: s.view, error: s.error ?? "no DOM tree captured" });
-    }
   }
 
   const { spec, stats } = extractDesignSpec(views);
@@ -85,6 +101,22 @@ export async function extractCmd(
     return EXIT.GATE_FAIL;
   }
 
+  // Multi-viewport: tile frames left-to-right (per-viewport x offsets) so
+  // published frames land side by side instead of stacking at the origin.
+  if (multiViewport) {
+    const offsets = new Map<string, number>();
+    let running = 0;
+    for (const vp of targets) {
+      offsets.set(vp.name, running);
+      running += vp.width + VIEWPORT_GUTTER;
+    }
+    for (const frame of finalSpec.frames) {
+      const at = frame.name.lastIndexOf("@");
+      const off = at === -1 ? undefined : offsets.get(frame.name.slice(at + 1));
+      if (off !== undefined) frame.x = off;
+    }
+  }
+
   const outDir = path.join(flags.dataDir, "batch", "designspec");
   await mkdir(outDir, { recursive: true });
   const files: string[] = [];
@@ -102,7 +134,9 @@ export async function extractCmd(
     };
     for (const c of frame.children ?? []) collectRefs(c);
     const single: DesignSpec = {
-      frames: [{ ...frame, x: 0 }],
+      // Per-view specs publish independently — keep the tiling offset so the
+      // landed frames sit side by side; legacy single-viewport pins x to 0.
+      frames: [{ ...frame, x: multiViewport ? frame.x : 0 }],
       ...(refs.size > 0
         ? { components: Object.fromEntries([...refs].map((id) => [id, finalSpec.components![id]!])) }
         : {}),
