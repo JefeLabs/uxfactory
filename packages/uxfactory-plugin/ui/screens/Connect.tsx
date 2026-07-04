@@ -339,7 +339,7 @@ export function Connect({
         {mode === "local" && (
           <>
             {/* Bridge status */}
-            <Field label="Bridge:">
+            <Field label="Bridge:" align="start">
               <div className="flex flex-col gap-2">
                 <StatusPill status={pillStatus} label={pillLabel} />
 

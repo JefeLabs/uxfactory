@@ -220,6 +220,23 @@ describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
     expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
   });
 
+  it("top-aligns the Bridge: label against its multi-row content", async () => {
+    const bridge = makeBridge({
+      health: vi.fn().mockResolvedValue({ ok: false }),
+    });
+    const bus = makeBus();
+    useAppStore.setState({ ...BASE_STORE });
+
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
+
+    // The Field row wrapping the label must be start-aligned, not centered —
+    // the bridge-down state stacks pill + commands + caption below the label.
+    const label = screen.getByText("Bridge:");
+    expect(label.parentElement?.className).toContain("items-start");
+  });
+
   it("shows the setup commands while bridge status is still 'Checking…'", async () => {
     const bridge = makeBridge({
       // Never resolves — health stays pending, pill stays "Checking…"
