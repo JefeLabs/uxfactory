@@ -81,7 +81,6 @@ function resetStores(snapshotOverride?: Partial<ProjectSnapshot>) {
     runs: [],
     composerUnitType: "page",
     composerPlatforms: [],
-    composerOrientation: "auto",
     composerVariations: 1,
     composerFidelity: "medium",
   });
@@ -626,7 +625,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     });
 
     // Verify stored viewport is shown on the trigger
-    expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Mobile");
+    expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Mobile portrait");
 
     unmount();
 
@@ -634,7 +633,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
-    expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Mobile");
+    expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Mobile portrait");
   });
 
   it("setComposerState updates the store and both selects reflect the change", async () => {
@@ -717,8 +716,9 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     await user.click(screen.getByRole("checkbox", { name: "Desktop" }));
 
-    // Explicit list in fixed Desktop→Tablet→Mobile order
-    expect(useRunsStore.getState().composerPlatforms).toEqual(["desktop", "mobile"]);
+    // Explicit list in fixed option order; the bare seeded "mobile" normalizes
+    // to its portrait variant on the first explicit toggle.
+    expect(useRunsStore.getState().composerPlatforms).toEqual(["desktop", "mobile-portrait"]);
   });
 
   it("submit expands the [] sentinel to the classification platforms", async () => {
@@ -753,7 +753,7 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
 // ─── Composer: viewports, orientation, variations, fidelity ──────────────────
 
 describe("composer: viewports, orientation, variations, fidelity", () => {
-  it("viewport popup offers Desktop/Tablet/Mobile; trigger shows all selected", async () => {
+  it("viewport popup offers device×orientation combos; trigger shows all selected", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
@@ -761,17 +761,39 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     });
 
     const trigger = screen.getByRole("button", { name: "Viewports" });
-    // Default [] sentinel → classification platforms (desktop, mobile)
-    expect(trigger).toHaveTextContent("Desktop + Mobile");
+    // Default [] sentinel → classification platforms (desktop, mobile),
+    // bare tokens normalize to the portrait variant for display.
+    expect(trigger).toHaveTextContent("Desktop + Mobile portrait");
 
     await user.click(trigger);
     expect(screen.getByRole("checkbox", { name: "Desktop" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Tablet" })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Mobile" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Tablet portrait" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Tablet landscape" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Mobile portrait" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Mobile landscape" })).not.toBeChecked();
 
-    await user.click(screen.getByRole("checkbox", { name: "Tablet" }));
-    expect(useRunsStore.getState().composerPlatforms).toEqual(["desktop", "tablet", "mobile"]);
-    expect(trigger).toHaveTextContent("Desktop + Tablet + Mobile");
+    await user.click(screen.getByRole("checkbox", { name: "Tablet landscape" }));
+    expect(useRunsStore.getState().composerPlatforms).toEqual([
+      "desktop",
+      "tablet-landscape",
+      "mobile-portrait",
+    ]);
+    expect(trigger).toHaveTextContent("Desktop + Tablet landscape + Mobile portrait");
+  });
+
+  it("viewport rows show true dimensions per device×orientation", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Viewports" }));
+    expect(screen.getByText("1440×900")).toBeInTheDocument();
+    expect(screen.getByText("768×1024")).toBeInTheDocument();
+    expect(screen.getByText("1024×768")).toBeInTheDocument();
+    expect(screen.getByText("390×844")).toBeInTheDocument();
+    expect(screen.getByText("844×390")).toBeInTheDocument();
   });
 
   it("the last checked viewport cannot be unchecked", async () => {
@@ -783,18 +805,17 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
-    expect(screen.getByRole("checkbox", { name: "Tablet" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Tablet portrait" })).toBeDisabled();
   });
 
-  it("orientation, variations, and fidelity selectors render with their options", async () => {
+  it("variations and fidelity selectors render with their options", async () => {
     const { bridge } = makeBridge();
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
 
-    const orientation = screen.getByLabelText("Orientation") as HTMLSelectElement;
-    expect(Array.from(orientation.options).map((o) => o.value)).toEqual(["auto", "portrait", "landscape"]);
-    expect(orientation.value).toBe("auto");
+    // Orientation is part of the viewport combos — no standalone selector.
+    expect(screen.queryByLabelText("Orientation")).not.toBeInTheDocument();
 
     const variations = screen.getByLabelText("Variations") as HTMLSelectElement;
     expect(Array.from(variations.options).map((o) => o.value)).toEqual(["1", "2", "3"]);
@@ -802,17 +823,24 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
 
     const fidelity = screen.getByLabelText("Fidelity") as HTMLSelectElement;
     expect(Array.from(fidelity.options).map((o) => o.value)).toEqual(["low", "medium", "high"]);
+    // Fidelity speaks design language, not dial language.
+    expect(Array.from(fidelity.options).map((o) => o.textContent)).toEqual([
+      "Wireframe",
+      "Mockup",
+      "Hi-fi",
+    ]);
     expect(fidelity.value).toBe("medium");
   });
 
-  it("non-default orientation/variations/fidelity ride the enqueue payload", async () => {
+  it("combined viewports, variations, and fidelity ride the enqueue payload", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
 
-    await user.selectOptions(screen.getByLabelText("Orientation"), "landscape");
+    await user.click(screen.getByRole("button", { name: "Viewports" }));
+    await user.click(screen.getByRole("checkbox", { name: "Mobile landscape" }));
     await user.selectOptions(screen.getByLabelText("Variations"), "2");
     await user.selectOptions(screen.getByLabelText("Fidelity"), "low");
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "Hero section");
@@ -824,8 +852,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
       payload: {
         prompt: "Hero section",
         unitType: "page",
-        platforms: ["desktop", "mobile"],
-        orientation: "landscape",
+        platforms: ["desktop", "mobile-portrait", "mobile-landscape"],
         variations: 2,
         fidelity: "low",
       },
@@ -901,10 +928,10 @@ describe("composer: user-flow unit forces single viewport and no variations", ()
     });
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
-    await user.click(screen.getByRole("checkbox", { name: "Tablet" }));
+    await user.click(screen.getByRole("checkbox", { name: "Tablet landscape" }));
 
-    expect(useRunsStore.getState().composerPlatforms).toEqual(["tablet"]);
-    expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Tablet");
+    expect(useRunsStore.getState().composerPlatforms).toEqual(["tablet-landscape"]);
+    expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Tablet landscape");
   });
 });
 

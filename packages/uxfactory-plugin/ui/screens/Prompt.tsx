@@ -24,7 +24,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Monitor, Tablet, Smartphone } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
@@ -97,18 +97,31 @@ function platformsLabel(platforms: string[]): string {
 
 const COMPOSER_PLACEHOLDER = "Describe the component(s) to generate";
 
-const VIEWPORT_OPTIONS: { label: string; value: string }[] = [
-  { label: "Desktop", value: "desktop" },
-  { label: "Tablet", value: "tablet" },
-  { label: "Mobile", value: "mobile" },
+/**
+ * Viewport = device × orientation, one flat pick-list with true dimensions.
+ * Desktop is landscape by definition; tablet/mobile split into both.
+ */
+const VIEWPORT_OPTIONS: {
+  label: string;
+  value: string;
+  dims: string;
+  Icon: typeof Monitor;
+  rotated?: boolean;
+}[] = [
+  { label: "Desktop", value: "desktop", dims: "1440×900", Icon: Monitor },
+  { label: "Tablet portrait", value: "tablet-portrait", dims: "768×1024", Icon: Tablet },
+  { label: "Tablet landscape", value: "tablet-landscape", dims: "1024×768", Icon: Tablet, rotated: true },
+  { label: "Mobile portrait", value: "mobile-portrait", dims: "390×844", Icon: Smartphone },
+  { label: "Mobile landscape", value: "mobile-landscape", dims: "844×390", Icon: Smartphone, rotated: true },
 ];
 const VIEWPORT_VALUES = VIEWPORT_OPTIONS.map((o) => o.value);
 
-const ORIENTATION_OPTIONS: { label: string; value: string }[] = [
-  { label: "Auto orientation", value: "auto" },
-  { label: "Portrait", value: "portrait" },
-  { label: "Landscape", value: "landscape" },
-];
+/** Bare classification tokens ("tablet"/"mobile") display as their portrait variant. */
+function normalizeViewport(token: string): string {
+  if (token === "tablet") return "tablet-portrait";
+  if (token === "mobile") return "mobile-portrait";
+  return token;
+}
 
 const VARIATION_OPTIONS: { label: string; value: string }[] = [
   { label: "1 variation", value: "1" },
@@ -116,10 +129,11 @@ const VARIATION_OPTIONS: { label: string; value: string }[] = [
   { label: "3 variations", value: "3" },
 ];
 
+// Design-language labels over engine dial values (low/medium/high on the wire).
 const FIDELITY_OPTIONS: { label: string; value: string }[] = [
-  { label: "Low fidelity", value: "low" },
-  { label: "Medium fidelity", value: "medium" },
-  { label: "High fidelity", value: "high" },
+  { label: "Wireframe", value: "low" },
+  { label: "Mockup", value: "medium" },
+  { label: "Hi-fi", value: "high" },
 ];
 
 /** Map a raw worker status string to the RunStatus vocabulary. */
@@ -191,12 +205,7 @@ function ViewportMultiSelect({
   onToggle: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const label =
-    selected.length > 0
-      ? VIEWPORT_OPTIONS.filter((o) => selected.includes(o.value))
-          .map((o) => o.label)
-          .join(" + ")
-      : "Viewports";
+  const selectedOptions = VIEWPORT_OPTIONS.filter((o) => selected.includes(o.value));
   return (
     <div className="relative inline-flex">
       <button
@@ -206,12 +215,30 @@ function ViewportMultiSelect({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={[
-          "inline-flex items-center bg-white border border-gray-300 rounded-full",
+          "inline-flex items-center gap-1 bg-white border border-gray-300 rounded-full",
           "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer relative",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
         ].join(" ")}
       >
-        {label}
+        {selectedOptions.length > 0 ? (
+          <span className="flex items-center gap-1" aria-hidden="true">
+            {selectedOptions.map((o) => (
+              <o.Icon
+                key={o.value}
+                size={14}
+                className={o.rotated ? "rotate-90" : undefined}
+              />
+            ))}
+          </span>
+        ) : (
+          <Monitor size={14} aria-hidden="true" />
+        )}
+        {/* Names live in sr-only text so the trigger stays compact but readable. */}
+        <span className="sr-only">
+          {selectedOptions.length > 0
+            ? selectedOptions.map((o) => o.label).join(" + ")
+            : "Viewports"}
+        </span>
         <ChevronDown
           size={12}
           aria-hidden="true"
@@ -235,12 +262,22 @@ function ViewportMultiSelect({
               >
                 <input
                   type="checkbox"
+                  aria-label={o.label}
                   checked={checked}
                   disabled={lastChecked}
                   onChange={() => onToggle(o.value)}
                   className="accent-primary-600"
                 />
+                <o.Icon
+                  size={14}
+                  aria-hidden="true"
+                  className={[
+                    "text-gray-500 shrink-0",
+                    o.rotated ? "rotate-90" : "",
+                  ].join(" ")}
+                />
                 {o.label}
+                <span className="text-xs text-gray-400 ml-auto pl-3">{o.dims}</span>
               </label>
             );
           })}
@@ -366,7 +403,6 @@ export function Prompt({
   const runs = useRunsStore((s) => s.runs);
   const composerUnitType = useRunsStore((s) => s.composerUnitType);
   const composerPlatforms = useRunsStore((s) => s.composerPlatforms);
-  const composerOrientation = useRunsStore((s) => s.composerOrientation);
   const composerVariations = useRunsStore((s) => s.composerVariations);
   const composerFidelity = useRunsStore((s) => s.composerFidelity);
   const setComposerState = useRunsStore((s) => s.setComposerState);
@@ -456,7 +492,6 @@ export function Prompt({
 
     // Non-default composer extras ride the payload; defaults stay off the wire
     // so legacy consumers see byte-identical requests.
-    const orientation = useRunsStore.getState().composerOrientation;
     const variations = useRunsStore.getState().composerVariations;
     const fidelity = useRunsStore.getState().composerFidelity;
 
@@ -468,7 +503,6 @@ export function Prompt({
           prompt: trimmed,
           unitType,
           platforms,
-          ...(orientation !== "auto" ? { orientation } : {}),
           ...(variations > 1 ? { variations } : {}),
           ...(fidelity !== "medium" ? { fidelity } : {}),
         },
@@ -497,7 +531,7 @@ export function Prompt({
   // The [] sentinel (fall back to classification platforms at submit) survives
   // until the first explicit toggle; from then on the list is explicit.
   function handleViewportToggle(value: string) {
-    const current = effectivePlatforms;
+    const current = effectivePlatforms.map(normalizeViewport);
     const has = current.includes(value);
     if (isUserFlow) {
       // Single-select: picking a viewport replaces the selection.
@@ -518,9 +552,9 @@ export function Prompt({
     };
     if (value === "user-flow") {
       // A flow is one journey: clamp to a single viewport and one variation.
+      const normalized = effectivePlatforms.map(normalizeViewport);
       const first =
-        VIEWPORT_VALUES.find((v) => effectivePlatforms.includes(v)) ??
-        effectivePlatforms[0];
+        VIEWPORT_VALUES.find((v) => normalized.includes(v)) ?? normalized[0];
       if (first !== undefined) partial.composerPlatforms = [first];
       partial.composerVariations = 1;
     }
@@ -568,17 +602,11 @@ export function Prompt({
                 ariaLabel="Unit type"
               />
               <ViewportMultiSelect
-                selected={effectivePlatforms.filter((p) =>
-                  VIEWPORT_VALUES.includes(p),
-                )}
+                selected={effectivePlatforms
+                  .map(normalizeViewport)
+                  .filter((p) => VIEWPORT_VALUES.includes(p))}
                 single={isUserFlow}
                 onToggle={handleViewportToggle}
-              />
-              <ChipSelect
-                value={composerOrientation}
-                onChange={(v) => setComposerState({ composerOrientation: v })}
-                options={ORIENTATION_OPTIONS}
-                ariaLabel="Orientation"
               />
               <ChipSelect
                 value={String(composerVariations)}

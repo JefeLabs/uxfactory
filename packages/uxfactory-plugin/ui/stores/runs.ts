@@ -54,9 +54,8 @@ const MAX_RUNS = 20;
 /** Composer chip state — every field the Prompt composer persists across tab switches. */
 export interface ComposerState {
   composerUnitType: string;
+  /** Viewport tokens (device×orientation, e.g. "mobile-portrait"); [] = classification fallback. */
   composerPlatforms: string[];
-  /** "auto" | "portrait" | "landscape" — "auto" stays off the wire. */
-  composerOrientation: string;
   /** 1–3; 1 stays off the wire. */
   composerVariations: number;
   /** "low" | "medium" | "high" — "medium" stays off the wire. */
@@ -110,7 +109,6 @@ export const useRunsStore = create<RunsStore>(
     runs: [],
     composerUnitType: "page",
     composerPlatforms: [],
-    composerOrientation: "auto",
     composerVariations: 1,
     composerFidelity: "medium",
 
