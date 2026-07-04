@@ -219,6 +219,23 @@ describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
     expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
   });
 
+  it("shows the setup commands while bridge status is still 'Checking…'", async () => {
+    const bridge = makeBridge({
+      // Never resolves — health stays pending, pill stays "Checking…"
+      health: vi.fn().mockReturnValue(new Promise(() => {})),
+    });
+    const bus = makeBus();
+    useAppStore.setState({ ...BASE_STORE });
+
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Checking…");
+    expect(screen.getByText("npm install -g @uxfactory/cli")).toBeInTheDocument();
+    expect(screen.getByText("uxfactory bridge")).toBeInTheDocument();
+  });
+
   it("shows the npm install command above the launch command when bridge is down", async () => {
     const bridge = makeBridge({
       health: vi.fn().mockResolvedValue({ ok: false }),

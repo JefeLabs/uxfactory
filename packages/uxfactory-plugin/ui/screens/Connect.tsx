@@ -329,8 +329,8 @@ export function Connect({
               <div className="flex flex-col gap-2">
                 <StatusPill status={pillStatus} label={pillLabel} />
 
-                {/* Setup commands when bridge is down: install once, then launch */}
-                {bridgeStatus === "down" && (
+                {/* Setup commands until the bridge is confirmed running: install once, then launch */}
+                {bridgeStatus !== "running" && (
                   <div className="flex flex-col gap-1.5">
                     <CopyableCommand
                       id="install-cmd"
