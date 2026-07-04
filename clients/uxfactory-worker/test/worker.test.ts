@@ -1312,6 +1312,48 @@ describe('runGenerative', () => {
     }
   });
 
+  it('generate-design: payload designStyle overrides the classification default', async () => {
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.classification.json'),
+      JSON.stringify({ designStyle: 'swiss' }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      {
+        id: 'pr_style_override',
+        kind: 'generate-design',
+        payload: { designStyle: 'cyberpunk' },
+        createdAt: 1,
+      },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('Design style: CYBERPUNK');
+    expect(user).not.toContain('Design style: SWISS');
+    const rubric = await readFile(path.join(projectRoot, '.uxfactory', 'craft-rubric.md'), 'utf8');
+    expect(rubric).toContain('Cyberpunk');
+  });
+
+  it('generate-design: an unknown payload designStyle falls back to the classification', async () => {
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.classification.json'),
+      JSON.stringify({ designStyle: 'swiss' }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_style_bad', kind: 'generate-design', payload: { designStyle: 'vibes' }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('Design style: SWISS');
+  });
+
   it('STYLE_GUIDANCE stays in sync with the panel DESIGN_STYLES vocabulary', async () => {
     const { DESIGN_STYLES } = await import(
       '../../../packages/uxfactory-plugin/ui/lib/design-styles.js'

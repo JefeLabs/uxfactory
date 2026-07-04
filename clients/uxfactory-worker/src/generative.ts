@@ -1219,9 +1219,16 @@ export async function runGenerative(
   ctx: DispatchCtx,
 ): Promise<DispatchOutcome> {
   try {
-    // Classification-pinned design style shapes the generate-design task + rubric.
-    const designStyle =
-      req.kind === 'generate-design' ? await readDesignStyle(ctx.projectRoot) : undefined;
+    // Design style for the generate-design task + rubric: a valid per-request
+    // payload override wins; otherwise the classification-pinned default.
+    let designStyle: string | undefined;
+    if (req.kind === 'generate-design') {
+      const payloadStyle = str(asObject(req.payload), 'designStyle');
+      designStyle =
+        payloadStyle !== undefined && STYLE_GUIDANCE[payloadStyle] !== undefined
+          ? payloadStyle
+          : await readDesignStyle(ctx.projectRoot);
+    }
     const plan = planGenerative(req, ctx, { designStyle });
 
     // Grant the headless skill the least tools it needs (shell uxfactory + write

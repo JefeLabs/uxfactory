@@ -83,6 +83,7 @@ function resetStores(snapshotOverride?: Partial<ProjectSnapshot>) {
     composerPlatforms: [],
     composerVariations: 1,
     composerFidelity: "medium",
+    composerDesignStyle: "",
     deviceConfig: DEFAULT_DEVICE_CONFIG,
   });
 }
@@ -830,6 +831,52 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
           tablet: "768x1024",
           mobile: "430x932",
         },
+      },
+    });
+  });
+
+  it("style select offers Project default plus the full vocabulary; default stays off the wire", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
+    expect(select.options).toHaveLength(37); // sentinel + 36 styles
+    expect(select.options[0]!.textContent).toBe("Project default");
+    expect(select.value).toBe("");
+
+    // Default submits WITHOUT a designStyle key (legacy wire).
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    const body = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(body.payload).not.toHaveProperty("designStyle");
+  });
+
+  it("a picked style overrides the project default on the wire", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    await user.selectOptions(screen.getByLabelText("Design style"), "cyberpunk");
+    expect(useRunsStore.getState().composerDesignStyle).toBe("cyberpunk");
+
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A dashboard");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-design",
+      payload: {
+        prompt: "A dashboard",
+        unitType: "page",
+        platforms: ["desktop", "mobile"],
+        designStyle: "cyberpunk",
       },
     });
   });

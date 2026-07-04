@@ -103,6 +103,8 @@ export interface ComposerState {
   composerVariations: number;
   /** "low" | "medium" | "high" — "medium" stays off the wire. */
   composerFidelity: string;
+  /** Design-style slug override; "" = project default, stays off the wire. */
+  composerDesignStyle: string;
 }
 
 export interface RunsState extends ComposerState {
@@ -158,6 +160,7 @@ export const useRunsStore = create<RunsStore>(
     composerPlatforms: [],
     composerVariations: 1,
     composerFidelity: "medium",
+    composerDesignStyle: "",
     deviceConfig: DEFAULT_DEVICE_CONFIG,
 
     add(entry) {
