@@ -30,7 +30,7 @@ import { userEvent } from "@testing-library/user-event";
 import type { Bridge, BridgeEvent, ProjectSnapshot } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { useAppStore } from "../ui/stores/app.js";
-import { useRunsStore } from "../ui/stores/runs.js";
+import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../ui/stores/runs.js";
 import { Prompt } from "../ui/screens/Prompt.js";
 import { renderWithProviders } from "./test-utils.js";
 
@@ -83,6 +83,7 @@ function resetStores(snapshotOverride?: Partial<ProjectSnapshot>) {
     composerPlatforms: [],
     composerVariations: 1,
     composerFidelity: "medium",
+    deviceConfig: DEFAULT_DEVICE_CONFIG,
   });
 }
 
@@ -794,6 +795,43 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     expect(screen.getByText("1024×768")).toBeInTheDocument();
     expect(screen.getByText("390×844")).toBeInTheDocument();
     expect(screen.getByText("844×390")).toBeInTheDocument();
+  });
+
+  it("viewport dims follow the configured devices; custom sizes ride the payload", async () => {
+    const user = userEvent.setup();
+    useRunsStore.setState({
+      deviceConfig: {
+        ...DEFAULT_DEVICE_CONFIG,
+        mobile: { name: "iPhone Pro Max", width: 430, height: 932 },
+      },
+    });
+    const { bridge } = makeBridge();
+    await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Viewports" }));
+    // Portrait uses the configured size; landscape swaps it.
+    expect(screen.getByText("430×932")).toBeInTheDocument();
+    expect(screen.getByText("932×430")).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "Checkout page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-design",
+      payload: {
+        prompt: "Checkout page",
+        unitType: "page",
+        platforms: ["desktop", "mobile"],
+        viewportSizes: {
+          desktop: "1440x900",
+          tablet: "768x1024",
+          mobile: "430x932",
+        },
+      },
+    });
   });
 
   it("defaults to Desktop when nothing resolves selected (no classification platforms)", async () => {

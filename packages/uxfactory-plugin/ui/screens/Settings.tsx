@@ -25,6 +25,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { Bridge, BridgeStats, SkillEntry } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
+import { useRunsStore } from "../stores/runs.js";
+import type { DeviceSize } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { statsQuery, skillsQuery, logsQuery } from "../queries.js";
 
@@ -33,6 +35,33 @@ import { statsQuery, skillsQuery, logsQuery } from "../queries.js";
 const STORAGE_BUDGET_BYTES = 100 * 1024; // 100 kb
 const LOGS_REPOLL_MS = 2_000;
 const RESTART_COMMAND = "uxfactory bridge";
+/** Device presets selectable per viewport category (portrait-base sizes). */
+const DEVICE_PRESETS: Record<"desktop" | "tablet" | "mobile", DeviceSize[]> = {
+  desktop: [
+    { name: "Laptop", width: 1440, height: 900 },
+    { name: "Small laptop", width: 1280, height: 800 },
+    { name: "MacBook Pro 16″", width: 1728, height: 1117 },
+    { name: "Desktop HD", width: 1920, height: 1080 },
+  ],
+  tablet: [
+    { name: "iPad Mini/Air", width: 768, height: 1024 },
+    { name: "iPad Pro 11″", width: 834, height: 1194 },
+    { name: "iPad Pro 12.9″", width: 1024, height: 1366 },
+  ],
+  mobile: [
+    { name: "iPhone SE", width: 375, height: 667 },
+    { name: "iPhone 14/15", width: 390, height: 844 },
+    { name: "iPhone Pro Max", width: 430, height: 932 },
+    { name: "Android (Pixel)", width: 412, height: 915 },
+  ],
+};
+
+const DEVICE_CATEGORIES: { key: "desktop" | "tablet" | "mobile"; label: string }[] = [
+  { key: "desktop", label: "Desktop" },
+  { key: "tablet", label: "Tablet" },
+  { key: "mobile", label: "Mobile" },
+];
+
 /** Known plugin storage key prefixes (the bus has no key-listing). */
 const STORAGE_PREFIXES = ["conn:v1", "runs:v1", "checks:v1"] as const;
 
@@ -175,6 +204,8 @@ export function Settings({
 }): React.JSX.Element {
   // ── Store selectors (single primitives / stable refs only) ─────────────────
   const endpoint = useAppStore((s) => s.connection.endpoint);
+  const deviceConfig = useRunsStore((s) => s.deviceConfig);
+  const setDeviceConfig = useRunsStore((s) => s.setDeviceConfig);
   const toast = useAppStore((s) => s.toast);
 
   // ── Stats (Query-driven, 10s refetchInterval) ──────────────────────────────
@@ -469,6 +500,42 @@ export function Settings({
                 <span className="text-success-600" aria-hidden="true">✓</span>
               </span>
             </div>
+          </div>
+        </Card>
+
+        {/* ── Card: Devices — the device behind each composer viewport ─────── */}
+        <Card>
+          <div className="flex items-center justify-between px-3 pt-3 pb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              Devices
+            </span>
+            <span className="text-xs text-gray-400 normal-case tracking-normal font-normal">
+              sets viewport sizes
+            </span>
+          </div>
+          <div className="divide-y divide-gray-100 border-t border-gray-100">
+            {DEVICE_CATEGORIES.map(({ key, label }) => (
+              <div key={key} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="text-xs text-gray-500 shrink-0 w-20">{label}</span>
+                <select
+                  aria-label={`${label} device`}
+                  value={deviceConfig[key].name}
+                  onChange={(e) => {
+                    const preset = DEVICE_PRESETS[key].find(
+                      (d) => d.name === e.target.value,
+                    );
+                    if (preset !== undefined) setDeviceConfig({ [key]: preset });
+                  }}
+                  className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  {DEVICE_PRESETS[key].map((d) => (
+                    <option key={d.name} value={d.name}>
+                      {`${d.name} · ${d.width}×${d.height}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
           </div>
         </Card>
 

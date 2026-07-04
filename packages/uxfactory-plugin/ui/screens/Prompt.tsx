@@ -30,7 +30,8 @@ import { useMutation } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
-import { useRunsStore } from "../stores/runs.js";
+import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../stores/runs.js";
+import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { enqueueMutation } from "../queries.js";
@@ -98,23 +99,46 @@ function platformsLabel(platforms: string[]): string {
 const COMPOSER_PLACEHOLDER = "Describe the component(s) to generate";
 
 /**
- * Viewport = device × orientation, one flat pick-list with true dimensions.
- * Desktop is landscape by definition; tablet/mobile split into both.
+ * Viewport = device × orientation, one flat pick-list. Dimensions come from the
+ * per-category devices configured in Settings (DEFAULT_DEVICE_CONFIG until
+ * changed); landscape variants swap width/height.
  */
-const VIEWPORT_OPTIONS: {
+const VIEWPORT_BASE: {
+  label: string;
+  value: string;
+  category: keyof DeviceConfig;
+  landscapeSwap: boolean;
+  Icon: typeof Monitor;
+  rotated?: boolean;
+}[] = [
+  { label: "Desktop", value: "desktop", category: "desktop", landscapeSwap: false, Icon: Monitor },
+  { label: "Tablet portrait", value: "tablet-portrait", category: "tablet", landscapeSwap: false, Icon: Tablet },
+  { label: "Tablet landscape", value: "tablet-landscape", category: "tablet", landscapeSwap: true, Icon: Tablet, rotated: true },
+  { label: "Mobile portrait", value: "mobile-portrait", category: "mobile", landscapeSwap: false, Icon: Smartphone },
+  { label: "Mobile landscape", value: "mobile-landscape", category: "mobile", landscapeSwap: true, Icon: Smartphone, rotated: true },
+];
+const VIEWPORT_VALUES = VIEWPORT_BASE.map((o) => o.value);
+
+interface ViewportOption {
   label: string;
   value: string;
   dims: string;
   Icon: typeof Monitor;
   rotated?: boolean;
-}[] = [
-  { label: "Desktop", value: "desktop", dims: "1440×900", Icon: Monitor },
-  { label: "Tablet portrait", value: "tablet-portrait", dims: "768×1024", Icon: Tablet },
-  { label: "Tablet landscape", value: "tablet-landscape", dims: "1024×768", Icon: Tablet, rotated: true },
-  { label: "Mobile portrait", value: "mobile-portrait", dims: "390×844", Icon: Smartphone },
-  { label: "Mobile landscape", value: "mobile-landscape", dims: "844×390", Icon: Smartphone, rotated: true },
-];
-const VIEWPORT_VALUES = VIEWPORT_OPTIONS.map((o) => o.value);
+}
+
+function viewportOptionsFor(devices: DeviceConfig): ViewportOption[] {
+  return VIEWPORT_BASE.map((o) => {
+    const d = devices[o.category];
+    return {
+      label: o.label,
+      value: o.value,
+      dims: o.landscapeSwap ? `${d.height}×${d.width}` : `${d.width}×${d.height}`,
+      Icon: o.Icon,
+      ...(o.rotated !== undefined ? { rotated: o.rotated } : {}),
+    };
+  });
+}
 
 /** Bare classification tokens ("tablet"/"mobile") display as their portrait variant. */
 function normalizeViewport(token: string): string {
@@ -196,16 +220,18 @@ function ChipSelect({
  * checkboxes behave radio-like: picking one replaces the selection.
  */
 function ViewportMultiSelect({
+  options,
   selected,
   single,
   onToggle,
 }: {
+  options: ViewportOption[];
   selected: string[];
   single: boolean;
   onToggle: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const selectedOptions = VIEWPORT_OPTIONS.filter((o) => selected.includes(o.value));
+  const selectedOptions = options.filter((o) => selected.includes(o.value));
   return (
     <div className="relative inline-flex">
       <button
@@ -253,7 +279,7 @@ function ViewportMultiSelect({
           aria-label="Viewport options"
           className="absolute top-full left-0 mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-col gap-1"
         >
-          {VIEWPORT_OPTIONS.map((o) => {
+          {options.map((o) => {
             const checked = selected.includes(o.value);
             // Multi mode: the last checked row can't be unchecked (≥1 viewport).
             const lastChecked = !single && checked && selected.length === 1;
@@ -407,6 +433,7 @@ export function Prompt({
   const composerPlatforms = useRunsStore((s) => s.composerPlatforms);
   const composerVariations = useRunsStore((s) => s.composerVariations);
   const composerFidelity = useRunsStore((s) => s.composerFidelity);
+  const deviceConfig = useRunsStore((s) => s.deviceConfig);
   const setComposerState = useRunsStore((s) => s.setComposerState);
 
   // ── Local state ────────────────────────────────────────────────────────────
@@ -505,6 +532,17 @@ export function Prompt({
     // so legacy consumers see byte-identical requests.
     const variations = useRunsStore.getState().composerVariations;
     const fidelity = useRunsStore.getState().composerFidelity;
+    const devices = useRunsStore.getState().deviceConfig;
+    const sizeOf = (d: DeviceSize) => `${d.width}x${d.height}`;
+    const viewportSizes = {
+      desktop: sizeOf(devices.desktop),
+      tablet: sizeOf(devices.tablet),
+      mobile: sizeOf(devices.mobile),
+    };
+    const isCustomDevices =
+      viewportSizes.desktop !== sizeOf(DEFAULT_DEVICE_CONFIG.desktop) ||
+      viewportSizes.tablet !== sizeOf(DEFAULT_DEVICE_CONFIG.tablet) ||
+      viewportSizes.mobile !== sizeOf(DEFAULT_DEVICE_CONFIG.mobile);
 
     setIsSubmitting(true);
     try {
@@ -516,6 +554,7 @@ export function Prompt({
           platforms,
           ...(variations > 1 ? { variations } : {}),
           ...(fidelity !== "medium" ? { fidelity } : {}),
+          ...(isCustomDevices ? { viewportSizes } : {}),
         },
       });
 
@@ -611,6 +650,7 @@ export function Prompt({
                 ariaLabel="Unit type"
               />
               <ViewportMultiSelect
+                options={viewportOptionsFor(deviceConfig)}
                 selected={selectedViewports}
                 single={isUserFlow}
                 onToggle={handleViewportToggle}

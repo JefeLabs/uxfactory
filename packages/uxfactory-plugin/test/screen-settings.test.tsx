@@ -39,6 +39,7 @@ import type { Bridge, BridgeStats } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { Settings } from "../ui/screens/Settings.js";
 import { useAppStore } from "../ui/stores/app.js";
+import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../ui/stores/runs.js";
 import { renderWithProviders } from "./test-utils.js";
 
 // ─── Store reset ─────────────────────────────────────────────────────────────
@@ -641,5 +642,44 @@ describe("AC-8: graceful stats() failure → down state", () => {
       expect(screen.queryByText(/Bridge not reachable/i)).not.toBeInTheDocument();
     });
     expect(screen.getByText(/v0\.4\.2/)).toBeInTheDocument();
+  });
+});
+
+// ─── Devices card: per-category viewport device presets ───────────────────────
+
+describe("Devices card: define the device behind each viewport category", () => {
+  beforeEach(() => {
+    useRunsStore.setState({ deviceConfig: DEFAULT_DEVICE_CONFIG });
+  });
+
+  it("renders Desktop/Tablet/Mobile device selects with the default presets", async () => {
+    const bridge = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Settings bridge={bridge} bus={bus} />, { queryClient: makeTestQueryClient() });
+
+    const desktop = screen.getByLabelText("Desktop device") as HTMLSelectElement;
+    const tablet = screen.getByLabelText("Tablet device") as HTMLSelectElement;
+    const mobile = screen.getByLabelText("Mobile device") as HTMLSelectElement;
+    expect(desktop.value).toBe("Laptop");
+    expect(tablet.value).toBe("iPad Mini/Air");
+    expect(mobile.value).toBe("iPhone 14/15");
+    // Options carry the actual dimensions.
+    expect(screen.getByRole("option", { name: "Desktop HD · 1920×1080" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "iPhone Pro Max · 430×932" })).toBeInTheDocument();
+  });
+
+  it("changing a device preset updates the runs-store deviceConfig", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Settings bridge={bridge} bus={bus} />, { queryClient: makeTestQueryClient() });
+
+    await user.selectOptions(screen.getByLabelText("Mobile device"), "iPhone Pro Max");
+
+    expect(useRunsStore.getState().deviceConfig.mobile).toEqual({
+      name: "iPhone Pro Max",
+      width: 430,
+      height: 932,
+    });
   });
 });

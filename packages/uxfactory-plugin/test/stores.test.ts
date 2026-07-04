@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore, suggestFor } from "../ui/stores/wizard.js";
-import { useRunsStore } from "../ui/stores/runs.js";
+import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../ui/stores/runs.js";
 import type { RunEntry } from "../ui/stores/runs.js";
 import type { ProjectSnapshot } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
@@ -559,5 +559,50 @@ describe("runs store — hydrate + persist roundtrip", () => {
 
     expect(useRunsStore.getState().runs[0]?.id).toBe("legacy-1");
     expect(useRunsStore.getState().runs[0]?.nodeIds).toBeUndefined();
+  });
+});
+
+describe("runs store — device config", () => {
+  beforeEach(() => {
+    useRunsStore.setState({ runs: [], deviceConfig: DEFAULT_DEVICE_CONFIG });
+  });
+
+  it("defaults to Laptop / iPad / iPhone sizes", () => {
+    const cfg = useRunsStore.getState().deviceConfig;
+    expect(cfg.desktop).toEqual({ name: "Laptop", width: 1440, height: 900 });
+    expect(cfg.tablet).toEqual({ name: "iPad Mini/Air", width: 768, height: 1024 });
+    expect(cfg.mobile).toEqual({ name: "iPhone 14/15", width: 390, height: 844 });
+  });
+
+  it("hydrates deviceConfig from bus storage, merging over defaults", async () => {
+    const { bus } = makeFakeBus({
+      "devices:v1:file-abc123": {
+        mobile: { name: "iPhone Pro Max", width: 430, height: 932 },
+      },
+    });
+    const teardown = await useRunsStore.getState().hydrate(bus);
+    teardown?.();
+
+    expect(useRunsStore.getState().deviceConfig.mobile).toEqual({
+      name: "iPhone Pro Max",
+      width: 430,
+      height: 932,
+    });
+    // Untouched categories keep their defaults.
+    expect(useRunsStore.getState().deviceConfig.desktop.width).toBe(1440);
+  });
+
+  it("persists deviceConfig when setDeviceConfig runs after hydrate", async () => {
+    const { bus, storage } = makeFakeBus();
+    const teardown = await useRunsStore.getState().hydrate(bus);
+
+    useRunsStore.getState().setDeviceConfig({
+      desktop: { name: "Desktop HD", width: 1920, height: 1080 },
+    });
+    await Promise.resolve();
+    teardown?.();
+
+    const stored = storage["devices:v1:file-abc123"] as { desktop?: { width: number } };
+    expect(stored?.desktop?.width).toBe(1920);
   });
 });

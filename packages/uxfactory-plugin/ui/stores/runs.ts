@@ -49,6 +49,49 @@ export interface RunEntry {
 
 const MAX_RUNS = 20;
 
+// ─── Device config ────────────────────────────────────────────────────────────
+
+/** One concrete device behind a viewport category (portrait-base dimensions). */
+export interface DeviceSize {
+  name: string;
+  width: number;
+  height: number;
+}
+
+/** The device chosen for each viewport category (Settings → Devices). */
+export interface DeviceConfig {
+  desktop: DeviceSize;
+  tablet: DeviceSize;
+  mobile: DeviceSize;
+}
+
+export const DEFAULT_DEVICE_CONFIG: DeviceConfig = {
+  desktop: { name: "Laptop", width: 1440, height: 900 },
+  tablet: { name: "iPad Mini/Air", width: 768, height: 1024 },
+  mobile: { name: "iPhone 14/15", width: 390, height: 844 },
+};
+
+function isDeviceSize(v: unknown): v is DeviceSize {
+  return (
+    v !== null &&
+    typeof v === "object" &&
+    typeof (v as DeviceSize).name === "string" &&
+    typeof (v as DeviceSize).width === "number" &&
+    typeof (v as DeviceSize).height === "number"
+  );
+}
+
+/** Merge a stored (possibly partial/corrupt) config over the defaults. */
+function mergeDeviceConfig(stored: unknown): DeviceConfig {
+  const next = { ...DEFAULT_DEVICE_CONFIG };
+  if (stored === null || typeof stored !== "object") return next;
+  for (const key of ["desktop", "tablet", "mobile"] as const) {
+    const v = (stored as Record<string, unknown>)[key];
+    if (isDeviceSize(v)) next[key] = v;
+  }
+  return next;
+}
+
 // ─── Store state ──────────────────────────────────────────────────────────────
 
 /** Composer chip state — every field the Prompt composer persists across tab switches. */
@@ -64,6 +107,8 @@ export interface ComposerState {
 
 export interface RunsState extends ComposerState {
   runs: RunEntry[];
+  /** Per-category devices behind the composer's viewport picker (Settings → Devices). */
+  deviceConfig: DeviceConfig;
   /*
    * Composer chip state lives here (rather than component local state) so the
    * Prompt screen restores its selections when re-mounted on tab switches.
@@ -98,6 +143,8 @@ export interface RunsActions {
   hydrate(bus: PluginBus): Promise<() => void>;
   /** Persist composer chip state across tab switches (partial update). */
   setComposerState(partial: Partial<ComposerState>): void;
+  /** Update the device behind one or more viewport categories. */
+  setDeviceConfig(partial: Partial<DeviceConfig>): void;
 }
 
 export type RunsStore = RunsState & RunsActions;
@@ -111,6 +158,7 @@ export const useRunsStore = create<RunsStore>(
     composerPlatforms: [],
     composerVariations: 1,
     composerFidelity: "medium",
+    deviceConfig: DEFAULT_DEVICE_CONFIG,
 
     add(entry) {
       const run: RunEntry = { status: "generating", ...entry };
@@ -141,6 +189,10 @@ export const useRunsStore = create<RunsStore>(
       set(partial);
     },
 
+    setDeviceConfig(partial) {
+      set((s) => ({ deviceConfig: { ...s.deviceConfig, ...partial } }));
+    },
+
     async hydrate(bus: PluginBus): Promise<() => void> {
       let fileKey: string;
       try {
@@ -152,6 +204,7 @@ export const useRunsStore = create<RunsStore>(
       }
 
       const storageKey = `runs:v1:${fileKey}`;
+      const devicesKey = `devices:v1:${fileKey}`;
 
       // Load existing runs from storage.
       try {
@@ -163,12 +216,25 @@ export const useRunsStore = create<RunsStore>(
         // Storage read failure — start fresh.
       }
 
+      // Load the device config (partial/corrupt entries merge over defaults).
+      try {
+        const storedDevices = await bus.storageGet<unknown>(devicesKey);
+        if (storedDevices !== undefined) {
+          set({ deviceConfig: mergeDeviceConfig(storedDevices) });
+        }
+      } catch {
+        // Storage read failure — keep defaults.
+      }
+
       // Auto-persist on every state change.
       // Use the api parameter to avoid a circular self-reference in the type.
       const unsubscribe: () => void = api.subscribe((state: RunsStore) => {
         bus
           .storageSet(storageKey, state.runs)
           .catch(() => { /* storage write failure — non-fatal */ });
+        bus
+          .storageSet(devicesKey, state.deviceConfig)
+          .catch(() => { /* non-fatal */ });
       });
 
       // Trigger an immediate persist of the hydrated state.
