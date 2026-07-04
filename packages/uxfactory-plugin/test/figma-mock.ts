@@ -1,5 +1,25 @@
 import type { MainToUi, UiToMain } from "../src/messages.js";
 
+/** Stand-in for real Figma's `figma.mixed` sentinel (a unique Symbol). */
+export const FIGMA_MIXED: unique symbol = Symbol("figma.mixed");
+
+/**
+ * Real figma.ui.postMessage rejects unserializable payloads ("Cannot unwrap
+ * symbol") — any figma.mixed leaking into a report must fail in tests too.
+ */
+function assertNoSymbols(value: unknown): void {
+  if (typeof value === "symbol") {
+    throw new Error("in postMessage: Cannot unwrap symbol");
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) assertNoSymbols(v);
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value)) assertNoSymbols(v);
+  }
+}
+
 /**
  * A fake scene node exposing only the surface `code.ts` touches.
  *
@@ -16,7 +36,34 @@ export class FakeNode {
   fills: unknown = undefined;
   strokes: unknown = undefined;
   strokeWeight: number | undefined = undefined;
-  cornerRadius: number | undefined = undefined;
+  _cornerRadius: number | undefined = undefined;
+  /**
+   * Real Figma: the shorthand reads as figma.mixed (a Symbol) when the four
+   * per-corner radii differ — report code must never copy it into a message.
+   */
+  get cornerRadius(): number | symbol | undefined {
+    const corners = [
+      this.topLeftRadius,
+      this.topRightRadius,
+      this.bottomRightRadius,
+      this.bottomLeftRadius,
+    ];
+    const set = corners.filter((v): v is number => v !== undefined);
+    if (set.length > 0) {
+      return set.length === 4 && set.every((v) => v === set[0]) ? set[0] : FIGMA_MIXED;
+    }
+    return this._cornerRadius;
+  }
+  set cornerRadius(v: number | symbol | undefined) {
+    if (typeof v === "number") {
+      this._cornerRadius = v;
+      // Real Figma's uniform shorthand writes all four corners.
+      this.topLeftRadius = v;
+      this.topRightRadius = v;
+      this.bottomRightRadius = v;
+      this.bottomLeftRadius = v;
+    }
+  }
   opacity: number | undefined = undefined;
   rotation: number | undefined = undefined;
   visible: boolean | undefined = undefined;
@@ -316,6 +363,7 @@ export function makeFigma(): FakeFigma {
     posted,
     onmessage: null,
     postMessage(msg: MainToUi) {
+      assertNoSymbols(msg);
       posted.push(msg);
     },
     resize() {},

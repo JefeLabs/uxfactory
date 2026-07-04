@@ -202,18 +202,22 @@ function toReportNode(node: EditableNode): ReportNode {
     w: node.width,
     h: node.height,
   };
-  if (node.rotation !== undefined) out.rotation = node.rotation;
-  if (node.opacity !== undefined) out.opacity = node.opacity;
-  if (node.visible !== undefined) out.visible = node.visible;
-  if (node.cornerRadius !== undefined) out.cornerRadius = node.cornerRadius;
+  // typeof guards, not undefined-checks: real Figma reads report figma.mixed (a
+  // Symbol) for shorthand properties with divergent per-part values (e.g.
+  // cornerRadius with distinct corners, strokeWeight with per-side weights) —
+  // and figma.ui.postMessage throws "Cannot unwrap symbol" on any symbol.
+  if (typeof node.rotation === "number") out.rotation = node.rotation;
+  if (typeof node.opacity === "number") out.opacity = node.opacity;
+  if (typeof node.visible === "boolean") out.visible = node.visible;
+  if (typeof node.cornerRadius === "number") out.cornerRadius = node.cornerRadius;
   const fill = paintToHex(node.fills);
   if (fill !== undefined) out.fill = fill;
   const stroke = paintToHex(node.strokes);
   if (stroke !== undefined) out.stroke = stroke;
-  if (node.strokeWeight !== undefined) out.strokeWidth = node.strokeWeight;
+  if (typeof node.strokeWeight === "number") out.strokeWidth = node.strokeWeight;
   // Fix 2: prefer text sublayer (STICKY / CONNECTOR) over direct characters.
   const chars = node.text !== undefined ? node.text.characters : node.characters;
-  if (chars) out.characters = chars;
+  if (typeof chars === "string" && chars) out.characters = chars;
   return out;
 }
 

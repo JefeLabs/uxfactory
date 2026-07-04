@@ -238,6 +238,27 @@ describe("code.ts render", () => {
     expect(col.__childCountAtSizing).toBe(1);
   });
 
+  it("regression: mixed corner radii never leak figma.mixed into the report post", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      frames: [
+        { name: "card-host", x: 0, y: 0, width: 200, height: 200,
+          children: [
+            // Distinct per-corner radii → node.cornerRadius reads as figma.mixed
+            // (a Symbol) in real Figma; postMessage cannot serialize it.
+            { type: "shape", name: "card", x: 0, y: 0, width: 100, height: 80,
+              cornerRadius: { tl: 8, tr: 8, br: 0, bl: 0 } },
+          ] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j_mixed" });
+
+    const types = fig.ui.posted.map((m) => (m as { type: string }).type);
+    expect(types).toContain("rendered");
+    expect(types).not.toContain("render-error");
+  });
+
   it("regression: fill-heavy specs render instead of dying on real Figma's FILL constraint", async () => {
     const fig = makeFigma();
     await loadCode(fig);
