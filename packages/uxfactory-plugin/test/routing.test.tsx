@@ -180,11 +180,11 @@ describe("boot path — connect screen (no stored connection)", () => {
 describe("boot path — tabs (stored connection + classified project)", () => {
   beforeEach(() => resetToTabs(true));
 
-  it("renders the tab list with all 6 tabs", async () => {
+  it("renders the tab list with 5 tabs (Settings lives in the ContextBar)", async () => {
     await renderApp();
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     const tabs = within(tabList).getAllByRole("tab");
-    expect(tabs).toHaveLength(6);
+    expect(tabs).toHaveLength(5);
   });
 
   it("renders the Prompt tab label", async () => {
@@ -318,7 +318,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
 describe("tab navigation sets active tab", () => {
   beforeEach(() => resetToTabs(true));
 
-  const tabLabels = ["Generate", "Artifacts", "Components", "Assets", "Checks", "Settings"] as const;
+  const tabLabels = ["Generate", "Artifacts", "Components", "Assets", "Checks"] as const;
 
   for (const label of tabLabels) {
     it(`clicking '${label}' makes its tab trigger active`, async () => {

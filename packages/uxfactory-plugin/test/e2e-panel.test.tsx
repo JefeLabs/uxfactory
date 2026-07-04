@@ -234,17 +234,18 @@ describe("E2E: tab navigation after connect", () => {
     });
   });
 
-  it("renders all 6 tabs and Prompt is active by default", async () => {
+  it("renders the 5 tabs (Settings moved to the ContextBar) and Prompt is active by default", async () => {
     await renderApp();
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     expect(tabList).toBeInTheDocument();
     // The tab bar carries the primary background for emphasis.
     expect(tabList.className).toContain("bg-primary-600");
 
-    const tabs = ["Generate", "Artifacts", "Components", "Assets", "Checks", "Settings"];
+    const tabs = ["Generate", "Artifacts", "Components", "Assets", "Checks"];
     for (const label of tabs) {
       expect(screen.getByRole("tab", { name: label })).toBeInTheDocument();
     }
+    expect(screen.queryByRole("tab", { name: "Settings" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 
@@ -258,14 +259,30 @@ describe("E2E: tab navigation after connect", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/artifacts"));
   });
 
-  it("clicking Settings tab makes it active", async () => {
+  it("the ContextBar gear button opens Settings", async () => {
     const user = userEvent.setup();
     const { router } = await renderApp();
 
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
 
-    expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute("data-state", "active");
     await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/settings"));
+  });
+
+  it("the connection indicator is an icon-only status (no text pill)", async () => {
+    await renderApp();
+    const indicator = screen.getByRole("status", { name: "Connected" });
+    expect(indicator).toBeInTheDocument();
+    expect(indicator).not.toHaveTextContent("Connected");
+  });
+
+  it("the Disconnect button clears the connection and returns to Connect", async () => {
+    const user = userEvent.setup();
+    const { router } = await renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connect"));
+    expect(useAppStore.getState().connection.status).toBe("none");
   });
 });
 

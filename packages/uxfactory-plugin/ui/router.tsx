@@ -27,7 +27,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { snapshotQuery } from "./queries.js";
 import * as Tabs from "@radix-ui/react-tabs";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Settings as SettingsIcon, Unplug } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
 import type { Tab } from "./stores/app.js";
 import { Chip, StatusPill } from "./components/index.js";
@@ -137,13 +137,44 @@ function connectionStatusToPill(status: string): StatusPillStatus {
   }
 }
 
+/** Icon-only connection indicator — same role/name contract the pill had. */
+const CONNECTION_DOT: Record<string, { className: string; label: string }> = {
+  connected: { className: "bg-success-600", label: "Connected" },
+  reconnecting: { className: "bg-amber-500 animate-pulse", label: "Reconnecting" },
+  down: { className: "bg-red-500", label: "Connection error" },
+  disconnected: { className: "bg-gray-300", label: "Disconnected" },
+};
+
+function ConnectionDot({ status }: { status: StatusPillStatus }): React.JSX.Element {
+  const dot = CONNECTION_DOT[status] ?? CONNECTION_DOT["disconnected"]!;
+  return (
+    <span
+      role="status"
+      aria-label={dot.label}
+      title={dot.label}
+      className="inline-flex items-center justify-center w-5 h-5 shrink-0"
+    >
+      <span aria-hidden="true" className={`w-2.5 h-2.5 rounded-full ${dot.className}`} />
+    </span>
+  );
+}
+
 function ContextBar(): React.JSX.Element {
+  const { bridge } = rootRoute.useRouteContext();
   const connection = useAppStore((s) => s.connection);
   const snapshot = useAppStore((s) => s.snapshot);
   const fileName = useAppStore((s) => s.fileInfo?.name);
   const cancelReconnect = useAppStore((s) => s.cancelReconnect);
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
+
+  // Disconnect: back to the Connect screen; stored connection stays for
+  // one-click reconnect, but the client's root scoping is cleared.
+  function handleDisconnect(): void {
+    cancelReconnect(); // sets connection.status back to "none"
+    bridge.setProjectRoot?.(null);
+    void navigate({ to: "/connect" });
+  }
 
   const pillStatus = connectionStatusToPill(connection.status);
   // Project name = the Figma file the user connected; the repo is a detail below.
@@ -206,7 +237,25 @@ function ContextBar(): React.JSX.Element {
             </span>
           )}
         </div>
-        <StatusPill status={pillStatus} />
+        <ConnectionDot status={pillStatus} />
+        <button
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => void navigate({ to: "/tabs/settings" })}
+          className="p-1 text-gray-400 hover:text-gray-600 shrink-0"
+        >
+          <SettingsIcon size={14} />
+        </button>
+        <button
+          type="button"
+          aria-label="Disconnect"
+          title="Disconnect"
+          onClick={handleDisconnect}
+          className="p-1 text-gray-400 hover:text-red-600 shrink-0"
+        >
+          <Unplug size={14} />
+        </button>
       </div>
 
       {/* Chips bar — compact chips in their own collapsible row */}
@@ -249,20 +298,22 @@ function ContextBar(): React.JSX.Element {
 // ─── TabNav ───────────────────────────────────────────────────────────────────
 
 // NOTE: label "Generate" matches the existing test assertions (app.tsx used "Generate").
+// Settings is NOT a tab — it opens via the ContextBar gear button.
 const TAB_DEFS: { value: Tab; label: string }[] = [
   { value: "prompt", label: "Generate" },
   { value: "artifacts", label: "Artifacts" },
   { value: "components", label: "Components" },
   { value: "assets", label: "Assets" },
   { value: "checks", label: "Checks" },
-  { value: "settings", label: "Settings" },
 ];
 
 function deriveTab(pathname: string): Tab {
   const rest = pathname.startsWith("/tabs/")
     ? pathname.slice("/tabs/".length)
     : "prompt";
-  const known = TAB_DEFS.map((t) => t.value) as string[];
+  // "settings" is a valid /tabs route without a trigger: Tabs.Root holds the
+  // value and simply highlights no tab while the Settings screen is open.
+  const known = [...TAB_DEFS.map((t) => t.value), "settings"] as string[];
   return (known.includes(rest) ? rest : "prompt") as Tab;
 }
 
