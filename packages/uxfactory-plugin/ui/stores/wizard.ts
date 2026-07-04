@@ -29,6 +29,8 @@ export interface ClassificationDraft {
   layout: Layout;
   ageGroup: string;
   startingMode: StartingMode;
+  /** Design-style slug (see ui/lib/design-styles.ts); "" = follow the suggestion. */
+  designStyle: string;
 }
 
 // ─── Defaults draft ───────────────────────────────────────────────────────────
@@ -151,6 +153,7 @@ const DEFAULT_CLASSIFICATION: ClassificationDraft = {
   layout: "responsive",
   ageGroup: "18-39",
   startingMode: "start-fresh",
+  designStyle: "",
 };
 
 const DEFAULT_DEFAULTS: DefaultsDraft = {
@@ -221,6 +224,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
       }
       if (typeof cls["layout"] === "string") patch.layout = cls["layout"] as Layout;
       if (typeof cls["ageGroup"] === "string") patch.ageGroup = cls["ageGroup"];
+      if (typeof cls["designStyle"] === "string") patch.designStyle = cls["designStyle"];
       set((s) => ({ classification: { ...s.classification, ...patch } }));
     }
 

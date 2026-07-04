@@ -253,10 +253,38 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
       platforms: ["desktop", "mobile"],
       layout: "responsive",
       ageGroup: "18-39",
+      // corporate industry suggests Swiss; untouched picker submits the suggestion
+      designStyle: "swiss",
     });
     // style is NOT in the body — it's written by Screen 2
     const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(body).not.toHaveProperty("style");
+  });
+
+  it("Design style select shows the industry suggestion with its traits", async () => {
+    const bridge = makeFakeBridge();
+    await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
+
+    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
+    expect(select.value).toBe("swiss"); // ecommerce + corporate → Swiss
+    expect(screen.getByText(/Strong modular grid/)).toBeInTheDocument();
+  });
+
+  it("picking a style overrides the suggestion and rides the classification body", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge();
+    await renderWithProviders(<SetupClassification bridge={bridge} />, {
+      initialEntries: ["/setup/classification"],
+    });
+
+    await user.selectOptions(screen.getByLabelText("Design style"), "bento");
+    expect(screen.getByText(/rounded content blocks/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body["designStyle"]).toBe("bento");
   });
 
   it("routes to setup-2 after Continue", async () => {

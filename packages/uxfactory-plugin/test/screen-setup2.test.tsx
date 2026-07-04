@@ -112,11 +112,11 @@ function resetToFreshSetup() {
 describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", () => {
   beforeEach(resetToFreshSetup);
 
-  it("Style: 'Mix' is selected", async () => {
+  it("Tone: 'Mix' is selected", async () => {
     await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/defaults"],
     });
-    const group = screen.getByRole("radiogroup", { name: "Style" });
+    const group = screen.getByRole("radiogroup", { name: "Tone" });
     expect(within(group).getByRole("radio", { name: "Mix" })).toHaveAttribute(
       "data-state",
       "checked",

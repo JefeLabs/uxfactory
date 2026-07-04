@@ -1228,6 +1228,82 @@ describe('runGenerative', () => {
     }
   });
 
+  // ── Design style: classification.designStyle shapes the task + rubric ─────
+
+  it('generate-design: classification designStyle injects style guidance and the rubric section', async () => {
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.classification.json'),
+      JSON.stringify({ category: 'marketing', designStyle: 'swiss' }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_style_swiss', kind: 'generate-design', payload: { prompt: 'landing' }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('Design style: SWISS');
+    expect(user).toContain('modular grid');
+
+    const rubric = await readFile(path.join(projectRoot, '.uxfactory', 'craft-rubric.md'), 'utf8');
+    expect(rubric).toContain('Design style conformance');
+    expect(rubric).toContain('Swiss');
+    expect(rubric).toContain('modular grid');
+  });
+
+  it('generate-design: every design style carries distinct guidance', async () => {
+    const STYLE_MARKERS: Record<string, string> = {
+      minimalism: 'negative space',
+      neobrutalism: 'Clashing color',
+      constructivism: 'geometric shapes',
+      swiss: 'modular grid',
+      editorial: 'Print-inspired',
+      'hand-drawn': 'Handwritten or script',
+      retro: 'old-school tech',
+      flat: 'no shadows or 3D',
+      bento: 'rounded content blocks',
+    };
+    for (const [style, marker] of Object.entries(STYLE_MARKERS)) {
+      await writeFile(
+        path.join(projectRoot, 'uxfactory.classification.json'),
+        JSON.stringify({ designStyle: style }),
+        'utf8',
+      );
+      const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+      await runGenerative(
+        { id: `pr_style_${style}`, kind: 'generate-design', payload: {}, createdAt: 1 },
+        adapter,
+        new FakeBridge(),
+        ctx(),
+      );
+      const user = adapter.lastInput?.messages[0]?.content as string;
+      expect(user, style).toContain('Design style:');
+      expect(user, style).toContain(marker);
+    }
+  });
+
+  it('generate-design: no designStyle → no style note, rubric untouched (legacy)', async () => {
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.classification.json'),
+      JSON.stringify({ category: 'marketing' }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_style_none', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).not.toContain('Design style:');
+    const rubric = await readFile(path.join(projectRoot, '.uxfactory', 'craft-rubric.md'), 'utf8');
+    expect(rubric).not.toContain('Design style conformance');
+  });
+
   it('generate-design: empty payload (legacy) adds no request/scope/platform lines', async () => {
     const adapter = new FakeAdapter(projectRoot, [
       { type: 'message-stop', finishReason: 'stop' },

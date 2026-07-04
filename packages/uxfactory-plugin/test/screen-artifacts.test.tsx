@@ -1030,15 +1030,29 @@ describe("quick-dial Segmented label coverage", () => {
     expect(within(group).getByRole("radio", { name: "Exhaustive" })).toBeInTheDocument();
   });
 
-  it("Style dial shows Informal and Formal labels", async () => {
+  it("Tone dial (renamed from Style) shows Informal and Formal labels", async () => {
     const user = userEvent.setup();
     await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(screen.getByRole("checkbox", { name: /Style/i }));
+    await user.click(screen.getByRole("checkbox", { name: /Tone/i }));
 
-    const group = screen.getByRole("radiogroup", { name: /Style fidelity/i });
+    const group = screen.getByRole("radiogroup", { name: /Tone fidelity/i });
     expect(within(group).getByRole("radio", { name: "Informal" })).toBeInTheDocument();
     expect(within(group).getByRole("radio", { name: "Formal" })).toBeInTheDocument();
+  });
+
+  it("classification chips include the design Style when set", async () => {
+    const state = useAppStore.getState();
+    useAppStore.setState({
+      snapshot: {
+        ...state.snapshot!,
+        classification: { ...state.snapshot!.classification, designStyle: "swiss" },
+      },
+    });
+    await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+
+    const chips = screen.getByRole("group", { name: "Classification" });
+    expect(within(chips).getByRole("checkbox", { name: /Style.*Swiss/i })).toBeInTheDocument();
   });
 });
 

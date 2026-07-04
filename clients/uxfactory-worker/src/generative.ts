@@ -207,6 +207,103 @@ const UNIT_GUIDANCE: Record<string, string> = {
     'high-contrast composition that reads in a fast-scrolling timeline.',
 };
 
+/**
+ * Design-style guidance keyed by classification.designStyle (panel wizard
+ * vocabulary). Each entry becomes both prompt guidance for the design agent
+ * and a craft-rubric conformance section for the vision judge.
+ */
+export const STYLE_GUIDANCE: Record<string, { label: string; traits: string[] }> = {
+  minimalism: {
+    label: 'Minimalism',
+    traits: [
+      'Few elements',
+      'No decorative details',
+      'Lots of negative space',
+      'Minimal use of bold colors',
+    ],
+  },
+  neobrutalism: {
+    label: 'Brutalism & Neobrutalism',
+    traits: [
+      'Provocative layouts',
+      'Clashing color palettes',
+      'Heavy shadows and outlines',
+    ],
+  },
+  constructivism: {
+    label: 'Constructivism',
+    traits: [
+      'Sans-serif fonts',
+      'Various geometric shapes',
+      'Elements aligned to one side of the page',
+    ],
+  },
+  swiss: {
+    label: 'Swiss Style',
+    traits: [
+      'Strong modular grid',
+      'Clean sans-serif fonts',
+      'Minimal, realistic photos and illustrations',
+      'Poster-inspired composition',
+    ],
+  },
+  editorial: {
+    label: 'Editorial Style',
+    traits: [
+      'Print-inspired design',
+      'High contrast in fonts',
+      'Large visuals',
+      'Plenty of decorative elements',
+    ],
+  },
+  'hand-drawn': {
+    label: 'Hand-drawn Style',
+    traits: [
+      'Handwritten or script fonts',
+      'Sketches and brush strokes',
+      'Misaligned or free-form layout',
+      'Intentional visual chaos',
+    ],
+  },
+  retro: {
+    label: 'Retro',
+    traits: [
+      'Bright color palettes and gradients',
+      'Grainy textures and wear effects',
+      'Design elements inspired by old-school tech',
+    ],
+  },
+  flat: {
+    label: 'Flat',
+    traits: [
+      'Total flatness — no shadows or 3D effects',
+      'Pastel tones',
+      'Clean, readable fonts',
+    ],
+  },
+  bento: {
+    label: 'Bento',
+    traits: [
+      'Many rectangular, rounded content blocks',
+      'Very little empty space',
+      'No decorative or unconventional design tricks',
+    ],
+  },
+};
+
+/** Read classification.designStyle when it names a known style; else undefined. */
+async function readDesignStyle(projectRoot: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(path.join(projectRoot, 'uxfactory.classification.json'), 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== 'object') return undefined;
+    const style = (parsed as Record<string, unknown>)['designStyle'];
+    return typeof style === 'string' && STYLE_GUIDANCE[style] !== undefined ? style : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Conventional per-category viewport sizes (mirror the panel's device defaults). */
 const DEFAULT_VIEWPORT_SIZES: Record<
   'desktop' | 'tablet' | 'mobile',
@@ -589,11 +686,24 @@ export async function ensureSkillPermissions(projectRoot: string): Promise<strin
  * green) can read it — the engine's `skill/` dir is NOT in the agent's workspace.
  * Idempotent; the single source is `skill/craft-review/SKILL.md` (via loadSkill).
  */
-export async function provisionCraftRubric(projectRoot: string): Promise<string> {
+export async function provisionCraftRubric(
+  projectRoot: string,
+  designStyle?: string,
+): Promise<string> {
   const dir = path.join(projectRoot, '.uxfactory');
   const file = path.join(dir, 'craft-rubric.md');
   await mkdir(dir, { recursive: true });
-  await writeFile(file, loadSkill('craft-review'), 'utf8');
+  let rubric = loadSkill('craft-review');
+  // The judge scores against the project's CHOSEN style, not generic taste.
+  const styleSpec = designStyle !== undefined ? STYLE_GUIDANCE[designStyle] : undefined;
+  if (styleSpec !== undefined) {
+    rubric +=
+      `\n\n## Design style conformance — ${styleSpec.label}\n\n` +
+      'The project pins this design style; score how unmistakably each screen reads in it:\n' +
+      styleSpec.traits.map((t) => `- ${t}`).join('\n') +
+      '\n';
+  }
+  await writeFile(file, rubric, 'utf8');
   return file;
 }
 
@@ -704,7 +814,11 @@ interface GenerativePlan {
   progress?: boolean;
 }
 
-function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan {
+function planGenerative(
+  req: PipelineRequest,
+  ctx: DispatchCtx,
+  extras?: { designStyle?: string },
+): GenerativePlan {
   const p = asObject(req.payload);
 
   if (req.kind === 'generate-artifact') {
@@ -820,6 +934,13 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
       unitType !== undefined && UNIT_GUIDANCE[unitType] !== undefined
         ? `${UNIT_GUIDANCE[unitType]} `
         : '';
+    const styleSpec =
+      extras?.designStyle !== undefined ? STYLE_GUIDANCE[extras.designStyle] : undefined;
+    const styleNote =
+      styleSpec !== undefined
+        ? `Design style: ${styleSpec.label.toUpperCase()} — ${styleSpec.traits.join('; ')}. ` +
+          'Every screen must read unmistakably in this style. '
+        : '';
     const platformsNote =
       platforms.length > 0
         ? `Target platforms: ${platforms.join(', ')} — lay out and size every screen for these viewports. `
@@ -828,6 +949,7 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
     const user =
       requestNote +
       scopeNote +
+      styleNote +
       platformsNote +
       'Author REAL, self-contained UI screens as `design/screens/<page>.html` files ' +
       '(inline <style> + <script>, no external assets) that cover the stories and ' +
@@ -874,7 +996,10 @@ export async function runGenerative(
   ctx: DispatchCtx,
 ): Promise<DispatchOutcome> {
   try {
-    const plan = planGenerative(req, ctx);
+    // Classification-pinned design style shapes the generate-design task + rubric.
+    const designStyle =
+      req.kind === 'generate-design' ? await readDesignStyle(ctx.projectRoot) : undefined;
+    const plan = planGenerative(req, ctx, { designStyle });
 
     // Grant the headless skill the least tools it needs (shell uxfactory + write
     // files) inside the sandboxed project tree before invoking the adapter.
@@ -900,7 +1025,7 @@ export async function runGenerative(
         viewports: computeViewports(designPayload),
       });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
-      await provisionCraftRubric(ctx.projectRoot);
+      await provisionCraftRubric(ctx.projectRoot, designStyle);
     }
 
     const input: AgentInput = {

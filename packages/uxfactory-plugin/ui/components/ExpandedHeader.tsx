@@ -23,6 +23,7 @@ import React, { useState } from "react";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { Chip, Segmented } from "./index.js";
 import type { SegmentedOption } from "./index.js";
+import { designStyleLabel } from "../lib/design-styles.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
 import { engineToLabel, labelToEngine } from "../lib/dials.js";
@@ -74,7 +75,9 @@ function clsStyle(snapshot: ProjectSnapshot): string {
 
 const DIAL_CONFIGS: Record<DialKey, DialConfig> = {
   style: {
-    label: "Style",
+    // Renamed from "Style": the classification chip row now owns the "Style"
+    // label for classification.designStyle; this dial is the editorial tone.
+    label: "Tone",
     wireKey: "style",
     options: Object.entries(labelToEngine.style).map(([label, value]) => ({ label, value })),
     getValue: clsStyle,
@@ -173,6 +176,13 @@ function classChipsFrom(snapshot: ProjectSnapshot): ClassChip[] {
     { id: "age", label: "Age", value: String(cls["ageGroup"] ?? "—") || "—" },
     { id: "platforms", label: "Platforms", value: platformStr },
     { id: "layout", label: "Layout", value: capitalize(cls["layout"]) },
+    ...(typeof cls["designStyle"] === "string" && cls["designStyle"] !== ""
+      ? [{
+          id: "designStyle",
+          label: "Style",
+          value: designStyleLabel(cls["designStyle"]) ?? capitalize(cls["designStyle"]),
+        }]
+      : []),
   ];
 }
 

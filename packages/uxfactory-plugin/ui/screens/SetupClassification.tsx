@@ -18,6 +18,7 @@ import { putClassificationMutation } from "../queries.js";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
+import { DESIGN_STYLES, suggestDesignStyle } from "../lib/design-styles.js";
 import { ChipGroup, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
 import type { ChipGroupOption, SegmentedOption } from "../components/index.js";
 
@@ -155,7 +156,14 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const layout = useWizardStore((s) => s.classification.layout);
   const ageGroup = useWizardStore((s) => s.classification.ageGroup);
   const startingMode = useWizardStore((s) => s.classification.startingMode);
+  const designStyleDraft = useWizardStore((s) => s.classification.designStyle);
   const setClassification = useWizardStore((s) => s.setClassification);
+
+  // Unset ("" or absent in older drafts) = follow the industry/purpose
+  // suggestion; an explicit pick overrides it.
+  const designStyle = designStyleDraft || suggestDesignStyle(category, industry);
+  const designStyleTraits =
+    DESIGN_STYLES.find((s) => s.value === designStyle)?.traits ?? [];
   const applySuggestions = useWizardStore((s) => s.applySuggestions);
   const prefillFrom = useWizardStore((s) => s.prefillFrom);
   const toastFn = useAppStore((s) => s.toast);
@@ -182,6 +190,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const canContinue = Boolean(category);
   const industryId = useId();
   const localeId = useId();
+  const designStyleId = useId();
   const [saving, setSaving] = useState(false);
 
   // ── Router + mutation ─────────────────────────────────────────────────────────
@@ -202,7 +211,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   async function handleContinue() {
     if (!canContinue || saving) return;
     setSaving(true);
-    putClassification.mutate({ category, industry, locale, platforms, layout, ageGroup });
+    putClassification.mutate({ category, industry, locale, platforms, layout, ageGroup, designStyle });
   }
 
   function handleBack() {
@@ -303,6 +312,29 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
                 onChange={(v) => setClassification({ ageGroup: v as string })}
                 ariaLabel="Age group"
               />
+            </Field>
+
+            <Field label="Design style" id={designStyleId}>
+              <div className="space-y-1">
+                <select
+                  id={designStyleId}
+                  value={designStyle}
+                  onChange={(e) => setClassification({ designStyle: e.target.value })}
+                  className="w-full text-sm border border-gray-300 rounded-[var(--radius-card)] px-3 py-2 bg-white text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                >
+                  {DESIGN_STYLES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                      {s.value === suggestDesignStyle(category, industry)
+                        ? " (suggested)"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">
+                  {designStyleTraits.join(" · ")}
+                </p>
+              </div>
             </Field>
           </div>
 

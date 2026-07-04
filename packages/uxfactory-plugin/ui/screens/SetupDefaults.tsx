@@ -200,13 +200,13 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
 
           {/* Six dial controls */}
           <div className="space-y-4">
-            {/* Style */}
-            <Field label="Style">
+            {/* Tone (renamed from Style — "Style" now means the design style) */}
+            <Field label="Tone">
               <Segmented
                 options={STYLE_OPTIONS}
                 value={style}
                 onChange={(v) => setDefault("style", v)}
-                ariaLabel="Style"
+                ariaLabel="Tone"
               />
             </Field>
 
