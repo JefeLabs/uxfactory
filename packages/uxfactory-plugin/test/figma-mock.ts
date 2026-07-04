@@ -63,6 +63,12 @@ export class FakeNode {
     return this._layoutSizingHorizontal;
   }
   set layoutSizingHorizontal(v: string | undefined) {
+    // Real Figma constraint: FILL is only legal on children of auto-layout parents.
+    if (v === "FILL" && !this._parentIsAutoLayout()) {
+      throw new Error(
+        "in set_layoutSizingHorizontal: FILL can only be set on children of auto-layout frames",
+      );
+    }
     this.__childCountAtSizing = this.children.length;
     this._layoutSizingHorizontal = v;
   }
@@ -70,7 +76,19 @@ export class FakeNode {
     return this._layoutSizingVertical;
   }
   set layoutSizingVertical(v: string | undefined) {
+    if (v === "FILL" && !this._parentIsAutoLayout()) {
+      throw new Error(
+        "in set_layoutSizingVertical: FILL can only be set on children of auto-layout frames",
+      );
+    }
     this._layoutSizingVertical = v;
+  }
+  private _parentIsAutoLayout(): boolean {
+    return (
+      this._parent !== null &&
+      this._parent.layoutMode !== undefined &&
+      this._parent.layoutMode !== "NONE"
+    );
   }
   children: FakeNode[] = [];
   /** Tracks which parent this node was appended to — used by remove(). */

@@ -189,7 +189,7 @@ describe("code.ts render", () => {
           layout: { mode: "vertical", gap: 16, padding: { top: 24, right: 8, bottom: 24, left: 8 }, primaryAlign: "space-between", counterAlign: "center" },
           sizing: { horizontal: "fill", vertical: "hug" },
           children: [
-            { name: "row", x: 0, y: 0, width: 100, height: 40, layout: { mode: "horizontal", gap: 4 }, children: [] },
+            { name: "row", x: 0, y: 0, width: 100, height: 40, layout: { mode: "horizontal", gap: 4 }, sizing: { horizontal: "fill" }, children: [] },
           ],
         },
       ],
@@ -203,7 +203,10 @@ describe("code.ts render", () => {
     expect(col.paddingLeft).toBe(8);
     expect(col.primaryAxisAlignItems).toBe("SPACE_BETWEEN");
     expect(col.counterAxisAlignItems).toBe("CENTER");
-    expect(col.layoutSizingHorizontal).toBe("FILL");
+    // Top-level frame: the page is not auto-layout, so FILL is illegal in real
+    // Figma — skipped, keeping the fixed frame width. HUG (self-referential)
+    // stays legal on the auto-layout node itself.
+    expect(col.layoutSizingHorizontal).toBeUndefined();
     expect(col.layoutSizingVertical).toBe("HUG");
     expect(col.primaryAxisSizingMode).toBe("FIXED");
     expect(col.counterAxisSizingMode).toBe("FIXED");
@@ -211,21 +214,58 @@ describe("code.ts render", () => {
     expect(row.type).toBe("FRAME");
     expect(row.layoutMode).toBe("HORIZONTAL");
     expect(row.primaryAxisSizingMode).toBe("FIXED");
+    // Nested child of an auto-layout parent: FILL is legal and applied.
+    expect(row.layoutSizingHorizontal).toBe("FILL");
   });
 
-  it("sets layoutSizing only after children are appended", async () => {
+  it("sets FILL only after children are appended and only under an auto-layout parent", async () => {
     const fig = makeFigma();
     await loadCode(fig);
     const spec: DesignSpec = {
       frames: [
-        { name: "col", x: 0, y: 0, width: 200, height: 200, layout: { mode: "vertical" }, sizing: { horizontal: "fill" },
-          children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10 }] },
+        { name: "host", x: 0, y: 0, width: 400, height: 400, layout: { mode: "vertical" },
+          children: [
+            { name: "col", x: 0, y: 0, width: 200, height: 200, layout: { mode: "vertical" }, sizing: { horizontal: "fill" },
+              children: [{ type: "shape", name: "s", x: 0, y: 0, width: 10, height: 10 }] },
+          ] },
       ],
     };
     await fig.__send({ type: "render", spec, jobId: "j2" });
-    const col = fig.currentPage.children.find((n) => n.name === "col")!;
+    const host = fig.currentPage.children.find((n) => n.name === "host")!;
+    const col = host.children.find((n) => n.name === "col")!;
+    expect(col.layoutSizingHorizontal).toBe("FILL");
     // sizing recorded the child count present at the moment it was set
     expect(col.__childCountAtSizing).toBe(1);
+  });
+
+  it("regression: fill-heavy specs render instead of dying on real Figma's FILL constraint", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    // Top-level fill (illegal — page parent) + nested fills (legal) — the shape
+    // that killed the generate-design canvas landing in real Figma.
+    const spec: DesignSpec = {
+      frames: [
+        { name: "page-frame", x: 0, y: 0, width: 390, height: 800, layout: { mode: "vertical" },
+          sizing: { horizontal: "fill", vertical: "fill" },
+          children: [
+            { name: "hero", x: 0, y: 0, width: 390, height: 300, layout: { mode: "vertical", gap: 8 },
+              sizing: { horizontal: "fill" },
+              children: [
+                { type: "text", name: "title", x: 0, y: 0, width: 200, height: 32, characters: "Hi" },
+              ] },
+          ] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j_fill" });
+
+    const types = fig.ui.posted.map((m) => (m as { type: string }).type);
+    expect(types).toContain("rendered");
+    expect(types).not.toContain("render-error");
+
+    const pageFrame = fig.currentPage.children.find((n) => n.name === "page-frame")!;
+    expect(pageFrame.layoutSizingHorizontal).toBeUndefined(); // skipped: page parent
+    const hero = pageFrame.children.find((n) => n.name === "hero")!;
+    expect(hero.layoutSizingHorizontal).toBe("FILL");
   });
 
   it("builds a component once and instantiates it with per-instance overrides", async () => {

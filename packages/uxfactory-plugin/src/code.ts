@@ -357,9 +357,35 @@ function applyAutoLayout(node: EditableNode, layout: PlannedChild["layout"], siz
   }
   if (layout.primaryAlign !== undefined) node.primaryAxisAlignItems = PRIMARY_ALIGN[layout.primaryAlign];
   if (layout.counterAlign !== undefined) node.counterAxisAlignItems = COUNTER_ALIGN[layout.counterAlign];
-  // sizing AFTER children are appended (see renderContainer)
-  if (sizing?.horizontal !== undefined) node.layoutSizingHorizontal = SIZING[sizing.horizontal];
-  if (sizing?.vertical !== undefined) node.layoutSizingVertical = SIZING[sizing.vertical];
+  // Own sizing AFTER children are appended (see renderContainer) — but only the
+  // parent-independent modes. FILL is legal solely on children of auto-layout
+  // parents, and the tree builds bottom-up (a node's parent has no layoutMode
+  // yet when the node renders), so real Figma throws on it here. FILL is
+  // applied by the PARENT's pass instead: see applyChildFillSizing.
+  if (sizing?.horizontal !== undefined && SIZING[sizing.horizontal] !== "FILL") {
+    node.layoutSizingHorizontal = SIZING[sizing.horizontal];
+  }
+  if (sizing?.vertical !== undefined && SIZING[sizing.vertical] !== "FILL") {
+    node.layoutSizingVertical = SIZING[sizing.vertical];
+  }
+}
+
+/**
+ * Apply children's FILL sizing once `node` itself became auto-layout. Runs
+ * after applyAutoLayout(node, …) so the parent's layoutMode exists — the only
+ * moment FILL is legal (real Figma: "FILL can only be set on children of
+ * auto-layout frames"). Non-auto-layout parents (including the page for
+ * top-level frames) skip it and keep the fixed frame geometry.
+ */
+function applyChildFillSizing(
+  node: EditableNode,
+  rendered: ReadonlyArray<{ sizing: PlannedChild["sizing"]; child: EditableNode }>,
+): void {
+  if (node.layoutMode === undefined || node.layoutMode === "NONE") return;
+  for (const { sizing, child } of rendered) {
+    if (sizing?.horizontal === "fill") child.layoutSizingHorizontal = "FILL";
+    if (sizing?.vertical === "fill") child.layoutSizingVertical = "FILL";
+  }
 }
 
 function toFigmaEffect(e: NonNullable<PlannedChild["effects"]>[number]): Record<string, unknown> {
@@ -465,14 +491,17 @@ async function renderContainer(
   applyCornerRadius(node, frame.cornerRadius);
   parent.appendChild(node);
   ctx.byName.set(frame.name, node);
+  const rendered: Array<{ sizing: PlannedChild["sizing"]; child: EditableNode }> = [];
   for (const child of frame.children) {
     const childNode = await renderChild(child, node, ctx);
     if (childNode) {
       ctx.byName.set(child.name, childNode);
       ctx.reportNodes.set(childNode.id, toReportNode(childNode));
+      rendered.push({ sizing: child.sizing, child: childNode });
     }
   }
   applyAutoLayout(node, frame.layout, frame.sizing);
+  applyChildFillSizing(node, rendered);
   return node;
 }
 
@@ -621,10 +650,13 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
         // Isolated ctx: master internals never reach the page reportNodes/byName.
         // editDiffs + components remain shared so nested instances still resolve.
         const masterCtx: RenderCtx = { byName: new Map(), reportNodes: new Map(), editDiffs: ctx.editDiffs, components: ctx.components };
+        const masterRendered: Array<{ sizing: PlannedChild["sizing"]; child: EditableNode }> = [];
         for (const child of def.children) {
-          await renderChild(child, master, masterCtx);
+          const childNode = await renderChild(child, master, masterCtx);
+          if (childNode) masterRendered.push({ sizing: child.sizing, child: childNode });
         }
         applyAutoLayout(master, def.layout, def.sizing);
+        applyChildFillSizing(master, masterRendered);
         master.x = masterCursor - def.width;
         master.y = 0;
         masterCursor = master.x - 100;
