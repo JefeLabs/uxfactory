@@ -272,6 +272,30 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
     expect(screen.getByText(/Strong modular grid/)).toBeInTheDocument();
   });
 
+  it("Design style options are grouped and include the extended vocabulary", async () => {
+    await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/classification"],
+    });
+
+    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
+    expect(select.options).toHaveLength(36);
+    const groups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.label);
+    expect(groups).toEqual([
+      "Core styles",
+      "Core digital paradigms",
+      "Modern & dimensional",
+      "Nostalgic & retro",
+      "Artistic & cultural",
+      "Thematic & niche",
+    ]);
+    // Spot-check one style per new group.
+    expect(within(select).getByRole("option", { name: /Cupertino/ })).toBeInTheDocument();
+    expect(within(select).getByRole("option", { name: /Glassmorphism/ })).toBeInTheDocument();
+    expect(within(select).getByRole("option", { name: /Vaporwave/ })).toBeInTheDocument();
+    expect(within(select).getByRole("option", { name: /Art Deco/ })).toBeInTheDocument();
+    expect(within(select).getByRole("option", { name: /Terminal/ })).toBeInTheDocument();
+  });
+
   it("picking a style overrides the suggestion and rides the classification body", async () => {
     const user = userEvent.setup();
     const bridge = makeFakeBridge();

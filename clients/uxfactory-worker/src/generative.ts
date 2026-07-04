@@ -289,6 +289,229 @@ export const STYLE_GUIDANCE: Record<string, { label: string; traits: string[] }>
       'No decorative or unconventional design tricks',
     ],
   },
+  enterprise: {
+    label: 'Enterprise / Utility-first',
+    traits: [
+      'Extreme data density',
+      'Strict atomic component hierarchy',
+      'High accessibility',
+      'Rigid, functional layouts with no ornamental flair',
+    ],
+  },
+  glassmorphism: {
+    label: 'Glassmorphism',
+    traits: [
+      'Frosted-glass translucent panels',
+      'Vivid background colors',
+      'Layered vertical depth and hierarchy',
+    ],
+  },
+  material: {
+    label: 'Material Design',
+    traits: [
+      'Realistic paper-and-ink lighting',
+      'Grid-based layouts with disciplined padding',
+      'Responsive, physically-grounded animations',
+    ],
+  },
+  neumorphism: {
+    label: 'Neumorphism (Soft UI)',
+    traits: [
+      'Low-contrast monochromatic palette',
+      'Soft shadows',
+      'Elements appear extruded from the background material',
+    ],
+  },
+  wireframe: {
+    label: 'Wireframe / Skeletal',
+    traits: [
+      'Grayscale tones',
+      'Simple stroke borders',
+      'Placeholder typography',
+      'Exposed structural bones of the interface',
+    ],
+  },
+  bauhaus: {
+    label: 'Bauhaus',
+    traits: [
+      'Fundamental geometric shapes (circles, squares, triangles)',
+      'Primary colors',
+      'Strict grid systems balancing form and function',
+    ],
+  },
+  memphis: {
+    label: 'Memphis Design',
+    traits: [
+      'Energetic abstract geometric patterns and squiggles',
+      'Heavily contrasting pastel or neon colors',
+      'A sharp, vibrant pivot away from minimalism',
+    ],
+  },
+  aurora: {
+    label: 'Aurora / Mesh Gradients',
+    traits: [
+      'Fluid, blurred mesh gradients',
+      'Organic color blends',
+      'Dynamic warmth behind an uncluttered foreground',
+    ],
+  },
+  cyberpunk: {
+    label: 'Cyberpunk / Dark Tech',
+    traits: [
+      'Deep dark backgrounds',
+      'High-contrast glowing neon accents (cyan, magenta, yellow)',
+      'Monospaced typography',
+    ],
+  },
+  claymorphism: {
+    label: 'Claymorphism',
+    traits: [
+      'Floating 3D elements',
+      'Very soft rounded corners',
+      'Double inner shadows',
+      'Tactile, friendly clay-like feel',
+    ],
+  },
+  kinetic: {
+    label: 'Kinetic / Typographic-led',
+    traits: [
+      'Typography carries the entire aesthetic',
+      'Aggressively large, tightly kerned text',
+      'Animated type as the primary interactive element',
+    ],
+  },
+  skeuomorphic: {
+    label: 'Skeuomorphic',
+    traits: [
+      'Hyper-realistic textures, shadows, and lighting',
+      'Mimics real-world materials (leather, brushed metal)',
+      'Physical switches and controls',
+    ],
+  },
+  cupertino: {
+    label: 'Cupertino (Apple HIG)',
+    traits: [
+      'Smooth blur and translucent surfaces',
+      'Large typography',
+      'Content depth and fluid navigation',
+    ],
+  },
+  metro: {
+    label: 'Metro (Flat 2.0)',
+    traits: [
+      'Sharp edges and solid blocks of color',
+      'High-contrast typography',
+      'Tile-based composition',
+    ],
+  },
+  holographic: {
+    label: 'Holographic',
+    traits: [
+      'Iridescent color palettes',
+      'Shimmering gradients',
+      'Glowing prism-refraction edges',
+    ],
+  },
+  y2k: {
+    label: 'Y2K Aesthetic',
+    traits: [
+      'Metallic gradients',
+      'Bubble fonts',
+      'Icy blues and purples',
+      'Early-internet optimism',
+    ],
+  },
+  'brutalist-web': {
+    label: 'Web 1.0 / Brutalist Web',
+    traits: [
+      'Default browser styling',
+      'Times New Roman and bright blue hyperlinks',
+      'Visible table borders',
+      'Chaotic, unstyled layouts',
+    ],
+  },
+  'retro-os': {
+    label: '90s OS (Win95 / Mac OS 9)',
+    traits: [
+      'Thick bevels and gray dialog boxes',
+      'Pixelated icons',
+      'Strict grid-based window management',
+    ],
+  },
+  vaporwave: {
+    label: 'Vaporwave',
+    traits: [
+      'Neon pinks and cyans',
+      'Grid lines and retro-tech imagery',
+      'Glitch effects with classical statues',
+    ],
+  },
+  'pixel-art': {
+    label: 'Pixel Art / 8-bit',
+    traits: [
+      'Blocky, low-resolution graphics',
+      'Restricted color palettes',
+      'Jagged, un-aliased typography',
+    ],
+  },
+  'art-deco': {
+    label: 'Art Deco',
+    traits: [
+      'Geometric elegance and symmetrical layouts',
+      'High-contrast gold and black palettes',
+      'Sophisticated sans-serif typography',
+    ],
+  },
+  'pop-art': {
+    label: 'Pop Art',
+    traits: [
+      'Comic-book halftone dots',
+      'Primary colors with thick black outlines',
+      'High-energy, contrasting compositions',
+    ],
+  },
+  'de-stijl': {
+    label: 'De Stijl',
+    traits: [
+      'Only straight horizontal and vertical lines',
+      'Rectangular forms',
+      'Black, white, gray, and primary colors',
+    ],
+  },
+  organic: {
+    label: 'Organic / Eco',
+    traits: [
+      'Earth tones (greens, browns, warm whites)',
+      'Organic, irregular shapes',
+      'Natural textures (paper, grain)',
+      'Humanist typography',
+    ],
+  },
+  'dark-academia': {
+    label: 'Dark Academia',
+    traits: [
+      'Deep browns, maroons, and forest greens',
+      'Serif typography',
+      'Vintage paper textures',
+      'Studious, classical vibe',
+    ],
+  },
+  glitch: {
+    label: 'Glitch / Anti-design',
+    traits: [
+      'Intentional distortion and chromatic aberration',
+      'Misaligned grids and overlapping text',
+      'A rejection of traditional usability conventions',
+    ],
+  },
+  terminal: {
+    label: 'Terminal / CLI',
+    traits: [
+      'Purely text-based interface',
+      'Monospaced typography',
+      'Stark dark background with bright green or amber text',
+    ],
+  },
 };
 
 /** Read classification.designStyle when it names a known style; else undefined. */

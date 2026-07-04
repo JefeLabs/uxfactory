@@ -28,7 +28,7 @@ import type { BridgeLike, PipelineRequest } from '../src/bridge-client.js';
 import { runCli, resolveCliBin } from '../src/run-cli.js';
 import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.js';
 import type { DispatchCtx } from '../src/dispatch.js';
-import { ensureSkillPermissions, extractArtifacts, parseProgressLine } from '../src/generative.js';
+import { ensureSkillPermissions, extractArtifacts, parseProgressLine, STYLE_GUIDANCE } from '../src/generative.js';
 import { loadSkill } from '../src/skills.js';
 import { drain, handleRequest, runWorker } from '../src/main.js';
 
@@ -1265,6 +1265,33 @@ describe('runGenerative', () => {
       retro: 'old-school tech',
       flat: 'no shadows or 3D',
       bento: 'rounded content blocks',
+      enterprise: 'data density',
+      glassmorphism: 'Frosted-glass',
+      material: 'paper-and-ink',
+      neumorphism: 'extruded',
+      wireframe: 'Placeholder typography',
+      bauhaus: 'circles, squares, triangles',
+      memphis: 'squiggles',
+      aurora: 'mesh gradients',
+      cyberpunk: 'neon accents',
+      claymorphism: 'Double inner shadows',
+      kinetic: 'tightly kerned',
+      skeuomorphic: 'brushed metal',
+      cupertino: 'translucent surfaces',
+      metro: 'solid blocks of color',
+      holographic: 'Iridescent',
+      y2k: 'Bubble fonts',
+      'brutalist-web': 'Times New Roman',
+      'retro-os': 'Thick bevels',
+      vaporwave: 'Neon pinks',
+      'pixel-art': 'low-resolution',
+      'art-deco': 'gold and black',
+      'pop-art': 'halftone',
+      'de-stijl': 'horizontal and vertical lines',
+      organic: 'Earth tones',
+      'dark-academia': 'Vintage paper',
+      glitch: 'chromatic aberration',
+      terminal: 'amber',
     };
     for (const [style, marker] of Object.entries(STYLE_MARKERS)) {
       await writeFile(
@@ -1283,6 +1310,15 @@ describe('runGenerative', () => {
       expect(user, style).toContain('Design style:');
       expect(user, style).toContain(marker);
     }
+  });
+
+  it('STYLE_GUIDANCE stays in sync with the panel DESIGN_STYLES vocabulary', async () => {
+    const { DESIGN_STYLES } = await import(
+      '../../../packages/uxfactory-plugin/ui/lib/design-styles.js'
+    );
+    expect(Object.keys(STYLE_GUIDANCE).sort()).toEqual(
+      DESIGN_STYLES.map((s: { value: string }) => s.value).sort(),
+    );
   });
 
   it('generate-design: no designStyle → no style note, rubric untouched (legacy)', async () => {

@@ -18,7 +18,7 @@ import { putClassificationMutation } from "../queries.js";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
-import { DESIGN_STYLES, suggestDesignStyle } from "../lib/design-styles.js";
+import { DESIGN_STYLES, DESIGN_STYLE_GROUPS, suggestDesignStyle } from "../lib/design-styles.js";
 import { ChipGroup, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
 import type { ChipGroupOption, SegmentedOption } from "../components/index.js";
 
@@ -322,13 +322,17 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
                   onChange={(e) => setClassification({ designStyle: e.target.value })}
                   className="w-full text-sm border border-gray-300 rounded-[var(--radius-card)] px-3 py-2 bg-white text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
                 >
-                  {DESIGN_STYLES.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                      {s.value === suggestDesignStyle(category, industry)
-                        ? " (suggested)"
-                        : ""}
-                    </option>
+                  {DESIGN_STYLE_GROUPS.map((group) => (
+                    <optgroup key={group.id} label={group.label}>
+                      {DESIGN_STYLES.filter((s) => s.group === group.id).map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                          {s.value === suggestDesignStyle(category, industry)
+                            ? " (suggested)"
+                            : ""}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
                 <p className="text-xs text-gray-500">
