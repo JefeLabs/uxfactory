@@ -245,11 +245,13 @@ function ViewportMultiSelect({
           className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
         />
       </button>
+      {/* Opens DOWNWARD: the composer sits at the top of the scroll area, so an
+          upward popup clips its first rows against the scroll container edge. */}
       {open && (
         <div
           role="group"
           aria-label="Viewport options"
-          className="absolute bottom-full left-0 mb-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-col gap-1"
+          className="absolute top-full left-0 mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-col gap-1"
         >
           {VIEWPORT_OPTIONS.map((o) => {
             const checked = selected.includes(o.value);
