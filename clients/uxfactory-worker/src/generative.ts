@@ -186,6 +186,25 @@ const UNIT_GUIDANCE: Record<string, string> = {
   atom:
     'Scope: a single ATOM (the smallest UI primitive such as a button, input, or badge) — ' +
     'render its variants and states side by side on one canvas; no page chrome.',
+  email:
+    'Scope: an HTML EMAIL — a single 600px-wide, table-safe layout with fully inline CSS, ' +
+    'no JavaScript, and no web-app chrome; assume email-client rendering (no flex/grid), ' +
+    'and include preheader text plus a plain-text-friendly hierarchy.',
+  'instagram-post':
+    'Scope: an INSTAGRAM POST graphic — one fixed 1080×1080 canvas, no page chrome; ' +
+    'bold type hierarchy legible at feed size, brand-token colors only.',
+  'instagram-story':
+    'Scope: an INSTAGRAM STORY graphic — one fixed 1080×1920 vertical canvas, no page ' +
+    'chrome; keep critical content out of the top/bottom ~250px system-UI safe zones.',
+  'youtube-thumbnail':
+    'Scope: a YOUTUBE THUMBNAIL — one fixed 1280×720 canvas; must stay readable at ' +
+    'small preview sizes: max ~4 words, high contrast, a single focal subject.',
+  'facebook-post':
+    'Scope: a FACEBOOK POST graphic — one fixed 1200×630 canvas, no page chrome; ' +
+    'designed to hold up in the link-card crop.',
+  'x-post':
+    'Scope: an X POST graphic — one fixed 1600×900 canvas, no page chrome; ' +
+    'high-contrast composition that reads in a fast-scrolling timeline.',
 };
 
 /** Render the `constraints` payload field (array | string | absent) for the prompt. */

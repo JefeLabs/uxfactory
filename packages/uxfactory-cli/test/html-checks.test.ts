@@ -169,8 +169,12 @@ describe("unit-type differentiation", () => {
     expect(renderCoverage(snaps, stories, { storyCoverage: false }).status).toBe("fail");
   });
 
-  it("component units (atom/molecule/organism): uncovered stories do not fail the gate", () => {
-    for (const unit of ["atom", "molecule", "organism"]) {
+  it("component units (atoms through channel graphics): uncovered stories do not fail the gate", () => {
+    for (const unit of [
+      "atom", "molecule", "organism",
+      "email", "instagram-post", "instagram-story",
+      "youtube-thumbnail", "facebook-post", "x-post",
+    ]) {
       const r = runHtmlBatch({ snapshots: [partialSnap], stories, tokens, scope: SCOPE, unit });
       expect(r.clean, unit).toBe(true);
       expect(r.unit, unit).toBe(unit);

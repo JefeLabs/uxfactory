@@ -64,6 +64,13 @@ const UNIT_OPTIONS: { label: string; value: string }[] = [
   { label: "Organism", value: "organism" },
   { label: "Molecule", value: "molecule" },
   { label: "Atom", value: "atom" },
+  // Channel units — fixed-canvas graphics/templates for specific destinations.
+  { label: "Email", value: "email" },
+  { label: "Instagram Post", value: "instagram-post" },
+  { label: "Instagram Story", value: "instagram-story" },
+  { label: "YouTube Thumbnail", value: "youtube-thumbnail" },
+  { label: "Facebook Post", value: "facebook-post" },
+  { label: "X Post", value: "x-post" },
 ];
 
 /**

@@ -1055,6 +1055,12 @@ describe("Footer hint line", () => {
       "Organism",
       "Molecule",
       "Atom",
+      "Email",
+      "Instagram Post",
+      "Instagram Story",
+      "YouTube Thumbnail",
+      "Facebook Post",
+      "X Post",
     ]);
   });
 });

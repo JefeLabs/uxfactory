@@ -57,6 +57,8 @@ describe("validateRegistry", () => {
     for (const unit of [
       "user-flow", "home-page", "secondary-page", "tertiary-page",
       "page", "template", "organism", "molecule", "atom",
+      "email", "instagram-post", "instagram-story",
+      "youtube-thumbnail", "facebook-post", "x-post",
     ]) {
       expect(validateRegistry({ version: 1, inputs: {}, unit }).ok, unit).toBe(true);
     }

@@ -33,6 +33,12 @@ export const UNIT_TYPES = [
   "organism",
   "molecule",
   "atom",
+  "email",
+  "instagram-post",
+  "instagram-story",
+  "youtube-thumbnail",
+  "facebook-post",
+  "x-post",
 ] as const;
 
 export type UnitType = (typeof UNIT_TYPES)[number];

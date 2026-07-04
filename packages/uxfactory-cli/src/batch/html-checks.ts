@@ -45,8 +45,21 @@ export interface RenderSnapshot {
 /** Key separator (NUL char) that cannot appear in a story id or impliedState. */
 const NUL = String.fromCharCode(0);
 
-/** Component-tier units: gated claims-only — one component can't cover the story set. */
-export const COMPONENT_UNITS: ReadonlySet<string> = new Set(["organism", "molecule", "atom"]);
+/**
+ * Component-tier units: gated claims-only — one component (or one fixed-canvas
+ * channel graphic) can't plausibly cover the story set.
+ */
+export const COMPONENT_UNITS: ReadonlySet<string> = new Set([
+  "organism",
+  "molecule",
+  "atom",
+  "email",
+  "instagram-post",
+  "instagram-story",
+  "youtube-thumbnail",
+  "facebook-post",
+  "x-post",
+]);
 
 /**
  * render-coverage (must) — every story's required impliedStates must each be claimed

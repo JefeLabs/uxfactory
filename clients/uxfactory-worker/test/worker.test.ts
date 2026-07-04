@@ -1204,6 +1204,12 @@ describe('runGenerative', () => {
       organism: 'ORGANISM',
       molecule: 'MOLECULE',
       atom: 'ATOM',
+      email: 'HTML EMAIL',
+      'instagram-post': '1080×1080',
+      'instagram-story': '1080×1920',
+      'youtube-thumbnail': '1280×720',
+      'facebook-post': '1200×630',
+      'x-post': '1600×900',
     };
 
     for (const [unitType, marker] of Object.entries(UNIT_MARKERS)) {
