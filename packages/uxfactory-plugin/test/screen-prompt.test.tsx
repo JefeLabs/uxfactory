@@ -796,6 +796,38 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     expect(screen.getByText("844×390")).toBeInTheDocument();
   });
 
+  it("defaults to Desktop when nothing resolves selected (no classification platforms)", async () => {
+    const user = userEvent.setup();
+    resetStores({
+      classification: {
+        category: "ecommerce",
+        industry: "retail",
+        locale: "en-US",
+        platforms: [],
+        layout: "responsive",
+      },
+    });
+    const { bridge } = makeBridge();
+    await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    const trigger = screen.getByRole("button", { name: "Viewports" });
+    expect(trigger).toHaveTextContent("Desktop");
+
+    await user.click(trigger);
+    expect(screen.getByRole("checkbox", { name: "Desktop" })).toBeChecked();
+
+    // Submit carries the Desktop default instead of an empty platforms list.
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A pricing page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-design",
+      payload: { prompt: "A pricing page", unitType: "page", platforms: ["desktop"] },
+    });
+  });
+
   it("the last checked viewport cannot be unchecked", async () => {
     const user = userEvent.setup();
     useRunsStore.setState({ runs: [], composerUnitType: "page", composerPlatforms: ["tablet"] });

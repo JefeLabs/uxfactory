@@ -425,6 +425,13 @@ export function Prompt({
   const effectivePlatforms =
     composerPlatforms.length > 0 ? composerPlatforms : classificationPlatforms;
 
+  // Viewport selection for display/toggling: normalized to known tokens,
+  // defaulting to Desktop when nothing resolves selected.
+  const knownViewports = effectivePlatforms
+    .map(normalizeViewport)
+    .filter((p) => VIEWPORT_VALUES.includes(p));
+  const selectedViewports = knownViewports.length > 0 ? knownViewports : ["desktop"];
+
   // User-flow is a single journey: one viewport, no variations.
   const isUserFlow = composerUnitType === "user-flow";
 
@@ -490,7 +497,9 @@ export function Prompt({
     )
       ? (useAppStore.getState().snapshot!.classification!["platforms"] as string[])
       : [];
-    const platforms = storedPlatforms.length > 0 ? storedPlatforms : clsPlatforms;
+    const resolved = storedPlatforms.length > 0 ? storedPlatforms : clsPlatforms;
+    // Never send an empty viewport list — Desktop is the floor default.
+    const platforms = resolved.length > 0 ? resolved : ["desktop"];
 
     // Non-default composer extras ride the payload; defaults stay off the wire
     // so legacy consumers see byte-identical requests.
@@ -533,7 +542,7 @@ export function Prompt({
   // The [] sentinel (fall back to classification platforms at submit) survives
   // until the first explicit toggle; from then on the list is explicit.
   function handleViewportToggle(value: string) {
-    const current = effectivePlatforms.map(normalizeViewport);
+    const current = selectedViewports;
     const has = current.includes(value);
     if (isUserFlow) {
       // Single-select: picking a viewport replaces the selection.
@@ -554,9 +563,7 @@ export function Prompt({
     };
     if (value === "user-flow") {
       // A flow is one journey: clamp to a single viewport and one variation.
-      const normalized = effectivePlatforms.map(normalizeViewport);
-      const first =
-        VIEWPORT_VALUES.find((v) => normalized.includes(v)) ?? normalized[0];
+      const first = VIEWPORT_VALUES.find((v) => selectedViewports.includes(v));
       if (first !== undefined) partial.composerPlatforms = [first];
       partial.composerVariations = 1;
     }
@@ -604,9 +611,7 @@ export function Prompt({
                 ariaLabel="Unit type"
               />
               <ViewportMultiSelect
-                selected={effectivePlatforms
-                  .map(normalizeViewport)
-                  .filter((p) => VIEWPORT_VALUES.includes(p))}
+                selected={selectedViewports}
                 single={isUserFlow}
                 onToggle={handleViewportToggle}
               />
