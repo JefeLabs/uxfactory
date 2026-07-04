@@ -71,6 +71,13 @@ describe("validateRegistry", () => {
     expect(validateRegistry({ version: 1, inputs: {}, unit: 3 }).ok).toBe(false);
   });
 
+  it("accepts a slug designStyle and rejects unsafe values", () => {
+    expect(validateRegistry({ version: 1, inputs: {}, designStyle: "flat" }).ok).toBe(true);
+    expect(validateRegistry({ version: 1, inputs: {}, designStyle: "dark-academia" }).ok).toBe(true);
+    expect(validateRegistry({ version: 1, inputs: {}, designStyle: "Bad Style!" }).ok).toBe(false);
+    expect(validateRegistry({ version: 1, inputs: {}, designStyle: 7 }).ok).toBe(false);
+  });
+
   it("accepts a valid viewports array", () => {
     const res = validateRegistry({
       version: 1,

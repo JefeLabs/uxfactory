@@ -7,7 +7,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { HtmlRenderRequest } from "./html-render.js";
-import type { RenderSnapshot, CoverCheck, PaintedColor, AxeFinding } from "../batch/html-checks.js";
+import type { RenderSnapshot, CoverCheck, PaintedColor, AxeFinding, StyleStats } from "../batch/html-checks.js";
 import { EXTRACT_FN } from "./dom-capture.js";
 import type { CapturedNode } from "./dom-capture.js";
 
@@ -42,16 +42,35 @@ const CAPTURE_FN = `(covers) => {
     return { story: c.story, impliedState: c.impliedState, selector: c.selector, found: !!el, visible: !!el && visible(el) };
   });
   const colorMap = new Map();
+  let shadowCount = 0;
+  let visibleElements = 0;
+  let roundedBlocks = 0;
+  const fontSet = new Set();
   for (const el of document.querySelectorAll("*")) {
     if (!visible(el)) continue;
+    visibleElements += 1;
     const s = getComputedStyle(el);
     for (const prop of ["color", "backgroundColor", "borderColor"]) {
       const hex = toHex(s[prop]);
       if (hex && !colorMap.has(hex)) colorMap.set(hex, shortSel(el));
     }
+    if ((s.boxShadow && s.boxShadow !== "none") || (s.textShadow && s.textShadow !== "none")) {
+      shadowCount += 1;
+    }
+    const family = (s.fontFamily || "").split(",")[0].trim().replace(/["']/g, "").toLowerCase();
+    if (family) fontSet.add(family);
+    const radius = parseFloat(s.borderTopLeftRadius) || 0;
+    const r = el.getBoundingClientRect();
+    if (radius >= 8 && r.width * r.height >= 10000) roundedBlocks += 1;
   }
   const paintedColors = [...colorMap.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([hex, exampleSelector]) => ({ hex, exampleSelector }));
-  return { coverChecks, paintedColors };
+  const styleStats = {
+    shadowCount,
+    fontFamilies: [...fontSet].sort(),
+    visibleElements,
+    roundedBlocks,
+  };
+  return { coverChecks, paintedColors, styleStats };
 }`;
 
 export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<RenderSnapshot[]> {
@@ -107,7 +126,7 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
 
           const captured = (await page.evaluate(
             `(${CAPTURE_FN})(${JSON.stringify(view.covers)})`,
-          )) as { coverChecks: CoverCheck[]; paintedColors: PaintedColor[] };
+          )) as { coverChecks: CoverCheck[]; paintedColors: PaintedColor[]; styleStats: StyleStats };
 
           let domTree: CapturedNode | undefined;
           if (req.captureDom === true) {
@@ -125,7 +144,7 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
             targets: v.nodes.flatMap((n) => n.target.map(String)),
           }));
 
-          out.push({ ...base, ok: true, coverChecks: captured.coverChecks, paintedColors: captured.paintedColors, axe, ...(domTree !== undefined ? { domTree } : {}) });
+          out.push({ ...base, ok: true, coverChecks: captured.coverChecks, paintedColors: captured.paintedColors, styleStats: captured.styleStats, axe, ...(domTree !== undefined ? { domTree } : {}) });
         } catch (err) {
           out.push({
             ...base, ok: false, error: (err as Error).message,

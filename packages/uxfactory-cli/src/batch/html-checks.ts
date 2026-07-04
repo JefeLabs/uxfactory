@@ -27,6 +27,18 @@ export interface AxeFinding {
   help?: string;
 }
 
+/** Style facts the renderer captures for the advisory style-conformance check. */
+export interface StyleStats {
+  /** Visible elements painting a box- or text-shadow. */
+  shadowCount: number;
+  /** Distinct first font families in use (lowercased). */
+  fontFamilies: string[];
+  /** Count of visible elements in the view. */
+  visibleElements: number;
+  /** Visible blocks with a border radius ≥ 8px and a non-trivial area. */
+  roundedBlocks: number;
+}
+
 /** The deterministic per-(page,view) record the pure checks consume. */
 export interface RenderSnapshot {
   page: string;
@@ -40,6 +52,8 @@ export interface RenderSnapshot {
   axe: AxeFinding[];
   /** Present iff the render was requested with captureDom (SP3b extract). */
   domTree?: CapturedNode;
+  /** Present when the renderer captured style facts (advisory style checks). */
+  styleStats?: StyleStats;
 }
 
 /** Key separator (NUL char) that cannot appear in a story id or impliedState. */
@@ -237,6 +251,69 @@ export function htmlTokenConformance(snapshots: RenderSnapshot[], tokens: TokenS
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
 }
 
+/**
+ * style-conformance (advisory) — machine-checkable traits of the declared
+ * design style. Advisory by design: style is ultimately a judgment call, so
+ * findings inform the craft loop but never fail the gate.
+ */
+const MONO_FONT = /mono|courier|consolas|menlo|terminal/;
+
+const STYLE_RULES: Record<string, (s: RenderSnapshot) => BatchFinding[]> = {
+  flat: (s) =>
+    s.styleStats!.shadowCount > 0
+      ? [{
+          detail: `${s.page} › ${s.view}: ${s.styleStats!.shadowCount} shadowed element(s) — Flat forbids shadows and 3D effects`,
+          ref: `${s.page} › ${s.view}`,
+        }]
+      : [],
+  terminal: (s) => {
+    const nonMono = s.styleStats!.fontFamilies.filter((f) => !MONO_FONT.test(f));
+    return nonMono.length > 0
+      ? [{
+          detail: `${s.page} › ${s.view}: non-monospace font(s) ${nonMono.join(", ")} — Terminal/CLI demands monospace typography`,
+          ref: `${s.page} › ${s.view}`,
+        }]
+      : [];
+  },
+  minimalism: (s) =>
+    s.styleStats!.visibleElements > 120
+      ? [{
+          detail: `${s.page} › ${s.view}: ${s.styleStats!.visibleElements} visible elements — Minimalism wants few elements and lots of negative space`,
+          ref: `${s.page} › ${s.view}`,
+        }]
+      : [],
+  bento: (s) =>
+    s.styleStats!.roundedBlocks < 4
+      ? [{
+          detail: `${s.page} › ${s.view}: only ${s.styleStats!.roundedBlocks} rounded content block(s) — Bento composes many rounded blocks`,
+          ref: `${s.page} › ${s.view}`,
+        }]
+      : [],
+};
+
+export function styleConformance(
+  snapshots: RenderSnapshot[],
+  designStyle: string,
+): CheckResult {
+  const id = "style-conformance";
+  const rule = STYLE_RULES[designStyle];
+  if (rule === undefined) {
+    return {
+      id, status: "skip", severity: "advisory", findings: [],
+      reason: `no deterministic rules for style "${designStyle}"`,
+    };
+  }
+  const measured = snapshots.filter((s) => s.ok && s.styleStats !== undefined);
+  if (measured.length === 0) {
+    return {
+      id, status: "skip", severity: "advisory", findings: [],
+      reason: "renderer did not capture style stats",
+    };
+  }
+  const findings = measured.flatMap((s) => rule(s));
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
+}
+
 /** Per-gate binding thresholds for the HTML tier (kept separate from spec-mode GATE_THRESHOLDS). */
 export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   "render-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "low", min_flow: "none" },
@@ -244,6 +321,7 @@ export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   contrast: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "flow-steps": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
+  "style-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
 };
 
 /** Everything one deterministic HTML gate pass needs (snapshots already captured). */
@@ -254,16 +332,18 @@ export interface RunHtmlBatchInput {
   scope: RenderScope;
   /** Optional design unit (registry `unit` field) — shapes the rubric per unit. */
   unit?: string;
+  /** Optional design style (registry `designStyle`) — enables advisory style checks. */
+  designStyle?: string;
 }
 
 interface HtmlGateEntry {
   id: string;
   severity: Severity;
   run: (i: RunHtmlBatchInput) => CheckResult;
-  /** Unit predicate — the gate binds only when this returns true (default: always). */
-  bindsForUnit?: (unit: string | undefined) => boolean;
-  /** not-owed reason when the unit predicate excludes the gate. */
-  unitNotOwedReason?: string;
+  /** Input predicate — the gate binds only when this returns true (default: always). */
+  bindsWhen?: (i: RunHtmlBatchInput) => boolean;
+  /** not-owed reason when the predicate excludes the gate. */
+  notOwedReason?: string;
 }
 
 const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
@@ -282,8 +362,15 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
     id: "flow-steps",
     severity: "must",
     run: (i) => flowSteps(i.snapshots),
-    bindsForUnit: (unit) => unit === "user-flow",
-    unitNotOwedReason: "binds only for the user-flow unit",
+    bindsWhen: (i) => i.unit === "user-flow",
+    notOwedReason: "binds only for the user-flow unit",
+  },
+  {
+    id: "style-conformance",
+    severity: "advisory",
+    run: (i) => styleConformance(i.snapshots, i.designStyle!),
+    bindsWhen: (i) => i.designStyle !== undefined,
+    notOwedReason: "no design style declared",
   },
 ];
 
@@ -293,22 +380,22 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
  * Returns the BatchReport shape so report.json stays identical between modes.
  */
 export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
-  const { scope, unit } = input;
+  const { scope, unit, designStyle } = input;
   const checks: CheckResult[] = [];
   const rubric: string[] = [];
   for (const entry of HTML_GATE_ENTRIES) {
     const t = HTML_GATE_THRESHOLDS[entry.id];
-    const unitBinds = entry.bindsForUnit?.(unit) ?? true;
-    const doesBind = t !== undefined && binds(t, scope) && unitBinds;
+    const predicateBinds = entry.bindsWhen?.(input) ?? true;
+    const doesBind = t !== undefined && binds(t, scope) && predicateBinds;
     if (doesBind) {
       rubric.push(entry.id);
       checks.push(entry.run(input));
     } else {
       checks.push({
         id: entry.id, status: "not-owed", severity: entry.severity, findings: [],
-        reason: unitBinds
+        reason: predicateBinds
           ? "does not bind at the current render scope"
-          : entry.unitNotOwedReason ?? "does not bind for this unit",
+          : entry.notOwedReason ?? "does not bind for this input",
       });
     }
   }
@@ -316,6 +403,7 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   return {
     scope,
     ...(unit !== undefined ? { unit } : {}),
+    ...(designStyle !== undefined ? { designStyle } : {}),
     rubric,
     checks,
     mustPassFailed,

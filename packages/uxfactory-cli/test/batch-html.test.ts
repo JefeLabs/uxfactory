@@ -54,7 +54,7 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined, undefined, undefined,
       { renderViews: async () => [goodSnap] },
     );
     expect(code).toBe(EXIT.OK);
@@ -68,7 +68,7 @@ describe("batchHtmlMode", () => {
     const badSnap: RenderSnapshot = { ...goodSnap, coverChecks: [{ ...goodSnap.coverChecks[0]!, visible: false }] };
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined, undefined, { renderViews: async () => [badSnap] },
+      io, inputsFor(), undefined, undefined, undefined, undefined, undefined, { renderViews: async () => [badSnap] },
     );
     expect(code).toBe(EXIT.GATE_FAIL);
   });
@@ -77,7 +77,7 @@ describe("batchHtmlMode", () => {
     const io = makeIO();
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined, undefined, undefined,
       { renderViews: async () => { throw new Error("playwright not installed"); } },
     );
     expect(code).toBe(EXIT.TRANSPORT);
@@ -89,7 +89,7 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root },
-      io, inputsFor(), undefined, "visual", undefined, undefined,
+      io, inputsFor(), undefined, "visual", undefined, undefined, undefined,
       { renderViews: async () => [goodSnap] },
     );
     // The committed registry scope is honored — no spurious "set a render scope" EXIT.TRANSPORT.
@@ -106,6 +106,7 @@ describe("batchHtmlMode", () => {
         { name: "desktop", width: 1920, height: 1080 },
         { name: "mobile-portrait", width: 390, height: 844 },
       ],
+      undefined,
       {
         renderViews: async (req) => {
           seen.push({ ...req.viewport, previewDir: req.previewDir });
@@ -132,7 +133,7 @@ describe("batchHtmlMode", () => {
     const seen: { width: number; height: number }[] = [];
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined, undefined, undefined,
       {
         renderViews: async (req) => {
           seen.push(req.viewport);
@@ -150,13 +151,32 @@ describe("batchHtmlMode", () => {
     const componentSnap: RenderSnapshot = { ...goodSnap, coverChecks: [] };
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, "atom", undefined,
+      io, inputsFor(), undefined, undefined, "atom", undefined, undefined,
       { renderViews: async () => [componentSnap] },
     );
     expect(code).toBe(EXIT.OK);
     const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
     expect(report.unit).toBe("atom");
     expect(report.clean).toBe(true);
+  });
+
+  it("passes the registry designStyle to the gate: advisory findings never fail the exit code", async () => {
+    const io = makeIO();
+    const shadowySnap: RenderSnapshot = {
+      ...goodSnap,
+      styleStats: { shadowCount: 5, fontFamilies: ["inter"], visibleElements: 40, roundedBlocks: 2 },
+    };
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, undefined, undefined, "flat",
+      { renderViews: async () => [shadowySnap] },
+    );
+    expect(code).toBe(EXIT.OK); // advisory only
+    const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
+    expect(report.designStyle).toBe("flat");
+    const sc = report.checks.find((c: { id: string }) => c.id === "style-conformance");
+    expect(sc.status).toBe("fail");
+    expect(sc.severity).toBe("advisory");
   });
 });
 

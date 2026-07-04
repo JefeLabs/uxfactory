@@ -47,6 +47,11 @@ export interface EnsureBatchRegistryOptions {
    * set-or-clear semantics as `unit`.
    */
   viewports?: { name: string; width: number; height: number }[] | undefined;
+  /**
+   * Design style for THIS run (registry top-level `designStyle`). Same
+   * set-or-clear semantics as `unit`.
+   */
+  designStyle?: string | undefined;
 }
 
 /** Conventional generation paths — keep in sync with generative.ts TARGET_MAP. */
@@ -125,6 +130,10 @@ export async function ensureBatchRegistry(
   if ('viewports' in options) {
     if (options.viewports !== undefined) registry['viewports'] = options.viewports;
     else delete registry['viewports'];
+  }
+  if ('designStyle' in options) {
+    if (options.designStyle !== undefined) registry['designStyle'] = options.designStyle;
+    else delete registry['designStyle'];
   }
 
   await writeFile(file, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');

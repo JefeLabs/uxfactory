@@ -74,6 +74,12 @@ export interface BatchRegistry {
    * view once per viewport; absent → the legacy single 390×844 render.
    */
   viewports?: RegistryViewport[];
+  /**
+   * Optional design-style slug (stamped by the worker from classification or
+   * the per-request override). Enables the advisory style-conformance check.
+   * Loose slug validation — the gate only has rules for a subset of styles.
+   */
+  designStyle?: string;
 }
 
 /** Registry input paths resolved to absolute filesystem paths (null = not registered). */
@@ -141,6 +147,15 @@ export function validateRegistry(
       return {
         ok: false,
         message: `registry.unit must be one of: ${UNIT_TYPES.join(", ")}`,
+      };
+    }
+  }
+  if (raw["designStyle"] !== undefined) {
+    const s = raw["designStyle"];
+    if (typeof s !== "string" || !/^[a-z0-9-]+$/.test(s)) {
+      return {
+        ok: false,
+        message: "registry.designStyle must be a lowercase slug (a-z, 0-9, hyphens)",
       };
     }
   }

@@ -183,6 +183,7 @@ export async function batchCmd(
     return batchHtmlMode(
       specsDir, flags, io, reg.inputs, profileScope,
       reg.registry.scope, reg.registry.unit, reg.registry.viewports,
+      reg.registry.designStyle,
     );
   }
 

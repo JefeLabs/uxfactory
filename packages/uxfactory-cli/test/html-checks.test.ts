@@ -125,10 +125,13 @@ describe("runHtmlBatch", () => {
   it("runs all checks at visual:medium and is clean when all binding checks pass", () => {
     const r = runHtmlBatch({ snapshots: [goodSnap], stories, tokens, scope: VISUAL_MEDIUM });
     expect(r.clean).toBe(true);
-    expect(r.checks.map((c) => c.id).sort()).toEqual(["a11y", "contrast", "flow-steps", "render-coverage", "token-conformance"]);
-    // flow-steps is not-owed without the user-flow unit; everything else passes.
+    expect(r.checks.map((c) => c.id).sort()).toEqual([
+      "a11y", "contrast", "flow-steps", "render-coverage", "style-conformance", "token-conformance",
+    ]);
+    // flow-steps/style-conformance are not-owed without a unit/style; the rest pass.
+    const conditional = new Set(["flow-steps", "style-conformance"]);
     expect(
-      r.checks.every((c) => (c.id === "flow-steps" ? c.status === "not-owed" : c.status === "pass")),
+      r.checks.every((c) => (conditional.has(c.id) ? c.status === "not-owed" : c.status === "pass")),
     ).toBe(true);
   });
 
@@ -264,5 +267,94 @@ describe("unit-type differentiation", () => {
       expect(fs.reason, String(unit)).toContain("user-flow");
       expect(r.rubric).not.toContain("flow-steps");
     }
+  });
+});
+
+// ─── style-conformance (advisory) ────────────────────────────────────────────
+
+describe("style-conformance: advisory deterministic style checks", () => {
+  const SCOPE: RenderScope = { visual: "medium", editorial: "low", coverage: "medium", flow: "low" };
+  const fullCover = [
+    { story: "checkout", impliedState: "success" as const, selector: "#ok", found: true, visible: true },
+    { story: "checkout", impliedState: "error" as const, selector: "#err", found: true, visible: true },
+  ];
+  const statsSnap = (styleStats: NonNullable<RenderSnapshot["styleStats"]>) =>
+    snap({
+      coverChecks: fullCover,
+      paintedColors: [{ hex: "#1e88e5", exampleSelector: "b" }],
+      styleStats,
+    });
+
+  it("flat with painted shadows fails ADVISORY — the gate stays clean", () => {
+    const r = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 3, fontFamilies: ["inter"], visibleElements: 40, roundedBlocks: 2 })],
+      stories, tokens, scope: SCOPE, designStyle: "flat",
+    });
+    const sc = r.checks.find((c) => c.id === "style-conformance")!;
+    expect(sc.status).toBe("fail");
+    expect(sc.severity).toBe("advisory");
+    expect(sc.findings.some((f) => f.detail.includes("shadow"))).toBe(true);
+    // Advisory failures never fail the gate.
+    expect(r.mustPassFailed).toBe(false);
+    expect(r.clean).toBe(true);
+    expect(r.rubric).toContain("style-conformance");
+    expect(r.designStyle).toBe("flat");
+  });
+
+  it("flat with zero shadows passes", () => {
+    const r = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 0, fontFamilies: ["inter"], visibleElements: 40, roundedBlocks: 2 })],
+      stories, tokens, scope: SCOPE, designStyle: "flat",
+    });
+    expect(r.checks.find((c) => c.id === "style-conformance")!.status).toBe("pass");
+  });
+
+  it("terminal demands monospace typography", () => {
+    const bad = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 0, fontFamilies: ["inter", "menlo"], visibleElements: 40, roundedBlocks: 0 })],
+      stories, tokens, scope: SCOPE, designStyle: "terminal",
+    });
+    const sc = bad.checks.find((c) => c.id === "style-conformance")!;
+    expect(sc.status).toBe("fail");
+    expect(sc.findings.some((f) => f.detail.includes("monospace"))).toBe(true);
+
+    const good = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 0, fontFamilies: ["menlo", "courier new"], visibleElements: 40, roundedBlocks: 0 })],
+      stories, tokens, scope: SCOPE, designStyle: "terminal",
+    });
+    expect(good.checks.find((c) => c.id === "style-conformance")!.status).toBe("pass");
+  });
+
+  it("minimalism flags element-dense views; bento flags too few rounded blocks", () => {
+    const dense = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 0, fontFamilies: ["inter"], visibleElements: 300, roundedBlocks: 0 })],
+      stories, tokens, scope: SCOPE, designStyle: "minimalism",
+    });
+    expect(dense.checks.find((c) => c.id === "style-conformance")!.status).toBe("fail");
+
+    const sparseBento = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 0, fontFamilies: ["inter"], visibleElements: 40, roundedBlocks: 1 })],
+      stories, tokens, scope: SCOPE, designStyle: "bento",
+    });
+    const sc = sparseBento.checks.find((c) => c.id === "style-conformance")!;
+    expect(sc.status).toBe("fail");
+    expect(sc.findings.some((f) => f.detail.includes("rounded"))).toBe(true);
+  });
+
+  it("styles without deterministic rules skip; absent style is not-owed; missing stats skip", () => {
+    const noRules = runHtmlBatch({
+      snapshots: [statsSnap({ shadowCount: 0, fontFamilies: [], visibleElements: 10, roundedBlocks: 0 })],
+      stories, tokens, scope: SCOPE, designStyle: "vaporwave",
+    });
+    expect(noRules.checks.find((c) => c.id === "style-conformance")!.status).toBe("skip");
+
+    const noStyle = runHtmlBatch({ snapshots: [statsSnap({ shadowCount: 0, fontFamilies: [], visibleElements: 10, roundedBlocks: 0 })], stories, tokens, scope: SCOPE });
+    expect(noStyle.checks.find((c) => c.id === "style-conformance")!.status).toBe("not-owed");
+
+    const noStats = runHtmlBatch({
+      snapshots: [snap({ coverChecks: fullCover, paintedColors: [{ hex: "#1e88e5", exampleSelector: "b" }] })],
+      stories, tokens, scope: SCOPE, designStyle: "flat",
+    });
+    expect(noStats.checks.find((c) => c.id === "style-conformance")!.status).toBe("skip");
   });
 });

@@ -1337,6 +1337,39 @@ describe('runGenerative', () => {
     expect(rubric).toContain('Cyberpunk');
   });
 
+  it('generate-design: the effective designStyle is stamped into the registry (payload wins)', async () => {
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.classification.json'),
+      JSON.stringify({ designStyle: 'swiss' }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_style_reg', kind: 'generate-design', payload: { designStyle: 'flat' }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { designStyle?: string };
+    expect(reg.designStyle).toBe('flat');
+
+    // No style anywhere → stale registry stamp cleared.
+    await writeFile(path.join(projectRoot, 'uxfactory.classification.json'), '{}', 'utf8');
+    const adapter2 = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_style_reg_clear', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter2,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg2 = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { designStyle?: string };
+    expect(reg2.designStyle).toBeUndefined();
+  });
+
   it('generate-design: an unknown payload designStyle falls back to the classification', async () => {
     await writeFile(
       path.join(projectRoot, 'uxfactory.classification.json'),

@@ -27,6 +27,8 @@ export interface BatchReport {
   scope: RenderScope;
   /** The design unit this pass was gated as (registry `unit`), when declared. */
   unit?: string;
+  /** The design style advisory checks ran against (registry `designStyle`). */
+  designStyle?: string;
   /** The binding gate ids (the rubric) for this scope. */
   rubric: string[];
   checks: CheckResult[];

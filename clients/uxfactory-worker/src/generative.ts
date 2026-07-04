@@ -1253,6 +1253,9 @@ export async function runGenerative(
             : undefined,
         // Concrete render viewports for the CLI batch (undefined clears stale).
         viewports: computeViewports(designPayload),
+        // The effective style (payload override or classification default) so
+        // the CLI's advisory style-conformance check runs against it.
+        designStyle,
       });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
       await provisionCraftRubric(ctx.projectRoot, designStyle);
