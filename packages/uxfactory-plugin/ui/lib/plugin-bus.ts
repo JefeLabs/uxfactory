@@ -18,6 +18,13 @@ export interface PluginBus {
   selectNodes(ids: string[]): void;
   /** Fire-and-forget: post a review report to the plugin main thread. */
   postReview(report: ReviewPayload): void;
+  /**
+   * Fire-and-forget: forward a bridge render job to the plugin main thread.
+   * Optional for fixture compatibility — the real bus always implements it.
+   */
+  postRender?(spec: unknown, jobId?: string): void;
+  /** Subscribes to MainToUi "rendered" reports. Returns an unsubscribe function. */
+  onRendered?(cb: (report: unknown) => void): () => void;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -100,6 +107,9 @@ export function createBus(
   // Set of active selection listeners.
   const selectionListeners = new Set<(sel: unknown) => void>();
 
+  // Set of active rendered-report listeners (the render relay).
+  const renderedListeners = new Set<(report: unknown) => void>();
+
   subscribe((raw: unknown) => {
     if (!raw || typeof raw !== "object") return;
     const msg = raw as MainToUi;
@@ -120,6 +130,8 @@ export function createBus(
     } else if (msg.type === "selection") {
       const sel = (msg as unknown as { selection: unknown }).selection;
       for (const cb of selectionListeners) cb(sel);
+    } else if (msg.type === "rendered") {
+      for (const cb of renderedListeners) cb(msg.report);
     }
   });
 
@@ -217,6 +229,15 @@ export function createBus(
 
     postReview(report: ReviewPayload): void {
       send({ type: "review", report });
+    },
+
+    postRender(spec: unknown, jobId?: string): void {
+      send({ type: "render", spec, ...(jobId !== undefined ? { jobId } : {}) });
+    },
+
+    onRendered(cb: (report: unknown) => void): () => void {
+      renderedListeners.add(cb);
+      return () => renderedListeners.delete(cb);
     },
   };
 }

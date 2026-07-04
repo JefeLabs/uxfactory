@@ -387,9 +387,56 @@ const tabsRoute = createRoute({
   path: "/tabs",
   component: TabsLayout,
 });
+
+/** Render-queue poll cadence while the tabs shell is mounted. */
+const RENDER_POLL_MS = 2_000;
+
+/**
+ * RenderRelay — bridges the bridge's render queue to the plugin main thread.
+ * Polls GET /next (root-scoped via the client's rooted() wire) while the tabs
+ * shell is mounted, forwards jobs as {type:"render"} bus messages, and posts
+ * the main thread's {type:"rendered"} reports back to POST /rendered.
+ *
+ * This loop lived in the legacy src/ui.ts pill panel; the React panel rewrite
+ * dropped it. Both bridge methods and bus hooks are optional (fixture/legacy
+ * compat) — the relay quietly no-ops when either side is absent.
+ */
+function RenderRelay(): null {
+  const { bridge, bus } = tabsRoute.useRouteContext();
+  useEffect(() => {
+    if (bridge.nextRenderJob === undefined || bus.postRender === undefined) return;
+    let cancelled = false;
+
+    const tick = async (): Promise<void> => {
+      try {
+        const job = await bridge.nextRenderJob!();
+        if (!cancelled && job !== null) bus.postRender!(job.spec, job.jobId);
+      } catch {
+        // Bridge down / root gone — the health pill owns surfacing that.
+      }
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), RENDER_POLL_MS);
+
+    const offRendered = bus.onRendered?.((report) => {
+      void bridge.postRenderReport?.(report).catch(() => {
+        // Report delivery is best-effort; the canvas render already happened.
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      offRendered?.();
+    };
+  }, [bridge, bus]);
+  return null;
+}
+
 function TabsLayout(): React.JSX.Element {
   return (
     <div className="flex flex-col flex-1 min-h-0">
+      <RenderRelay />
       <ContextBar />
       <TabNav />
     </div>

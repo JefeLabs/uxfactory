@@ -148,19 +148,53 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   // /fs/repos supersedes /fs/cwd for discovery (cwd stays for compat).
   app.get("/fs/repos", async () => registry.listRepos());
 
-  app.get("/next", async (_req, reply) => {
+  // Per-root render-relay stores: each root's queue + reports live in its own
+  // data dir (where the worker's landing step drops render jobs). The launch
+  // root reuses the primary store; other served roots get a lazy instance.
+  const relayStores = new Map<string, BridgeStore>([[registry.launchRoot, store]]);
+  async function relayStoreFor(root: string): Promise<BridgeStore> {
+    let s = relayStores.get(root);
+    if (s === undefined) {
+      s = new BridgeStore(registry.dataDirFor(root));
+      await s.init();
+      relayStores.set(root, s);
+    }
+    return s;
+  }
+  type RelayResolution =
+    | { ok: true; store: BridgeStore }
+    | { ok: false; code: number; error: string };
+  // Absent/empty ?root= keeps the legacy launch-store wire byte-identical
+  // (no re-validation); a present root gets the full 403/410 resolution.
+  async function resolveRelayStore(
+    rawRoot: string | string[] | undefined,
+  ): Promise<RelayResolution> {
+    if (rawRoot === undefined || (typeof rawRoot === "string" && rawRoot.trim() === "")) {
+      return { ok: true, store };
+    }
+    const resolution = await registry.resolveRequestRoot(rawRoot);
+    if (!resolution.ok) return { ok: false, code: resolution.code, error: resolution.error };
+    return { ok: true, store: await relayStoreFor(resolution.root) };
+  }
+
+  app.get<{ Querystring: { root?: string } }>("/next", async (req, reply) => {
     store.markPluginSeen();
-    const job = await store.dequeueNext();
+    const relay = await resolveRelayStore(req.query.root);
+    if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+    const job = await relay.store.dequeueNext();
     if (job === null) return reply.code(204).send();
     return { jobId: job.jobId, spec: job.spec };
   });
 
   // --- render reports ---
 
-  app.post("/rendered", async (req) => {
+  app.post<{ Querystring: { root?: string } }>("/rendered", async (req, reply) => {
     store.markPluginSeen();
+    const relay = await resolveRelayStore(req.query.root);
+    if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
     const body = req.body as RenderReport & { jobId?: string };
-    const stored = await store.saveReport(body);
+    const stored = await relay.store.saveReport(body);
+    // Waiters (POST /edits --wait) are keyed by jobId and bridge-global.
     if (typeof body.jobId === "string") {
       const waiter = waiters.get(body.jobId);
       if (waiter !== undefined) {
@@ -172,8 +206,10 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     return { renderId: stored.renderId };
   });
 
-  app.get("/rendered", async (_req, reply) => {
-    const report = await store.getReport();
+  app.get<{ Querystring: { root?: string } }>("/rendered", async (req, reply) => {
+    const relay = await resolveRelayStore(req.query.root);
+    if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
+    const report = await relay.store.getReport();
     if (report === null) return reply.code(404).send({ error: "no render report yet" });
     return report;
   });

@@ -178,6 +178,10 @@ export interface Bridge {
   getProjectRoot?(): string | null;
   /** GET /fs/repos — repo discovery list (optional — absent in legacy bridge builds). */
   getRepos?(): Promise<ReposResponse>;
+  /** GET /next — poll one queued render job for this root; null when the queue is empty. */
+  nextRenderJob?(): Promise<{ jobId?: string; spec: unknown } | null>;
+  /** POST /rendered — forward the main thread's render report to the bridge. */
+  postRenderReport?(report: unknown): Promise<{ renderId: string }>;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -405,6 +409,20 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     getRepos() {
       return request<ReposResponse>("/fs/repos");
+    },
+
+    async nextRenderJob() {
+      // 204 (empty queue) has no body — request()'s unconditional json() would throw.
+      const res = await doFetch(`${root}${rooted("/next")}`);
+      if (res.status === 204) return null;
+      if (!res.ok) {
+        throw new BridgeError(res.status, await res.text().catch(() => null));
+      }
+      return (await res.json()) as { jobId?: string; spec: unknown };
+    },
+
+    postRenderReport(report: unknown) {
+      return post<{ renderId: string }>(rooted("/rendered"), report);
     },
   };
 }

@@ -371,6 +371,31 @@ describe("contract: setProjectRoot appends ?root= to root-scoped verbs", () => {
     expect(captured).toContain("/project/artifact?key=brief");
   });
 
+  it("render relay verbs (/next, /rendered) carry ?root= when rooted", async () => {
+    const captured: string[] = [];
+    const client = createBridgeClient(injectFetch(app, captured));
+    client.setProjectRoot!(root);
+
+    await client.nextRenderJob!().catch(() => null);
+    await client.postRenderReport!({ ok: true, jobId: "j1" }).catch(() => null);
+
+    const enc = encodeURIComponent(root);
+    expect(captured.find((u) => u.startsWith("/next"))).toContain(`root=${enc}`);
+    expect(captured.find((u) => u.startsWith("/rendered"))).toContain(`root=${enc}`);
+  });
+
+  it("render relay verbs stay byte-identical legacy when unrooted", async () => {
+    const captured: string[] = [];
+    const unrooted = createBridgeClient(injectFetch(app, captured));
+
+    await unrooted.nextRenderJob!().catch(() => null);
+    await unrooted.postRenderReport!({ ok: true }).catch(() => null);
+
+    expect(captured).toContain("/next");
+    expect(captured).toContain("/rendered");
+    for (const u of captured) expect(u).not.toContain("root=");
+  });
+
   it("getRepos returns the ReposResponse shape from the real server", async () => {
     const res = await bridge.getRepos!();
     expect(res.cwd).toBe(root);
