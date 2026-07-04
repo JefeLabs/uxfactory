@@ -42,6 +42,11 @@ export interface EnsureBatchRegistryOptions {
    * the field untouched (callers with no opinion).
    */
   unit?: string | undefined;
+  /**
+   * Render viewports for THIS run (registry top-level `viewports`). Same
+   * set-or-clear semantics as `unit`.
+   */
+  viewports?: { name: string; width: number; height: number }[] | undefined;
 }
 
 /** Conventional generation paths — keep in sync with generative.ts TARGET_MAP. */
@@ -111,11 +116,15 @@ export async function ensureBatchRegistry(
     }
   }
 
-  // Unit is per-run state, not a durable registration: set it when provided,
-  // clear a stale one when explicitly passed as undefined.
+  // Unit and viewports are per-run state, not durable registrations: set them
+  // when provided, clear stale values when explicitly passed as undefined.
   if ('unit' in options) {
     if (options.unit !== undefined) registry['unit'] = options.unit;
     else delete registry['unit'];
+  }
+  if ('viewports' in options) {
+    if (options.viewports !== undefined) registry['viewports'] = options.viewports;
+    else delete registry['viewports'];
   }
 
   await writeFile(file, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');

@@ -207,6 +207,79 @@ const UNIT_GUIDANCE: Record<string, string> = {
     'high-contrast composition that reads in a fast-scrolling timeline.',
 };
 
+/** Conventional per-category viewport sizes (mirror the panel's device defaults). */
+const DEFAULT_VIEWPORT_SIZES: Record<
+  'desktop' | 'tablet' | 'mobile',
+  { width: number; height: number }
+> = {
+  desktop: { width: 1440, height: 900 },
+  tablet: { width: 768, height: 1024 },
+  mobile: { width: 390, height: 844 },
+};
+
+/** Fixed canvas per channel unit — overrides any viewport selection. */
+const CHANNEL_CANVAS: Record<string, { width: number; height: number }> = {
+  email: { width: 600, height: 800 },
+  'instagram-post': { width: 1080, height: 1080 },
+  'instagram-story': { width: 1080, height: 1920 },
+  'youtube-thumbnail': { width: 1280, height: 720 },
+  'facebook-post': { width: 1200, height: 630 },
+  'x-post': { width: 1600, height: 900 },
+};
+
+/** Parse a "WxH" payload size string. */
+function parseSize(v: unknown): { width: number; height: number } | null {
+  if (typeof v !== 'string') return null;
+  const m = /^(\d+)x(\d+)$/.exec(v);
+  if (m === null) return null;
+  return { width: Number(m[1]), height: Number(m[2]) };
+}
+
+/**
+ * Compute the registry `viewports` for a generate-design payload: the channel
+ * unit's fixed canvas, or one entry per platform token (device×orientation)
+ * sized from `viewportSizes` (panel device config) or the conventional
+ * defaults. Landscape tokens swap width/height. Returns undefined when the
+ * payload names nothing renderable (legacy payloads clear stale viewports).
+ */
+function computeViewports(
+  p: Record<string, unknown>,
+): { name: string; width: number; height: number }[] | undefined {
+  const unitType = str(p, 'unitType');
+  if (unitType !== undefined && CHANNEL_CANVAS[unitType] !== undefined) {
+    const c = CHANNEL_CANVAS[unitType];
+    return [{ name: 'canvas', width: c.width, height: c.height }];
+  }
+
+  const platforms = Array.isArray(p['platforms'])
+    ? (p['platforms'] as unknown[]).filter((x): x is string => typeof x === 'string')
+    : [];
+  const sizes =
+    p['viewportSizes'] !== null && typeof p['viewportSizes'] === 'object'
+      ? (p['viewportSizes'] as Record<string, unknown>)
+      : {};
+
+  const out: { name: string; width: number; height: number }[] = [];
+  for (const token of platforms) {
+    const category = token.startsWith('desktop')
+      ? 'desktop'
+      : token.startsWith('tablet')
+        ? 'tablet'
+        : token.startsWith('mobile')
+          ? 'mobile'
+          : null;
+    if (category === null) continue;
+    const base = parseSize(sizes[category]) ?? DEFAULT_VIEWPORT_SIZES[category];
+    const landscape = token.endsWith('-landscape');
+    out.push({
+      name: token,
+      width: landscape ? base.height : base.width,
+      height: landscape ? base.width : base.height,
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 /** Render the `constraints` payload field (array | string | absent) for the prompt. */
 function constraintsText(v: unknown): string {
   if (Array.isArray(v)) return v.map((x) => String(x)).join('; ');
@@ -813,7 +886,8 @@ export async function runGenerative(
     // provisioning time, so we bypass the existence gate for exactly these two keys;
     // every other input/kind keeps the existence-gated, non-clobbering behavior.
     if (req.kind === 'generate-design') {
-      const unitType = str(asObject(req.payload), 'unitType');
+      const designPayload = asObject(req.payload);
+      const unitType = str(designPayload, 'unitType');
       await ensureBatchRegistry(ctx.projectRoot, {
         unconditional: ['screens', 'trace'],
         // Stamp only vocabulary the CLI registry validates (UNIT_GUIDANCE keys);
@@ -822,6 +896,8 @@ export async function runGenerative(
           unitType !== undefined && UNIT_GUIDANCE[unitType] !== undefined
             ? unitType
             : undefined,
+        // Concrete render viewports for the CLI batch (undefined clears stale).
+        viewports: computeViewports(designPayload),
       });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
       await provisionCraftRubric(ctx.projectRoot);

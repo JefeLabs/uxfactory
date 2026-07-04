@@ -7,7 +7,7 @@ import { renderHtml, type HtmlRenderDeps } from "../render/html-render.js";
 import { runHtmlBatch } from "../batch/html-checks.js";
 import { resolveScope, checkReadiness, parseScope } from "../batch/scope.js";
 import type { Dial, DialLevel, RenderScope } from "../batch/scope.js";
-import type { ResolvedInputs } from "../batch/registry.js";
+import type { ResolvedInputs, RegistryViewport } from "../batch/registry.js";
 import type { StorySet, TokenSet } from "../batch/checks.js";
 import type { BatchReport } from "../batch/run.js";
 import type { IO } from "../io.js";
@@ -29,6 +29,7 @@ export async function batchHtmlMode(
   profileScope: RenderScope | undefined,
   registryScope: string | Record<string, unknown> | undefined,
   registryUnit: string | undefined,
+  registryViewports: RegistryViewport[] | undefined,
   deps?: HtmlRenderDeps,
 ): Promise<number> {
   void specsDir; // HTML mode reads the screens dir from the registry, not the positional arg
@@ -80,14 +81,32 @@ export async function batchHtmlMode(
   if (!traceResult.ok) { io.err(traceResult.message); return EXIT.TRANSPORT; }
 
   // Render (async). A renderer failure is a setup error (2), never a silent pass.
-  const previewDir = path.join(flags.dataDir, "batch", "previews");
-  await mkdir(previewDir, { recursive: true });
-  let snapshots;
+  // Registry viewports (stamped by the worker) each get their own render pass and
+  // preview subdirectory; absent → the legacy single default-viewport render.
+  const targets: RegistryViewport[] =
+    registryViewports !== undefined && registryViewports.length > 0
+      ? registryViewports
+      : [{ name: "default", ...DEFAULT_VIEWPORT }];
+  const basePreviewDir = path.join(flags.dataDir, "batch", "previews");
+  const snapshots = [];
   try {
-    snapshots = await renderHtml(
-      { baseDir: path.dirname(inputs.trace), trace: traceResult.trace, previewDir, viewport: DEFAULT_VIEWPORT },
-      deps,
-    );
+    for (const vp of targets) {
+      const previewDir =
+        registryViewports !== undefined
+          ? path.join(basePreviewDir, vp.name)
+          : basePreviewDir;
+      await mkdir(previewDir, { recursive: true });
+      const snaps = await renderHtml(
+        {
+          baseDir: path.dirname(inputs.trace),
+          trace: traceResult.trace,
+          previewDir,
+          viewport: { width: vp.width, height: vp.height },
+        },
+        deps,
+      );
+      snapshots.push(...snaps);
+    }
   } catch (err) {
     io.err(`HTML renderer unavailable (install playwright + axe-core): ${(err as Error).message}`);
     return EXIT.TRANSPORT;
@@ -102,7 +121,14 @@ export async function batchHtmlMode(
     ...(registryUnit !== undefined ? { unit: registryUnit } : {}),
   });
 
-  const reportDoc = { screens: snapshots.map((s) => `${s.page} › ${s.view}`), ...report };
+  const reportDoc = {
+    screens: snapshots.map((s) =>
+      targets.length > 1
+        ? `${s.page} › ${s.view} @ ${s.viewport.width}×${s.viewport.height}`
+        : `${s.page} › ${s.view}`,
+    ),
+    ...report,
+  };
   await writeFile(path.join(flags.dataDir, "batch", "report.json"), JSON.stringify(reportDoc, null, 2), "utf8");
   if (flags.json === true) {
     io.out(JSON.stringify(reportDoc));

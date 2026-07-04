@@ -54,7 +54,7 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined, undefined,
       { renderViews: async () => [goodSnap] },
     );
     expect(code).toBe(EXIT.OK);
@@ -68,7 +68,7 @@ describe("batchHtmlMode", () => {
     const badSnap: RenderSnapshot = { ...goodSnap, coverChecks: [{ ...goodSnap.coverChecks[0]!, visible: false }] };
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined, { renderViews: async () => [badSnap] },
+      io, inputsFor(), undefined, undefined, undefined, undefined, { renderViews: async () => [badSnap] },
     );
     expect(code).toBe(EXIT.GATE_FAIL);
   });
@@ -77,7 +77,7 @@ describe("batchHtmlMode", () => {
     const io = makeIO();
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined, undefined,
       { renderViews: async () => { throw new Error("playwright not installed"); } },
     );
     expect(code).toBe(EXIT.TRANSPORT);
@@ -89,11 +89,59 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root },
-      io, inputsFor(), undefined, "visual", undefined,
+      io, inputsFor(), undefined, "visual", undefined, undefined,
       { renderViews: async () => [goodSnap] },
     );
     // The committed registry scope is honored — no spurious "set a render scope" EXIT.TRANSPORT.
     expect(code).toBe(EXIT.OK);
+  });
+
+  it("renders once per registry viewport, at that viewport's size", async () => {
+    const io = makeIO();
+    const seen: { width: number; height: number; previewDir: string }[] = [];
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, undefined,
+      [
+        { name: "desktop", width: 1920, height: 1080 },
+        { name: "mobile-portrait", width: 390, height: 844 },
+      ],
+      {
+        renderViews: async (req) => {
+          seen.push({ ...req.viewport, previewDir: req.previewDir });
+          return [{ ...goodSnap, viewport: req.viewport }];
+        },
+      },
+    );
+    expect(code).toBe(EXIT.OK);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ width: 1920, height: 1080 });
+    expect(seen[1]).toMatchObject({ width: 390, height: 844 });
+    // Screenshots partition per viewport so filenames can't collide.
+    expect(seen[0]!.previewDir).toContain("desktop");
+    expect(seen[1]!.previewDir).toContain("mobile-portrait");
+
+    // The gate ran over the union of snapshots from both viewports.
+    const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
+    expect(report.clean).toBe(true);
+    expect(report.screens).toHaveLength(2);
+  });
+
+  it("no registry viewports → single legacy 390×844 render", async () => {
+    const io = makeIO();
+    const seen: { width: number; height: number }[] = [];
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, undefined, undefined,
+      {
+        renderViews: async (req) => {
+          seen.push(req.viewport);
+          return [goodSnap];
+        },
+      },
+    );
+    expect(code).toBe(EXIT.OK);
+    expect(seen).toEqual([{ width: 390, height: 844 }]);
   });
 
   it("passes the registry unit to the gate: atom relaxes story coverage; report echoes unit", async () => {
@@ -102,7 +150,7 @@ describe("batchHtmlMode", () => {
     const componentSnap: RenderSnapshot = { ...goodSnap, coverChecks: [] };
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, "atom",
+      io, inputsFor(), undefined, undefined, "atom", undefined,
       { renderViews: async () => [componentSnap] },
     );
     expect(code).toBe(EXIT.OK);

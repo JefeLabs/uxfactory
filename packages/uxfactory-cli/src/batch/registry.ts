@@ -43,6 +43,13 @@ export const UNIT_TYPES = [
 
 export type UnitType = (typeof UNIT_TYPES)[number];
 
+/** One concrete render viewport (stamped by the worker from the composer request). */
+export interface RegistryViewport {
+  name: string;
+  width: number;
+  height: number;
+}
+
 /** The committed `uxfactory.batch.json` manifest (§13.1). */
 export interface BatchRegistry {
   version: 1;
@@ -61,6 +68,12 @@ export interface BatchRegistry {
    * composer's unit droplist). Shapes the gate rubric: see {@link UNIT_TYPES}.
    */
   unit?: UnitType;
+  /**
+   * Optional render viewports (stamped by the worker from the composer's
+   * viewport selection / channel canvas). The HTML batch renders every trace
+   * view once per viewport; absent → the legacy single 390×844 render.
+   */
+  viewports?: RegistryViewport[];
 }
 
 /** Registry input paths resolved to absolute filesystem paths (null = not registered). */
@@ -128,6 +141,25 @@ export function validateRegistry(
       return {
         ok: false,
         message: `registry.unit must be one of: ${UNIT_TYPES.join(", ")}`,
+      };
+    }
+  }
+  if (raw["viewports"] !== undefined) {
+    const v = raw["viewports"];
+    const isViewport = (e: unknown): boolean =>
+      isPlainObject(e) &&
+      typeof e["name"] === "string" &&
+      typeof e["width"] === "number" &&
+      Number.isInteger(e["width"]) &&
+      (e["width"] as number) > 0 &&
+      typeof e["height"] === "number" &&
+      Number.isInteger(e["height"]) &&
+      (e["height"] as number) > 0;
+    if (!Array.isArray(v) || !v.every(isViewport)) {
+      return {
+        ok: false,
+        message:
+          "registry.viewports must be an array of {name, width, height} entries with positive integer sizes",
       };
     }
   }

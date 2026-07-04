@@ -70,6 +70,28 @@ describe("validateRegistry", () => {
     if (!bad.ok) expect(bad.message).toContain("unit");
     expect(validateRegistry({ version: 1, inputs: {}, unit: 3 }).ok).toBe(false);
   });
+
+  it("accepts a valid viewports array", () => {
+    const res = validateRegistry({
+      version: 1,
+      inputs: {},
+      viewports: [
+        { name: "desktop", width: 1920, height: 1080 },
+        { name: "mobile-portrait", width: 390, height: 844 },
+      ],
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("rejects malformed viewports", () => {
+    expect(validateRegistry({ version: 1, inputs: {}, viewports: "wide" }).ok).toBe(false);
+    expect(
+      validateRegistry({ version: 1, inputs: {}, viewports: [{ name: "d", width: -5, height: 900 }] }).ok,
+    ).toBe(false);
+    expect(
+      validateRegistry({ version: 1, inputs: {}, viewports: [{ width: 100, height: 100 }] }).ok,
+    ).toBe(false);
+  });
 });
 
 describe("resolveInputs", () => {

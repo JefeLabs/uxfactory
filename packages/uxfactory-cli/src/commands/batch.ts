@@ -180,7 +180,10 @@ export async function batchCmd(
   //     so step 2 would otherwise error out ("no *.uxfactory.json specs found") before reaching here.
   if (reg.inputs.screens !== null && reg.inputs.trace !== null) {
     const { batchHtmlMode } = await import("./batch-html.js");
-    return batchHtmlMode(specsDir, flags, io, reg.inputs, profileScope, reg.registry.scope, reg.registry.unit);
+    return batchHtmlMode(
+      specsDir, flags, io, reg.inputs, profileScope,
+      reg.registry.scope, reg.registry.unit, reg.registry.viewports,
+    );
   }
 
   // 2. load + validate the batch specs (invalid/unreadable → 2)

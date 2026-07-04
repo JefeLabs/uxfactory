@@ -1297,6 +1297,91 @@ describe('runGenerative', () => {
     expect(reg.unit).toBe('atom');
   });
 
+  it('generate-design: stamps registry viewports from platforms + viewportSizes', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      {
+        id: 'pr_reg_vps',
+        kind: 'generate-design',
+        payload: {
+          unitType: 'page',
+          platforms: ['desktop', 'mobile-landscape', 'tablet'],
+          viewportSizes: { desktop: '1920x1080', tablet: '768x1024', mobile: '430x932' },
+        },
+        createdAt: 1,
+      },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { viewports?: unknown };
+    expect(reg.viewports).toEqual([
+      { name: 'desktop', width: 1920, height: 1080 },
+      // landscape token swaps the configured mobile size
+      { name: 'mobile-landscape', width: 932, height: 430 },
+      // bare token, portrait, straight from viewportSizes
+      { name: 'tablet', width: 768, height: 1024 },
+    ]);
+  });
+
+  it('generate-design: platforms without viewportSizes use the conventional defaults', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_reg_vp_default', kind: 'generate-design', payload: { platforms: ['mobile'] }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { viewports?: unknown };
+    expect(reg.viewports).toEqual([{ name: 'mobile', width: 390, height: 844 }]);
+  });
+
+  it('generate-design: channel units stamp their fixed canvas as the sole viewport', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      {
+        id: 'pr_reg_canvas',
+        kind: 'generate-design',
+        payload: { unitType: 'instagram-story', platforms: ['desktop', 'mobile'] },
+        createdAt: 1,
+      },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { viewports?: unknown };
+    expect(reg.viewports).toEqual([{ name: 'canvas', width: 1080, height: 1920 }]);
+  });
+
+  it('generate-design: empty payload clears stale registry viewports', async () => {
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.batch.json'),
+      JSON.stringify({
+        version: 1,
+        inputs: {},
+        viewports: [{ name: 'stale', width: 111, height: 222 }],
+      }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_reg_vp_stale', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { viewports?: unknown };
+    expect(reg.viewports).toBeUndefined();
+  });
+
   it('generate-design: clears a stale unit on unit-less payloads; never stamps unknown types', async () => {
     // Seed a stale unit as if a previous atom run left it behind.
     await writeFile(
