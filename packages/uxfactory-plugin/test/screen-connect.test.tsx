@@ -219,6 +219,38 @@ describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
     expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
   });
 
+  it("shows the npm install command above the launch command when bridge is down", async () => {
+    const bridge = makeBridge({
+      health: vi.fn().mockResolvedValue({ ok: false }),
+    });
+    const bus = makeBus();
+    useAppStore.setState({ ...BASE_STORE });
+
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Not detected"),
+    );
+
+    // Both commands visible, each with its own Copy button
+    const installCmd = screen.getByText("npm install -g @uxfactory/cli");
+    const launchCmd = screen.getByText("uxfactory bridge");
+    expect(
+      screen.getByRole("button", { name: /Copy npm install/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Copy uxfactory bridge/i }),
+    ).toBeInTheDocument();
+
+    // Install must render BEFORE launch in document order
+    expect(
+      installCmd.compareDocumentPosition(launchCmd) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("health flip to ok re-enables CTA within a fake-timer 3s tick", async () => {
     vi.useFakeTimers();
     try {

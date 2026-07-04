@@ -51,6 +51,49 @@ function selectText(elementId: string): void {
   sel?.addRange(range);
 }
 
+// ─── Copyable command row (bridge-down setup hint) ────────────────────────────
+
+function CopyableCommand({
+  id,
+  step,
+  command,
+  copyLabel,
+}: {
+  id: string;
+  step: string;
+  command: string;
+  copyLabel: string;
+}): React.JSX.Element {
+  const handleCopy = (): void => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(command).catch(() => selectText(id));
+    } else {
+      selectText(id);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-gray-400 w-3 shrink-0" aria-hidden="true">
+        {step}
+      </span>
+      <code
+        id={id}
+        className="text-xs font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded text-gray-800 select-all"
+      >
+        {command}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
+        aria-label={copyLabel}
+      >
+        Copy
+      </button>
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function Connect({
@@ -226,15 +269,6 @@ export function Connect({
     connect.mutate(repoPath.trim());
   };
 
-  const handleCopyCommand = (): void => {
-    const cmd = "uxfactory bridge";
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(cmd).catch(() => selectText("bridge-cmd"));
-    } else {
-      selectText("bridge-cmd");
-    }
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -295,23 +329,25 @@ export function Connect({
               <div className="flex flex-col gap-2">
                 <StatusPill status={pillStatus} label={pillLabel} />
 
-                {/* Copyable command when bridge is down */}
+                {/* Setup commands when bridge is down: install once, then launch */}
                 {bridgeStatus === "down" && (
-                  <div className="flex items-center gap-2">
-                    <code
+                  <div className="flex flex-col gap-1.5">
+                    <CopyableCommand
+                      id="install-cmd"
+                      step="1."
+                      command="npm install -g @uxfactory/cli"
+                      copyLabel="Copy npm install command"
+                    />
+                    <CopyableCommand
                       id="bridge-cmd"
-                      className="text-xs font-mono bg-gray-100 border border-gray-200 px-2 py-1 rounded text-gray-800 select-all"
-                    >
-                      uxfactory bridge
-                    </code>
-                    <button
-                      type="button"
-                      onClick={handleCopyCommand}
-                      className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
-                      aria-label="Copy uxfactory bridge command"
-                    >
-                      Copy
-                    </button>
+                      step="2."
+                      command="uxfactory bridge"
+                      copyLabel="Copy uxfactory bridge command"
+                    />
+                    <p className="text-xs text-gray-400">
+                      Requires Node ≥ 20.10. Run the launch command from your
+                      repository root and keep it running.
+                    </p>
                   </div>
                 )}
               </div>
