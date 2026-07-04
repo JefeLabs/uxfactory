@@ -219,6 +219,43 @@ describe("unit-type differentiation", () => {
     expect(r.checks.find((c) => c.id === "flow-steps")!.status).toBe("pass");
   });
 
+  it("per-viewport coverage: a story covered at one viewport but not another fails", () => {
+    const desktop = { width: 1920, height: 1080 };
+    const mobile = { width: 390, height: 844 };
+    const coverBoth = [
+      { story: "checkout", impliedState: "success" as const, selector: "#ok", found: true, visible: true },
+      { story: "checkout", impliedState: "error" as const, selector: "#err", found: true, visible: true },
+    ];
+    const snaps = [
+      // Desktop covers both states; mobile covers neither.
+      snap({ viewport: desktop, coverChecks: coverBoth }),
+      snap({ viewport: mobile, view: "plain", coverChecks: [] }),
+    ];
+    const r = renderCoverage(snaps, stories);
+    expect(r.status).toBe("fail");
+    expect(
+      r.findings.some((f) => f.detail.includes("not covered") && f.detail.includes("390×844")),
+    ).toBe(true);
+    // The desktop viewport is fully covered — no desktop finding.
+    expect(r.findings.some((f) => f.detail.includes("1920×1080"))).toBe(false);
+  });
+
+  it("per-viewport coverage: covered at every viewport passes", () => {
+    const coverBoth = (vp: { width: number; height: number }) =>
+      snap({
+        viewport: vp,
+        coverChecks: [
+          { story: "checkout", impliedState: "success" as const, selector: "#ok", found: true, visible: true },
+          { story: "checkout", impliedState: "error" as const, selector: "#err", found: true, visible: true },
+        ],
+      });
+    const r = renderCoverage(
+      [coverBoth({ width: 1920, height: 1080 }), coverBoth({ width: 390, height: 844 })],
+      stories,
+    );
+    expect(r.status).toBe("pass");
+  });
+
   it("flow-steps is not-owed for non-flow units, with a unit-specific reason", () => {
     for (const unit of [undefined, "page", "atom"]) {
       const r = runHtmlBatch({ snapshots: [partialSnap], stories, tokens, scope: SCOPE, unit });

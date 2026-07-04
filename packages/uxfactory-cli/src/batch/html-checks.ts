@@ -80,10 +80,14 @@ export function renderCoverage(
     return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
   }
   const findings: BatchFinding[] = [];
+  // Coverage is per viewport: a story×state must be visibly covered at EVERY
+  // rendered viewport, not just any one of them.
+  const vpKey = (s: RenderSnapshot): string => `${s.viewport.width}×${s.viewport.height}`;
+  const viewports = new Set(snapshots.map(vpKey));
   const covered = new Set<string>();
   for (const s of snapshots) {
     for (const c of s.coverChecks) {
-      if (c.found && c.visible) covered.add(`${c.story}${NUL}${c.impliedState}`);
+      if (c.found && c.visible) covered.add(`${c.story}${NUL}${c.impliedState}${NUL}${vpKey(s)}`);
     }
   }
   // Render failures first — loud, never silent.
@@ -111,17 +115,23 @@ export function renderCoverage(
       }
     }
   }
-  // Required (story × distinct impliedState) coverage — page-tier units only.
+  // Required (story × distinct impliedState × viewport) coverage — page-tier
+  // units only. Single-viewport runs keep the legacy finding wording.
   if (storyCoverage) {
+    const multiViewport = viewports.size > 1;
     for (const story of stories.stories ?? []) {
       const required = new Set<ImpliedState>();
       for (const ac of story.acceptanceCriteria ?? []) required.add(ac.impliedState);
       for (const state of required) {
-        if (!covered.has(`${story.id}${NUL}${state}`)) {
-          findings.push({
-            detail: `story ${story.id} ${state} state is not covered by any visible rendering`,
-            ref: `${story.id}/${state}`,
-          });
+        for (const vp of viewports) {
+          if (!covered.has(`${story.id}${NUL}${state}${NUL}${vp}`)) {
+            findings.push({
+              detail: multiViewport
+                ? `story ${story.id} ${state} state is not covered by any visible rendering at ${vp}`
+                : `story ${story.id} ${state} state is not covered by any visible rendering`,
+              ref: multiViewport ? `${story.id}/${state}@${vp}` : `${story.id}/${state}`,
+            });
+          }
         }
       }
     }
