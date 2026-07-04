@@ -6,11 +6,20 @@ export interface ChipProps {
   selected?: boolean;
   onSelect?: () => void;
   tone?: "default" | "dial";
+  /** "sm" renders a compact chip for dense bars (e.g. the header chips bar). */
+  size?: "md" | "sm";
 }
 
-export function Chip({ label, value, selected = false, onSelect, tone = "default" }: ChipProps) {
-  const base =
-    "inline-flex items-center px-3 py-1 rounded-full border text-sm cursor-pointer transition-colors select-none";
+export function Chip({
+  label,
+  value,
+  selected = false,
+  onSelect,
+  tone = "default",
+  size = "md",
+}: ChipProps) {
+  const sizing = size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-sm";
+  const base = `inline-flex items-center ${sizing} rounded-full border cursor-pointer transition-colors select-none`;
 
   const selectedStyle =
     "bg-primary-50 border-primary-600 text-primary-600 font-semibold";

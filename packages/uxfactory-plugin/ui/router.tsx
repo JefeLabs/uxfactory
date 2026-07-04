@@ -140,12 +140,15 @@ function connectionStatusToPill(status: string): StatusPillStatus {
 function ContextBar(): React.JSX.Element {
   const connection = useAppStore((s) => s.connection);
   const snapshot = useAppStore((s) => s.snapshot);
+  const fileName = useAppStore((s) => s.fileInfo?.name);
   const cancelReconnect = useAppStore((s) => s.cancelReconnect);
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
   const pillStatus = connectionStatusToPill(connection.status);
+  // Project name = the Figma file the user connected; the repo is a detail below.
   const projectName =
+    fileName ??
     snapshot?.name ??
     (connection.repoPath
       ? connection.repoPath.split("/").pop() ?? "Project"
@@ -188,35 +191,55 @@ function ContextBar(): React.JSX.Element {
 
   return (
     <div className="bg-white border-b border-gray-200 shrink-0">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <span className="text-sm font-medium text-gray-900 truncate flex-1 min-w-0">
-          {projectName}
-        </span>
-        <div className="flex items-center gap-1 flex-wrap">
-          {primaryChips.map((label) => (
-            <Chip key={label} label={label} selected tone="default" />
-          ))}
-          {overflowCount > 0 && (
-            <Chip label={`+${overflowCount}`} selected={false} tone="default" />
+      {/* Project name bar — file name leads; repo path is a subtext + hover detail */}
+      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+        <div
+          className="flex-1 min-w-0"
+          title={connection.repoPath !== "" ? connection.repoPath : undefined}
+        >
+          <span className="block text-sm font-medium text-gray-900 truncate">
+            {projectName}
+          </span>
+          {connection.repoPath !== "" && (
+            <span className="block text-[10px] leading-tight text-gray-400 truncate">
+              {connection.repoPath}
+            </span>
           )}
         </div>
         <StatusPill status={pillStatus} />
-        <button
-          type="button"
-          aria-label={
-            expanded ? "Collapse project details" : "Expand project details"
-          }
-          onClick={() => setExpanded((v) => !v)}
-          className="p-1 text-gray-400 hover:text-gray-600 shrink-0"
-        >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
       </div>
-      {expanded && secondaryChips.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-3 pb-2">
-          {secondaryChips.map((label) => (
-            <Chip key={label} label={label} selected tone="default" />
-          ))}
+
+      {/* Chips bar — compact chips in their own collapsible row */}
+      {(primaryChips.length > 0 || secondaryChips.length > 0) && (
+        <div className="flex items-start gap-1 px-3 pb-1.5">
+          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+            {primaryChips.map((label) => (
+              <Chip key={label} size="sm" label={label} selected tone="default" />
+            ))}
+            {expanded &&
+              secondaryChips.map((label) => (
+                <Chip key={label} size="sm" label={label} selected tone="default" />
+              ))}
+            {overflowCount > 0 && (
+              <Chip
+                size="sm"
+                label={`+${overflowCount}`}
+                selected={false}
+                tone="default"
+                onSelect={() => setExpanded(true)}
+              />
+            )}
+          </div>
+          <button
+            type="button"
+            aria-label={
+              expanded ? "Collapse project details" : "Expand project details"
+            }
+            onClick={() => setExpanded((v) => !v)}
+            className="p-0.5 text-gray-400 hover:text-gray-600 shrink-0"
+          >
+            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
         </div>
       )}
     </div>

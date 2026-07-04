@@ -167,6 +167,61 @@ describe("E2E: panel lifecycle — connect screen to tabs", () => {
   });
 });
 
+// ─── E2E: ContextBar name bar + chips bar ─────────────────────────────────────
+
+describe("E2E: ContextBar shows project name with repo subtext and a compact chips bar", () => {
+  // SnapshotSync refetches on mount and overwrites the store — the fake bridge
+  // must serve the SAME snapshot the store is seeded with, or the chips vanish
+  // as soon as an await lets the fetch land.
+  function demoBridge(): Bridge {
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(DEMO_SNAPSHOT);
+    return bridge;
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
+      // File name differs from snapshot.name (repo basename) to prove precedence.
+      fileInfo: { name: "My Product", fileKey: "file-abc" },
+      snapshot: DEMO_SNAPSHOT,
+      toasts: [],
+    });
+  });
+
+  it("shows the Figma file name as project name, repo path as subtext", async () => {
+    await renderApp(demoBridge());
+    expect(screen.getByText("My Product")).toBeInTheDocument();
+    expect(screen.getByText("/home/user/demo-shop")).toBeInTheDocument();
+  });
+
+  it("renders compact (sm) chips in their own bar below the name", async () => {
+    await renderApp(demoBridge());
+    const chip = screen.getByText("ecommerce").closest("button");
+    expect(chip?.className).toContain("text-[11px]");
+    // The chips bar (not the name row) hosts the expand control.
+    expect(
+      screen.getByRole("button", { name: /Expand project details/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("collapsed bar shows primary chips + overflow count; +N click expands", async () => {
+    const user = userEvent.setup();
+    await renderApp(demoBridge());
+    expect(screen.getByText("ecommerce")).toBeInTheDocument();
+    expect(screen.getByText("responsive")).toBeInTheDocument();
+    // Secondary chips hidden while collapsed (5 = industry, locale, age, 2 platforms)
+    expect(screen.queryByText("corporate")).not.toBeInTheDocument();
+    const overflow = screen.getByRole("checkbox", { name: "+5" });
+
+    await user.click(overflow);
+
+    expect(screen.getByText("corporate")).toBeInTheDocument();
+    expect(screen.getByText("en-US")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "+5" })).not.toBeInTheDocument();
+  });
+});
+
 // ─── E2E: Tab navigation ──────────────────────────────────────────────────────
 
 describe("E2E: tab navigation after connect", () => {
