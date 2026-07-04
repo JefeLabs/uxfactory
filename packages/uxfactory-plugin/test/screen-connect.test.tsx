@@ -23,6 +23,7 @@ import {
 import {
   act,
   cleanup,
+  fireEvent,
   screen,
   waitFor,
 } from "@testing-library/react";
@@ -266,6 +267,38 @@ describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
       installCmd.compareDocumentPosition(launchCmd) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("'Copy both' copies the combined install-and-launch one-liner", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    try {
+      const bridge = makeBridge({
+        health: vi.fn().mockResolvedValue({ ok: false }),
+      });
+      const bus = makeBus();
+      useAppStore.setState({ ...BASE_STORE });
+
+      await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+        initialEntries: ["/connect"],
+      });
+
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent("Not detected"),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /Copy both/i }));
+      expect(writeText).toHaveBeenCalledWith(
+        "npm install -g @uxfactory/cli && uxfactory bridge",
+      );
+    } finally {
+      // jsdom has no native navigator.clipboard — remove the stub so other
+      // tests keep exercising the selectText fallback path.
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
   });
 
   it("health flip to ok re-enables CTA within a fake-timer 3s tick", async () => {

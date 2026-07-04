@@ -39,6 +39,10 @@ const MODE_OPTIONS: SegmentedOption[] = [
   { label: "Cloud", value: "cloud" },
 ];
 
+const INSTALL_CMD = "npm install -g @uxfactory/cli";
+const LAUNCH_CMD = "uxfactory bridge";
+const COMBINED_SETUP_CMD = `${INSTALL_CMD} && ${LAUNCH_CMD}`;
+
 // ─── Helper: text-selection fallback for clipboard ───────────────────────────
 
 function selectText(elementId: string): void {
@@ -269,6 +273,16 @@ export function Connect({
     connect.mutate(repoPath.trim());
   };
 
+  const handleCopyBoth = (): void => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(COMBINED_SETUP_CMD)
+        .catch(() => selectText("combined-cmd"));
+    } else {
+      selectText("combined-cmd");
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
@@ -335,15 +349,30 @@ export function Connect({
                     <CopyableCommand
                       id="install-cmd"
                       step="1."
-                      command="npm install -g @uxfactory/cli"
+                      command={INSTALL_CMD}
                       copyLabel="Copy npm install command"
                     />
                     <CopyableCommand
                       id="bridge-cmd"
                       step="2."
-                      command="uxfactory bridge"
+                      command={LAUNCH_CMD}
                       copyLabel="Copy uxfactory bridge command"
                     />
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 shrink-0" aria-hidden="true" />
+                      {/* Hidden but selectable — the selectText fallback target */}
+                      <span id="combined-cmd" className="sr-only">
+                        {COMBINED_SETUP_CMD}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyBoth}
+                        className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
+                        aria-label="Copy both commands as one"
+                      >
+                        Copy both as one command
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-400">
                       Requires Node ≥ 20.10. Run the launch command from your
                       repository root and keep it running.
