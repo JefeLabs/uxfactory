@@ -294,15 +294,16 @@ export function Connect({
             <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/20">
               <Code size={24} className="text-white" aria-hidden="true" />
             </div>
-            <p className="text-lg font-semibold">UX Factory</p>
+            <p className="text-2xl font-bold">UX Factory</p>
           </div>
-          <p className="text-xl font-bold mb-3">UX artifacts at your fingertips.</p>
+          <p className="text-base font-semibold mb-3">
+            Designs validated against your specifications
+          </p>
           <ul className="space-y-1 text-sm text-white/90">
-            <li>
-              · Create and maintain specifications for product, IA, UX and design concerns.
-            </li>
-            <li>· Verify your designs.</li>
-            <li>· Generate goal-oriented AI-rendered designs.</li>
+            <li>· Review designs against registered stories and acceptance criteria</li>
+            <li>· Generate product, IA, UX, and design artifacts with AI</li>
+            <li>· Build components with AI assistance</li>
+            <li>· Manage your component library</li>
           </ul>
         </div>
       )}

@@ -201,6 +201,9 @@ describe("hero brand", () => {
     });
 
     expect(screen.getByText("UX Factory")).toBeInTheDocument();
+    expect(
+      screen.getByText("Designs validated against your specifications"),
+    ).toBeInTheDocument();
   });
 });
 
