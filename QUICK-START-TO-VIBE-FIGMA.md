@@ -118,7 +118,7 @@ uxfactory bridge        # keep this running
 pnpm --filter @uxfactory/plugin build   # writes the plugin bundle + manifest.json
 ```
 
-In Figma: **Plugins → Development → Import plugin from manifest…** → pick `packages/uxfactory-plugin/manifest.json`, then run **UXFactory** (it connects to the bridge at `localhost:3779`).
+In Figma: **Plugins → Development → Import plugin from manifest…** → pick `packages/uxfactory-plugin/manifest.json`, then run **UX Factory** (it connects to the bridge at `localhost:3779`).
 
 **Render it:**
 

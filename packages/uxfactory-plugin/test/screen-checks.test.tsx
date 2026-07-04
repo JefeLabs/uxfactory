@@ -927,7 +927,7 @@ describe("AC-4: Copy report writes a deterministic markdown report to clipboard"
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledOnce();
     const text = writtenText[0] ?? "";
-    expect(text).toContain("UXFactory Check Report");
+    expect(text).toContain("UX Factory Check Report");
     expect(text).toContain("conform.geometry");
 
     vi.unstubAllGlobals();

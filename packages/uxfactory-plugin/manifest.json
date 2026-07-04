@@ -1,5 +1,5 @@
 {
-  "name": "UXFactory",
+  "name": "UX Factory",
   "id": "uxfactory-plugin",
   "api": "1.0.0",
   "main": "dist/code.js",
@@ -8,6 +8,6 @@
   "networkAccess": {
     "allowedDomains": ["none"],
     "devAllowedDomains": ["http://localhost:3779"],
-    "reasoning": "Connects only to the local UXFactory bridge relay (localhost:3779) to receive render/pipeline requests and post render reports. No data leaves the machine; there is no cloud backend."
+    "reasoning": "Connects only to the local UX Factory bridge relay (localhost:3779) to receive render/pipeline requests and post render reports. No data leaves the machine; there is no cloud backend."
   }
 }

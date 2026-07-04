@@ -112,7 +112,7 @@ export interface ChecksViewProps {
 
 function buildMarkdownReport(model: TierModel, meta: RunMeta): string {
   const lines: string[] = [];
-  lines.push("# UXFactory Check Report");
+  lines.push("# UX Factory Check Report");
   if (meta.runNumber !== undefined) lines.push(`Run: #${meta.runNumber}`);
   if (meta.unit) lines.push(`Unit: ${meta.unit}`);
   if (meta.profile) lines.push(`Profile: ${meta.profile}`);

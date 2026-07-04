@@ -318,7 +318,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
               selected={startingMode === "start-fresh"}
               onSelect={() => setClassification({ startingMode: "start-fresh" })}
             >
-              No specs found yet. UXFactory will help you create your first
+              No specs found yet. UX Factory will help you create your first
               specifications from your designs.
             </RadioCard>
 
@@ -338,7 +338,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
                     in <span className="font-medium">Artifacts</span>.
                   </>
                 ) : (
-                  "For projects that already have specifications, requirements, or design tokens — UXFactory will check your designs against them."
+                  "For projects that already have specifications, requirements, or design tokens — UX Factory will check your designs against them."
                 )}
               </RadioCard>
             </div>

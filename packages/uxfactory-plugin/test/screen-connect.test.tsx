@@ -190,6 +190,20 @@ describe("AC-1: happy connect — running bridge + valid path → routes per sna
 
 // ─── AC-2: Bridge down / flip to running ─────────────────────────────────────
 
+describe("hero brand", () => {
+  it("shows the 'UX Factory' wordmark next to the logo for first-run users", async () => {
+    const bridge = makeBridge();
+    const bus = makeBus();
+    useAppStore.setState({ ...BASE_STORE });
+
+    await renderWithProviders(<Connect bridge={bridge} bus={bus} />, {
+      initialEntries: ["/connect"],
+    });
+
+    expect(screen.getByText("UX Factory")).toBeInTheDocument();
+  });
+});
+
 describe("AC-2: bridge down → CTA disabled + copyable command shown", () => {
   it("shows 'Not detected' pill, uxfactory bridge command, and disabled CTA when bridge is down", async () => {
     const bridge = makeBridge({

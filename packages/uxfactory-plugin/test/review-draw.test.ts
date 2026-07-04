@@ -26,7 +26,7 @@ const sampleReport: ReviewReportLike = {
 };
 
 describe("review drawing (Task 4)", () => {
-  it("draws a UXFactory Review group with 2 badges (red/amber) and a Review notes panel", async () => {
+  it("draws a UX Factory Review group with 2 badges (red/amber) and a Review notes panel", async () => {
     const fig = makeFigma();
 
     // Set up named canvas nodes that the review can find
@@ -56,8 +56,8 @@ describe("review drawing (Task 4)", () => {
     expect(done).toBeDefined();
     expect(done!.skipped).toBe(0);
 
-    // "UXFactory Review" group appended to the page
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    // "UX Factory Review" group appended to the page
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
 
     // 2 badges inside the group
@@ -96,7 +96,7 @@ describe("review drawing (Task 4)", () => {
     expect(notesText!.characters).toContain("AMBER = advisory suggestion");
   });
 
-  it("re-review clears the prior UXFactory Review group (idempotent)", async () => {
+  it("re-review clears the prior UX Factory Review group (idempotent)", async () => {
     const fig = makeFigma();
 
     const buttonNode = fig.createRectangle();
@@ -108,9 +108,34 @@ describe("review drawing (Task 4)", () => {
     await fig.__send({ type: "review", report: sampleReport });
     await fig.__send({ type: "review", report: sampleReport });
 
-    // Exactly ONE "UXFactory Review" group after two reviews
-    const groups = fig.currentPage.children.filter((n) => n.name === "UXFactory Review");
+    // Exactly ONE "UX Factory Review" group after two reviews
+    const groups = fig.currentPage.children.filter((n) => n.name === "UX Factory Review");
     expect(groups).toHaveLength(1);
+  });
+
+  it("clears legacy 'UXFactory Review' groups left by pre-rename builds", async () => {
+    const fig = makeFigma();
+
+    // A group left on the canvas by a build that used the old brand name.
+    const legacy = fig.createFrame();
+    legacy.name = "UXFactory Review";
+    fig.currentPage.appendChild(legacy);
+
+    const buttonNode = fig.createRectangle();
+    buttonNode.name = "ButtonNode";
+    buttonNode.resize(100, 40);
+    fig.currentPage.appendChild(buttonNode);
+
+    await loadCode(fig);
+    await fig.__send({ type: "review", report: sampleReport });
+
+    // Old-named group removed; exactly one new-named group remains.
+    expect(
+      fig.currentPage.children.filter((n) => n.name === "UXFactory Review"),
+    ).toHaveLength(0);
+    expect(
+      fig.currentPage.children.filter((n) => n.name === "UX Factory Review"),
+    ).toHaveLength(1);
   });
 
   it("skips a flag whose node is absent without crashing, increments skipped count", async () => {
@@ -134,7 +159,7 @@ describe("review drawing (Task 4)", () => {
     expect(done!.skipped).toBe(1);
 
     // Only 1 badge rectangle for HeaderNode (badge-num labels use lowercase prefix)
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
     const badges = group!.children.filter((n) => n.name.startsWith("Badge"));
     expect(badges).toHaveLength(1);
@@ -168,7 +193,7 @@ describe("Fix C1 — unmatched ElementFlag appears in notes panel (not silently 
     expect(done).toBeDefined();
     expect(done!.skipped).toBe(1);
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
 
     // No badge rectangle (node not on canvas)
@@ -207,7 +232,7 @@ describe("Fix C1 — unmatched ElementFlag appears in notes panel (not silently 
     const done = lastOfType(fig, "review-done");
     expect(done!.skipped).toBe(0);
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     const notes = group!.children.find((n) => n.name === "Review notes");
     const notesText = notes!.children.find((n) => n.name === "notes-content");
 
@@ -247,7 +272,7 @@ describe("Fix I1 — advisory finding with property produces amber badge", () =>
 
     expect(lastOfType(fig, "review-error")).toBeUndefined();
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
 
     const badges = group!.children.filter((n) => n.name.startsWith("Badge"));
@@ -290,7 +315,7 @@ describe("Fix I2 — badge number text node + element flags section", () => {
 
     expect(lastOfType(fig, "review-error")).toBeUndefined();
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
 
     // Badge rectangle (found node)
@@ -338,7 +363,7 @@ describe("Fix I1 — reliability label in notes panel", () => {
 
     expect(lastOfType(fig, "review-error")).toBeUndefined();
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
 
     const notes = group!.children.find((n) => n.name === "Review notes");
@@ -372,7 +397,7 @@ describe("Fix I1 — reliability label in notes panel", () => {
 
     await fig.__send({ type: "review", report: exactReport });
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     const notes = group!.children.find((n) => n.name === "Review notes");
     const notesText = notes!.children.find((n) => n.name === "notes-content");
 
@@ -398,7 +423,7 @@ describe("Fix I1 — reliability label in notes panel", () => {
 
     await fig.__send({ type: "review", report: noReliabilityReport });
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     const notes = group!.children.find((n) => n.name === "Review notes");
     const notesText = notes!.children.find((n) => n.name === "notes-content");
     expect(notesText!.characters).not.toContain("Reliability:");
@@ -409,7 +434,7 @@ describe("Fix I1 — reliability label in notes panel", () => {
 // Fix I3 — clipsContent=false + no orphan on forced failure
 // ---------------------------------------------------------------------------
 describe("Fix I3 — no-clip container + orphan-clear on draw failure", () => {
-  it("UXFactory Review container has clipsContent === false", async () => {
+  it("UX Factory Review container has clipsContent === false", async () => {
     const fig = makeFigma();
 
     const buttonNode = fig.createRectangle();
@@ -422,7 +447,7 @@ describe("Fix I3 — no-clip container + orphan-clear on draw failure", () => {
 
     expect(lastOfType(fig, "review-error")).toBeUndefined();
 
-    const group = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    const group = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(group).toBeDefined();
     // clipsContent must be false so badges outside the 1×1 frame are visible on real Figma
     expect((group as unknown as { clipsContent: boolean }).clipsContent).toBe(false);
@@ -443,8 +468,8 @@ describe("Fix I3 — no-clip container + orphan-clear on draw failure", () => {
     expect(err).toBeDefined();
     expect(err!.message).toContain("font unavailable in test");
 
-    // No "UXFactory Review" group may remain as an orphan on the page
-    const orphan = fig.currentPage.children.find((n) => n.name === "UXFactory Review");
+    // No "UX Factory Review" group may remain as an orphan on the page
+    const orphan = fig.currentPage.children.find((n) => n.name === "UX Factory Review");
     expect(orphan).toBeUndefined();
   });
 });

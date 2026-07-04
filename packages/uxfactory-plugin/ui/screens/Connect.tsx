@@ -290,8 +290,11 @@ export function Connect({
       {/* ── Hero band (full-width indigo) — hidden for returning users ─── */}
       {!isReturning && (
         <div className="bg-primary-600 px-6 py-8 text-white shrink-0">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/20 mb-4">
-            <Code size={24} className="text-white" aria-hidden="true" />
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/20">
+              <Code size={24} className="text-white" aria-hidden="true" />
+            </div>
+            <p className="text-lg font-semibold">UX Factory</p>
           </div>
           <p className="text-xl font-bold mb-3">UX artifacts at your fingertips.</p>
           <ul className="space-y-1 text-sm text-white/90">

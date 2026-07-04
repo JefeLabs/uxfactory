@@ -734,14 +734,16 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
 
 // ---- review annotation drawing (§7.8) ----
 
-const REVIEW_GROUP_NAME = "UXFactory Review";
+const REVIEW_GROUP_NAME = "UX Factory Review";
+/** Group name written by pre-rename builds — still cleared on re-review. */
+const LEGACY_REVIEW_GROUP_NAME = "UXFactory Review";
 const RED_FILL = "#E53935"; // conformance violation
 const AMBER_FILL = "#FB8C00"; // advisory suggestion
 const BADGE_SIZE = 20;
 
 /**
  * Draws conformance-review annotations on the current page from a ReviewReport.
- * §7.8: one removable "UXFactory Review" group; numbered badges (red=conformance,
+ * §7.8: one removable "UX Factory Review" group; numbered badges (red=conformance,
  * amber=advisory) at found nodes; "Review notes" panel with element flags, coverage
  * gaps, legend, and verdict.
  *
@@ -750,7 +752,7 @@ const BADGE_SIZE = 20;
  * Fix I2: each badge has a visible number text node; notes panel lists all ElementFlags.
  * Fix I3: clipsContent=false on the group; group is appended early so the catch path
  *   can remove any partial orphan before posting review-error.
- * Fix M4: ALL prior "UXFactory Review" groups are cleared (no break).
+ * Fix M4: ALL prior review groups are cleared (no break), legacy name included.
  */
 async function drawReview(report: ReviewReportLike): Promise<void> {
   let group: EditableNode | null = null;
@@ -758,10 +760,10 @@ async function drawReview(report: ReviewReportLike): Promise<void> {
     const plan = planAnnotations(report);
     const page = fig.currentPage;
 
-    // Fix M4: Remove ALL top-level groups named "UXFactory Review" (no break so
-    // duplicates from a prior partial run are also cleared).
+    // Fix M4: Remove ALL top-level review groups (no break so duplicates from a
+    // prior partial run are also cleared) — including the legacy pre-rename name.
     for (const child of [...page.children]) {
-      if (child.name === REVIEW_GROUP_NAME) {
+      if (child.name === REVIEW_GROUP_NAME || child.name === LEGACY_REVIEW_GROUP_NAME) {
         child.remove();
         // no break — remove all duplicates
       }
