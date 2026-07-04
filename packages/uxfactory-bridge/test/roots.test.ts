@@ -133,6 +133,36 @@ describe("RootRegistry.resolveRequestRoot", () => {
   });
 });
 
+describe("RootRegistry write serialization", () => {
+  it("concurrent registers persist every root (no lost update)", async () => {
+    const reg = make();
+    await reg.init();
+    const roots = await Promise.all([mkRoot(), mkRoot(), mkRoot(), mkRoot()]);
+    // Two panels (or more) connecting at once must not clobber each other's
+    // registry entry via interleaved read-modify-write.
+    await Promise.all(roots.map((r) => reg.register(r)));
+    const persisted = (await reg.readRegistry()).map((e) => e.root);
+    expect(persisted).toContain(path.resolve(launchRoot));
+    for (const r of roots) expect(persisted).toContain(path.resolve(r));
+  });
+});
+
+describe("RootRegistry.resolveRequestRoot duplicate params", () => {
+  it("array rawRoot (?root=a&root=b) → 400 root-invalid, never throws", async () => {
+    const reg = make();
+    await reg.init();
+    const a = await mkRoot();
+    await reg.register(a);
+    // Fastify parses repeated query params into an array; the registry must
+    // reject the ambiguity cleanly instead of crashing on rawRoot.trim().
+    expect(await reg.resolveRequestRoot([a, launchRoot])).toEqual({
+      ok: false,
+      code: 400,
+      error: "root-invalid",
+    });
+  });
+});
+
 describe("RootRegistry.readRegistry", () => {
   it("missing file → []", async () => {
     const reg = new RootRegistry({

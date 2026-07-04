@@ -46,8 +46,8 @@ export interface ResolvedRoot {
 /** Failed root resolution → an HTTP code + machine-readable error. */
 export interface RootResolutionError {
   ok: false;
-  code: 403 | 410;
-  error: "root-not-served" | "root-gone";
+  code: 400 | 403 | 410;
+  error: "root-invalid" | "root-not-served" | "root-gone";
 }
 
 export type RootResolution = ResolvedRoot | RootResolutionError;
@@ -79,6 +79,8 @@ export class RootRegistry {
   readonly launchDataDir: string;
   private readonly registryPath: string;
   private readonly served = new Set<string>();
+  /** Serializes registry read-modify-writes; concurrent connects must not clobber each other. */
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(opts: RootRegistryOptions) {
     this.launchRoot = path.resolve(opts.launchRoot);
@@ -122,11 +124,17 @@ export class RootRegistry {
 
   /**
    * Resolve a request's raw ?root= to a validated {root, dataDir}.
+   *   - duplicate params (?root=a&root=b parse to an array) → 400 root-invalid;
    *   - undefined/empty → launch root (legacy fallback), still re-validated;
    *   - not in the served set → 403 root-not-served;
    *   - served but no longer a project root → 410 root-gone.
    */
-  async resolveRequestRoot(rawRoot: string | undefined): Promise<RootResolution> {
+  async resolveRequestRoot(
+    rawRoot: string | string[] | undefined,
+  ): Promise<RootResolution> {
+    if (Array.isArray(rawRoot)) {
+      return { ok: false, code: 400, error: "root-invalid" };
+    }
     const root =
       rawRoot === undefined || rawRoot.trim() === ""
         ? this.launchRoot
@@ -198,7 +206,15 @@ export class RootRegistry {
   }
 
   /** Insert or update a registry entry (dedup by resolved path). Never throws. */
-  private async upsert(root: string): Promise<void> {
+  private upsert(root: string): Promise<void> {
+    // Queue behind any in-flight write: doUpsert never rejects (its whole body
+    // is try/caught), so the chain cannot break.
+    const queued = this.writeChain.then(() => this.doUpsert(root));
+    this.writeChain = queued;
+    return queued;
+  }
+
+  private async doUpsert(root: string): Promise<void> {
     const resolved = path.resolve(root);
     const now = Date.now();
     try {
