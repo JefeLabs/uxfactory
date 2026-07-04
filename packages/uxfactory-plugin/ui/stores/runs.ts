@@ -51,19 +51,28 @@ const MAX_RUNS = 20;
 
 // ─── Store state ──────────────────────────────────────────────────────────────
 
-export interface RunsState {
+/** Composer chip state — every field the Prompt composer persists across tab switches. */
+export interface ComposerState {
+  composerUnitType: string;
+  composerPlatforms: string[];
+  /** "auto" | "portrait" | "landscape" — "auto" stays off the wire. */
+  composerOrientation: string;
+  /** 1–3; 1 stays off the wire. */
+  composerVariations: number;
+  /** "low" | "medium" | "high" — "medium" stays off the wire. */
+  composerFidelity: string;
+}
+
+export interface RunsState extends ComposerState {
   runs: RunEntry[];
-  /**
-   * Composer chip state — persists across tab switches within a session.
-   * Stored here (rather than component local state) so the Prompt screen
-   * restores its unit-type and platform selection when re-mounted.
+  /*
+   * Composer chip state lives here (rather than component local state) so the
+   * Prompt screen restores its selections when re-mounted on tab switches.
    *
    * Design choice: runs store is the natural owner because both composer
    * state and the run list relate to generation jobs; no separate slice
    * was introduced to avoid store proliferation.
    */
-  composerUnitType: string;
-  composerPlatforms: string[];
 }
 
 export interface RunsActions {
@@ -88,8 +97,8 @@ export interface RunsActions {
    * Async because it reads fileInfo + storage from the bus.
    */
   hydrate(bus: PluginBus): Promise<() => void>;
-  /** Persist composer chip state across tab switches. */
-  setComposerState(unitType: string, platforms: string[]): void;
+  /** Persist composer chip state across tab switches (partial update). */
+  setComposerState(partial: Partial<ComposerState>): void;
 }
 
 export type RunsStore = RunsState & RunsActions;
@@ -101,6 +110,9 @@ export const useRunsStore = create<RunsStore>(
     runs: [],
     composerUnitType: "page",
     composerPlatforms: [],
+    composerOrientation: "auto",
+    composerVariations: 1,
+    composerFidelity: "medium",
 
     add(entry) {
       const run: RunEntry = { status: "generating", ...entry };
@@ -127,8 +139,8 @@ export const useRunsStore = create<RunsStore>(
       }));
     },
 
-    setComposerState(unitType, platforms) {
-      set({ composerUnitType: unitType, composerPlatforms: platforms });
+    setComposerState(partial) {
+      set(partial);
     },
 
     async hydrate(bus: PluginBus): Promise<() => void> {

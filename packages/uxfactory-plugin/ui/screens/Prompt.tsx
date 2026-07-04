@@ -97,6 +97,31 @@ function platformsLabel(platforms: string[]): string {
 
 const COMPOSER_PLACEHOLDER = "Describe the component(s) to generate";
 
+const VIEWPORT_OPTIONS: { label: string; value: string }[] = [
+  { label: "Desktop", value: "desktop" },
+  { label: "Tablet", value: "tablet" },
+  { label: "Mobile", value: "mobile" },
+];
+const VIEWPORT_VALUES = VIEWPORT_OPTIONS.map((o) => o.value);
+
+const ORIENTATION_OPTIONS: { label: string; value: string }[] = [
+  { label: "Auto orientation", value: "auto" },
+  { label: "Portrait", value: "portrait" },
+  { label: "Landscape", value: "landscape" },
+];
+
+const VARIATION_OPTIONS: { label: string; value: string }[] = [
+  { label: "1 variation", value: "1" },
+  { label: "2 variations", value: "2" },
+  { label: "3 variations", value: "3" },
+];
+
+const FIDELITY_OPTIONS: { label: string; value: string }[] = [
+  { label: "Low fidelity", value: "low" },
+  { label: "Medium fidelity", value: "medium" },
+  { label: "High fidelity", value: "high" },
+];
+
 /** Map a raw worker status string to the RunStatus vocabulary. */
 function toRunStatus(raw: string | undefined): Exclude<RunStatus, "generating"> {
   if (raw === "checked" || raw === "warnings" || raw === "failed") return raw;
@@ -114,11 +139,13 @@ function ChipSelect({
   onChange,
   options,
   ariaLabel,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { label: string; value: string }[];
+  options: { label: string; value: string; disabled?: boolean }[];
   ariaLabel: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="relative inline-flex items-center">
@@ -126,14 +153,16 @@ function ChipSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={ariaLabel}
+        disabled={disabled}
         className={[
           "appearance-none bg-white border border-gray-300 rounded-full",
           "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
+          "disabled:opacity-60 disabled:cursor-not-allowed",
         ].join(" ")}
       >
         {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
             {opt.label}
           </option>
         ))}
@@ -143,6 +172,80 @@ function ChipSelect({
         aria-hidden="true"
         className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
       />
+    </div>
+  );
+}
+
+/**
+ * Chip-styled viewport picker with a checkbox popup. The trigger shows every
+ * selected viewport ("Desktop + Mobile"). `single` (user-flow unit) makes the
+ * checkboxes behave radio-like: picking one replaces the selection.
+ */
+function ViewportMultiSelect({
+  selected,
+  single,
+  onToggle,
+}: {
+  selected: string[];
+  single: boolean;
+  onToggle: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const label =
+    selected.length > 0
+      ? VIEWPORT_OPTIONS.filter((o) => selected.includes(o.value))
+          .map((o) => o.label)
+          .join(" + ")
+      : "Viewports";
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        aria-label="Viewports"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={[
+          "inline-flex items-center bg-white border border-gray-300 rounded-full",
+          "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer relative",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
+        ].join(" ")}
+      >
+        {label}
+        <ChevronDown
+          size={12}
+          aria-hidden="true"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+        />
+      </button>
+      {open && (
+        <div
+          role="group"
+          aria-label="Viewport options"
+          className="absolute bottom-full left-0 mb-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-col gap-1"
+        >
+          {VIEWPORT_OPTIONS.map((o) => {
+            const checked = selected.includes(o.value);
+            // Multi mode: the last checked row can't be unchecked (≥1 viewport).
+            const lastChecked = !single && checked && selected.length === 1;
+            return (
+              <label
+                key={o.value}
+                className="flex items-center gap-2 text-sm text-gray-700 px-1 py-0.5 cursor-pointer whitespace-nowrap"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={lastChecked}
+                  onChange={() => onToggle(o.value)}
+                  className="accent-primary-600"
+                />
+                {o.label}
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -263,6 +366,9 @@ export function Prompt({
   const runs = useRunsStore((s) => s.runs);
   const composerUnitType = useRunsStore((s) => s.composerUnitType);
   const composerPlatforms = useRunsStore((s) => s.composerPlatforms);
+  const composerOrientation = useRunsStore((s) => s.composerOrientation);
+  const composerVariations = useRunsStore((s) => s.composerVariations);
+  const composerFidelity = useRunsStore((s) => s.composerFidelity);
   const setComposerState = useRunsStore((s) => s.setComposerState);
 
   // ── Local state ────────────────────────────────────────────────────────────
@@ -281,24 +387,8 @@ export function Prompt({
   const effectivePlatforms =
     composerPlatforms.length > 0 ? composerPlatforms : classificationPlatforms;
 
-  // Platform select value: "__all__" if effectivePlatforms matches all classification platforms.
-  const allPlatformsSorted = [...classificationPlatforms].sort().join(",");
-  const effectiveSorted = [...effectivePlatforms].sort().join(",");
-  const platformSelectValue =
-    classificationPlatforms.length === 0 || effectiveSorted === allPlatformsSorted
-      ? "__all__"
-      : (effectivePlatforms[0] ?? "__all__");
-
-  const platformOptions: { label: string; value: string }[] =
-    classificationPlatforms.length > 0
-      ? [
-          { label: platformsLabel(classificationPlatforms), value: "__all__" },
-          ...classificationPlatforms.map((p) => ({
-            label: capitalize(p),
-            value: p,
-          })),
-        ]
-      : [{ label: "All Platforms", value: "__all__" }];
+  // User-flow is a single journey: one viewport, no variations.
+  const isUserFlow = composerUnitType === "user-flow";
 
   // ── Derived: grounding chips from snapshot artifacts ───────────────────────
   const artifacts = Array.isArray(snapshotArtifacts) ? snapshotArtifacts : [];
@@ -364,11 +454,24 @@ export function Prompt({
       : [];
     const platforms = storedPlatforms.length > 0 ? storedPlatforms : clsPlatforms;
 
+    // Non-default composer extras ride the payload; defaults stay off the wire
+    // so legacy consumers see byte-identical requests.
+    const orientation = useRunsStore.getState().composerOrientation;
+    const variations = useRunsStore.getState().composerVariations;
+    const fidelity = useRunsStore.getState().composerFidelity;
+
     setIsSubmitting(true);
     try {
       const { id } = await enqueue.mutateAsync({
         kind: "generate-design",
-        payload: { prompt: trimmed, unitType, platforms },
+        payload: {
+          prompt: trimmed,
+          unitType,
+          platforms,
+          ...(orientation !== "auto" ? { orientation } : {}),
+          ...(variations > 1 ? { variations } : {}),
+          ...(fidelity !== "medium" ? { fidelity } : {}),
+        },
       });
 
       // Ordering matters: the run row is added only AFTER enqueue resolves
@@ -390,19 +493,50 @@ export function Prompt({
     }
   }
 
-  // ── Platform chip change ───────────────────────────────────────────────────
-  // "__all__" is stored as the [] sentinel — it expands to the classification
-  // platforms only at submit time, so a later classification edit is picked up.
-  function handlePlatformChange(value: string) {
-    const currentUnitType = useRunsStore.getState().composerUnitType;
-    const platforms = value === "__all__" ? [] : [value];
-    setComposerState(currentUnitType, platforms);
+  // ── Viewport checkbox toggle ───────────────────────────────────────────────
+  // The [] sentinel (fall back to classification platforms at submit) survives
+  // until the first explicit toggle; from then on the list is explicit.
+  function handleViewportToggle(value: string) {
+    const current = effectivePlatforms;
+    const has = current.includes(value);
+    if (isUserFlow) {
+      // Single-select: picking a viewport replaces the selection.
+      if (!has) setComposerState({ composerPlatforms: [value] });
+      return;
+    }
+    if (has && current.length <= 1) return; // keep at least one viewport
+    const next = VIEWPORT_VALUES.filter((v) =>
+      v === value ? !has : current.includes(v),
+    );
+    setComposerState({ composerPlatforms: next });
   }
 
   // ── Unit-type chip change ──────────────────────────────────────────────────
   function handleUnitTypeChange(value: string) {
-    const currentPlatforms = useRunsStore.getState().composerPlatforms;
-    setComposerState(value, currentPlatforms);
+    const partial: Parameters<typeof setComposerState>[0] = {
+      composerUnitType: value,
+    };
+    if (value === "user-flow") {
+      // A flow is one journey: clamp to a single viewport and one variation.
+      const first =
+        VIEWPORT_VALUES.find((v) => effectivePlatforms.includes(v)) ??
+        effectivePlatforms[0];
+      if (first !== undefined) partial.composerPlatforms = [first];
+      partial.composerVariations = 1;
+    }
+    setComposerState(partial);
+  }
+
+  // ── Variations change — high fidelity is single-variation only ─────────────
+  function handleVariationsChange(value: string) {
+    const n = Number(value);
+    const partial: Parameters<typeof setComposerState>[0] = {
+      composerVariations: n,
+    };
+    if (n > 1 && useRunsStore.getState().composerFidelity === "high") {
+      partial.composerFidelity = "medium";
+    }
+    setComposerState(partial);
   }
 
   // ── Recent runs (top 3 visible) ────────────────────────────────────────────
@@ -433,14 +567,36 @@ export function Prompt({
                 options={UNIT_OPTIONS}
                 ariaLabel="Unit type"
               />
-              {classificationPlatforms.length > 0 && (
-                <ChipSelect
-                  value={platformSelectValue}
-                  onChange={handlePlatformChange}
-                  options={platformOptions}
-                  ariaLabel="Platform target"
-                />
-              )}
+              <ViewportMultiSelect
+                selected={effectivePlatforms.filter((p) =>
+                  VIEWPORT_VALUES.includes(p),
+                )}
+                single={isUserFlow}
+                onToggle={handleViewportToggle}
+              />
+              <ChipSelect
+                value={composerOrientation}
+                onChange={(v) => setComposerState({ composerOrientation: v })}
+                options={ORIENTATION_OPTIONS}
+                ariaLabel="Orientation"
+              />
+              <ChipSelect
+                value={String(composerVariations)}
+                onChange={handleVariationsChange}
+                options={VARIATION_OPTIONS}
+                ariaLabel="Variations"
+                disabled={isUserFlow}
+              />
+              <ChipSelect
+                value={composerFidelity}
+                onChange={(v) => setComposerState({ composerFidelity: v })}
+                options={FIDELITY_OPTIONS.map((o) =>
+                  o.value === "high" && composerVariations > 1
+                    ? { ...o, disabled: true }
+                    : o,
+                )}
+                ariaLabel="Fidelity"
+              />
             </div>
 
             {/* Circular submit button (↑) */}
