@@ -1277,6 +1277,54 @@ describe('runGenerative', () => {
     expect(reg.inputs.trace).toBe('design/trace.json');
   });
 
+  it('generate-design: stamps the payload unitType into the registry unit field', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_reg_unit', kind: 'generate-design', payload: { unitType: 'atom' }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { unit?: string };
+    expect(reg.unit).toBe('atom');
+  });
+
+  it('generate-design: clears a stale unit on unit-less payloads; never stamps unknown types', async () => {
+    // Seed a stale unit as if a previous atom run left it behind.
+    await writeFile(
+      path.join(projectRoot, 'uxfactory.batch.json'),
+      JSON.stringify({ version: 1, inputs: {}, unit: 'atom' }),
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_reg_stale', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    let reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { unit?: string };
+    expect(reg.unit).toBeUndefined();
+
+    // An unknown unitType must not be stamped — it would fail the CLI's
+    // registry validation and turn the agent's every batch run into a setup error.
+    const adapter2 = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    await runGenerative(
+      { id: 'pr_reg_unknown', kind: 'generate-design', payload: { unitType: 'widget' }, createdAt: 1 },
+      adapter2,
+      new FakeBridge(),
+      ctx(),
+    );
+    reg = JSON.parse(
+      await readFile(path.join(projectRoot, 'uxfactory.batch.json'), 'utf8'),
+    ) as { unit?: string };
+    expect(reg.unit).toBeUndefined();
+  });
+
   it('generate-design: forwards a UXF::PROGRESS line as a structured progress event (note masked)', async () => {
     const adapter = new FakeAdapter(projectRoot, [
       { type: 'text-delta', text: 'starting work\n' },

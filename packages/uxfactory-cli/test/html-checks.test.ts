@@ -122,11 +122,14 @@ describe("runHtmlBatch", () => {
     axe: [],
   });
 
-  it("runs all four checks at visual:medium and is clean when all pass", () => {
+  it("runs all checks at visual:medium and is clean when all binding checks pass", () => {
     const r = runHtmlBatch({ snapshots: [goodSnap], stories, tokens, scope: VISUAL_MEDIUM });
     expect(r.clean).toBe(true);
-    expect(r.checks.map((c) => c.id).sort()).toEqual(["a11y", "contrast", "render-coverage", "token-conformance"]);
-    expect(r.checks.every((c) => c.status === "pass")).toBe(true);
+    expect(r.checks.map((c) => c.id).sort()).toEqual(["a11y", "contrast", "flow-steps", "render-coverage", "token-conformance"]);
+    // flow-steps is not-owed without the user-flow unit; everything else passes.
+    expect(
+      r.checks.every((c) => (c.id === "flow-steps" ? c.status === "not-owed" : c.status === "pass")),
+    ).toBe(true);
   });
 
   it("marks a11y/contrast/token not-owed at visual:low; render-coverage still binds", () => {
@@ -141,5 +144,84 @@ describe("runHtmlBatch", () => {
     const r = runHtmlBatch({ snapshots: [snap({ ok: false, error: "x" })], stories, tokens, scope: VISUAL_MEDIUM });
     expect(r.clean).toBe(false);
     expect(r.mustPassFailed).toBe(true);
+  });
+});
+
+// ─── Unit-type differentiation ───────────────────────────────────────────────
+
+describe("unit-type differentiation", () => {
+  const SCOPE: RenderScope = { visual: "medium", editorial: "low", coverage: "medium", flow: "low" };
+  // Covers only 'success' — story 'checkout' also requires 'error'.
+  const partialSnap = snap({
+    view: "default",
+    coverChecks: [{ story: "checkout", impliedState: "success", selector: "#ok", found: true, visible: true }],
+    paintedColors: [{ hex: "#1e88e5", exampleSelector: "button" }],
+  });
+
+  it("renderCoverage claims-only mode: uncovered stories pass, with an explanatory reason", () => {
+    const r = renderCoverage([partialSnap], stories, { storyCoverage: false });
+    expect(r.status).toBe("pass");
+    expect(r.reason).toContain("story coverage");
+  });
+
+  it("renderCoverage claims-only mode: dead and invisible claims still fail", () => {
+    const snaps = [snap({ coverChecks: [{ story: "checkout", impliedState: "success", selector: "#gone", found: false, visible: false }] })];
+    expect(renderCoverage(snaps, stories, { storyCoverage: false }).status).toBe("fail");
+  });
+
+  it("component units (atom/molecule/organism): uncovered stories do not fail the gate", () => {
+    for (const unit of ["atom", "molecule", "organism"]) {
+      const r = runHtmlBatch({ snapshots: [partialSnap], stories, tokens, scope: SCOPE, unit });
+      expect(r.clean, unit).toBe(true);
+      expect(r.unit, unit).toBe(unit);
+    }
+  });
+
+  it("page-tier units keep full story coverage: uncovered stories fail", () => {
+    for (const unit of ["home-page", "secondary-page", "tertiary-page", "page", "template", undefined]) {
+      const r = runHtmlBatch({ snapshots: [partialSnap], stories, tokens, scope: SCOPE, unit });
+      expect(r.clean, String(unit)).toBe(false);
+    }
+  });
+
+  it("unit user-flow: a single rendered page fails flow-steps", () => {
+    const fullSnap = snap({
+      coverChecks: [
+        { story: "checkout", impliedState: "success", selector: "#ok", found: true, visible: true },
+        { story: "checkout", impliedState: "error", selector: "#err", found: true, visible: true },
+      ],
+      paintedColors: [{ hex: "#1e88e5", exampleSelector: "button" }],
+    });
+    const r = runHtmlBatch({ snapshots: [fullSnap], stories, tokens, scope: SCOPE, unit: "user-flow" });
+    const fs = r.checks.find((c) => c.id === "flow-steps")!;
+    expect(fs.status).toBe("fail");
+    expect(r.mustPassFailed).toBe(true);
+    expect(r.rubric).toContain("flow-steps");
+  });
+
+  it("unit user-flow: two distinct pages pass flow-steps", () => {
+    const snaps = [
+      snap({
+        page: "screens/step-1.html",
+        coverChecks: [
+          { story: "checkout", impliedState: "success", selector: "#ok", found: true, visible: true },
+          { story: "checkout", impliedState: "error", selector: "#err", found: true, visible: true },
+        ],
+        paintedColors: [{ hex: "#1e88e5", exampleSelector: "button" }],
+      }),
+      snap({ page: "screens/step-2.html", paintedColors: [{ hex: "#111111", exampleSelector: "p" }] }),
+    ];
+    const r = runHtmlBatch({ snapshots: snaps, stories, tokens, scope: SCOPE, unit: "user-flow" });
+    expect(r.checks.find((c) => c.id === "flow-steps")!.status).toBe("pass");
+  });
+
+  it("flow-steps is not-owed for non-flow units, with a unit-specific reason", () => {
+    for (const unit of [undefined, "page", "atom"]) {
+      const r = runHtmlBatch({ snapshots: [partialSnap], stories, tokens, scope: SCOPE, unit });
+      const fs = r.checks.find((c) => c.id === "flow-steps")!;
+      expect(fs.status, String(unit)).toBe("not-owed");
+      expect(fs.reason, String(unit)).toContain("user-flow");
+      expect(r.rubric).not.toContain("flow-steps");
+    }
   });
 });

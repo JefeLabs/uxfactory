@@ -18,6 +18,25 @@ export interface BatchInputs {
   trace?: string;
 }
 
+/**
+ * Design-unit vocabulary (panel composer + worker generate-design). Page-tier
+ * units keep full story coverage; component-tier units (organism/molecule/atom)
+ * are gated claims-only; user-flow additionally owes the flow-steps check.
+ */
+export const UNIT_TYPES = [
+  "user-flow",
+  "home-page",
+  "secondary-page",
+  "tertiary-page",
+  "page",
+  "template",
+  "organism",
+  "molecule",
+  "atom",
+] as const;
+
+export type UnitType = (typeof UNIT_TYPES)[number];
+
 /** The committed `uxfactory.batch.json` manifest (§13.1). */
 export interface BatchRegistry {
   version: 1;
@@ -31,6 +50,11 @@ export interface BatchRegistry {
    * CLI flags `--scope` / `--visual` / … override this at runtime.
    */
   scope?: string | Record<string, unknown>;
+  /**
+   * Optional design unit this batch targets (stamped by the worker from the
+   * composer's unit droplist). Shapes the gate rubric: see {@link UNIT_TYPES}.
+   */
+  unit?: UnitType;
 }
 
 /** Registry input paths resolved to absolute filesystem paths (null = not registered). */
@@ -90,6 +114,15 @@ export function validateRegistry(
     const parsed = parseScope(s as string | Record<string, unknown>);
     if (!parsed.ok) {
       return { ok: false, message: `registry.scope: ${parsed.message}` };
+    }
+  }
+  if (raw["unit"] !== undefined) {
+    const u = raw["unit"];
+    if (typeof u !== "string" || !(UNIT_TYPES as readonly string[]).includes(u)) {
+      return {
+        ok: false,
+        message: `registry.unit must be one of: ${UNIT_TYPES.join(", ")}`,
+      };
     }
   }
   return { ok: true, registry: raw as unknown as BatchRegistry };

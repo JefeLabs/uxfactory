@@ -35,6 +35,13 @@ export interface EnsureBatchRegistryOptions {
    * `generate-design` path for `['screens','trace']` so HTML mode is selected.
    */
   unconditional?: ReadonlyArray<BatchInputKey>;
+  /**
+   * Design unit for THIS run (registry top-level `unit`). Set-or-clear semantics
+   * whenever the key is present in the options: a string stamps it; `undefined`
+   * removes any stale value from a previous run. Omit the key entirely to leave
+   * the field untouched (callers with no opinion).
+   */
+  unit?: string | undefined;
 }
 
 /** Conventional generation paths — keep in sync with generative.ts TARGET_MAP. */
@@ -102,6 +109,13 @@ export async function ensureBatchRegistry(
     if (unconditional.has(key) || (await fileExists(path.join(projectRoot, rel)))) {
       inputs[key] = rel;
     }
+  }
+
+  // Unit is per-run state, not a durable registration: set it when provided,
+  // clear a stale one when explicitly passed as undefined.
+  if ('unit' in options) {
+    if (options.unit !== undefined) registry['unit'] = options.unit;
+    else delete registry['unit'];
   }
 
   await writeFile(file, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');

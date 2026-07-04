@@ -54,7 +54,7 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined,
       { renderViews: async () => [goodSnap] },
     );
     expect(code).toBe(EXIT.OK);
@@ -68,7 +68,7 @@ describe("batchHtmlMode", () => {
     const badSnap: RenderSnapshot = { ...goodSnap, coverChecks: [{ ...goodSnap.coverChecks[0]!, visible: false }] };
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined, { renderViews: async () => [badSnap] },
+      io, inputsFor(), undefined, undefined, undefined, { renderViews: async () => [badSnap] },
     );
     expect(code).toBe(EXIT.GATE_FAIL);
   });
@@ -77,7 +77,7 @@ describe("batchHtmlMode", () => {
     const io = makeIO();
     const code = await batchHtmlMode(
       "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
-      io, inputsFor(), undefined, undefined,
+      io, inputsFor(), undefined, undefined, undefined,
       { renderViews: async () => { throw new Error("playwright not installed"); } },
     );
     expect(code).toBe(EXIT.TRANSPORT);
@@ -89,11 +89,26 @@ describe("batchHtmlMode", () => {
     const code = await batchHtmlMode(
       "design",
       { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root },
-      io, inputsFor(), undefined, "visual",
+      io, inputsFor(), undefined, "visual", undefined,
       { renderViews: async () => [goodSnap] },
     );
     // The committed registry scope is honored — no spurious "set a render scope" EXIT.TRANSPORT.
     expect(code).toBe(EXIT.OK);
+  });
+
+  it("passes the registry unit to the gate: atom relaxes story coverage; report echoes unit", async () => {
+    const io = makeIO();
+    // Covers no story at all — fails render-coverage for a page, passes for an atom.
+    const componentSnap: RenderSnapshot = { ...goodSnap, coverChecks: [] };
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, "atom",
+      { renderViews: async () => [componentSnap] },
+    );
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
+    expect(report.unit).toBe("atom");
+    expect(report.clean).toBe(true);
   });
 });
 

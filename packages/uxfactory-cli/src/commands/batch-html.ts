@@ -28,6 +28,7 @@ export async function batchHtmlMode(
   inputs: ResolvedInputs,
   profileScope: RenderScope | undefined,
   registryScope: string | Record<string, unknown> | undefined,
+  registryUnit: string | undefined,
   deps?: HtmlRenderDeps,
 ): Promise<number> {
   void specsDir; // HTML mode reads the screens dir from the registry, not the positional arg
@@ -93,7 +94,13 @@ export async function batchHtmlMode(
   }
 
   // Pure gate over the snapshots.
-  const report: BatchReport = runHtmlBatch({ snapshots, stories, tokens, scope });
+  const report: BatchReport = runHtmlBatch({
+    snapshots,
+    stories,
+    tokens,
+    scope,
+    ...(registryUnit !== undefined ? { unit: registryUnit } : {}),
+  });
 
   const reportDoc = { screens: snapshots.map((s) => `${s.page} › ${s.view}`), ...report };
   await writeFile(path.join(flags.dataDir, "batch", "report.json"), JSON.stringify(reportDoc, null, 2), "utf8");

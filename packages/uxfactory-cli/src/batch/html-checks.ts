@@ -45,12 +45,24 @@ export interface RenderSnapshot {
 /** Key separator (NUL char) that cannot appear in a story id or impliedState. */
 const NUL = String.fromCharCode(0);
 
+/** Component-tier units: gated claims-only — one component can't cover the story set. */
+export const COMPONENT_UNITS: ReadonlySet<string> = new Set(["organism", "molecule", "atom"]);
+
 /**
  * render-coverage (must) — every story's required impliedStates must each be claimed
  * by ≥1 visible cover across the rendered views. Pure + deterministic.
+ *
+ * `opts.storyCoverage: false` (component units) drops the story×state requirement
+ * but keeps validating what IS claimed: render failures and dead/invisible
+ * selectors still fail, and the relaxation is announced via `reason`.
  */
-export function renderCoverage(snapshots: RenderSnapshot[], stories: StorySet | null): CheckResult {
+export function renderCoverage(
+  snapshots: RenderSnapshot[],
+  stories: StorySet | null,
+  opts?: { storyCoverage?: boolean },
+): CheckResult {
   const id = "render-coverage";
+  const storyCoverage = opts?.storyCoverage ?? true;
   if (stories === null) {
     return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
   }
@@ -86,19 +98,46 @@ export function renderCoverage(snapshots: RenderSnapshot[], stories: StorySet | 
       }
     }
   }
-  // Required (story × distinct impliedState) coverage.
-  for (const story of stories.stories ?? []) {
-    const required = new Set<ImpliedState>();
-    for (const ac of story.acceptanceCriteria ?? []) required.add(ac.impliedState);
-    for (const state of required) {
-      if (!covered.has(`${story.id}${NUL}${state}`)) {
-        findings.push({
-          detail: `story ${story.id} ${state} state is not covered by any visible rendering`,
-          ref: `${story.id}/${state}`,
-        });
+  // Required (story × distinct impliedState) coverage — page-tier units only.
+  if (storyCoverage) {
+    for (const story of stories.stories ?? []) {
+      const required = new Set<ImpliedState>();
+      for (const ac of story.acceptanceCriteria ?? []) required.add(ac.impliedState);
+      for (const state of required) {
+        if (!covered.has(`${story.id}${NUL}${state}`)) {
+          findings.push({
+            detail: `story ${story.id} ${state} state is not covered by any visible rendering`,
+            ref: `${story.id}/${state}`,
+          });
+        }
       }
     }
   }
+  return {
+    id,
+    status: findings.length > 0 ? "fail" : "pass",
+    severity: "must",
+    findings,
+    ...(storyCoverage
+      ? {}
+      : { reason: "component unit — story coverage not required; claims still validated" }),
+  };
+}
+
+/**
+ * flow-steps (must, user-flow unit only) — a flow is multi-screen by definition:
+ * the rendered set must span ≥2 distinct pages.
+ */
+export function flowSteps(snapshots: RenderSnapshot[]): CheckResult {
+  const id = "flow-steps";
+  const pages = new Set(snapshots.filter((s) => s.ok).map((s) => s.page));
+  const findings: BatchFinding[] =
+    pages.size >= 2
+      ? []
+      : [{
+          detail: `a user flow needs at least 2 distinct screens; ${pages.size} rendered`,
+          ref: [...pages][0] ?? "trace",
+        }];
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
 }
 
@@ -181,6 +220,7 @@ export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   a11y: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   contrast: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
+  "flow-steps": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
 };
 
 /** Everything one deterministic HTML gate pass needs (snapshots already captured). */
@@ -189,19 +229,39 @@ export interface RunHtmlBatchInput {
   stories: StorySet | null;
   tokens: TokenSet | null;
   scope: RenderScope;
+  /** Optional design unit (registry `unit` field) — shapes the rubric per unit. */
+  unit?: string;
 }
 
 interface HtmlGateEntry {
   id: string;
   severity: Severity;
   run: (i: RunHtmlBatchInput) => CheckResult;
+  /** Unit predicate — the gate binds only when this returns true (default: always). */
+  bindsForUnit?: (unit: string | undefined) => boolean;
+  /** not-owed reason when the unit predicate excludes the gate. */
+  unitNotOwedReason?: string;
 }
 
 const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
-  { id: "render-coverage", severity: "must", run: (i) => renderCoverage(i.snapshots, i.stories) },
+  {
+    id: "render-coverage",
+    severity: "must",
+    run: (i) =>
+      renderCoverage(i.snapshots, i.stories, {
+        storyCoverage: i.unit === undefined || !COMPONENT_UNITS.has(i.unit),
+      }),
+  },
   { id: "a11y", severity: "must", run: (i) => a11y(i.snapshots) },
   { id: "contrast", severity: "must", run: (i) => contrast(i.snapshots) },
   { id: "token-conformance", severity: "must", run: (i) => htmlTokenConformance(i.snapshots, i.tokens) },
+  {
+    id: "flow-steps",
+    severity: "must",
+    run: (i) => flowSteps(i.snapshots),
+    bindsForUnit: (unit) => unit === "user-flow",
+    unitNotOwedReason: "binds only for the user-flow unit",
+  },
 ];
 
 /**
@@ -210,22 +270,32 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
  * Returns the BatchReport shape so report.json stays identical between modes.
  */
 export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
-  const { scope } = input;
+  const { scope, unit } = input;
   const checks: CheckResult[] = [];
+  const rubric: string[] = [];
   for (const entry of HTML_GATE_ENTRIES) {
     const t = HTML_GATE_THRESHOLDS[entry.id];
-    const doesBind = t !== undefined && binds(t, scope);
-    if (doesBind) checks.push(entry.run(input));
-    else
+    const unitBinds = entry.bindsForUnit?.(unit) ?? true;
+    const doesBind = t !== undefined && binds(t, scope) && unitBinds;
+    if (doesBind) {
+      rubric.push(entry.id);
+      checks.push(entry.run(input));
+    } else {
       checks.push({
         id: entry.id, status: "not-owed", severity: entry.severity, findings: [],
-        reason: "does not bind at the current render scope",
+        reason: unitBinds
+          ? "does not bind at the current render scope"
+          : entry.unitNotOwedReason ?? "does not bind for this unit",
       });
+    }
   }
-  const rubric = Object.keys(HTML_GATE_THRESHOLDS).filter((id) => {
-    const t = HTML_GATE_THRESHOLDS[id];
-    return t !== undefined && binds(t, scope);
-  });
   const mustPassFailed = checks.some((c) => c.severity === "must" && c.status === "fail");
-  return { scope, rubric, checks, mustPassFailed, clean: !mustPassFailed };
+  return {
+    scope,
+    ...(unit !== undefined ? { unit } : {}),
+    rubric,
+    checks,
+    mustPassFailed,
+    clean: !mustPassFailed,
+  };
 }

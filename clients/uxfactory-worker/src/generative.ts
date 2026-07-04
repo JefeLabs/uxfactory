@@ -794,7 +794,16 @@ export async function runGenerative(
     // provisioning time, so we bypass the existence gate for exactly these two keys;
     // every other input/kind keeps the existence-gated, non-clobbering behavior.
     if (req.kind === 'generate-design') {
-      await ensureBatchRegistry(ctx.projectRoot, { unconditional: ['screens', 'trace'] });
+      const unitType = str(asObject(req.payload), 'unitType');
+      await ensureBatchRegistry(ctx.projectRoot, {
+        unconditional: ['screens', 'trace'],
+        // Stamp only vocabulary the CLI registry validates (UNIT_GUIDANCE keys);
+        // unknown or absent unit types clear any stale unit from a prior run.
+        unit:
+          unitType !== undefined && UNIT_GUIDANCE[unitType] !== undefined
+            ? unitType
+            : undefined,
+      });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
       await provisionCraftRubric(ctx.projectRoot);
     }

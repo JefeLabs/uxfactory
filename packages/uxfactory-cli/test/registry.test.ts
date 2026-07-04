@@ -52,6 +52,22 @@ describe("validateRegistry", () => {
     expect(validateRegistry({ version: 1, inputs: {}, maxIterations: 0 }).ok).toBe(false);
     expect(validateRegistry({ version: 1, inputs: {}, maxIterations: 1.5 }).ok).toBe(false);
   });
+
+  it("accepts every known unit value", () => {
+    for (const unit of [
+      "user-flow", "home-page", "secondary-page", "tertiary-page",
+      "page", "template", "organism", "molecule", "atom",
+    ]) {
+      expect(validateRegistry({ version: 1, inputs: {}, unit }).ok, unit).toBe(true);
+    }
+  });
+
+  it("rejects an unknown or non-string unit", () => {
+    const bad = validateRegistry({ version: 1, inputs: {}, unit: "widget" });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.message).toContain("unit");
+    expect(validateRegistry({ version: 1, inputs: {}, unit: 3 }).ok).toBe(false);
+  });
 });
 
 describe("resolveInputs", () => {
