@@ -110,6 +110,8 @@ uxfactory lint hello.uxfactory.json     # exit 0 = valid spec
 uxfactory bridge        # keep this running
 ```
 
+> Start it from a **project root** — a folder with `.git` or `uxfactory.batch.json`. Requests that don't name a repo (including legacy worker polls) resolve to the bridge's launch directory and are re-validated against it, so a bridge launched elsewhere answers those with `410 root-gone`.
+
 **Figma desktop — install & open the plugin** (once):
 
 ```bash
