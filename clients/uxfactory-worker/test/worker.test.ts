@@ -1160,6 +1160,84 @@ describe('runGenerative', () => {
     expect((out.result as { content: string }).content).not.toContain('TESTSECRET');
   });
 
+  // ── Unit-type differentiation: composer payload shapes the design task ────
+
+  it('generate-design: includes the user prompt, unit scope, and platforms from the payload', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    const bridge = new FakeBridge();
+
+    await runGenerative(
+      {
+        id: 'pr_unit_home',
+        kind: 'generate-design',
+        payload: {
+          prompt: 'A dashboard for teachers',
+          unitType: 'home-page',
+          platforms: ['desktop', 'mobile'],
+        },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('USER REQUEST (honor verbatim): A dashboard for teachers');
+    expect(user).toContain('Scope:');
+    expect(user).toContain('HOME page');
+    expect(user).toContain('desktop, mobile');
+    // The base HTML-loop task is still present.
+    expect(user).toContain('uxfactory batch --json -- design');
+  });
+
+  it('generate-design: each unit type carries its own distinct scope guidance', async () => {
+    const UNIT_MARKERS: Record<string, string> = {
+      'user-flow': 'MULTI-SCREEN',
+      'home-page': 'HOME page',
+      'secondary-page': 'SECONDARY page',
+      'tertiary-page': 'TERTIARY page',
+      page: 'standalone PAGE',
+      template: 'TEMPLATE',
+      organism: 'ORGANISM',
+      molecule: 'MOLECULE',
+      atom: 'ATOM',
+    };
+
+    for (const [unitType, marker] of Object.entries(UNIT_MARKERS)) {
+      const adapter = new FakeAdapter(projectRoot, [
+        { type: 'message-stop', finishReason: 'stop' },
+      ]);
+      await runGenerative(
+        { id: `pr_unit_${unitType}`, kind: 'generate-design', payload: { unitType }, createdAt: 1 },
+        adapter,
+        new FakeBridge(),
+        ctx(),
+      );
+      const user = adapter.lastInput?.messages[0]?.content as string;
+      expect(user, `unitType=${unitType}`).toContain('Scope:');
+      expect(user, `unitType=${unitType}`).toContain(marker);
+    }
+  });
+
+  it('generate-design: empty payload (legacy) adds no request/scope/platform lines', async () => {
+    const adapter = new FakeAdapter(projectRoot, [
+      { type: 'message-stop', finishReason: 'stop' },
+    ]);
+    await runGenerative(
+      { id: 'pr_unit_legacy', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).not.toContain('USER REQUEST');
+    expect(user).not.toContain('Scope:');
+    expect(user).not.toContain('Target platforms');
+  });
+
   it('generate-design: ensures the skill grant covers Read (the loop reads report.json + inputs)', async () => {
     const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
     const bridge = new FakeBridge();

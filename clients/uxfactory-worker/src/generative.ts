@@ -154,6 +154,40 @@ function str(p: Record<string, unknown>, key: string): string | undefined {
   return typeof v === 'string' ? v : undefined;
 }
 
+/**
+ * Unit-type scope guidance for `generate-design`. Keys match the panel
+ * composer's unit droplist wire values (Prompt.tsx UNIT_OPTIONS). Unknown or
+ * absent unit types add no scope line, so legacy panels are unaffected.
+ */
+const UNIT_GUIDANCE: Record<string, string> = {
+  'user-flow':
+    'Scope: a MULTI-SCREEN user flow — author one HTML page per flow step with explicit ' +
+    'connective navigation (the control that advances each step), and cover every step ' +
+    'and transition state in trace.json.',
+  'home-page':
+    'Scope: the HOME page (primary landing) — it owns the app shell: full primary ' +
+    'navigation, a hero/overview section, and entry points into every major story area.',
+  'secondary-page':
+    'Scope: a SECONDARY page (a section landing reached from primary navigation) — reuse ' +
+    'the shared shell (nav/header) and focus on section-level content; no home hero.',
+  'tertiary-page':
+    'Scope: a TERTIARY page (detail/leaf content reached from a secondary page) — include ' +
+    'breadcrumbs or an explicit way back, and focus on the detail content itself.',
+  page: 'Scope: a single standalone PAGE covering the stories it names.',
+  template:
+    'Scope: a page TEMPLATE — a layout skeleton with clearly named placeholder slots ' +
+    'instead of real content; emphasize grid, regions, and slot naming.',
+  organism:
+    'Scope: a single ORGANISM component (a self-contained section such as a header, card ' +
+    'grid, or form) — render it isolated on a neutral canvas page without full-page chrome.',
+  molecule:
+    'Scope: a single MOLECULE component (a small composed unit such as a labeled input ' +
+    'with a button) — isolated on a neutral canvas; no page chrome.',
+  atom:
+    'Scope: a single ATOM (the smallest UI primitive such as a button, input, or badge) — ' +
+    'render its variants and states side by side on one canvas; no page chrome.',
+};
+
 /** Render the `constraints` payload field (array | string | absent) for the prompt. */
 function constraintsText(v: unknown): string {
   if (Array.isArray(v)) return v.map((x) => String(x)).join('; ');
@@ -673,7 +707,36 @@ function planGenerative(req: PipelineRequest, ctx: DispatchCtx): GenerativePlan 
     // + `inputs.trace` in `runGenerative` (before the agent's first `batch`) so
     // HTML mode is selected. The skill owns the whole loop; we hand it the task +
     // the working tree (the CLI is on PATH).
+    //
+    // The composer payload (prompt/unitType/platforms) narrows the task: the
+    // user request leads, the unit type sets the scope, platforms set viewports.
+    // All three are optional — a legacy/empty payload reproduces the bare task.
+    const p = asObject(req.payload);
+    const promptText = str(p, 'prompt');
+    const unitType = str(p, 'unitType');
+    const platforms = Array.isArray(p['platforms'])
+      ? (p['platforms'] as unknown[]).filter(
+          (x): x is string => typeof x === 'string' && x.trim() !== '',
+        )
+      : [];
+
+    const requestNote =
+      promptText !== undefined && promptText.trim() !== ''
+        ? `USER REQUEST (honor verbatim): ${promptText.trim()}. `
+        : '';
+    const scopeNote =
+      unitType !== undefined && UNIT_GUIDANCE[unitType] !== undefined
+        ? `${UNIT_GUIDANCE[unitType]} `
+        : '';
+    const platformsNote =
+      platforms.length > 0
+        ? `Target platforms: ${platforms.join(', ')} — lay out and size every screen for these viewports. `
+        : '';
+
     const user =
+      requestNote +
+      scopeNote +
+      platformsNote +
       'Author REAL, self-contained UI screens as `design/screens/<page>.html` files ' +
       '(inline <style> + <script>, no external assets) that cover the stories and ' +
       'acceptance criteria in design/acceptance-criteria.json — one file per page, each ' +
