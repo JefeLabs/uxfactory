@@ -769,4 +769,40 @@ describe("Footer hint line", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("composer placeholder invites describing component(s)", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    expect(
+      screen.getByPlaceholderText("Describe the component(s) to generate"),
+    ).toBeInTheDocument();
+  });
+
+  it("unit type droplist: flow/page tiers on top, Atom at the end", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    const select = screen.getByRole("combobox", { name: "Unit type" });
+    const labels = Array.from(select.querySelectorAll("option")).map(
+      (o) => o.textContent,
+    );
+    expect(labels).toEqual([
+      "User Flow",
+      "Home Page",
+      "Secondary Page",
+      "Tertiary Page",
+      "Page",
+      "Template",
+      "Organism",
+      "Molecule",
+      "Atom",
+    ]);
+  });
 });

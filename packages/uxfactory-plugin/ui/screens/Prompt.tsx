@@ -54,10 +54,15 @@ interface WorkerPayload {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const UNIT_OPTIONS: { label: string; value: string }[] = [
+  { label: "User Flow", value: "user-flow" },
+  { label: "Home Page", value: "home-page" },
+  { label: "Secondary Page", value: "secondary-page" },
+  { label: "Tertiary Page", value: "tertiary-page" },
   { label: "Page", value: "page" },
   { label: "Template", value: "template" },
   { label: "Organism", value: "organism" },
   { label: "Molecule", value: "molecule" },
+  { label: "Atom", value: "atom" },
 ];
 
 /**
@@ -90,11 +95,7 @@ function platformsLabel(platforms: string[]): string {
   return platforms.map(capitalize).join(" + ");
 }
 
-function composerPlaceholder(unitType: string): string {
-  return unitType === "organism" || unitType === "molecule"
-    ? "Describe the component to generate…"
-    : "Describe the screen to generate…";
-}
+const COMPOSER_PLACEHOLDER = "Describe the component(s) to generate";
 
 /** Map a raw worker status string to the RunStatus vocabulary. */
 function toRunStatus(raw: string | undefined): Exclude<RunStatus, "generating"> {
@@ -417,7 +418,7 @@ export function Prompt({
           <textarea
             value={promptText}
             onChange={(e) => setPromptText(e.target.value)}
-            placeholder={composerPlaceholder(composerUnitType)}
+            placeholder={COMPOSER_PLACEHOLDER}
             rows={4}
             aria-label="Prompt"
             className="w-full text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
