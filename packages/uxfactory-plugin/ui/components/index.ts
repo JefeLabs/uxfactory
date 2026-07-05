@@ -30,3 +30,6 @@ export type { ToastProps, ToastItem } from "./Toast.js";
 
 export { DesignStylePicker } from "./DesignStylePicker.js";
 export type { DesignStylePickerProps } from "./DesignStylePicker.js";
+
+export { ContextChipEditor, CHIP_FIELD_LABEL, CLASSIFICATION_FIELDS } from "./ContextChipEditor.js";
+export type { ChipField, ContextChipEditorProps } from "./ContextChipEditor.js";

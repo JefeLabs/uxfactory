@@ -30,9 +30,16 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { ChevronDown, ChevronUp, Inbox, Settings as SettingsIcon, Unplug } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
 import type { Tab } from "./stores/app.js";
-import { Chip, DesignStylePicker, StatusPill } from "./components/index.js";
-import type { StatusPillStatus } from "./components/index.js";
+import {
+  Chip,
+  ContextChipEditor,
+  CHIP_FIELD_LABEL,
+  CLASSIFICATION_FIELDS,
+  StatusPill,
+} from "./components/index.js";
+import type { ChipField, StatusPillStatus } from "./components/index.js";
 import { designStyleLabel, suggestDesignStyle } from "./lib/design-styles.js";
+import { engineToLabel } from "./lib/dials.js";
 import type { Bridge } from "./lib/bridge.js";
 import type { PluginBus } from "./lib/plugin-bus.js";
 
@@ -125,6 +132,13 @@ function ToastOverlay(): React.JSX.Element | null {
 
 // ─── ContextBar (verbatim relocation from app.tsx) ────────────────────────────
 
+/** Narrow unknown to a plain object record (else empty). */
+function asRecord(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
 function connectionStatusToPill(status: string): StatusPillStatus {
   switch (status) {
     case "connected":
@@ -175,10 +189,10 @@ function ContextBar(): React.JSX.Element {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
-  // Inline design-style editor deployed UNDER the bar (chip click toggles it).
-  const [styleOpen, setStyleOpen] = useState(false);
-  const [styleDraft, setStyleDraft] = useState("");
-  const [styleSaving, setStyleSaving] = useState(false);
+  // Inline chip editor deployed UNDER the bar (any chip click toggles it).
+  const [editing, setEditing] = useState<ChipField | null>(null);
+  const [draft, setDraft] = useState<string | string[]>("");
+  const [chipSaving, setChipSaving] = useState(false);
 
   // Disconnect: back to the Connect screen; stored connection stays for
   // one-click reconnect, but the client's root scoping is cleared.
@@ -207,49 +221,113 @@ function ContextBar(): React.JSX.Element {
     ? (cls?.["platforms"] as string[])
     : [];
 
-  const primaryChips = [category, layout].filter(Boolean) as string[];
-  const secondaryChips = [industry, locale, ageGroup, ...platforms].filter(
-    Boolean,
-  ) as string[];
-  const overflowCount = expanded ? 0 : secondaryChips.length;
+  // Generative-default dials — profile.scope.* + experimental.coherence, plus
+  // tone which lives in classification.style. Only set dials get a chip.
+  const profileRec = asRecord(snapshot?.profile);
+  const scopeRec = asRecord(profileRec["scope"]);
+  const experimentalRec = asRecord(profileRec["experimental"]);
+  const dialChips: { field: ChipField; label: string; engine: string; display: string }[] = [];
+  const pushDial = (field: ChipField, label: string, raw: unknown, map: Record<string, string>) => {
+    if (typeof raw !== "string") return;
+    dialChips.push({ field, label, engine: raw, display: map[raw] ?? raw });
+  };
+  pushDial("tone", "Tone", cls?.["style"], engineToLabel.style);
+  pushDial("visual", "Visual", scopeRec["visual"], engineToLabel.visual);
+  pushDial("editorial", "Editorial", scopeRec["editorial"], engineToLabel.editorial);
+  pushDial("flow", "Flows", scopeRec["flow"], engineToLabel.flows);
+  pushDial("coverage", "Coverage", scopeRec["coverage"], engineToLabel.coverage);
+  pushDial("coherence", "Coherence", experimentalRec["coherence"], engineToLabel.coherence);
 
-  // Design style: a generative default, not a classification fact — its chip
-  // is clickable and edits inline, while the fact chips stay read-only.
+  const secondaryCount =
+    [industry, locale, ageGroup].filter(Boolean).length +
+    platforms.length +
+    dialChips.length;
+  const overflowCount = expanded ? 0 : secondaryCount;
+
+  // Design style: a generative default with an explicit exploring state.
   const designStyle =
     typeof cls?.["designStyle"] === "string" ? (cls["designStyle"] as string) : "";
   const styleChipLabel = designStyle
     ? `Style: ${designStyleLabel(designStyle)}`
     : "Style: exploring";
 
-  function handleStyleChipClick(): void {
-    setStyleDraft(designStyle);
-    setStyleOpen((v) => !v);
-  }
-
-  async function handleStyleSave(): Promise<void> {
-    if (styleSaving || cls === null) return;
-    setStyleSaving(true);
-    // Set-or-clear: exploring ("") removes the key so the advisory style gate
-    // is not owed and the composer override is the only style input.
-    const { designStyle: _prev, ...rest } = cls as Record<string, unknown>;
-    const body = { ...rest, ...(styleDraft ? { designStyle: styleDraft } : {}) };
-    try {
-      await bridge.putClassification(body);
-    } catch {
-      setStyleSaving(false);
-      toast("Could not save style — is the bridge running?");
+  /** Toggle the under-bar editor for a chip, seeding the draft from live state. */
+  function openChip(field: ChipField): void {
+    if (editing === field) {
+      setEditing(null);
       return;
     }
+    if (field === "platforms") {
+      setDraft(Array.isArray(cls?.["platforms"]) ? [...(cls["platforms"] as string[])] : []);
+    } else if (CLASSIFICATION_FIELDS.has(field)) {
+      setDraft(typeof cls?.[field] === "string" ? (cls[field] as string) : "");
+    } else {
+      setDraft(dialChips.find((d) => d.field === field)?.engine ?? "");
+    }
+    setEditing(field);
+  }
+
+  /** Optimistically apply a snapshot patch to the store + query cache. */
+  function patchSnapshot(
+    patch: (snap: NonNullable<typeof snapshot>) => NonNullable<typeof snapshot>,
+  ): void {
     const current = useAppStore.getState().snapshot;
-    if (current) {
-      const updated = { ...current, classification: body };
-      useAppStore.setState({ snapshot: updated });
-      queryClient.setQueryData(snapshotQuery(bridge).queryKey, updated);
+    if (!current) return;
+    const updated = patch(current);
+    useAppStore.setState({ snapshot: updated });
+    queryClient.setQueryData(snapshotQuery(bridge).queryKey, updated);
+  }
+
+  async function handleChipSave(): Promise<void> {
+    if (chipSaving || editing === null || cls === null) return;
+    const field = editing;
+    setChipSaving(true);
+    try {
+      if (CLASSIFICATION_FIELDS.has(field)) {
+        // One merged classification body. designStyle is set-or-clear:
+        // exploring ("") removes the key so the advisory style gate is not
+        // owed and the composer override is the only style input.
+        const { designStyle: prevStyle, ...rest } = cls as Record<string, unknown>;
+        const body: Record<string, unknown> =
+          field === "designStyle"
+            ? { ...rest, ...(typeof draft === "string" && draft !== "" ? { designStyle: draft } : {}) }
+            : {
+                ...rest,
+                ...(prevStyle !== undefined ? { designStyle: prevStyle } : {}),
+                [field]: draft,
+              };
+        await bridge.putClassification(body);
+        patchSnapshot((snap) => ({ ...snap, classification: body }));
+      } else if (field === "tone") {
+        // Tone rides the profile endpoint's `style` key (it stamps
+        // classification.style server-side — mirror that locally).
+        await bridge.putProfile({ style: draft });
+        patchSnapshot((snap) => ({
+          ...snap,
+          classification: { ...asRecord(snap.classification), style: draft },
+        }));
+      } else {
+        await bridge.putProfile({ [field]: draft });
+        patchSnapshot((snap) => {
+          const p = asRecord(snap.profile);
+          if (field === "coherence") {
+            return {
+              ...snap,
+              profile: { ...p, experimental: { ...asRecord(p["experimental"]), coherence: draft } },
+            };
+          }
+          return { ...snap, profile: { ...p, scope: { ...asRecord(p["scope"]), [field]: draft } } };
+        });
+      }
+    } catch {
+      setChipSaving(false);
+      toast("Could not save — is the bridge running?");
+      return;
     }
     void queryClient.invalidateQueries({ queryKey: snapshotQuery(bridge).queryKey });
-    setStyleSaving(false);
-    setStyleOpen(false);
-    toast(styleDraft ? "Design style updated" : "Exploring — set styles per generate");
+    setChipSaving(false);
+    setEditing(null);
+    toast(`Updated ${CHIP_FIELD_LABEL[field]}`);
   }
 
   if (connection.status === "reconnecting") {
@@ -326,26 +404,42 @@ function ContextBar(): React.JSX.Element {
         </button>
       </div>
 
-      {/* Chips bar — compact chips in their own collapsible row */}
-      {(cls !== null || primaryChips.length > 0 || secondaryChips.length > 0) && (
+      {/* Chips bar — every chip is clickable and edits inline under the bar */}
+      {cls !== null && (
         <div className="flex items-start gap-1 px-3 pb-1.5">
           <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-            {cls !== null && (
-              <Chip
-                size="sm"
-                label={styleChipLabel}
-                selected={designStyle !== ""}
-                tone="default"
-                onSelect={handleStyleChipClick}
-              />
+            <Chip
+              size="sm"
+              label={styleChipLabel}
+              selected={designStyle !== ""}
+              tone="default"
+              onSelect={() => openChip("designStyle")}
+            />
+            {category !== null && (
+              <Chip size="sm" label={category} selected tone="default" onSelect={() => openChip("category")} />
             )}
-            {primaryChips.map((label) => (
-              <Chip key={label} size="sm" label={label} selected tone="default" />
-            ))}
-            {expanded &&
-              secondaryChips.map((label) => (
-                <Chip key={label} size="sm" label={label} selected tone="default" />
-              ))}
+            {layout !== null && (
+              <Chip size="sm" label={layout} selected tone="default" onSelect={() => openChip("layout")} />
+            )}
+            {expanded && (
+              <>
+                {industry !== null && (
+                  <Chip size="sm" label={industry} selected tone="default" onSelect={() => openChip("industry")} />
+                )}
+                {locale !== null && (
+                  <Chip size="sm" label={locale} selected tone="default" onSelect={() => openChip("locale")} />
+                )}
+                {ageGroup !== null && (
+                  <Chip size="sm" label={ageGroup} selected tone="default" onSelect={() => openChip("ageGroup")} />
+                )}
+                {platforms.map((p) => (
+                  <Chip key={`platform-${p}`} size="sm" label={p} selected tone="default" onSelect={() => openChip("platforms")} />
+                ))}
+                {dialChips.map((d) => (
+                  <Chip key={d.field} size="sm" label={d.label} value={d.display} selected tone="dial" onSelect={() => openChip(d.field)} />
+                ))}
+              </>
+            )}
             {overflowCount > 0 && (
               <Chip
                 size="sm"
@@ -369,32 +463,32 @@ function ContextBar(): React.JSX.Element {
         </div>
       )}
 
-      {/* Inline design-style editor — deployed under the bar by the chip */}
-      {styleOpen && cls !== null && (
+      {/* Inline chip editor — deployed under the bar by whichever chip was clicked */}
+      {editing !== null && cls !== null && (
         <div className="px-3 pt-2 pb-2 border-t border-gray-100 flex flex-col gap-1.5 bg-gray-50">
-          <DesignStylePicker
-            ariaLabel="Project design style"
-            value={styleDraft}
-            onChange={setStyleDraft}
-            suggested={suggestDesignStyle(category ?? "", industry ?? "")}
+          <ContextChipEditor
+            field={editing}
+            draft={draft}
+            onChange={setDraft}
+            suggestedStyle={suggestDesignStyle(category ?? "", industry ?? "")}
           />
           <div className="flex justify-end gap-1.5">
             <button
               type="button"
-              aria-label="Cancel style edit"
-              onClick={() => setStyleOpen(false)}
+              aria-label={`Cancel ${CHIP_FIELD_LABEL[editing]} edit`}
+              onClick={() => setEditing(null)}
               className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               type="button"
-              aria-label="Save style"
-              disabled={styleSaving}
-              onClick={() => void handleStyleSave()}
+              aria-label={`Save ${CHIP_FIELD_LABEL[editing]}`}
+              disabled={chipSaving}
+              onClick={() => void handleChipSave()}
               className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
             >
-              {styleSaving ? "Saving…" : "Save"}
+              {chipSaving ? "Saving…" : "Save"}
             </button>
           </div>
         </div>

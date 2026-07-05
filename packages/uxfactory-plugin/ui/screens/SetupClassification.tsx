@@ -19,63 +19,15 @@ import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
 import { ChipGroup, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
-import type { ChipGroupOption, SegmentedOption } from "../components/index.js";
-
-// ─── Static option lists ──────────────────────────────────────────────────────
-
-const CATEGORY_OPTIONS: ChipGroupOption[] = [
-  { label: "Marketing", value: "marketing" },
-  { label: "Ecommerce", value: "ecommerce" },
-  { label: "Web App", value: "webapp" },
-  { label: "News", value: "news" },
-];
-
-const INDUSTRY_OPTIONS: { label: string; value: string }[] = [
-  { label: "Corporate", value: "corporate" },
-  { label: "Finance", value: "finance" },
-  { label: "Healthcare", value: "healthcare" },
-  { label: "Education", value: "education" },
-  { label: "Retail", value: "retail" },
-  { label: "Technology", value: "technology" },
-  { label: "Media", value: "media" },
-  { label: "Government", value: "government" },
-  { label: "Non-profit", value: "non-profit" },
-  { label: "Other", value: "other" },
-];
-
-const LOCALE_OPTIONS: { label: string; value: string }[] = [
-  { label: "English (US)", value: "en-US" },
-  { label: "English (UK)", value: "en-GB" },
-  { label: "Spanish", value: "es" },
-  { label: "French", value: "fr" },
-  { label: "German", value: "de" },
-  { label: "Japanese", value: "ja" },
-  { label: "Chinese (Simplified)", value: "zh-CN" },
-  { label: "Portuguese", value: "pt" },
-];
-
-const PLATFORM_OPTIONS: ChipGroupOption[] = [
-  { label: "Desktop", value: "desktop" },
-  { label: "Tablet", value: "tablet" },
-  { label: "Mobile", value: "mobile" },
-];
-
-const LAYOUT_OPTIONS: SegmentedOption[] = [
-  { label: "Responsive", value: "responsive" },
-  { label: "Adaptive", value: "adaptive" },
-];
-
-const LAYOUT_CAPTIONS: Record<string, string> = {
-  responsive: "One fluid layout across your platforms",
-  adaptive: "Distinct layouts per platform",
-};
-
-const AGE_GROUP_OPTIONS: ChipGroupOption[] = [
-  { label: "Under 18", value: "under-18" },
-  { label: "18–39", value: "18-39" },
-  { label: "40–64", value: "40-64" },
-  { label: "65+", value: "65+" },
-];
+import {
+  CATEGORY_OPTIONS,
+  INDUSTRY_OPTIONS,
+  LOCALE_OPTIONS,
+  PLATFORM_OPTIONS,
+  LAYOUT_OPTIONS,
+  LAYOUT_CAPTIONS,
+  AGE_GROUP_OPTIONS,
+} from "../lib/classification-options.js";
 
 // ─── Scan-derived helpers ─────────────────────────────────────────────────────
 

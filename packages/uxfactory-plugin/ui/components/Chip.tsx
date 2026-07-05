@@ -36,6 +36,9 @@ export function Chip({
       type="button"
       role="checkbox"
       aria-checked={selected}
+      // Dial chips render label+value as adjacent spans, which would compute a
+      // spaceless accessible name ("VisualHigh") — give them an explicit one.
+      aria-label={tone === "dial" ? `${label} ${value ?? ""}`.trim() : undefined}
       data-value={value}
       onClick={onSelect}
       className={`${base} ${selected ? selectedStyle : unselectedStyle}`}

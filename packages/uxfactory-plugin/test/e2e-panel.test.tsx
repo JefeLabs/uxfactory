@@ -15,7 +15,7 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, act, cleanup, waitFor } from "@testing-library/react";
+import { screen, act, cleanup, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useAppStore } from "../ui/stores/app.js";
 import { useWizardStore } from "../ui/stores/wizard.js";
@@ -314,6 +314,113 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
 
     expect(bridge.putClassification).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Project design style")).not.toBeInTheDocument();
+  });
+});
+
+// ─── E2E: every ContextBar chip is clickable and edits inline ─────────────────
+
+describe("E2E: all project + generative chips in the ContextBar edit inline", () => {
+  const DEMO_PROFILE = {
+    scope: { visual: "high", editorial: "medium", coverage: "medium", flow: "low" },
+    experimental: { coherence: "high" },
+  };
+  const FULL_SNAPSHOT = {
+    ...DEMO_SNAPSHOT,
+    classification: { ...DEMO_SNAPSHOT.classification, style: "formal" },
+    profile: DEMO_PROFILE,
+  };
+
+  function fullBridge(): Bridge {
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(FULL_SNAPSHOT);
+    return bridge;
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
+      fileInfo: { name: "My Product", fileKey: "file-abc" },
+      snapshot: FULL_SNAPSHOT as never,
+      toasts: [],
+    });
+  });
+
+  it("generative default chips render alongside classification chips when expanded", async () => {
+    const user = userEvent.setup();
+    await renderApp(fullBridge());
+
+    // Dials are secondary chips — hidden while collapsed.
+    expect(screen.queryByRole("checkbox", { name: "Tone Formal" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+
+    expect(screen.getByRole("checkbox", { name: "Tone Formal" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Visual High" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Editorial Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Flows Shallow" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Coverage Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Coherence High" })).toBeInTheDocument();
+  });
+
+  it("clicking the category chip deploys its editor; Save merges into classification", async () => {
+    const user = userEvent.setup();
+    const bridge = fullBridge();
+    await renderApp(bridge);
+
+    await user.click(screen.getByRole("checkbox", { name: "ecommerce" }));
+    const group = screen.getByRole("radiogroup", { name: "Category" });
+    await user.click(within(group).getByRole("radio", { name: "Web App" }));
+    await user.click(screen.getByRole("button", { name: "Save category" }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    expect(bridge.putClassification).toHaveBeenCalledWith({
+      ...FULL_SNAPSHOT.classification,
+      category: "webapp",
+    });
+  });
+
+  it("clicking the Tone dial chip saves through the profile endpoint (style key)", async () => {
+    const user = userEvent.setup();
+    const bridge = fullBridge();
+    await renderApp(bridge);
+
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+    await user.click(screen.getByRole("checkbox", { name: "Tone Formal" }));
+    await user.click(screen.getByRole("radio", { name: "Informal" }));
+    await user.click(screen.getByRole("button", { name: "Save tone" }));
+
+    await waitFor(() => expect(bridge.putProfile).toHaveBeenCalledOnce());
+    expect(bridge.putProfile).toHaveBeenCalledWith({ style: "informal" });
+    expect(bridge.putClassification).not.toHaveBeenCalled();
+  });
+
+  it("clicking the Visual dial chip saves only that dial", async () => {
+    const user = userEvent.setup();
+    const bridge = fullBridge();
+    await renderApp(bridge);
+
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+    await user.click(screen.getByRole("checkbox", { name: "Visual High" }));
+    await user.click(screen.getByRole("radio", { name: "Low" }));
+    await user.click(screen.getByRole("button", { name: "Save visual" }));
+
+    await waitFor(() => expect(bridge.putProfile).toHaveBeenCalledOnce());
+    expect(bridge.putProfile).toHaveBeenCalledWith({ visual: "low" });
+  });
+
+  it("platform chips open a multi-select; Save writes the whole platforms array", async () => {
+    const user = userEvent.setup();
+    const bridge = fullBridge();
+    await renderApp(bridge);
+
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+    await user.click(screen.getByRole("checkbox", { name: "desktop" }));
+    const group = screen.getByRole("toolbar", { name: "Platforms" });
+    await user.click(within(group).getByRole("button", { name: "Tablet" }));
+    await user.click(screen.getByRole("button", { name: "Save platforms" }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body["platforms"]).toEqual(["desktop", "mobile", "tablet"]);
   });
 });
 
