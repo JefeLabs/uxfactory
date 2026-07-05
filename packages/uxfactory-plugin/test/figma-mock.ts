@@ -83,11 +83,36 @@ export class FakeNode {
   /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
   clipsContent: boolean | undefined = undefined;
   /**
-   * NOTE: real Figma flips primary/counterAxisSizingMode to AUTO (hug) when
-   * layoutMode is enabled — this fake does NOT model that. applyAutoLayout pins
-   * both axes FIXED (see code.ts); the code.test.ts assertions guard it.
+   * Real Figma flips primary/counterAxisSizingMode to AUTO (hug) the moment
+   * layoutMode is enabled and immediately shrink-wraps the frame to its
+   * children — pinning FIXED afterwards freezes the HUGGED size, it does not
+   * restore the pre-layout size. This fake models that so renderers that
+   * forget to re-apply planned dimensions fail in tests the way they fail on
+   * a real canvas. (Re-hug on later layoutSizing*="HUG" writes is NOT modeled.)
    */
-  layoutMode: string | undefined = undefined;
+  _layoutMode: string | undefined = undefined;
+  get layoutMode(): string | undefined {
+    return this._layoutMode;
+  }
+  set layoutMode(v: string | undefined) {
+    this._layoutMode = v;
+    if (v !== "HORIZONTAL" && v !== "VERTICAL") return;
+    this.primaryAxisSizingMode = "AUTO";
+    this.counterAxisSizingMode = "AUTO";
+    if (this.children.length === 0) return;
+    const gaps = (this.itemSpacing ?? 0) * (this.children.length - 1);
+    const padX = (this.paddingLeft ?? 0) + (this.paddingRight ?? 0);
+    const padY = (this.paddingTop ?? 0) + (this.paddingBottom ?? 0);
+    const widths = this.children.map((c) => c.width);
+    const heights = this.children.map((c) => c.height);
+    if (v === "HORIZONTAL") {
+      this.width = padX + widths.reduce((a, b) => a + b, 0) + gaps;
+      this.height = padY + Math.max(...heights);
+    } else {
+      this.width = padX + Math.max(...widths);
+      this.height = padY + heights.reduce((a, b) => a + b, 0) + gaps;
+    }
+  }
   itemSpacing: number | undefined = undefined;
   paddingTop: number | undefined = undefined;
   paddingRight: number | undefined = undefined;

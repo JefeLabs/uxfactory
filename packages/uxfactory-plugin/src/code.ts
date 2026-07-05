@@ -345,11 +345,25 @@ const PRIMARY_ALIGN: Record<string, string> = {
 const COUNTER_ALIGN: Record<string, string> = { start: "MIN", center: "CENTER", end: "MAX" };
 const SIZING: Record<string, string> = { fixed: "FIXED", hug: "HUG", fill: "FILL" };
 
-function applyAutoLayout(node: EditableNode, layout: PlannedChild["layout"], sizing: PlannedChild["sizing"]): void {
+function applyAutoLayout(
+  node: EditableNode,
+  layout: PlannedChild["layout"],
+  sizing: PlannedChild["sizing"],
+  planned: { width: number; height: number },
+): void {
   if (!layout) return;
   node.layoutMode = layout.mode === "vertical" ? "VERTICAL" : "HORIZONTAL";
   node.primaryAxisSizingMode = "FIXED";
   node.counterAxisSizingMode = "FIXED";
+  // Real Figma shrink-wraps the frame to its children the instant layoutMode
+  // is enabled, and the FIXED pins above freeze that HUGGED size — the resize
+  // done at creation is lost. Restore the planned dimensions, except on axes
+  // the spec declares hug (Figma's computed size is the intent there; FILL
+  // axes are overridden later by the parent's pass).
+  node.resize(
+    sizing?.horizontal === "hug" ? node.width : planned.width,
+    sizing?.vertical === "hug" ? node.height : planned.height,
+  );
   if (layout.gap !== undefined) node.itemSpacing = layout.gap;
   if (layout.padding !== undefined) {
     const p = layout.padding;
@@ -504,7 +518,7 @@ async function renderContainer(
       rendered.push({ sizing: child.sizing, child: childNode });
     }
   }
-  applyAutoLayout(node, frame.layout, frame.sizing);
+  applyAutoLayout(node, frame.layout, frame.sizing, { width: frame.width, height: frame.height });
   applyChildFillSizing(node, rendered);
   return node;
 }
@@ -659,7 +673,7 @@ async function renderSpec(raw: unknown, jobId?: string): Promise<void> {
           const childNode = await renderChild(child, master, masterCtx);
           if (childNode) masterRendered.push({ sizing: child.sizing, child: childNode });
         }
-        applyAutoLayout(master, def.layout, def.sizing);
+        applyAutoLayout(master, def.layout, def.sizing, { width: def.width, height: def.height });
         applyChildFillSizing(master, masterRendered);
         master.x = masterCursor - def.width;
         master.y = 0;

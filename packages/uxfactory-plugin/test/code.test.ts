@@ -238,6 +238,43 @@ describe("code.ts render", () => {
     expect(col.__childCountAtSizing).toBe(1);
   });
 
+  it("keeps the spec's fixed size on auto-layout frames (real Figma hugs on layoutMode enable)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const spec: DesignSpec = {
+      frames: [
+        { name: "page", x: 0, y: 0, width: 1440, height: 900,
+          children: [
+            // Fixed-size promise: children sum to 420 wide, spec says 1280.
+            { name: "nav-wrap", x: 80, y: 24, width: 1280, height: 64,
+              layout: { mode: "horizontal", gap: 24, primaryAlign: "space-between" },
+              children: [
+                { type: "shape", name: "brand", x: 0, y: 0, width: 120, height: 32 },
+                { type: "shape", name: "links", x: 0, y: 0, width: 300, height: 32 },
+              ] },
+            // Declared hug: Figma's computed size IS the intent on that axis.
+            { name: "chip-row", x: 80, y: 120, width: 400, height: 48,
+              layout: { mode: "horizontal", gap: 8 }, sizing: { horizontal: "hug" },
+              children: [{ type: "shape", name: "chip", x: 0, y: 0, width: 60, height: 24 }] },
+          ] },
+      ],
+    };
+    await fig.__send({ type: "render", spec, jobId: "j-hug" });
+
+    const page = fig.currentPage.children.find((n) => n.name === "page")!;
+    const nav = page.children.find((n) => n.name === "nav-wrap")!;
+    expect(nav.width).toBe(1280);
+    expect(nav.height).toBe(64);
+    const chips = page.children.find((n) => n.name === "chip-row")!;
+    expect(chips.width).toBe(60); // hugged to its single 60-wide child
+    expect(chips.height).toBe(48); // non-hug axis restored to spec
+
+    // The verify report must carry the restored geometry, not the hugged one.
+    const report = (lastOfType(fig, "rendered") as Extract<MainToUi, { type: "rendered" }>).report;
+    const navReport = report.nodes.find((n) => n.name === "nav-wrap")!;
+    expect(navReport.w).toBe(1280);
+  });
+
   it("regression: mixed corner radii never leak figma.mixed into the report post", async () => {
     const fig = makeFigma();
     await loadCode(fig);
