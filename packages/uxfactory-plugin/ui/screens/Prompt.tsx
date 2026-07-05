@@ -220,6 +220,7 @@ function ChipSelect({
   ariaLabel,
   disabled = false,
   fullWidth = false,
+  size = "md",
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -230,6 +231,8 @@ function ChipSelect({
   disabled?: boolean;
   /** Stretch to the container width — the stacked config column aligns on it. */
   fullWidth?: boolean;
+  /** "sm" matches the ContextBar's compact project-config chips. */
+  size?: "md" | "sm";
 }) {
   return (
     <div className={`relative inline-flex items-center ${fullWidth ? "w-full" : ""}`}>
@@ -241,7 +244,8 @@ function ChipSelect({
         className={[
           fullWidth ? "w-full" : "",
           "appearance-none bg-white border border-gray-300 rounded-full",
-          "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer",
+          size === "sm" ? "px-2 py-0.5 pr-6 text-[11px]" : "px-3 py-1 pr-7 text-sm",
+          "text-gray-700 cursor-pointer",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
           "disabled:opacity-60 disabled:cursor-not-allowed",
         ].join(" ")}
@@ -281,6 +285,7 @@ function ViewportMultiSelect({
   single,
   onToggle,
   fullWidth = false,
+  size = "md",
 }: {
   options: ViewportOption[];
   selected: string[];
@@ -288,9 +293,12 @@ function ViewportMultiSelect({
   onToggle: (v: string) => void;
   /** Stretch to the container width — the stacked config column aligns on it. */
   fullWidth?: boolean;
+  /** "sm" matches the ContextBar's compact project-config chips. */
+  size?: "md" | "sm";
 }) {
   const [open, setOpen] = useState(false);
   const selectedOptions = options.filter((o) => selected.includes(o.value));
+  const iconSize = size === "sm" ? 12 : 14;
   return (
     <div className={`relative inline-flex ${fullWidth ? "w-full" : ""}`}>
       <button
@@ -302,7 +310,8 @@ function ViewportMultiSelect({
         className={[
           fullWidth ? "w-full justify-start" : "",
           "inline-flex items-center gap-1 bg-white border border-gray-300 rounded-full",
-          "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer relative",
+          size === "sm" ? "px-2 py-0.5 pr-6 text-[11px]" : "px-3 py-1 pr-7 text-sm",
+          "text-gray-700 cursor-pointer relative",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
         ].join(" ")}
       >
@@ -311,13 +320,13 @@ function ViewportMultiSelect({
             {selectedOptions.map((o) => (
               <o.Icon
                 key={o.value}
-                size={14}
+                size={iconSize}
                 className={o.rotated ? "rotate-90" : undefined}
               />
             ))}
           </span>
         ) : (
-          <Monitor size={14} aria-hidden="true" />
+          <Monitor size={iconSize} aria-hidden="true" />
         )}
         {/* Names live in sr-only text so the trigger stays compact but readable. */}
         <span className="sr-only">
@@ -765,7 +774,7 @@ export function Prompt({
 
           {/* Config droplists — deployed beside the card only while open. */}
           {configOpen && (
-            <div className="w-40 flex flex-col gap-1.5 items-stretch shrink-0">
+            <div className="w-36 flex flex-col gap-1.5 items-stretch shrink-0">
               <>
                 <ChipSelect
                   value={composerUnitType}
@@ -773,6 +782,7 @@ export function Prompt({
                   options={UNIT_OPTIONS}
                   ariaLabel="Unit type"
                   fullWidth
+                  size="sm"
                 />
                 <ViewportMultiSelect
                   options={viewportOptionsFor(deviceConfig)}
@@ -780,6 +790,7 @@ export function Prompt({
                   single={isUserFlow}
                   onToggle={handleViewportToggle}
                   fullWidth
+                  size="sm"
                 />
                 <ChipSelect
                   value={String(composerVariations)}
@@ -788,6 +799,7 @@ export function Prompt({
                   ariaLabel="Variations"
                   disabled={isUserFlow}
                   fullWidth
+                  size="sm"
                 />
                 <ChipSelect
                   value={composerFidelity}
@@ -799,6 +811,7 @@ export function Prompt({
                   )}
                   ariaLabel="Fidelity"
                   fullWidth
+                  size="sm"
                 />
                 <ChipSelect
                   value={composerDesignStyle}
@@ -807,6 +820,7 @@ export function Prompt({
                   groups={styleOptionGroups(suggestedDesignStyle)}
                   ariaLabel="Design style"
                   fullWidth
+                  size="sm"
                 />
               </>
             </div>

@@ -1232,6 +1232,8 @@ describe("Generate config column", () => {
     ];
     for (const control of controls) {
       expect(control.className).toContain("w-full");
+      // Compact sizing — matches the ContextBar's sm project-config chips.
+      expect(control.className).toContain("text-[11px]");
     }
   });
 
