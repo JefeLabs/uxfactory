@@ -27,3 +27,6 @@ export type { FieldProps } from "./Field.js";
 
 export { Toast } from "./Toast.js";
 export type { ToastProps, ToastItem } from "./Toast.js";
+
+export { DesignStylePicker } from "./DesignStylePicker.js";
+export type { DesignStylePickerProps } from "./DesignStylePicker.js";

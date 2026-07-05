@@ -572,3 +572,62 @@ describe("Back navigation", () => {
     expect(bridge.putProfile).not.toHaveBeenCalled();
   });
 });
+
+// ─── Design style — a generative default with an explicit exploring state ─────
+
+describe("Design style lives under Generation defaults", () => {
+  beforeEach(() => resetToFreshSetup());
+
+  it("renders the picker defaulting to 'Exploring' with the industry suggestion marked", async () => {
+    await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
+      initialEntries: ["/setup/defaults"],
+    });
+
+    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
+    // Fresh project: nothing auto-committed — the project starts exploring.
+    expect(select.value).toBe("");
+    expect(
+      within(select).getByRole("option", { name: /Exploring — no default yet/i }),
+    ).toBeInTheDocument();
+    // ecommerce + corporate → Swiss carries the "(suggested)" marker.
+    expect(
+      within(select).getByRole("option", { name: /Swiss.*\(suggested\)/i }),
+    ).toBeInTheDocument();
+    // 36 styles + the exploring option, grouped.
+    expect(select.options).toHaveLength(37);
+    expect(select.querySelectorAll("optgroup")).toHaveLength(6);
+  });
+
+  it("Save & continue while exploring writes classification WITHOUT designStyle", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge();
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
+
+    await user.click(screen.getByRole("button", { name: /Save & continue/i }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("designStyle");
+    expect(body["category"]).toBe("ecommerce");
+    // The profile still saves as before.
+    await waitFor(() => expect(bridge.putProfile).toHaveBeenCalledOnce());
+  });
+
+  it("picking a style shows its traits and rides the classification body on save", async () => {
+    const user = userEvent.setup();
+    const bridge = makeFakeBridge();
+    await renderWithProviders(<SetupDefaults bridge={bridge} />, {
+      initialEntries: ["/setup/defaults"],
+    });
+
+    await user.selectOptions(screen.getByLabelText("Design style"), "bento");
+    expect(screen.getByText(/rounded content blocks/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Save & continue/i }));
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body["designStyle"]).toBe("bento");
+  });
+});

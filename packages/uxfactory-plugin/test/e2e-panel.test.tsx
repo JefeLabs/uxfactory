@@ -222,6 +222,101 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
   });
 });
 
+// ─── E2E: ContextBar design-style chip + inline editor ────────────────────────
+
+describe("E2E: design-style chip in the ContextBar opens an inline editor below it", () => {
+  function demoBridge(snapshot: unknown = DEMO_SNAPSHOT): Bridge {
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(snapshot);
+    return bridge;
+  }
+
+  beforeEach(() => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
+      fileInfo: { name: "My Product", fileKey: "file-abc" },
+      snapshot: DEMO_SNAPSHOT,
+      toasts: [],
+    });
+  });
+
+  it("shows 'Style: exploring' when the project has no design-style default", async () => {
+    await renderApp(demoBridge());
+    expect(screen.getByText("Style: exploring")).toBeInTheDocument();
+  });
+
+  it("shows the style label when a default is set", async () => {
+    const withStyle = {
+      ...DEMO_SNAPSHOT,
+      classification: { ...DEMO_SNAPSHOT.classification, designStyle: "flat" },
+    };
+    useAppStore.setState({ snapshot: withStyle as never });
+    await renderApp(demoBridge(withStyle));
+    expect(screen.getByText("Style: Flat")).toBeInTheDocument();
+  });
+
+  it("clicking the chip deploys the editor under the bar; Save merges designStyle into classification", async () => {
+    const user = userEvent.setup();
+    const bridge = demoBridge();
+    await renderApp(bridge);
+
+    await user.click(screen.getByText("Style: exploring"));
+    const select = screen.getByLabelText("Project design style") as HTMLSelectElement;
+    expect(select.value).toBe(""); // exploring
+    await user.selectOptions(select, "flat");
+
+    // The bridge serves the persisted state after save (what a real bridge does).
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEMO_SNAPSHOT,
+      classification: { ...DEMO_SNAPSHOT.classification, designStyle: "flat" },
+    });
+    await user.click(screen.getByRole("button", { name: "Save style" }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    expect(bridge.putClassification).toHaveBeenCalledWith({
+      ...DEMO_SNAPSHOT.classification,
+      designStyle: "flat",
+    });
+    // Editor closes; the chip reflects the new default.
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Project design style")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(screen.getByText("Style: Flat")).toBeInTheDocument());
+  });
+
+  it("switching back to exploring saves classification WITHOUT designStyle", async () => {
+    const user = userEvent.setup();
+    const withStyle = {
+      ...DEMO_SNAPSHOT,
+      classification: { ...DEMO_SNAPSHOT.classification, designStyle: "flat" },
+    };
+    useAppStore.setState({ snapshot: withStyle as never });
+    const bridge = demoBridge(withStyle);
+    await renderApp(bridge);
+
+    await user.click(screen.getByText("Style: Flat"));
+    await user.selectOptions(screen.getByLabelText("Project design style"), "");
+    await user.click(screen.getByRole("button", { name: "Save style" }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("designStyle");
+  });
+
+  it("Cancel closes the editor without saving", async () => {
+    const user = userEvent.setup();
+    const bridge = demoBridge();
+    await renderApp(bridge);
+
+    await user.click(screen.getByText("Style: exploring"));
+    await user.selectOptions(screen.getByLabelText("Project design style"), "bento");
+    await user.click(screen.getByRole("button", { name: "Cancel style edit" }));
+
+    expect(bridge.putClassification).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Project design style")).not.toBeInTheDocument();
+  });
+});
+
 // ─── E2E: Tab navigation ──────────────────────────────────────────────────────
 
 describe("E2E: tab navigation after connect", () => {

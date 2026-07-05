@@ -10,7 +10,7 @@
  * an infinite-update error.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useState } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Info } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -19,8 +19,9 @@ import { putProfileMutation } from "../queries.js";
 import type { Bridge } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
-import { Field, Segmented, StatusPill } from "../components/index.js";
+import { DesignStylePicker, Field, Segmented, StatusPill } from "../components/index.js";
 import type { SegmentedOption } from "../components/index.js";
+import { suggestDesignStyle } from "../lib/design-styles.js";
 import {
   styleLabelToEngine,
   fidelityLabelToEngine,
@@ -122,6 +123,8 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
 
   const category = useWizardStore((s) => s.classification.category);
   const industry = useWizardStore((s) => s.classification.industry);
+  const designStyle = useWizardStore((s) => s.classification.designStyle);
+  const setClassification = useWizardStore((s) => s.setClassification);
   const style = useWizardStore((s) => s.defaults.style);
   const visual = useWizardStore((s) => s.defaults.visual);
   const editorial = useWizardStore((s) => s.defaults.editorial);
@@ -131,6 +134,7 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   const setDefault = useWizardStore((s) => s.setDefault);
   const applySuggestions = useWizardStore((s) => s.applySuggestions);
   const [saving, setSaving] = useState(false);
+  const designStyleId = useId();
 
   // ── Router + mutation ─────────────────────────────────────────────────────────
   const navigate = useNavigate();
@@ -160,6 +164,25 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
   async function handleSave() {
     if (saving) return;
     setSaving(true);
+    // Design style lives in the classification file (the worker and gate read
+    // it there) even though it is EDITED here as a generative default. Persist
+    // it first with set-or-clear semantics: exploring ("") omits the key.
+    const cls = useWizardStore.getState().classification;
+    try {
+      await bridge.putClassification({
+        category: cls.category,
+        industry: cls.industry,
+        locale: cls.locale,
+        platforms: cls.platforms,
+        layout: cls.layout,
+        ageGroup: cls.ageGroup,
+        ...(cls.designStyle ? { designStyle: cls.designStyle } : {}),
+      });
+    } catch {
+      toastFn("Could not save — is the bridge running?");
+      setSaving(false);
+      return;
+    }
     putProfile.mutate({ style, visual, editorial, flow, coverage, coherence });
   }
 
@@ -200,6 +223,17 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
 
           {/* Six dial controls */}
           <div className="space-y-4">
+            {/* Design style — a generative default with an explicit exploring
+                state; nothing is auto-committed from the industry suggestion. */}
+            <Field label="Design style" id={designStyleId} align="start">
+              <DesignStylePicker
+                id={designStyleId}
+                value={designStyle}
+                onChange={(v) => setClassification({ designStyle: v })}
+                suggested={suggestDesignStyle(category, industry)}
+              />
+            </Field>
+
             {/* Tone (renamed from Style — "Style" now means the design style) */}
             <Field label="Tone">
               <Segmented

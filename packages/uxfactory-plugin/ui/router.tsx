@@ -24,14 +24,15 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { snapshotQuery, renderQueueQuery } from "./queries.js";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ChevronDown, ChevronUp, Inbox, Settings as SettingsIcon, Unplug } from "lucide-react";
 import { useAppStore } from "./stores/app.js";
 import type { Tab } from "./stores/app.js";
-import { Chip, StatusPill } from "./components/index.js";
+import { Chip, DesignStylePicker, StatusPill } from "./components/index.js";
 import type { StatusPillStatus } from "./components/index.js";
+import { designStyleLabel, suggestDesignStyle } from "./lib/design-styles.js";
 import type { Bridge } from "./lib/bridge.js";
 import type { PluginBus } from "./lib/plugin-bus.js";
 
@@ -169,8 +170,15 @@ function ContextBar(): React.JSX.Element {
   const snapshot = useAppStore((s) => s.snapshot);
   const fileName = useAppStore((s) => s.fileInfo?.name);
   const cancelReconnect = useAppStore((s) => s.cancelReconnect);
+  const toast = useAppStore((s) => s.toast);
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
+
+  // Inline design-style editor deployed UNDER the bar (chip click toggles it).
+  const [styleOpen, setStyleOpen] = useState(false);
+  const [styleDraft, setStyleDraft] = useState("");
+  const [styleSaving, setStyleSaving] = useState(false);
 
   // Disconnect: back to the Connect screen; stored connection stays for
   // one-click reconnect, but the client's root scoping is cleared.
@@ -204,6 +212,45 @@ function ContextBar(): React.JSX.Element {
     Boolean,
   ) as string[];
   const overflowCount = expanded ? 0 : secondaryChips.length;
+
+  // Design style: a generative default, not a classification fact — its chip
+  // is clickable and edits inline, while the fact chips stay read-only.
+  const designStyle =
+    typeof cls?.["designStyle"] === "string" ? (cls["designStyle"] as string) : "";
+  const styleChipLabel = designStyle
+    ? `Style: ${designStyleLabel(designStyle)}`
+    : "Style: exploring";
+
+  function handleStyleChipClick(): void {
+    setStyleDraft(designStyle);
+    setStyleOpen((v) => !v);
+  }
+
+  async function handleStyleSave(): Promise<void> {
+    if (styleSaving || cls === null) return;
+    setStyleSaving(true);
+    // Set-or-clear: exploring ("") removes the key so the advisory style gate
+    // is not owed and the composer override is the only style input.
+    const { designStyle: _prev, ...rest } = cls as Record<string, unknown>;
+    const body = { ...rest, ...(styleDraft ? { designStyle: styleDraft } : {}) };
+    try {
+      await bridge.putClassification(body);
+    } catch {
+      setStyleSaving(false);
+      toast("Could not save style — is the bridge running?");
+      return;
+    }
+    const current = useAppStore.getState().snapshot;
+    if (current) {
+      const updated = { ...current, classification: body };
+      useAppStore.setState({ snapshot: updated });
+      queryClient.setQueryData(snapshotQuery(bridge).queryKey, updated);
+    }
+    void queryClient.invalidateQueries({ queryKey: snapshotQuery(bridge).queryKey });
+    setStyleSaving(false);
+    setStyleOpen(false);
+    toast(styleDraft ? "Design style updated" : "Exploring — set styles per generate");
+  }
 
   if (connection.status === "reconnecting") {
     return (
@@ -280,9 +327,18 @@ function ContextBar(): React.JSX.Element {
       </div>
 
       {/* Chips bar — compact chips in their own collapsible row */}
-      {(primaryChips.length > 0 || secondaryChips.length > 0) && (
+      {(cls !== null || primaryChips.length > 0 || secondaryChips.length > 0) && (
         <div className="flex items-start gap-1 px-3 pb-1.5">
           <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+            {cls !== null && (
+              <Chip
+                size="sm"
+                label={styleChipLabel}
+                selected={designStyle !== ""}
+                tone="default"
+                onSelect={handleStyleChipClick}
+              />
+            )}
             {primaryChips.map((label) => (
               <Chip key={label} size="sm" label={label} selected tone="default" />
             ))}
@@ -310,6 +366,37 @@ function ContextBar(): React.JSX.Element {
           >
             {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
+        </div>
+      )}
+
+      {/* Inline design-style editor — deployed under the bar by the chip */}
+      {styleOpen && cls !== null && (
+        <div className="px-3 pt-2 pb-2 border-t border-gray-100 flex flex-col gap-1.5 bg-gray-50">
+          <DesignStylePicker
+            ariaLabel="Project design style"
+            value={styleDraft}
+            onChange={setStyleDraft}
+            suggested={suggestDesignStyle(category ?? "", industry ?? "")}
+          />
+          <div className="flex justify-end gap-1.5">
+            <button
+              type="button"
+              aria-label="Cancel style edit"
+              onClick={() => setStyleOpen(false)}
+              className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              aria-label="Save style"
+              disabled={styleSaving}
+              onClick={() => void handleStyleSave()}
+              className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {styleSaving ? "Saving…" : "Save"}
+            </button>
+          </div>
         </div>
       )}
     </div>

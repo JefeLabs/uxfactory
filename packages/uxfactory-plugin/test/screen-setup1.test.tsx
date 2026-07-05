@@ -253,58 +253,31 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
       platforms: ["desktop", "mobile"],
       layout: "responsive",
       ageGroup: "18-39",
-      // corporate industry suggests Swiss; untouched picker submits the suggestion
-      designStyle: "swiss",
     });
-    // style is NOT in the body — it's written by Screen 2
     const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    // style is NOT in the body — it's written by Screen 2
     expect(body).not.toHaveProperty("style");
+    // designStyle is a generative default now (Screen 2) — an untouched setup
+    // must NOT auto-commit the industry suggestion; the project starts exploring.
+    expect(body).not.toHaveProperty("designStyle");
   });
 
-  it("Design style select shows the industry suggestion with its traits", async () => {
-    const bridge = makeFakeBridge();
-    await renderWithProviders(<SetupClassification bridge={bridge} />, {
-      initialEntries: ["/setup/classification"],
-    });
-
-    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
-    expect(select.value).toBe("swiss"); // ecommerce + corporate → Swiss
-    expect(screen.getByText(/Strong modular grid/)).toBeInTheDocument();
-  });
-
-  it("Design style options are grouped and include the extended vocabulary", async () => {
+  it("Design style moved to step 2 — no picker on the classification screen", async () => {
     await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/classification"],
     });
-
-    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
-    expect(select.options).toHaveLength(36);
-    const groups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.label);
-    expect(groups).toEqual([
-      "Core styles",
-      "Core digital paradigms",
-      "Modern & dimensional",
-      "Nostalgic & retro",
-      "Artistic & cultural",
-      "Thematic & niche",
-    ]);
-    // Spot-check one style per new group.
-    expect(within(select).getByRole("option", { name: /Cupertino/ })).toBeInTheDocument();
-    expect(within(select).getByRole("option", { name: /Glassmorphism/ })).toBeInTheDocument();
-    expect(within(select).getByRole("option", { name: /Vaporwave/ })).toBeInTheDocument();
-    expect(within(select).getByRole("option", { name: /Art Deco/ })).toBeInTheDocument();
-    expect(within(select).getByRole("option", { name: /Terminal/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Design style")).not.toBeInTheDocument();
   });
 
-  it("picking a style overrides the suggestion and rides the classification body", async () => {
+  it("a previously persisted designStyle rides through step-1 saves untouched", async () => {
     const user = userEvent.setup();
+    useWizardStore.setState((s) => ({
+      classification: { ...s.classification, designStyle: "bento" },
+    }));
     const bridge = makeFakeBridge();
     await renderWithProviders(<SetupClassification bridge={bridge} />, {
       initialEntries: ["/setup/classification"],
     });
-
-    await user.selectOptions(screen.getByLabelText("Design style"), "bento");
-    expect(screen.getByText(/rounded content blocks/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
     const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
