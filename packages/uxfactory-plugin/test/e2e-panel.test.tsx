@@ -407,8 +407,9 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
 
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
     const catChip = screen.getByRole("checkbox", { name: "Category ecommerce" });
-    // Quiet by default: the outline matches the chip background…
-    expect(catChip.className).toContain("border-white");
+    // Filled quietly by default: light gray backfill, no visible outline.
+    expect(catChip.className).toContain("bg-gray-100");
+    expect(catChip.className).toContain("border-gray-100");
     await user.click(catChip);
     // …and the chip being edited gets the primary border.
     expect(catChip.className).toContain("border-primary-600");

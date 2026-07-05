@@ -27,11 +27,12 @@ export function Chip({
   const selectedStyle =
     "bg-primary-50 border-primary-600 text-primary-600 font-semibold";
 
-  // "dial" chips are quiet by default: the outline matches the chip background
-  // (selection brings the primary border). Label muted, value semibold.
+  // "dial" chips are quietly FILLED by default (light gray backfill, border
+  // matching the fill so no outline shows); the primary outline appears only
+  // while the chip is selected/being edited. Label muted, value semibold.
   const unselectedStyle =
     tone === "dial"
-      ? "bg-white border-white text-gray-600 hover:border-gray-300"
+      ? "bg-gray-100 border-gray-100 text-gray-600 hover:bg-gray-200 hover:border-gray-200"
       : "bg-white border-gray-300 text-gray-700 hover:border-gray-400";
 
   return (
