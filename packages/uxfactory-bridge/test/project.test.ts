@@ -602,6 +602,54 @@ describe("GET + PUT /project/links", () => {
   });
 });
 
+// ─── POST /project/reset ─────────────────────────────────────────────────────
+
+describe("POST /project/reset — destructive Figma-association wipe", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  it("removes links.json, renders/, and canvas/ but leaves the rest of dataDir", async () => {
+    await writeJson(path.join(dataDir, "links.json"), [
+      { nodeId: "1:2", unitName: "Hero", unitType: "organism", acId: "AC-1.1" },
+    ]);
+    await writeJson(path.join(dataDir, "renders/r_1.json"), { renderId: "r_1" });
+    await writeJson(path.join(dataDir, "canvas/latest.json"), { source: "canvas-inferred" });
+    await writeJson(path.join(dataDir, "queue/pub_1.json"), { editor: "figma" });
+
+    const res = await app.inject({ method: "POST", url: "/project/reset" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, removed: ["canvas", "links.json", "renders"] });
+
+    await expect(readFile(path.join(dataDir, "links.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(dataDir, "renders/r_1.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(dataDir, "canvas/latest.json"), "utf8")).rejects.toThrow();
+    // Pipeline state is NOT a Figma association — the queue survives a reset.
+    await expect(readFile(path.join(dataDir, "queue/pub_1.json"), "utf8")).resolves.toBeTruthy();
+    // The emptied dirs are recreated: the live store writes into them without re-mkdir'ing.
+    await expect(readFile(path.join(dataDir, "renders"), "utf8")).rejects.toThrow(/EISDIR/);
+    await expect(readFile(path.join(dataDir, "canvas"), "utf8")).rejects.toThrow(/EISDIR/);
+  });
+
+  it("is idempotent — nothing stored still returns ok with empty removed", async () => {
+    const res = await app.inject({ method: "POST", url: "/project/reset" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, removed: [] });
+  });
+
+  it("unserved ?root= → 403 (never wipes a root the bridge does not serve)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/project/reset?root=${encodeURIComponent("/not/served/anywhere")}`,
+    });
+    expect(res.statusCode).toBe(403);
+    // launch root untouched by the rejected call
+    await writeJson(path.join(dataDir, "links.json"), []);
+    await expect(readFile(path.join(dataDir, "links.json"), "utf8")).resolves.toBeTruthy();
+  });
+});
+
 // ─── POST /project/open ──────────────────────────────────────────────────────
 
 describe("POST /project/open — path containment", () => {

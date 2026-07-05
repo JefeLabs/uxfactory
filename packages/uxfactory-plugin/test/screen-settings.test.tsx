@@ -683,3 +683,89 @@ describe("Devices card: define the device behind each viewport category", () => 
     });
   });
 });
+
+// ─── Danger zone: Reset repo ──────────────────────────────────────────────────
+
+describe("Danger zone: Reset repo", () => {
+  function makeResetBridge(overrides: Partial<Bridge> = {}): Bridge {
+    return makeBridge({
+      resetProject: vi.fn().mockResolvedValue({ ok: true, removed: ["links.json", "renders"] }),
+      setProjectRoot: vi.fn(),
+      ...overrides,
+    });
+  }
+
+  it("renders the danger card with a Reset repo action and warning copy", async () => {
+    await renderWithProviders(
+      <Settings bridge={makeResetBridge()} bus={makeBus()} />,
+      { queryClient: makeTestQueryClient() },
+    );
+
+    expect(screen.getByText("Danger zone")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reset repo/i })).toBeInTheDocument();
+  });
+
+  it("clicking Reset repo opens a confirm dialog; Cancel does nothing", async () => {
+    const user = userEvent.setup();
+    const bridge = makeResetBridge();
+    await renderWithProviders(
+      <Settings bridge={bridge} bus={makeBus()} />,
+      { queryClient: makeTestQueryClient() },
+    );
+
+    await user.click(screen.getByRole("button", { name: /reset repo/i }));
+    // Destructive intent is spelled out before anything happens.
+    expect(screen.getByText(/can('|’)t be undone/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reset & disconnect/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(bridge.resetProject).not.toHaveBeenCalled();
+    expect(screen.queryByText(/can('|’)t be undone/i)).not.toBeInTheDocument();
+  });
+
+  it("confirming resets the repo, forgets the stored connection, and disconnects to /connect", async () => {
+    const user = userEvent.setup();
+    const bridge = makeResetBridge();
+    const bus = makeBus();
+    useRunsStore.setState({ runs: [{ id: "r1" } as never] });
+
+    const { router } = await renderWithProviders(
+      <Settings bridge={bridge} bus={bus} />,
+      { queryClient: makeTestQueryClient() },
+    );
+
+    await user.click(screen.getByRole("button", { name: /reset repo/i }));
+    await user.click(screen.getByRole("button", { name: /reset & disconnect/i }));
+
+    await waitFor(() => expect(bridge.resetProject).toHaveBeenCalledTimes(1));
+    // Plugin-side association for THIS file is forgotten — no auto-reconnect.
+    await waitFor(() =>
+      expect(bus.storageSet).toHaveBeenCalledWith("conn:v1:file-abc", null),
+    );
+    expect(useRunsStore.getState().runs).toEqual([]);
+    expect(bridge.setProjectRoot).toHaveBeenCalledWith(null);
+    expect(useAppStore.getState().connection.status).toBe("none");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connect"));
+  });
+
+  it("bridge failure surfaces a toast and does NOT disconnect", async () => {
+    const user = userEvent.setup();
+    const bridge = makeResetBridge({
+      resetProject: vi.fn().mockRejectedValue(new Error("bridge down")),
+    });
+    const bus = makeBus();
+
+    const { router } = await renderWithProviders(
+      <Settings bridge={bridge} bus={bus} />,
+      { queryClient: makeTestQueryClient() },
+    );
+
+    await user.click(screen.getByRole("button", { name: /reset repo/i }));
+    await user.click(screen.getByRole("button", { name: /reset & disconnect/i }));
+
+    await waitFor(() => expect(useAppStore.getState().toasts.length).toBeGreaterThan(0));
+    expect(bus.storageSet).not.toHaveBeenCalledWith("conn:v1:file-abc", null);
+    expect(useAppStore.getState().connection.status).toBe("connected");
+    expect(router.state.location.pathname).not.toBe("/connect");
+  });
+});

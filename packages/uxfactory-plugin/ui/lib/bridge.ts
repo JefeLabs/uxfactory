@@ -190,6 +190,11 @@ export interface Bridge {
   discardRenderJob?(jobId: string): Promise<{ ok: boolean }>;
   /** GET /queue/:id/preview — the job's batch screenshot, or null when absent. */
   fetchRenderJobPreview?(jobId: string): Promise<Blob | null>;
+  /**
+   * POST /project/reset — DESTRUCTIVE: wipes the repo's Figma-file
+   * associations (node links, render reports, canvas snapshots).
+   */
+  resetProject?(): Promise<{ ok: boolean; removed: string[] }>;
 }
 
 /** One pending render job in the approval queue. */
@@ -467,6 +472,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
         throw new BridgeError(res.status, await res.text().catch(() => null));
       }
       return res.blob();
+    },
+
+    resetProject() {
+      return post<{ ok: boolean; removed: string[] }>(rooted("/project/reset"), {});
     },
   };
 }

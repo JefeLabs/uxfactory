@@ -696,6 +696,55 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
     },
   );
 
+  // ── POST /project/reset ──────────────────────────────────────────────────
+  // Destructive: wipes every Figma-file association the repo holds — node
+  // links, render reports (incl. verify results), and canvas snapshots.
+  // Pipeline state (queue, batch previews) is generation work, not an
+  // association, and survives. Directories are emptied but their scaffold is
+  // recreated: the live BridgeStore writes into canvas/, renders/, and
+  // renders/verify/ without re-mkdir'ing, so they must outlive the reset.
+  app.post<{ Querystring: { root?: string } }>("/project/reset", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
+
+    /** True when the directory holds at least one FILE anywhere below —
+     *  empty scaffold dirs (e.g. renders/verify at boot) are not data. */
+    async function hasAnyFile(dir: string): Promise<boolean> {
+      let entries: import("node:fs").Dirent[];
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return false;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) return true;
+        if (await hasAnyFile(path.join(dir, entry.name))) return true;
+      }
+      return false;
+    }
+
+    const removed: string[] = [];
+    for (const dir of ["canvas", "renders"]) {
+      const target = path.join(ctx.dataDir, dir);
+      if (!(await hasAnyFile(target))) continue;
+      await rm(target, { recursive: true, force: true });
+      await mkdir(dir === "renders" ? path.join(target, "verify") : target, {
+        recursive: true,
+      });
+      removed.push(dir);
+    }
+    const linksPath = path.join(ctx.dataDir, "links.json");
+    try {
+      await access(linksPath);
+      await rm(linksPath, { force: true });
+      removed.push("links.json");
+    } catch {
+      /* absent */
+    }
+    removed.sort();
+    return { ok: true, removed };
+  });
+
   // ── GET /project/artifact ────────────────────────────────────────────────
   app.get<{ Querystring: { key?: string; root?: string } }>(
     "/project/artifact",

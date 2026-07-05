@@ -22,6 +22,7 @@
 import React, { useEffect, useId, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import type { Bridge, BridgeStats, SkillEntry } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
@@ -207,6 +208,8 @@ export function Settings({
   const deviceConfig = useRunsStore((s) => s.deviceConfig);
   const setDeviceConfig = useRunsStore((s) => s.setDeviceConfig);
   const toast = useAppStore((s) => s.toast);
+  const cancelReconnect = useAppStore((s) => s.cancelReconnect);
+  const navigate = useNavigate();
 
   // ── Stats (Query-driven, 10s refetchInterval) ──────────────────────────────
   const statsResult = useQuery(statsQuery(bridge));
@@ -231,6 +234,10 @@ export function Settings({
 
   // ── Logs drawer state ──────────────────────────────────────────────────────
   const [logsOpen, setLogsOpen] = useState(false);
+
+  // ── Reset-repo confirm state ───────────────────────────────────────────────
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // ── Escape key closes the restart popover ─────────────────────────────────
   useEffect(() => {
@@ -303,6 +310,37 @@ export function Settings({
       // best-effort — storage failure is non-fatal
     }
     setStorageUsed(await computeStorageUsed(bus, fileKey));
+  }
+
+  /**
+   * DESTRUCTIVE. Order matters: the repo wipe must succeed before any
+   * plugin-side state is forgotten — a failed bridge call leaves the
+   * connection fully intact so the user can retry.
+   */
+  async function handleResetRepo(): Promise<void> {
+    setResetting(true);
+    try {
+      await bridge.resetProject?.();
+    } catch {
+      setResetting(false);
+      toast("Reset failed — bridge unreachable, nothing was changed");
+      return;
+    }
+    // Forget this file's stored connection + histories (best-effort: the repo
+    // is already wiped; storage failures must not block the disconnect).
+    if (fileKey !== null) {
+      await Promise.allSettled([
+        bus.storageSet(`conn:v1:${fileKey}`, null),
+        bus.storageSet(`checks:v1:${fileKey}`, null),
+      ]);
+    }
+    useRunsStore.setState({ runs: [] }); // hydrate() subscription persists []
+    cancelReconnect();
+    bridge.setProjectRoot?.(null);
+    setResetOpen(false);
+    setResetting(false);
+    toast("Repo reset — Figma associations removed");
+    void navigate({ to: "/connect" });
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -616,6 +654,28 @@ export function Settings({
             )}
           </div>
         </Card>
+        {/* ── Card 5: Danger zone ──────────────────────────────────────────── */}
+        <Card>
+          <div className="px-3 pt-3 pb-1 border-b border-red-100">
+            <span className="text-xs font-semibold uppercase tracking-wide text-red-600">
+              Danger zone
+            </span>
+          </div>
+          <div className="px-3 py-3 flex flex-col gap-2">
+            <p className="text-xs text-gray-500">
+              Reset repo removes every Figma file association stored in the
+              connected repo — canvas links, render reports, and canvas
+              snapshots — then disconnects this file.
+            </p>
+            <button
+              type="button"
+              onClick={() => setResetOpen(true)}
+              className="self-start text-xs px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              Reset repo…
+            </button>
+          </div>
+        </Card>
       </div>
 
       {/* ── Logs drawer ───────────────────────────────────────────────────── */}
@@ -624,6 +684,62 @@ export function Settings({
         open={logsOpen}
         onClose={() => setLogsOpen(false)}
       />
+
+      {/* ── Reset-repo confirm dialog ─────────────────────────────────────── */}
+      <Dialog.Root
+        open={resetOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !resetting) setResetOpen(false);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-sm bg-white rounded-lg shadow-xl z-50 p-4 flex flex-col gap-3"
+            aria-describedby={undefined}
+          >
+            <Dialog.Title className="text-sm font-semibold text-red-700">
+              Reset repo?
+            </Dialog.Title>
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-gray-700">
+                This permanently removes from the connected repo:
+              </p>
+              <ul className="text-xs text-gray-700 list-disc pl-4 flex flex-col gap-0.5">
+                <li>Canvas links (node ↔ story links)</li>
+                <li>Render reports and verify history</li>
+                <li>Canvas snapshots</li>
+              </ul>
+              <p className="text-xs text-gray-700">
+                This file will also disconnect and its run history is cleared.
+                Generated design specs and batch previews are kept.
+              </p>
+              <p className="text-xs font-medium text-red-700">
+                This can&rsquo;t be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  disabled={resetting}
+                  className="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                type="button"
+                onClick={() => void handleResetRepo()}
+                disabled={resetting}
+                className="text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+              >
+                {resetting ? "Resetting…" : "Reset & disconnect"}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
