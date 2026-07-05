@@ -195,9 +195,9 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
     expect(screen.getByText("/home/user/demo-shop")).toBeInTheDocument();
   });
 
-  it("collapsed bar shows the Project-wide config label + one total-count chip", async () => {
+  it("collapsed bar shows the Project config label + one total-count chip", async () => {
     await renderApp(demoBridge());
-    expect(screen.getByText("Project-wide config:")).toBeInTheDocument();
+    expect(screen.getByText("Project config:")).toBeInTheDocument();
     // No individual chips while collapsed — everything folds into the count
     // (8 = style, category, layout, industry, locale, age, 2 platforms).
     expect(screen.queryByText("ecommerce")).not.toBeInTheDocument();
@@ -367,7 +367,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
 
     // Collapsed default: the label + one total chip covering EVERYTHING
     // (14 = style + category + layout + industry + locale + age + 2 platforms + 6 dials).
-    expect(screen.getByText("Project-wide config:")).toBeInTheDocument();
+    expect(screen.getByText("Project config:")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "+14" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Tone Formal" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));

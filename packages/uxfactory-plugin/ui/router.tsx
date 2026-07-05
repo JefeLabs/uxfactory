@@ -238,7 +238,7 @@ function ContextBar(): React.JSX.Element {
   pushDial("coverage", "Coverage", scopeRec["coverage"], engineToLabel.coverage);
   pushDial("coherence", "Coherence", experimentalRec["coherence"], engineToLabel.coherence);
 
-  // Collapsed default: a "Project-wide config:" label + ONE chip carrying the
+  // Collapsed default: a "Project config:" label + ONE chip carrying the
   // total count. Expanding (+N or the chevron) reveals every chip, each
   // editable inline. 1 = the always-present Style chip.
   const totalChipCount =
@@ -412,7 +412,7 @@ function ContextBar(): React.JSX.Element {
       {cls !== null && (
         <div className="flex items-start gap-1 px-3 pb-1.5">
           <span className="text-[11px] text-gray-400 shrink-0 leading-5 select-none">
-            Project-wide config:
+            Project config:
           </span>
           <div className="flex flex-wrap gap-1 flex-1 min-w-0">
             {expanded && (
