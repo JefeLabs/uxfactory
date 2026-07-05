@@ -1171,6 +1171,26 @@ describe("Generate config column", () => {
     expect(screen.queryByLabelText("Unit type")).not.toBeInTheDocument();
   });
 
+  it("stacked config controls share one width (uniform column)", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+
+    const controls = [
+      screen.getByLabelText("Unit type"),
+      screen.getByRole("button", { name: "Viewports" }),
+      screen.getByLabelText("Variations"),
+      screen.getByLabelText("Fidelity"),
+      screen.getByLabelText("Design style"),
+    ];
+    for (const control of controls) {
+      expect(control.className).toContain("w-full");
+    }
+  });
+
   it("submit works without ever opening the config (defaults apply)", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();

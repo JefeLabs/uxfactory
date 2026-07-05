@@ -192,21 +192,25 @@ function ChipSelect({
   options,
   ariaLabel,
   disabled = false,
+  fullWidth = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: { label: string; value: string; disabled?: boolean }[];
   ariaLabel: string;
   disabled?: boolean;
+  /** Stretch to the container width — the stacked config column aligns on it. */
+  fullWidth?: boolean;
 }) {
   return (
-    <div className="relative inline-flex items-center">
+    <div className={`relative inline-flex items-center ${fullWidth ? "w-full" : ""}`}>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={ariaLabel}
         disabled={disabled}
         className={[
+          fullWidth ? "w-full" : "",
           "appearance-none bg-white border border-gray-300 rounded-full",
           "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
@@ -238,16 +242,19 @@ function ViewportMultiSelect({
   selected,
   single,
   onToggle,
+  fullWidth = false,
 }: {
   options: ViewportOption[];
   selected: string[];
   single: boolean;
   onToggle: (v: string) => void;
+  /** Stretch to the container width — the stacked config column aligns on it. */
+  fullWidth?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selectedOptions = options.filter((o) => selected.includes(o.value));
   return (
-    <div className="relative inline-flex">
+    <div className={`relative inline-flex ${fullWidth ? "w-full" : ""}`}>
       <button
         type="button"
         aria-label="Viewports"
@@ -255,6 +262,7 @@ function ViewportMultiSelect({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={[
+          fullWidth ? "w-full justify-start" : "",
           "inline-flex items-center gap-1 bg-white border border-gray-300 rounded-full",
           "px-3 py-1 pr-7 text-sm text-gray-700 cursor-pointer relative",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
@@ -653,8 +661,14 @@ export function Prompt({
         <div className="bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
           <div className="flex items-start gap-2">
             {/* Config column — a chip aligned with the placeholder; clicking
-                it stacks the five generate configs vertically on the left. */}
-            <div className="flex flex-col gap-1.5 items-start shrink-0">
+                it stacks the five generate configs vertically on the left,
+                all sharing the column's width. */}
+            <div
+              className={[
+                "flex flex-col gap-1.5 shrink-0",
+                configOpen ? "w-40 items-stretch" : "items-start",
+              ].join(" ")}
+            >
               <button
                 type="button"
                 aria-label="Generate config"
@@ -662,7 +676,7 @@ export function Prompt({
                 title="Generate config"
                 onClick={() => setConfigOpen((v) => !v)}
                 className={[
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors select-none",
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors select-none self-start",
                   configOpen
                     ? "bg-primary-50 border-primary-600 text-primary-600 font-semibold"
                     : "bg-white border-gray-300 text-gray-700 hover:border-gray-400",
@@ -678,12 +692,14 @@ export function Prompt({
                     onChange={handleUnitTypeChange}
                     options={UNIT_OPTIONS}
                     ariaLabel="Unit type"
+                    fullWidth
                   />
                   <ViewportMultiSelect
                     options={viewportOptionsFor(deviceConfig)}
                     selected={selectedViewports}
                     single={isUserFlow}
                     onToggle={handleViewportToggle}
+                    fullWidth
                   />
                   <ChipSelect
                     value={String(composerVariations)}
@@ -691,6 +707,7 @@ export function Prompt({
                     options={VARIATION_OPTIONS}
                     ariaLabel="Variations"
                     disabled={isUserFlow}
+                    fullWidth
                   />
                   <ChipSelect
                     value={composerFidelity}
@@ -701,12 +718,14 @@ export function Prompt({
                         : o,
                     )}
                     ariaLabel="Fidelity"
+                    fullWidth
                   />
                   <ChipSelect
                     value={composerDesignStyle}
                     onChange={(v) => setComposerState({ composerDesignStyle: v })}
                     options={STYLE_SELECT_OPTIONS}
                     ariaLabel="Design style"
+                    fullWidth
                   />
                 </>
               )}
