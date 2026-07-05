@@ -31,7 +31,7 @@ import type { Bridge, BridgeEvent } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../stores/runs.js";
-import { DESIGN_STYLES } from "../lib/design-styles.js";
+import { DESIGN_STYLES, designStyleLabel } from "../lib/design-styles.js";
 import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
@@ -169,10 +169,21 @@ const FIDELITY_OPTIONS: { label: string; value: string }[] = [
 ];
 
 // Per-request design-style override; "" follows the project's classification.
-const STYLE_SELECT_OPTIONS: { label: string; value: string }[] = [
-  { label: "Project default", value: "" },
-  ...DESIGN_STYLES.map((s) => ({ label: s.label, value: s.value })),
-];
+/**
+ * Composer style options. The "" sentinel means "no per-request override" —
+ * its label depends on the project: with a designStyle default it reads
+ * "Project default — <Label>"; while exploring (no default) it reads
+ * "Exploring", because there is no default to fall back to and the sentinel
+ * IS the exploring state. "Exploring" is never offered once a default exists.
+ */
+function styleSelectOptions(projectStyle: string): { label: string; value: string }[] {
+  return [
+    projectStyle !== ""
+      ? { label: `Project default — ${designStyleLabel(projectStyle)}`, value: "" }
+      : { label: "Exploring", value: "" },
+    ...DESIGN_STYLES.map((s) => ({ label: s.label, value: s.value })),
+  ];
+}
 
 /** Map a raw worker status string to the RunStatus vocabulary. */
 function toRunStatus(raw: string | undefined): Exclude<RunStatus, "generating"> {
@@ -456,6 +467,10 @@ export function Prompt({
   const composerVariations = useRunsStore((s) => s.composerVariations);
   const composerFidelity = useRunsStore((s) => s.composerFidelity);
   const composerDesignStyle = useRunsStore((s) => s.composerDesignStyle);
+  const projectDesignStyle =
+    typeof snapshotClassification?.["designStyle"] === "string"
+      ? (snapshotClassification["designStyle"] as string)
+      : "";
   const deviceConfig = useRunsStore((s) => s.deviceConfig);
   const setComposerState = useRunsStore((s) => s.setComposerState);
 
@@ -723,7 +738,7 @@ export function Prompt({
                   <ChipSelect
                     value={composerDesignStyle}
                     onChange={(v) => setComposerState({ composerDesignStyle: v })}
-                    options={STYLE_SELECT_OPTIONS}
+                    options={styleSelectOptions(projectDesignStyle)}
                     ariaLabel="Design style"
                     fullWidth
                   />

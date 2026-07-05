@@ -850,7 +850,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     });
   });
 
-  it("style select offers Project default plus the full vocabulary; default stays off the wire", async () => {
+  it("exploring project: the style select leads with 'Exploring'; default stays off the wire", async () => {
     const user = userEvent.setup();
     const { bridge } = makeBridge();
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
@@ -860,7 +860,8 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
 
     const select = screen.getByLabelText("Design style") as HTMLSelectElement;
     expect(select.options).toHaveLength(37); // sentinel + 36 styles
-    expect(select.options[0]!.textContent).toBe("Project default");
+    // No project default exists — the sentinel says so instead of implying one.
+    expect(select.options[0]!.textContent).toBe("Exploring");
     expect(select.value).toBe("");
 
     // Default submits WITHOUT a designStyle key (legacy wire).
@@ -871,6 +872,29 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
       payload: Record<string, unknown>;
     };
     expect(body.payload).not.toHaveProperty("designStyle");
+  });
+
+  it("project WITH a style default: sentinel names it and 'Exploring' is not offered", async () => {
+    resetStores({
+      classification: {
+        category: "ecommerce",
+        industry: "corporate",
+        platforms: ["desktop"],
+        designStyle: "flat",
+      },
+    });
+    const { bridge } = makeBridge();
+    await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+
+    const select = screen.getByLabelText("Design style") as HTMLSelectElement;
+    expect(select.options).toHaveLength(37); // sentinel + 36 styles
+    expect(select.options[0]!.textContent).toBe("Project default — Flat");
+    expect(select.value).toBe("");
+    const labels = Array.from(select.options).map((o) => o.textContent);
+    expect(labels).not.toContain("Exploring");
   });
 
   it("a picked style overrides the project default on the wire", async () => {
