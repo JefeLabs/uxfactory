@@ -191,10 +191,13 @@ export interface Bridge {
   /** GET /queue/:id/preview — the job's batch screenshot, or null when absent. */
   fetchRenderJobPreview?(jobId: string): Promise<Blob | null>;
   /**
-   * POST /project/reset — DESTRUCTIVE: wipes the repo's Figma-file
-   * associations (node links, render reports, canvas snapshots).
+   * POST /project/reset — soft reset: MOVES the repo's Figma-file
+   * associations (node links, render reports, canvas snapshots) and the
+   * panel-authored project definition (artifacts, classification, profile)
+   * into .uxfactory/archive/reset-<stamp>/. archiveDir is null when the
+   * project had nothing to archive.
    */
-  resetProject?(): Promise<{ ok: boolean; removed: string[] }>;
+  resetProject?(): Promise<{ ok: boolean; archived: string[]; archiveDir: string | null }>;
 }
 
 /** One pending render job in the approval queue. */
@@ -475,7 +478,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     },
 
     resetProject() {
-      return post<{ ok: boolean; removed: string[] }>(rooted("/project/reset"), {});
+      return post<{ ok: boolean; archived: string[]; archiveDir: string | null }>(
+        rooted("/project/reset"),
+        {},
+      );
     },
   };
 }

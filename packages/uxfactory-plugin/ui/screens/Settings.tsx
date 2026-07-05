@@ -339,7 +339,7 @@ export function Settings({
     bridge.setProjectRoot?.(null);
     setResetOpen(false);
     setResetting(false);
-    toast("Repo reset — Figma associations removed");
+    toast("Repo reset — previous state archived in .uxfactory/archive");
     void navigate({ to: "/connect" });
   }
 
@@ -663,9 +663,8 @@ export function Settings({
           </div>
           <div className="px-3 py-3 flex flex-col gap-2">
             <p className="text-xs text-gray-500">
-              Reset repo removes every Figma file association stored in the
-              connected repo — canvas links, render reports, and canvas
-              snapshots — then disconnects this file.
+              Reset repo moves every Figma file association and panel-authored
+              artifact out of the connected repo, then disconnects this file.
             </p>
             <button
               type="button"
@@ -703,19 +702,25 @@ export function Settings({
             </Dialog.Title>
             <div className="flex flex-col gap-2">
               <p className="text-xs text-gray-700">
-                This permanently removes from the connected repo:
+                This resets the connected repo by moving out:
               </p>
               <ul className="text-xs text-gray-700 list-disc pl-4 flex flex-col gap-0.5">
                 <li>Canvas links (node ↔ story links)</li>
                 <li>Render reports and verify history</li>
                 <li>Canvas snapshots</li>
+                <li>Project artifacts (brief, sitemap, flows, design system, assets)</li>
+                <li>Classification and quality profile</li>
               </ul>
               <p className="text-xs text-gray-700">
-                This file will also disconnect and its run history is cleared.
-                Generated design specs and batch previews are kept.
+                Everything is archived to{" "}
+                <code className="font-mono bg-gray-100 rounded px-1">
+                  .uxfactory/archive
+                </code>{" "}
+                in the repo — restore manually anytime. Generated design specs
+                and batch previews are kept.
               </p>
               <p className="text-xs font-medium text-red-700">
-                This can&rsquo;t be undone.
+                This file will disconnect and its run history is cleared.
               </p>
             </div>
             <div className="flex justify-end gap-2">

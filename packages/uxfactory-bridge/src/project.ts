@@ -24,6 +24,7 @@ import {
   access,
   stat,
   rm,
+  rename,
 } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -697,12 +698,14 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   );
 
   // ── POST /project/reset ──────────────────────────────────────────────────
-  // Destructive: wipes every Figma-file association the repo holds — node
-  // links, render reports (incl. verify results), and canvas snapshots.
-  // Pipeline state (queue, batch previews) is generation work, not an
-  // association, and survives. Directories are emptied but their scaffold is
-  // recreated: the live BridgeStore writes into canvas/, renders/, and
-  // renders/verify/ without re-mkdir'ing, so they must outlive the reset.
+  // Soft reset: every Figma-file association (node links, render reports
+  // incl. verify results, canvas snapshots) AND the panel-authored project
+  // definition (artifacts/, classification, profile) is MOVED into a
+  // timestamped .uxfactory/archive/reset-<stamp>/ folder — nothing is
+  // deleted, everything is manually restorable. Pipeline state (queue,
+  // batch previews) is generation work, not an association, and stays live.
+  // Emptied dirs get their scaffold back: the live BridgeStore writes into
+  // canvas/, renders/, and renders/verify/ without re-mkdir'ing.
   app.post<{ Querystring: { root?: string } }>("/project/reset", async (req, reply) => {
     const ctx = await resolveRoot(req.query.root, reply);
     if (ctx === null) return reply;
@@ -723,26 +726,57 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       return false;
     }
 
-    const removed: string[] = [];
-    for (const dir of ["canvas", "renders"]) {
-      const target = path.join(ctx.dataDir, dir);
-      if (!(await hasAnyFile(target))) continue;
-      await rm(target, { recursive: true, force: true });
-      await mkdir(dir === "renders" ? path.join(target, "verify") : target, {
-        recursive: true,
-      });
-      removed.push(dir);
+    const moves: Array<{ name: string; from: string }> = [];
+    for (const dir of ["artifacts", "canvas", "renders"]) {
+      const from = path.join(ctx.dataDir, dir);
+      if (await hasAnyFile(from)) moves.push({ name: dir, from });
     }
-    const linksPath = path.join(ctx.dataDir, "links.json");
-    try {
-      await access(linksPath);
-      await rm(linksPath, { force: true });
-      removed.push("links.json");
-    } catch {
-      /* absent */
+    const fileTargets: Array<[string, string]> = [
+      ["links.json", path.join(ctx.dataDir, "links.json")],
+      ["uxfactory.classification.json", path.join(ctx.root, "uxfactory.classification.json")],
+      ["uxfactory.profile.json", path.join(ctx.root, "uxfactory.profile.json")],
+    ];
+    for (const [name, from] of fileTargets) {
+      try {
+        await access(from);
+        moves.push({ name, from });
+      } catch {
+        /* absent */
+      }
     }
-    removed.sort();
-    return { ok: true, removed };
+
+    if (moves.length === 0) {
+      return { ok: true, archived: [], archiveDir: null };
+    }
+
+    // Unique stamp folder — a same-millisecond collision gets a numeric suffix
+    // rather than merging two resets into one archive.
+    const stamp = `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    let archiveAbs = path.join(ctx.dataDir, "archive", stamp);
+    for (let n = 2; ; n++) {
+      try {
+        await access(archiveAbs);
+        archiveAbs = path.join(ctx.dataDir, "archive", `${stamp}-${n}`);
+      } catch {
+        break;
+      }
+    }
+    await mkdir(archiveAbs, { recursive: true });
+
+    const archived: string[] = [];
+    for (const { name, from } of moves) {
+      await rename(from, path.join(archiveAbs, name));
+      archived.push(name);
+    }
+    await mkdir(path.join(ctx.dataDir, "renders", "verify"), { recursive: true });
+    await mkdir(path.join(ctx.dataDir, "canvas"), { recursive: true });
+
+    archived.sort();
+    return {
+      ok: true,
+      archived,
+      archiveDir: path.relative(ctx.root, archiveAbs),
+    };
   });
 
   // ── GET /project/artifact ────────────────────────────────────────────────

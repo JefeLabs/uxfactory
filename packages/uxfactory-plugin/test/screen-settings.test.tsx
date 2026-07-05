@@ -689,7 +689,11 @@ describe("Devices card: define the device behind each viewport category", () => 
 describe("Danger zone: Reset repo", () => {
   function makeResetBridge(overrides: Partial<Bridge> = {}): Bridge {
     return makeBridge({
-      resetProject: vi.fn().mockResolvedValue({ ok: true, removed: ["links.json", "renders"] }),
+      resetProject: vi.fn().mockResolvedValue({
+        ok: true,
+        archived: ["artifacts", "links.json", "renders"],
+        archiveDir: ".uxfactory/archive/reset-2026-07-05T00-00-00-000Z",
+      }),
       setProjectRoot: vi.fn(),
       ...overrides,
     });
@@ -714,13 +718,14 @@ describe("Danger zone: Reset repo", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /reset repo/i }));
-    // Destructive intent is spelled out before anything happens.
-    expect(screen.getByText(/can('|’)t be undone/i)).toBeInTheDocument();
+    // The dialog spells out the soft-delete semantics before anything happens.
+    expect(screen.getByText(".uxfactory/archive")).toBeInTheDocument();
+    expect(screen.getByText(/brief, sitemap, flows/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reset & disconnect/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
     expect(bridge.resetProject).not.toHaveBeenCalled();
-    expect(screen.queryByText(/can('|’)t be undone/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(".uxfactory/archive")).not.toBeInTheDocument();
   });
 
   it("confirming resets the repo, forgets the stored connection, and disconnects to /connect", async () => {

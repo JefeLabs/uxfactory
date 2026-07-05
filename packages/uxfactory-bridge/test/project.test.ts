@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -604,41 +604,108 @@ describe("GET + PUT /project/links", () => {
 
 // ─── POST /project/reset ─────────────────────────────────────────────────────
 
-describe("POST /project/reset — destructive Figma-association wipe", () => {
+describe("POST /project/reset — soft reset: archive Figma associations + project definition", () => {
   beforeEach(async () => {
     await addGitMarker(root);
     app = await createBridge({ dataDir });
   });
 
-  it("removes links.json, renders/, and canvas/ but leaves the rest of dataDir", async () => {
+  /** Path of the single expected archive folder. */
+  async function archiveDirOf(): Promise<string> {
+    const entries = await readdir(path.join(dataDir, "archive"));
+    expect(entries).toHaveLength(1);
+    return path.join(dataDir, "archive", entries[0]!);
+  }
+
+  it("moves associations + project definition into .uxfactory/archive/<stamp>/, leaving pipeline state", async () => {
     await writeJson(path.join(dataDir, "links.json"), [
       { nodeId: "1:2", unitName: "Hero", unitType: "organism", acId: "AC-1.1" },
     ]);
     await writeJson(path.join(dataDir, "renders/r_1.json"), { renderId: "r_1" });
     await writeJson(path.join(dataDir, "canvas/latest.json"), { source: "canvas-inferred" });
+    await writeTxt(path.join(dataDir, "artifacts/brief.md"), "# Brief\nA product.");
+    await writeJson(path.join(root, "uxfactory.classification.json"), { category: "E-Commerce" });
+    await writeJson(path.join(root, "uxfactory.profile.json"), { confirm_status: "approved" });
     await writeJson(path.join(dataDir, "queue/pub_1.json"), { editor: "figma" });
 
     const res = await app.inject({ method: "POST", url: "/project/reset" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, removed: ["canvas", "links.json", "renders"] });
+    const body = res.json() as { ok: boolean; archived: string[]; archiveDir: string };
+    expect(body.ok).toBe(true);
+    expect(body.archived).toEqual([
+      "artifacts",
+      "canvas",
+      "links.json",
+      "renders",
+      "uxfactory.classification.json",
+      "uxfactory.profile.json",
+    ]);
+    expect(body.archiveDir.startsWith(".uxfactory/archive/")).toBe(true);
 
+    // Originals are gone from their live locations…
     await expect(readFile(path.join(dataDir, "links.json"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(dataDir, "renders/r_1.json"), "utf8")).rejects.toThrow();
     await expect(readFile(path.join(dataDir, "canvas/latest.json"), "utf8")).rejects.toThrow();
-    // Pipeline state is NOT a Figma association — the queue survives a reset.
+    await expect(readFile(path.join(dataDir, "artifacts/brief.md"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(root, "uxfactory.classification.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.join(root, "uxfactory.profile.json"), "utf8")).rejects.toThrow();
+
+    // …but every byte survives inside the archive folder (soft delete).
+    const archive = await archiveDirOf();
+    expect(archive).toContain(path.join(dataDir, "archive"));
+    await expect(readFile(path.join(archive, "links.json"), "utf8")).resolves.toContain("Hero");
+    await expect(readFile(path.join(archive, "renders/r_1.json"), "utf8")).resolves.toContain("r_1");
+    await expect(readFile(path.join(archive, "canvas/latest.json"), "utf8")).resolves.toContain("canvas-inferred");
+    await expect(readFile(path.join(archive, "artifacts/brief.md"), "utf8")).resolves.toContain("# Brief");
+    await expect(readFile(path.join(archive, "uxfactory.classification.json"), "utf8")).resolves.toContain("E-Commerce");
+    await expect(readFile(path.join(archive, "uxfactory.profile.json"), "utf8")).resolves.toContain("approved");
+
+    // Pipeline state is NOT an association — the queue survives a reset.
     await expect(readFile(path.join(dataDir, "queue/pub_1.json"), "utf8")).resolves.toBeTruthy();
     // The emptied dirs are recreated: the live store writes into them without re-mkdir'ing.
     await expect(readFile(path.join(dataDir, "renders"), "utf8")).rejects.toThrow(/EISDIR/);
+    await expect(readFile(path.join(dataDir, "renders/verify"), "utf8")).rejects.toThrow(/EISDIR/);
     await expect(readFile(path.join(dataDir, "canvas"), "utf8")).rejects.toThrow(/EISDIR/);
+
+    // The fresh snapshot reflects a reset project: no classification, no brief.
+    const snap = (await app.inject({ method: "GET", url: "/project/snapshot" })).json() as {
+      hasClassification: boolean;
+      artifacts: { key: string; status: string }[];
+    };
+    expect(snap.hasClassification).toBe(false);
+    expect(snap.artifacts.find((a) => a.key === "brief")?.status).toBe("missing");
   });
 
-  it("is idempotent — nothing stored still returns ok with empty removed", async () => {
+  it("is idempotent — nothing stored returns ok with empty archived and creates no archive folder", async () => {
     const res = await app.inject({ method: "POST", url: "/project/reset" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, removed: [] });
+    expect(res.json()).toEqual({ ok: true, archived: [], archiveDir: null });
+    await expect(readdir(path.join(dataDir, "archive"))).rejects.toThrow();
   });
 
-  it("unserved ?root= → 403 (never wipes a root the bridge does not serve)", async () => {
+  it("consecutive resets never clobber an earlier archive", async () => {
+    await writeTxt(path.join(dataDir, "artifacts/brief.md"), "v1");
+    await app.inject({ method: "POST", url: "/project/reset" });
+    await writeTxt(path.join(dataDir, "artifacts/brief.md"), "v2");
+    await app.inject({ method: "POST", url: "/project/reset" });
+
+    const stamps = await readdir(path.join(dataDir, "archive"));
+    expect(stamps).toHaveLength(2);
+    const briefs = await Promise.all(
+      stamps.map((s) => readFile(path.join(dataDir, "archive", s, "artifacts/brief.md"), "utf8")),
+    );
+    expect(briefs.sort()).toEqual(["v1", "v2"]);
+  });
+
+  it("archived state is invisible to a reset — a prior archive never re-archives", async () => {
+    await writeTxt(path.join(dataDir, "artifacts/brief.md"), "v1");
+    await app.inject({ method: "POST", url: "/project/reset" });
+    // Second reset with nothing new: the archive folder itself must not count as data.
+    const res = await app.inject({ method: "POST", url: "/project/reset" });
+    expect(res.json()).toEqual({ ok: true, archived: [], archiveDir: null });
+  });
+
+  it("unserved ?root= → 403 (never touches a root the bridge does not serve)", async () => {
     const res = await app.inject({
       method: "POST",
       url: `/project/reset?root=${encodeURIComponent("/not/served/anywhere")}`,
