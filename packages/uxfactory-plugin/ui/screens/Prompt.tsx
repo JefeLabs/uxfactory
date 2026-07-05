@@ -24,7 +24,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, Monitor, Tablet, Smartphone } from "lucide-react";
+import { ChevronDown, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
@@ -454,6 +454,9 @@ export function Prompt({
   // ── Local state ────────────────────────────────────────────────────────────
   const [promptText, setPromptText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Generate config hidden by default — the Config chip reveals the five
+  // controls as a column on the left inside the input area.
+  const [configOpen, setConfigOpen] = useState(false);
 
   // ── Derived: classification platforms ─────────────────────────────────────
   // Safe to derive here (not in a selector) — no new array literal in selectors.
@@ -648,55 +651,78 @@ export function Prompt({
 
         {/* ── Composer card (indigo outline) ─────────────────────────────── */}
         <div className="bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
-          <textarea
-            value={promptText}
-            onChange={(e) => setPromptText(e.target.value)}
-            placeholder={COMPOSER_PLACEHOLDER}
-            rows={4}
-            aria-label="Prompt"
-            className="w-full text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
-          />
-
-          <div className="flex items-center gap-2 flex-wrap justify-between">
-            {/* Chip row: unit type + platform */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <ChipSelect
-                value={composerUnitType}
-                onChange={handleUnitTypeChange}
-                options={UNIT_OPTIONS}
-                ariaLabel="Unit type"
-              />
-              <ViewportMultiSelect
-                options={viewportOptionsFor(deviceConfig)}
-                selected={selectedViewports}
-                single={isUserFlow}
-                onToggle={handleViewportToggle}
-              />
-              <ChipSelect
-                value={String(composerVariations)}
-                onChange={handleVariationsChange}
-                options={VARIATION_OPTIONS}
-                ariaLabel="Variations"
-                disabled={isUserFlow}
-              />
-              <ChipSelect
-                value={composerFidelity}
-                onChange={(v) => setComposerState({ composerFidelity: v })}
-                options={FIDELITY_OPTIONS.map((o) =>
-                  o.value === "high" && composerVariations > 1
-                    ? { ...o, disabled: true }
-                    : o,
-                )}
-                ariaLabel="Fidelity"
-              />
-              <ChipSelect
-                value={composerDesignStyle}
-                onChange={(v) => setComposerState({ composerDesignStyle: v })}
-                options={STYLE_SELECT_OPTIONS}
-                ariaLabel="Design style"
-              />
+          <div className="flex items-start gap-2">
+            {/* Config column — a chip aligned with the placeholder; clicking
+                it stacks the five generate configs vertically on the left. */}
+            <div className="flex flex-col gap-1.5 items-start shrink-0">
+              <button
+                type="button"
+                aria-label="Generate config"
+                aria-expanded={configOpen}
+                title="Generate config"
+                onClick={() => setConfigOpen((v) => !v)}
+                className={[
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors select-none",
+                  configOpen
+                    ? "bg-primary-50 border-primary-600 text-primary-600 font-semibold"
+                    : "bg-white border-gray-300 text-gray-700 hover:border-gray-400",
+                ].join(" ")}
+              >
+                <SlidersHorizontal size={11} aria-hidden="true" />
+                Config
+              </button>
+              {configOpen && (
+                <>
+                  <ChipSelect
+                    value={composerUnitType}
+                    onChange={handleUnitTypeChange}
+                    options={UNIT_OPTIONS}
+                    ariaLabel="Unit type"
+                  />
+                  <ViewportMultiSelect
+                    options={viewportOptionsFor(deviceConfig)}
+                    selected={selectedViewports}
+                    single={isUserFlow}
+                    onToggle={handleViewportToggle}
+                  />
+                  <ChipSelect
+                    value={String(composerVariations)}
+                    onChange={handleVariationsChange}
+                    options={VARIATION_OPTIONS}
+                    ariaLabel="Variations"
+                    disabled={isUserFlow}
+                  />
+                  <ChipSelect
+                    value={composerFidelity}
+                    onChange={(v) => setComposerState({ composerFidelity: v })}
+                    options={FIDELITY_OPTIONS.map((o) =>
+                      o.value === "high" && composerVariations > 1
+                        ? { ...o, disabled: true }
+                        : o,
+                    )}
+                    ariaLabel="Fidelity"
+                  />
+                  <ChipSelect
+                    value={composerDesignStyle}
+                    onChange={(v) => setComposerState({ composerDesignStyle: v })}
+                    options={STYLE_SELECT_OPTIONS}
+                    ariaLabel="Design style"
+                  />
+                </>
+              )}
             </div>
 
+            <textarea
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              placeholder={COMPOSER_PLACEHOLDER}
+              rows={configOpen ? 8 : 4}
+              aria-label="Prompt"
+              className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-end">
             {/* Circular submit button (↑) */}
             <button
               type="button"

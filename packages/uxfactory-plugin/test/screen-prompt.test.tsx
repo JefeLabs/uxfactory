@@ -149,6 +149,11 @@ function makeBus(): PluginBus {
 
 // ─── AC-1: Submit enqueues exact payload + adds generating row + clears composer ──
 
+/** The generate config is collapsed by default — reveal it before touching controls. */
+async function openConfig(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Generate config" }));
+}
+
 describe("AC-1: submit enqueues exact payload, adds generating row, clears textarea", () => {
   it("calls bridge.enqueue with correct kind/payload and a generating row appears", async () => {
     const user = userEvent.setup();
@@ -195,6 +200,7 @@ describe("AC-1: submit enqueues exact payload, adds generating row, clears texta
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const textarea = screen.getByRole("textbox", { name: "Prompt" });
     await user.type(textarea, "A hero section");
@@ -598,6 +604,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     const { unmount } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
     const select = screen.getByLabelText("Unit type") as HTMLSelectElement;
     expect(select.value).toBe("molecule");
 
@@ -607,6 +614,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
     const select2 = screen.getByLabelText("Unit type") as HTMLSelectElement;
     expect(select2.value).toBe("molecule");
   });
@@ -625,6 +633,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     const { unmount } = await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     // Verify stored viewport is shown on the trigger
     expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Mobile portrait");
@@ -635,6 +644,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
     expect(screen.getByRole("button", { name: "Viewports" })).toHaveTextContent("Mobile portrait");
   });
 
@@ -646,6 +656,7 @@ describe("AC-7: composer chip state persists across tab switches (remounts)", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const unitSelect = screen.getByLabelText("Unit type") as HTMLSelectElement;
     await user.selectOptions(unitSelect, "organism");
@@ -714,6 +725,7 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     await user.click(screen.getByRole("checkbox", { name: "Desktop" }));
@@ -761,6 +773,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const trigger = screen.getByRole("button", { name: "Viewports" });
     // Default [] sentinel → classification platforms (desktop, mobile),
@@ -789,6 +802,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     expect(screen.getByText("1440×900")).toBeInTheDocument();
@@ -810,6 +824,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     // Portrait uses the configured size; landscape swaps it.
@@ -841,6 +856,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const select = screen.getByLabelText("Design style") as HTMLSelectElement;
     expect(select.options).toHaveLength(37); // sentinel + 36 styles
@@ -863,6 +879,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.selectOptions(screen.getByLabelText("Design style"), "cyberpunk");
     expect(useRunsStore.getState().composerDesignStyle).toBe("cyberpunk");
@@ -896,6 +913,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const trigger = screen.getByRole("button", { name: "Viewports" });
     expect(trigger).toHaveTextContent("Desktop");
@@ -920,6 +938,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     expect(screen.getByRole("checkbox", { name: "Tablet portrait" })).toBeDisabled();
@@ -930,6 +949,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     // Orientation is part of the viewport combos — no standalone selector.
     expect(screen.queryByLabelText("Orientation")).not.toBeInTheDocument();
@@ -955,6 +975,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     await user.click(screen.getByRole("checkbox", { name: "Mobile landscape" }));
@@ -982,6 +1003,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const fidelity = screen.getByLabelText("Fidelity") as HTMLSelectElement;
     const highOption = Array.from(fidelity.options).find((o) => o.value === "high")!;
@@ -1008,6 +1030,7 @@ describe("composer: user-flow unit forces single viewport and no variations", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.selectOptions(screen.getByLabelText("Variations"), "3");
     await user.selectOptions(screen.getByLabelText("Unit type"), "user-flow");
@@ -1024,6 +1047,7 @@ describe("composer: user-flow unit forces single viewport and no variations", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.selectOptions(screen.getByLabelText("Unit type"), "user-flow");
 
@@ -1043,6 +1067,7 @@ describe("composer: user-flow unit forces single viewport and no variations", ()
     await renderWithProviders(<Prompt bridge={bridge} bus={makeBus()} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     await user.click(screen.getByRole("button", { name: "Viewports" }));
     await user.click(screen.getByRole("checkbox", { name: "Tablet landscape" }));
@@ -1087,6 +1112,7 @@ describe("Footer hint line", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
+    await openConfig();
 
     const select = screen.getByRole("combobox", { name: "Unit type" });
     const labels = Array.from(select.querySelectorAll("option")).map(
@@ -1109,5 +1135,52 @@ describe("Footer hint line", () => {
       "Facebook Post",
       "X Post",
     ]);
+  });
+});
+
+// ─── Generate config column — hidden by default, revealed by the Config chip ──
+
+describe("Generate config column", () => {
+  it("hides all five config controls until the Config chip is clicked, then stacks them; clicking again hides", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    // Collapsed default: just the toggle chip alongside the prompt input.
+    expect(screen.queryByLabelText("Unit type")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Viewports" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Variations")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Fidelity")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Design style")).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole("button", { name: "Generate config" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("Unit type")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Viewports" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Variations")).toBeInTheDocument();
+    expect(screen.getByLabelText("Fidelity")).toBeInTheDocument();
+    expect(screen.getByLabelText("Design style")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(screen.queryByLabelText("Unit type")).not.toBeInTheDocument();
+  });
+
+  it("submit works without ever opening the config (defaults apply)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A pricing page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
   });
 });
