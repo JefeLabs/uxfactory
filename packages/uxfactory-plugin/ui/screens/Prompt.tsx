@@ -691,14 +691,13 @@ export function Prompt({
                 title="Generate config"
                 onClick={() => setConfigOpen((v) => !v)}
                 className={[
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] cursor-pointer transition-colors select-none self-start",
+                  "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none self-start",
                   configOpen
-                    ? "bg-primary-50 border-primary-600 text-primary-600 font-semibold"
-                    : "bg-white border-gray-300 text-gray-700 hover:border-gray-400",
+                    ? "bg-primary-50 border-primary-600 text-primary-600"
+                    : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
                 ].join(" ")}
               >
-                <SlidersHorizontal size={11} aria-hidden="true" />
-                Config
+                <SlidersHorizontal size={13} aria-hidden="true" />
               </button>
               {configOpen && (
                 <>
