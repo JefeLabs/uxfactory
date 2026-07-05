@@ -238,22 +238,37 @@ function ContextBar(): React.JSX.Element {
   pushDial("coverage", "Coverage", scopeRec["coverage"], engineToLabel.coverage);
   pushDial("coherence", "Coherence", experimentalRec["coherence"], engineToLabel.coherence);
 
-  // Collapsed default: a "Project config:" label + ONE chip carrying the
-  // total count. Expanding (+N or the chevron) reveals every chip, each
-  // editable inline. 1 = the always-present Style chip.
-  const totalChipCount =
-    1 +
-    [category, layout, industry, locale, ageGroup].filter(Boolean).length +
-    platforms.length +
-    dialChips.length;
-  const overflowCount = expanded ? 0 : totalChipCount;
-
   // Design style: a generative default with an explicit exploring state.
   const designStyle =
     typeof cls?.["designStyle"] === "string" ? (cls["designStyle"] as string) : "";
-  const styleChipLabel = designStyle
-    ? `Style: ${designStyleLabel(designStyle)}`
-    : "Style: exploring";
+
+  // One labelled chip per configured value, in the SAME order as project
+  // setup: step-1 classification facts, then step-2 generative defaults.
+  // Platforms fold into a single "Platform a|b" chip.
+  const configChips: { field: ChipField; label: string; value: string; selected: boolean }[] = [];
+  const pushChip = (field: ChipField, label: string, value: string | null) => {
+    if (value !== null && value !== "") configChips.push({ field, label, value, selected: true });
+  };
+  pushChip("category", "Category", category);
+  pushChip("industry", "Industry", industry);
+  pushChip("locale", "Locale", locale);
+  pushChip("platforms", "Platform", platforms.length > 0 ? platforms.join("|") : null);
+  pushChip("layout", "Layout", layout);
+  pushChip("ageGroup", "Age", ageGroup);
+  configChips.push({
+    field: "designStyle",
+    label: "Style",
+    value: designStyle ? designStyleLabel(designStyle) : "exploring",
+    selected: designStyle !== "",
+  });
+  for (const d of dialChips) {
+    configChips.push({ field: d.field, label: d.label, value: d.display, selected: true });
+  }
+
+  // Collapsed default: a "Project config:" label + ONE chip carrying the
+  // total count. Expanding (+N or the chevron) reveals every chip, each
+  // editable inline.
+  const overflowCount = expanded ? 0 : configChips.length;
 
   /** Toggle the under-bar editor for a chip, seeding the draft from live state. */
   function openChip(field: ChipField): void {
@@ -415,38 +430,18 @@ function ContextBar(): React.JSX.Element {
             Project config:
           </span>
           <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-            {expanded && (
-              <>
+            {expanded &&
+              configChips.map((c) => (
                 <Chip
+                  key={c.field}
                   size="sm"
-                  label={styleChipLabel}
-                  selected={designStyle !== ""}
-                  tone="default"
-                  onSelect={() => openChip("designStyle")}
+                  label={c.label}
+                  value={c.value}
+                  selected={c.selected}
+                  tone="dial"
+                  onSelect={() => openChip(c.field)}
                 />
-                {category !== null && (
-                  <Chip size="sm" label={category} selected tone="default" onSelect={() => openChip("category")} />
-                )}
-                {layout !== null && (
-                  <Chip size="sm" label={layout} selected tone="default" onSelect={() => openChip("layout")} />
-                )}
-                {industry !== null && (
-                  <Chip size="sm" label={industry} selected tone="default" onSelect={() => openChip("industry")} />
-                )}
-                {locale !== null && (
-                  <Chip size="sm" label={locale} selected tone="default" onSelect={() => openChip("locale")} />
-                )}
-                {ageGroup !== null && (
-                  <Chip size="sm" label={ageGroup} selected tone="default" onSelect={() => openChip("ageGroup")} />
-                )}
-                {platforms.map((p) => (
-                  <Chip key={`platform-${p}`} size="sm" label={p} selected tone="default" onSelect={() => openChip("platforms")} />
-                ))}
-                {dialChips.map((d) => (
-                  <Chip key={d.field} size="sm" label={d.label} value={d.display} selected tone="dial" onSelect={() => openChip(d.field)} />
-                ))}
-              </>
-            )}
+              ))}
             {overflowCount > 0 && (
               <Chip
                 size="sm"

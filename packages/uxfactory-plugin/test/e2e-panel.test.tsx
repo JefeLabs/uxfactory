@@ -201,8 +201,8 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
     // No individual chips while collapsed — everything folds into the count
     // (8 = style, category, layout, industry, locale, age, 2 platforms).
     expect(screen.queryByText("ecommerce")).not.toBeInTheDocument();
-    expect(screen.queryByText("Style: exploring")).not.toBeInTheDocument();
-    const overflow = screen.getByRole("checkbox", { name: "+8" });
+    expect(screen.queryByRole("checkbox", { name: "Style exploring" })).not.toBeInTheDocument();
+    const overflow = screen.getByRole("checkbox", { name: "+7" });
     expect(overflow.className).toContain("text-[11px]");
     // The chips bar (not the name row) hosts the expand control.
     expect(
@@ -215,14 +215,23 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
     await renderApp(demoBridge());
     expect(screen.queryByText("corporate")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("checkbox", { name: "+8" }));
+    await user.click(screen.getByRole("checkbox", { name: "+7" }));
 
-    expect(screen.getByText("Style: exploring")).toBeInTheDocument();
-    expect(screen.getByText("ecommerce")).toBeInTheDocument();
-    expect(screen.getByText("responsive")).toBeInTheDocument();
-    expect(screen.getByText("corporate")).toBeInTheDocument();
-    expect(screen.getByText("en-US")).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: "+8" })).not.toBeInTheDocument();
+    // Every chip carries its label, in the SAME order as project setup:
+    // step-1 facts first, then step-2 generative defaults.
+    const names = screen
+      .getAllByRole("checkbox")
+      .map((c) => c.getAttribute("aria-label") ?? c.textContent);
+    expect(names).toEqual([
+      "Category ecommerce",
+      "Industry corporate",
+      "Locale en-US",
+      "Platform desktop|mobile",
+      "Layout responsive",
+      "Age 18-39",
+      "Style exploring",
+    ]);
+    expect(screen.queryByRole("checkbox", { name: "+7" })).not.toBeInTheDocument();
   });
 });
 
@@ -253,7 +262,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     const user = userEvent.setup();
     await renderApp(demoBridge());
     await expandChips(user);
-    expect(screen.getByText("Style: exploring")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Style exploring" })).toBeInTheDocument();
   });
 
   it("shows the style label when a default is set", async () => {
@@ -265,7 +274,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     useAppStore.setState({ snapshot: withStyle as never });
     await renderApp(demoBridge(withStyle));
     await expandChips(user);
-    expect(screen.getByText("Style: Flat")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Style Flat" })).toBeInTheDocument();
   });
 
   it("clicking the chip deploys the editor under the bar; Save merges designStyle into classification", async () => {
@@ -274,7 +283,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     await renderApp(bridge);
 
     await expandChips(user);
-    await user.click(screen.getByText("Style: exploring"));
+    await user.click(screen.getByRole("checkbox", { name: "Style exploring" }));
     const select = screen.getByLabelText("Project design style") as HTMLSelectElement;
     expect(select.value).toBe(""); // exploring
     await user.selectOptions(select, "flat");
@@ -295,7 +304,9 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     await waitFor(() =>
       expect(screen.queryByLabelText("Project design style")).not.toBeInTheDocument(),
     );
-    await waitFor(() => expect(screen.getByText("Style: Flat")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: "Style Flat" })).toBeInTheDocument(),
+    );
   });
 
   it("switching back to exploring saves classification WITHOUT designStyle", async () => {
@@ -309,7 +320,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     await renderApp(bridge);
 
     await expandChips(user);
-    await user.click(screen.getByText("Style: Flat"));
+    await user.click(screen.getByRole("checkbox", { name: "Style Flat" }));
     await user.selectOptions(screen.getByLabelText("Project design style"), "");
     await user.click(screen.getByRole("button", { name: "Save style" }));
 
@@ -324,7 +335,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     await renderApp(bridge);
 
     await expandChips(user);
-    await user.click(screen.getByText("Style: exploring"));
+    await user.click(screen.getByRole("checkbox", { name: "Style exploring" }));
     await user.selectOptions(screen.getByLabelText("Project design style"), "bento");
     await user.click(screen.getByRole("button", { name: "Cancel style edit" }));
 
@@ -368,7 +379,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     // Collapsed default: the label + one total chip covering EVERYTHING
     // (14 = style + category + layout + industry + locale + age + 2 platforms + 6 dials).
     expect(screen.getByText("Project config:")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "+14" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "+13" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Tone Formal" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
 
@@ -378,6 +389,15 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     expect(screen.getByRole("checkbox", { name: "Flows Shallow" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Coverage Medium" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Coherence High" })).toBeInTheDocument();
+
+    // Full order mirrors project setup: step-1 facts, then step-2 defaults.
+    const prefixes = screen
+      .getAllByRole("checkbox")
+      .map((c) => (c.getAttribute("aria-label") ?? "").split(" ")[0]);
+    expect(prefixes).toEqual([
+      "Category", "Industry", "Locale", "Platform", "Layout", "Age",
+      "Style", "Tone", "Visual", "Editorial", "Flows", "Coverage", "Coherence",
+    ]);
   });
 
   it("clicking the category chip deploys its editor; Save merges into classification", async () => {
@@ -386,7 +406,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     await renderApp(bridge);
 
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
-    await user.click(screen.getByRole("checkbox", { name: "ecommerce" }));
+    await user.click(screen.getByRole("checkbox", { name: "Category ecommerce" }));
     const group = screen.getByRole("radiogroup", { name: "Category" });
     await user.click(within(group).getByRole("radio", { name: "Web App" }));
     await user.click(screen.getByRole("button", { name: "Save category" }));
@@ -433,7 +453,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     await renderApp(bridge);
 
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
-    await user.click(screen.getByRole("checkbox", { name: "desktop" }));
+    await user.click(screen.getByRole("checkbox", { name: "Platform desktop|mobile" }));
     const group = screen.getByRole("toolbar", { name: "Platforms" });
     await user.click(within(group).getByRole("button", { name: "Tablet" }));
     await user.click(screen.getByRole("button", { name: "Save platforms" }));
