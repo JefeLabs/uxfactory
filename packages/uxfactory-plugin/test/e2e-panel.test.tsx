@@ -414,6 +414,8 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     // …and the chip being edited gets the primary border.
     expect(catChip.className).toContain("border-primary-600");
     const group = screen.getByRole("radiogroup", { name: "Category" });
+    // Every chip editor carries help text explaining what the field drives.
+    expect(screen.getByText(/drives suggested styles/i)).toBeInTheDocument();
     await user.click(within(group).getByRole("radio", { name: "Web App" }));
     await user.click(screen.getByRole("button", { name: "Save category" }));
 
@@ -431,6 +433,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
 
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
     await user.click(screen.getByRole("checkbox", { name: "Tone Formal" }));
+    expect(screen.getByText(/voice of generated copy/i)).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "Informal" }));
     await user.click(screen.getByRole("button", { name: "Save tone" }));
 

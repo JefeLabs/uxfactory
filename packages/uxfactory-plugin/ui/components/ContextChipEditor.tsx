@@ -70,6 +70,27 @@ export const CHIP_FIELD_LABEL: Record<ChipField, string> = {
   coherence: "coherence",
 };
 
+/**
+ * Help text shown under each chip editor — what the field drives downstream.
+ * designStyle and layout are absent: their editors render value-dependent
+ * captions of their own (traits/exploring hint, layout captions). Visual and
+ * coverage copy reuses the SetupDefaults tooltip wording verbatim.
+ */
+const CHIP_FIELD_HELP: Partial<Record<ChipField, string>> = {
+  category: "What the product is — drives suggested styles and generation defaults.",
+  industry: "The domain served — informs style suggestions and copy tone.",
+  locale: "Primary language and region for generated copy.",
+  platforms: "Target devices — the default viewports for generated designs.",
+  ageGroup: "Primary audience — affects tone, density, and accessibility choices.",
+  tone: "Voice of generated copy — informal, mixed, or formal.",
+  visual: "Visual fidelity of generated designs. At Medium+, a11y/contrast/token checks bind.",
+  editorial: "How polished generated copy is — placeholder to publication-ready.",
+  flow: "How deep generated user flows go — happy path to edge cases.",
+  coverage:
+    "Floor for generation without specs — when requirements exist, they take precedence. Coverage ≥ Low → requirement coverage binds (T1).",
+  coherence: "Experimental — how strongly designs stay visually consistent with each other.",
+};
+
 const toSegmented = (map: Record<string, string>): SegmentedOption[] =>
   Object.entries(map).map(([label, value]) => ({ label, value }));
 
@@ -95,6 +116,22 @@ export function ContextChipEditor({
   onChange,
   suggestedStyle,
 }: ContextChipEditorProps): React.JSX.Element {
+  const control = renderControl(field, draft, onChange, suggestedStyle);
+  const help = CHIP_FIELD_HELP[field];
+  return (
+    <div className="space-y-1">
+      {control}
+      {help !== undefined && <p className="text-xs text-gray-500">{help}</p>}
+    </div>
+  );
+}
+
+function renderControl(
+  field: ChipField,
+  draft: string | string[],
+  onChange: (next: string | string[]) => void,
+  suggestedStyle?: string,
+): React.JSX.Element {
   switch (field) {
     case "designStyle":
       return (
