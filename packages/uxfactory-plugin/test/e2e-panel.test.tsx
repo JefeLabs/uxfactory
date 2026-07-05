@@ -406,7 +406,12 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     await renderApp(bridge);
 
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
-    await user.click(screen.getByRole("checkbox", { name: "Category ecommerce" }));
+    const catChip = screen.getByRole("checkbox", { name: "Category ecommerce" });
+    // Quiet by default: the outline matches the chip background…
+    expect(catChip.className).toContain("border-white");
+    await user.click(catChip);
+    // …and the chip being edited gets the primary border.
+    expect(catChip.className).toContain("border-primary-600");
     const group = screen.getByRole("radiogroup", { name: "Category" });
     await user.click(within(group).getByRole("radio", { name: "Web App" }));
     await user.click(screen.getByRole("button", { name: "Save category" }));

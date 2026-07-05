@@ -245,9 +245,9 @@ function ContextBar(): React.JSX.Element {
   // One labelled chip per configured value, in the SAME order as project
   // setup: step-1 classification facts, then step-2 generative defaults.
   // Platforms fold into a single "Platform a|b" chip.
-  const configChips: { field: ChipField; label: string; value: string; selected: boolean }[] = [];
+  const configChips: { field: ChipField; label: string; value: string }[] = [];
   const pushChip = (field: ChipField, label: string, value: string | null) => {
-    if (value !== null && value !== "") configChips.push({ field, label, value, selected: true });
+    if (value !== null && value !== "") configChips.push({ field, label, value });
   };
   pushChip("category", "Category", category);
   pushChip("industry", "Industry", industry);
@@ -259,10 +259,9 @@ function ContextBar(): React.JSX.Element {
     field: "designStyle",
     label: "Style",
     value: designStyle ? designStyleLabel(designStyle) : "exploring",
-    selected: designStyle !== "",
   });
   for (const d of dialChips) {
-    configChips.push({ field: d.field, label: d.label, value: d.display, selected: true });
+    configChips.push({ field: d.field, label: d.label, value: d.display });
   }
 
   // Collapsed default: a "Project config:" label + ONE chip carrying the
@@ -437,7 +436,8 @@ function ContextBar(): React.JSX.Element {
                   size="sm"
                   label={c.label}
                   value={c.value}
-                  selected={c.selected}
+                  // Selection = this chip's editor is open (primary border).
+                  selected={editing === c.field}
                   tone="dial"
                   onSelect={() => openChip(c.field)}
                 />

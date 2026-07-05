@@ -19,16 +19,19 @@ export function Chip({
   size = "md",
 }: ChipProps) {
   const sizing = size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-sm";
-  const base = `inline-flex items-center ${sizing} rounded-full border cursor-pointer transition-colors select-none`;
+  // Dial chips always keep a gap between the label and value spans.
+  const base = `inline-flex items-center ${sizing} rounded-full border cursor-pointer transition-colors select-none${
+    tone === "dial" ? " gap-1" : ""
+  }`;
 
   const selectedStyle =
     "bg-primary-50 border-primary-600 text-primary-600 font-semibold";
 
-  // "dial" chips have a lighter border to distinguish them from plain filter chips.
-  // Their label prefix is rendered muted and the value part semibold (see tone branch below).
+  // "dial" chips are quiet by default: the outline matches the chip background
+  // (selection brings the primary border). Label muted, value semibold.
   const unselectedStyle =
     tone === "dial"
-      ? "bg-white border-gray-200 text-gray-600 hover:border-gray-300 gap-1"
+      ? "bg-white border-white text-gray-600 hover:border-gray-300"
       : "bg-white border-gray-300 text-gray-700 hover:border-gray-400";
 
   return (
