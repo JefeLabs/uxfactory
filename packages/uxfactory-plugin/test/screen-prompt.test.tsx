@@ -863,6 +863,20 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     // No project default exists — the sentinel says so instead of implying one.
     expect(select.options[0]!.textContent).toBe("Exploring");
     expect(select.value).toBe("");
+    // Same grouped droplist as the ContextBar style editor: 6 categories.
+    const groups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.label);
+    expect(groups).toEqual([
+      "Core styles",
+      "Core digital paradigms",
+      "Modern & dimensional",
+      "Nostalgic & retro",
+      "Artistic & cultural",
+      "Thematic & niche",
+    ]);
+    // ecommerce → Flat carries the suggestion marker here too.
+    expect(
+      Array.from(select.options).some((o) => /^Flat \(suggested\)$/.test(o.textContent ?? "")),
+    ).toBe(true);
 
     // Default submits WITHOUT a designStyle key (legacy wire).
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A page");
@@ -895,6 +909,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     expect(select.value).toBe("");
     const labels = Array.from(select.options).map((o) => o.textContent);
     expect(labels).not.toContain("Exploring");
+    expect(select.querySelectorAll("optgroup")).toHaveLength(6);
   });
 
   it("a picked style overrides the project default on the wire", async () => {

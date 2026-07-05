@@ -31,7 +31,12 @@ import type { Bridge, BridgeEvent } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../stores/runs.js";
-import { DESIGN_STYLES, designStyleLabel } from "../lib/design-styles.js";
+import {
+  DESIGN_STYLES,
+  DESIGN_STYLE_GROUPS,
+  designStyleLabel,
+  suggestDesignStyle,
+} from "../lib/design-styles.js";
 import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
@@ -170,19 +175,29 @@ const FIDELITY_OPTIONS: { label: string; value: string }[] = [
 
 // Per-request design-style override; "" follows the project's classification.
 /**
- * Composer style options. The "" sentinel means "no per-request override" —
- * its label depends on the project: with a designStyle default it reads
+ * Composer style sentinel. "" means "no per-request override" — its label
+ * depends on the project: with a designStyle default it reads
  * "Project default — <Label>"; while exploring (no default) it reads
  * "Exploring", because there is no default to fall back to and the sentinel
  * IS the exploring state. "Exploring" is never offered once a default exists.
  */
-function styleSelectOptions(projectStyle: string): { label: string; value: string }[] {
-  return [
-    projectStyle !== ""
-      ? { label: `Project default — ${designStyleLabel(projectStyle)}`, value: "" }
-      : { label: "Exploring", value: "" },
-    ...DESIGN_STYLES.map((s) => ({ label: s.label, value: s.value })),
-  ];
+function styleSentinelOption(projectStyle: string): { label: string; value: string } {
+  return projectStyle !== ""
+    ? { label: `Project default — ${designStyleLabel(projectStyle)}`, value: "" }
+    : { label: "Exploring", value: "" };
+}
+
+/** The 36 styles in the SAME category groups the ContextBar editor shows. */
+function styleOptionGroups(
+  suggested: string,
+): { label: string; options: { label: string; value: string }[] }[] {
+  return DESIGN_STYLE_GROUPS.map((group) => ({
+    label: group.label,
+    options: DESIGN_STYLES.filter((s) => s.group === group.id).map((s) => ({
+      label: s.value === suggested ? `${s.label} (suggested)` : s.label,
+      value: s.value,
+    })),
+  }));
 }
 
 /** Map a raw worker status string to the RunStatus vocabulary. */
@@ -201,6 +216,7 @@ function ChipSelect({
   value,
   onChange,
   options,
+  groups,
   ariaLabel,
   disabled = false,
   fullWidth = false,
@@ -208,6 +224,8 @@ function ChipSelect({
   value: string;
   onChange: (v: string) => void;
   options: { label: string; value: string; disabled?: boolean }[];
+  /** Optional <optgroup> sections rendered after the flat options. */
+  groups?: { label: string; options: { label: string; value: string; disabled?: boolean }[] }[];
   ariaLabel: string;
   disabled?: boolean;
   /** Stretch to the container width — the stacked config column aligns on it. */
@@ -232,6 +250,15 @@ function ChipSelect({
           <option key={opt.value} value={opt.value} disabled={opt.disabled}>
             {opt.label}
           </option>
+        ))}
+        {groups?.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((opt) => (
+              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                {opt.label}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       <ChevronDown
@@ -471,6 +498,14 @@ export function Prompt({
     typeof snapshotClassification?.["designStyle"] === "string"
       ? (snapshotClassification["designStyle"] as string)
       : "";
+  const suggestedDesignStyle = suggestDesignStyle(
+    typeof snapshotClassification?.["category"] === "string"
+      ? (snapshotClassification["category"] as string)
+      : "",
+    typeof snapshotClassification?.["industry"] === "string"
+      ? (snapshotClassification["industry"] as string)
+      : "",
+  );
   const deviceConfig = useRunsStore((s) => s.deviceConfig);
   const setComposerState = useRunsStore((s) => s.setComposerState);
 
@@ -737,7 +772,8 @@ export function Prompt({
                   <ChipSelect
                     value={composerDesignStyle}
                     onChange={(v) => setComposerState({ composerDesignStyle: v })}
-                    options={styleSelectOptions(projectDesignStyle)}
+                    options={[styleSentinelOption(projectDesignStyle)]}
+                    groups={styleOptionGroups(suggestedDesignStyle)}
                     ariaLabel="Design style"
                     fullWidth
                   />
