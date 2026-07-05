@@ -905,7 +905,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
 
     const select = screen.getByLabelText("Design style") as HTMLSelectElement;
     expect(select.options).toHaveLength(37); // sentinel + 36 styles
-    expect(select.options[0]!.textContent).toBe("Project default — Flat");
+    expect(select.options[0]!.textContent).toBe("Default — Flat");
     expect(select.value).toBe("");
     const labels = Array.from(select.options).map((o) => o.textContent);
     expect(labels).not.toContain("Exploring");
@@ -1231,10 +1231,28 @@ describe("Generate config column", () => {
       screen.getByLabelText("Design style"),
     ];
     for (const control of controls) {
-      expect(control.className).toContain("w-full");
+      // Selects live inside a pill wrapper that carries the shared sizing.
+      const pill = control.tagName === "SELECT" ? control.parentElement! : control;
+      expect(pill.className).toContain("w-full");
       // Compact sizing — matches the ContextBar's sm project-config chips.
-      expect(control.className).toContain("text-[11px]");
+      expect(pill.className).toContain("text-[11px]");
     }
+  });
+
+  it("each droplist shows its type label next to the selection", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+
+    for (const label of ["Type", "Viewports", "Variations", "Fidelity", "Style"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // Variations shows just the count next to its label.
+    const variations = screen.getByLabelText("Variations") as HTMLSelectElement;
+    expect(Array.from(variations.options).map((o) => o.textContent)).toEqual(["1", "2", "3"]);
   });
 
   it("submit works without ever opening the config (defaults apply)", async () => {

@@ -160,10 +160,11 @@ function normalizeViewport(token: string): string {
   return token;
 }
 
+// Count only — the pill's "Variations" type label carries the meaning.
 const VARIATION_OPTIONS: { label: string; value: string }[] = [
-  { label: "1 variation", value: "1" },
-  { label: "2 variations", value: "2" },
-  { label: "3 variations", value: "3" },
+  { label: "1", value: "1" },
+  { label: "2", value: "2" },
+  { label: "3", value: "3" },
 ];
 
 // Design-language labels over engine dial values (low/medium/high on the wire).
@@ -183,7 +184,7 @@ const FIDELITY_OPTIONS: { label: string; value: string }[] = [
  */
 function styleSentinelOption(projectStyle: string): { label: string; value: string } {
   return projectStyle !== ""
-    ? { label: `Project default — ${designStyleLabel(projectStyle)}`, value: "" }
+    ? { label: `Default — ${designStyleLabel(projectStyle)}`, value: "" }
     : { label: "Exploring", value: "" };
 }
 
@@ -221,6 +222,7 @@ function ChipSelect({
   disabled = false,
   fullWidth = false,
   size = "md",
+  label,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -233,21 +235,34 @@ function ChipSelect({
   fullWidth?: boolean;
   /** "sm" matches the ContextBar's compact project-config chips. */
   size?: "md" | "sm";
+  /** Muted type label rendered inside the pill, left of the selection. */
+  label?: string;
 }) {
   return (
-    <div className={`relative inline-flex items-center ${fullWidth ? "w-full" : ""}`}>
+    <div
+      className={[
+        fullWidth ? "w-full" : "",
+        "relative inline-flex items-center bg-white border border-gray-300 rounded-full",
+        size === "sm" ? "px-2 py-0.5 gap-1 text-[11px]" : "px-3 py-1 gap-1.5 text-sm",
+        disabled ? "opacity-60" : "",
+        "focus-within:ring-2 focus-within:ring-primary-600",
+      ].join(" ")}
+    >
+      {label !== undefined && (
+        <span className="text-gray-400 shrink-0 select-none" aria-hidden="true">
+          {label}
+        </span>
+      )}
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={ariaLabel}
         disabled={disabled}
         className={[
-          fullWidth ? "w-full" : "",
-          "appearance-none bg-white border border-gray-300 rounded-full",
-          size === "sm" ? "px-2 py-0.5 pr-6 text-[11px]" : "px-3 py-1 pr-7 text-sm",
-          "text-gray-700 cursor-pointer",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
-          "disabled:opacity-60 disabled:cursor-not-allowed",
+          "appearance-none bg-transparent flex-1 min-w-0",
+          size === "sm" ? "pr-4" : "pr-5",
+          "text-gray-700 cursor-pointer focus:outline-none",
+          "disabled:cursor-not-allowed",
         ].join(" ")}
       >
         {options.map((opt) => (
@@ -268,7 +283,7 @@ function ChipSelect({
       <ChevronDown
         size={12}
         aria-hidden="true"
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
       />
     </div>
   );
@@ -286,6 +301,7 @@ function ViewportMultiSelect({
   onToggle,
   fullWidth = false,
   size = "md",
+  label,
 }: {
   options: ViewportOption[];
   selected: string[];
@@ -295,6 +311,8 @@ function ViewportMultiSelect({
   fullWidth?: boolean;
   /** "sm" matches the ContextBar's compact project-config chips. */
   size?: "md" | "sm";
+  /** Muted type label rendered inside the pill, left of the icons. */
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selectedOptions = options.filter((o) => selected.includes(o.value));
@@ -315,6 +333,11 @@ function ViewportMultiSelect({
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
         ].join(" ")}
       >
+        {label !== undefined && (
+          <span className="text-gray-400 shrink-0 select-none" aria-hidden="true">
+            {label}
+          </span>
+        )}
         {selectedOptions.length > 0 ? (
           <span className="flex items-center gap-1" aria-hidden="true">
             {selectedOptions.map((o) => (
@@ -782,6 +805,7 @@ export function Prompt({
                   onChange={handleUnitTypeChange}
                   options={UNIT_OPTIONS}
                   ariaLabel="Unit type"
+                  label="Type"
                   fullWidth
                   size="sm"
                 />
@@ -790,6 +814,7 @@ export function Prompt({
                   selected={selectedViewports}
                   single={isUserFlow}
                   onToggle={handleViewportToggle}
+                  label="Viewports"
                   fullWidth
                   size="sm"
                 />
@@ -798,6 +823,7 @@ export function Prompt({
                   onChange={handleVariationsChange}
                   options={VARIATION_OPTIONS}
                   ariaLabel="Variations"
+                  label="Variations"
                   disabled={isUserFlow}
                   fullWidth
                   size="sm"
@@ -811,6 +837,7 @@ export function Prompt({
                       : o,
                   )}
                   ariaLabel="Fidelity"
+                  label="Fidelity"
                   fullWidth
                   size="sm"
                 />
@@ -820,6 +847,7 @@ export function Prompt({
                   options={[styleSentinelOption(projectDesignStyle)]}
                   groups={styleOptionGroups(suggestedDesignStyle)}
                   ariaLabel="Design style"
+                  label="Style"
                   fullWidth
                   size="sm"
                 />
