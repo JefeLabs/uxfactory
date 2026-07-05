@@ -24,7 +24,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
+import { ArrowUp, ChevronDown, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
@@ -734,7 +734,8 @@ export function Prompt({
                 className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
               />
               {/* Config toggle INSIDE the input area — the droplists deploy
-                  outside the card so the textarea never resizes. */}
+                  outside the card so the textarea never resizes. Sized
+                  identically to the submit button (w-8 h-8, 14px icon). */}
               <button
                 type="button"
                 aria-label="Generate config"
@@ -742,13 +743,13 @@ export function Prompt({
                 title="Generate config"
                 onClick={() => setConfigOpen((v) => !v)}
                 className={[
-                  "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none shrink-0",
+                  "flex items-center justify-center w-8 h-8 rounded-full border cursor-pointer transition-colors select-none shrink-0",
                   configOpen
                     ? "bg-primary-50 border-primary-600 text-primary-600"
                     : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
                 ].join(" ")}
               >
-                <SlidersHorizontal size={13} aria-hidden="true" />
+                <SlidersHorizontal size={14} aria-hidden="true" />
               </button>
             </div>
 
@@ -761,13 +762,13 @@ export function Prompt({
                 aria-label="Generate design"
                 aria-busy={isSubmitting}
                 className={[
-                  "flex items-center justify-center w-9 h-9 rounded-full text-lg font-bold shrink-0 transition-colors",
+                  "flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-colors",
                   promptText.trim() && !isSubmitting
                     ? "bg-primary-600 text-white hover:bg-primary-700"
                     : "bg-primary-300 text-white cursor-not-allowed",
                 ].join(" ")}
               >
-                ↑
+                <ArrowUp size={14} strokeWidth={2.5} aria-hidden="true" />
               </button>
             </div>
           </div>
