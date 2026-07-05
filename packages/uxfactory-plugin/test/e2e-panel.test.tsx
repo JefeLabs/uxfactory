@@ -195,30 +195,34 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
     expect(screen.getByText("/home/user/demo-shop")).toBeInTheDocument();
   });
 
-  it("renders compact (sm) chips in their own bar below the name", async () => {
+  it("collapsed bar shows the Project-wide config label + one total-count chip", async () => {
     await renderApp(demoBridge());
-    const chip = screen.getByText("ecommerce").closest("button");
-    expect(chip?.className).toContain("text-[11px]");
+    expect(screen.getByText("Project-wide config:")).toBeInTheDocument();
+    // No individual chips while collapsed — everything folds into the count
+    // (8 = style, category, layout, industry, locale, age, 2 platforms).
+    expect(screen.queryByText("ecommerce")).not.toBeInTheDocument();
+    expect(screen.queryByText("Style: exploring")).not.toBeInTheDocument();
+    const overflow = screen.getByRole("checkbox", { name: "+8" });
+    expect(overflow.className).toContain("text-[11px]");
     // The chips bar (not the name row) hosts the expand control.
     expect(
       screen.getByRole("button", { name: /Expand project details/i }),
     ).toBeInTheDocument();
   });
 
-  it("collapsed bar shows primary chips + overflow count; +N click expands", async () => {
+  it("+N click reveals every chip", async () => {
     const user = userEvent.setup();
     await renderApp(demoBridge());
+    expect(screen.queryByText("corporate")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "+8" }));
+
+    expect(screen.getByText("Style: exploring")).toBeInTheDocument();
     expect(screen.getByText("ecommerce")).toBeInTheDocument();
     expect(screen.getByText("responsive")).toBeInTheDocument();
-    // Secondary chips hidden while collapsed (5 = industry, locale, age, 2 platforms)
-    expect(screen.queryByText("corporate")).not.toBeInTheDocument();
-    const overflow = screen.getByRole("checkbox", { name: "+5" });
-
-    await user.click(overflow);
-
     expect(screen.getByText("corporate")).toBeInTheDocument();
     expect(screen.getByText("en-US")).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: "+5" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "+8" })).not.toBeInTheDocument();
   });
 });
 
@@ -240,18 +244,27 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     });
   });
 
+  /** Chips fold into the +N count by default — reveal them first. */
+  async function expandChips(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+  }
+
   it("shows 'Style: exploring' when the project has no design-style default", async () => {
+    const user = userEvent.setup();
     await renderApp(demoBridge());
+    await expandChips(user);
     expect(screen.getByText("Style: exploring")).toBeInTheDocument();
   });
 
   it("shows the style label when a default is set", async () => {
+    const user = userEvent.setup();
     const withStyle = {
       ...DEMO_SNAPSHOT,
       classification: { ...DEMO_SNAPSHOT.classification, designStyle: "flat" },
     };
     useAppStore.setState({ snapshot: withStyle as never });
     await renderApp(demoBridge(withStyle));
+    await expandChips(user);
     expect(screen.getByText("Style: Flat")).toBeInTheDocument();
   });
 
@@ -260,6 +273,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     const bridge = demoBridge();
     await renderApp(bridge);
 
+    await expandChips(user);
     await user.click(screen.getByText("Style: exploring"));
     const select = screen.getByLabelText("Project design style") as HTMLSelectElement;
     expect(select.value).toBe(""); // exploring
@@ -294,6 +308,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     const bridge = demoBridge(withStyle);
     await renderApp(bridge);
 
+    await expandChips(user);
     await user.click(screen.getByText("Style: Flat"));
     await user.selectOptions(screen.getByLabelText("Project design style"), "");
     await user.click(screen.getByRole("button", { name: "Save style" }));
@@ -308,6 +323,7 @@ describe("E2E: design-style chip in the ContextBar opens an inline editor below 
     const bridge = demoBridge();
     await renderApp(bridge);
 
+    await expandChips(user);
     await user.click(screen.getByText("Style: exploring"));
     await user.selectOptions(screen.getByLabelText("Project design style"), "bento");
     await user.click(screen.getByRole("button", { name: "Cancel style edit" }));
@@ -349,7 +365,10 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     const user = userEvent.setup();
     await renderApp(fullBridge());
 
-    // Dials are secondary chips — hidden while collapsed.
+    // Collapsed default: the label + one total chip covering EVERYTHING
+    // (14 = style + category + layout + industry + locale + age + 2 platforms + 6 dials).
+    expect(screen.getByText("Project-wide config:")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "+14" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Tone Formal" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
 
@@ -366,6 +385,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     const bridge = fullBridge();
     await renderApp(bridge);
 
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
     await user.click(screen.getByRole("checkbox", { name: "ecommerce" }));
     const group = screen.getByRole("radiogroup", { name: "Category" });
     await user.click(within(group).getByRole("radio", { name: "Web App" }));

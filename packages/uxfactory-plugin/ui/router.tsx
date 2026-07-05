@@ -238,11 +238,15 @@ function ContextBar(): React.JSX.Element {
   pushDial("coverage", "Coverage", scopeRec["coverage"], engineToLabel.coverage);
   pushDial("coherence", "Coherence", experimentalRec["coherence"], engineToLabel.coherence);
 
-  const secondaryCount =
-    [industry, locale, ageGroup].filter(Boolean).length +
+  // Collapsed default: a "Project-wide config:" label + ONE chip carrying the
+  // total count. Expanding (+N or the chevron) reveals every chip, each
+  // editable inline. 1 = the always-present Style chip.
+  const totalChipCount =
+    1 +
+    [category, layout, industry, locale, ageGroup].filter(Boolean).length +
     platforms.length +
     dialChips.length;
-  const overflowCount = expanded ? 0 : secondaryCount;
+  const overflowCount = expanded ? 0 : totalChipCount;
 
   // Design style: a generative default with an explicit exploring state.
   const designStyle =
@@ -404,25 +408,28 @@ function ContextBar(): React.JSX.Element {
         </button>
       </div>
 
-      {/* Chips bar — every chip is clickable and edits inline under the bar */}
+      {/* Chips bar — collapsed to a label + total count; expanded chips edit inline */}
       {cls !== null && (
         <div className="flex items-start gap-1 px-3 pb-1.5">
+          <span className="text-[11px] text-gray-400 shrink-0 leading-5 select-none">
+            Project-wide config:
+          </span>
           <div className="flex flex-wrap gap-1 flex-1 min-w-0">
-            <Chip
-              size="sm"
-              label={styleChipLabel}
-              selected={designStyle !== ""}
-              tone="default"
-              onSelect={() => openChip("designStyle")}
-            />
-            {category !== null && (
-              <Chip size="sm" label={category} selected tone="default" onSelect={() => openChip("category")} />
-            )}
-            {layout !== null && (
-              <Chip size="sm" label={layout} selected tone="default" onSelect={() => openChip("layout")} />
-            )}
             {expanded && (
               <>
+                <Chip
+                  size="sm"
+                  label={styleChipLabel}
+                  selected={designStyle !== ""}
+                  tone="default"
+                  onSelect={() => openChip("designStyle")}
+                />
+                {category !== null && (
+                  <Chip size="sm" label={category} selected tone="default" onSelect={() => openChip("category")} />
+                )}
+                {layout !== null && (
+                  <Chip size="sm" label={layout} selected tone="default" onSelect={() => openChip("layout")} />
+                )}
                 {industry !== null && (
                   <Chip size="sm" label={industry} selected tone="default" onSelect={() => openChip("industry")} />
                 )}
