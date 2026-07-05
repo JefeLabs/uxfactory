@@ -250,6 +250,16 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
       if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
       const job = (await relay.store.listQueue()).find((j) => j.jobId === req.params.id);
       if (job === undefined) return reply.code(404).send({ error: "unknown jobId" });
+      // A publish-time snapshot is authoritative — the shared previews dir is
+      // overwritten by later runs, so name resolution can alias across runs.
+      try {
+        const snapshot = await readFile(
+          path.join(relay.store.dataDir, "queue", "previews", `${job.jobId}.png`),
+        );
+        return reply.type("image/png").send(snapshot);
+      } catch {
+        // no snapshot — fall back to name-based resolution below
+      }
       const frame = (job.spec as { frames?: Array<{ name?: unknown }> }).frames?.[0];
       const name = typeof frame?.name === "string" ? frame.name : null;
       if (name === null) return reply.code(404).send({ error: "no preview" });

@@ -3,7 +3,7 @@
  * emit the extracted semantic DesignSpec, self-gated by @uxfactory/spec validate().
  * Deterministic, LLM-free; the renderer is injectable for tests (SP3b §8).
  */
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { validate } from "@uxfactory/spec";
 import type { DesignSpec, Frame, FrameChild, ComponentInstanceNode } from "@uxfactory/spec";
@@ -119,6 +119,11 @@ export async function extractCmd(
 
   const outDir = path.join(flags.dataDir, "batch", "designspec");
   await mkdir(outDir, { recursive: true });
+  // Clear stale specs from previous runs — the landing step publishes EVERY
+  // *.designspec.json in this directory, so leftovers would reach the canvas.
+  for (const entry of await readdir(outDir)) {
+    if (entry.endsWith(".designspec.json")) await unlink(path.join(outDir, entry));
+  }
   const files: string[] = [];
   const combinedPath = path.join(outDir, "design.designspec.json");
   await writeFile(combinedPath, JSON.stringify(finalSpec, null, 2), "utf8");

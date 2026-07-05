@@ -111,11 +111,18 @@ export function checkGeometry(spec: Spec, report: RenderReport, tolerancePx: num
   for (const child of collectChildren(spec)) {
     const node = findNode(report, { name: child.name });
     if (!node) continue; // presence handles missing nodes
-    compareGeo(failures, node, "x", child.x, node.x, tolerancePx);
-    compareGeo(failures, node, "y", child.y, node.y, tolerancePx);
-    if (child.width !== undefined)
+    // Auto-layout awareness: Figma re-flows positions of auto-layout children
+    // and re-computes fill/hug axes, so the spec's static pixels are not the
+    // source of truth there — comparing them would fail correct renders.
+    if (child.inAutoLayout !== true) {
+      compareGeo(failures, node, "x", child.x, node.x, tolerancePx);
+      compareGeo(failures, node, "y", child.y, node.y, tolerancePx);
+    }
+    const h = child.sizing?.horizontal;
+    if (child.width !== undefined && h !== "fill" && h !== "hug")
       compareGeo(failures, node, "width", child.width, node.w, tolerancePx);
-    if (child.height !== undefined)
+    const v = child.sizing?.vertical;
+    if (child.height !== undefined && v !== "fill" && v !== "hug")
       compareGeo(failures, node, "height", child.height, node.h, tolerancePx);
   }
   return failures.length === 0

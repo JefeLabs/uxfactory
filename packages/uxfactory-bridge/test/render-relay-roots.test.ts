@@ -196,6 +196,30 @@ describe("approval queue: /queue list + approve/discard + preview", () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it("serves the per-job preview snapshot when present — no cross-run aliasing", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    await seed.enqueue(
+      { editor: "figma", frames: [{ name: "screens/home.html/success@desktop", x: 0, y: 0, width: 10, height: 10, children: [] }] },
+      "job_snap",
+    );
+    // The name-resolved preview belongs to a NEWER run (aliasing hazard)…
+    const previewDir = path.join(rootB, ".uxfactory", "batch", "previews", "desktop");
+    await mkdir(previewDir, { recursive: true });
+    await writeFile(path.join(previewDir, "home-success.png"), "NEWER-RUN");
+    // …but the job carries its own snapshot taken at publish time.
+    const snapDir = path.join(rootB, ".uxfactory", "queue", "previews");
+    await mkdir(snapDir, { recursive: true });
+    await writeFile(path.join(snapDir, "job_snap.png"), "PUBLISH-TIME");
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/queue/job_snap/preview?root=${encodeURIComponent(rootB)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload.toString()).toBe("PUBLISH-TIME");
+  });
+
   it("traversal-safe: a crafted frame name cannot read outside the previews dir", async () => {
     const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
     await seed.init();

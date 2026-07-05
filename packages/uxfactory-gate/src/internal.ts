@@ -20,6 +20,10 @@ export function expectedEditor(spec: Spec): Editor | undefined {
 
 /** A child node flattened out of a frame/section, with the geometry the spec declares. */
 export interface SpecChild {
+  /** Parent container declares auto-layout — Figma computes this child's position. */
+  inAutoLayout?: boolean;
+  /** The child's own declared sizing; fill/hug axes are re-computed by Figma. */
+  sizing?: { horizontal?: string; vertical?: string };
   name: string;
   x: number;
   y: number;
@@ -28,14 +32,24 @@ export interface SpecChild {
 }
 
 /** Internal structural shape for recursive child walking (keeps the package decoupled from spec internals). */
-type AnyChild = { name: string; x: number; y: number; width?: number; height?: number; type?: string; children?: AnyChild[] };
+type AnyChild = {
+  name: string; x: number; y: number; width?: number; height?: number; type?: string;
+  children?: AnyChild[]; layout?: unknown;
+  sizing?: { horizontal?: string; vertical?: string };
+};
 
 /** Recursively push each child into `out`. Nested frames (no `type`) are pushed AND recursed;
  *  typed leaves (component-instance, shape, text, etc.) are pushed but NOT recursed. */
-function walkChildren(children: AnyChild[], out: SpecChild[]): void {
+function walkChildren(children: AnyChild[], out: SpecChild[], inAutoLayout: boolean): void {
   for (const child of children) {
-    out.push({ name: child.name, x: child.x, y: child.y, width: child.width, height: child.height });
-    if (child.type === undefined && Array.isArray(child.children)) walkChildren(child.children, out);
+    out.push({
+      name: child.name, x: child.x, y: child.y, width: child.width, height: child.height,
+      ...(inAutoLayout ? { inAutoLayout } : {}),
+      ...(child.sizing !== undefined ? { sizing: child.sizing } : {}),
+    });
+    if (child.type === undefined && Array.isArray(child.children)) {
+      walkChildren(child.children, out, child.layout !== undefined);
+    }
   }
 }
 
@@ -43,12 +57,12 @@ function walkChildren(children: AnyChild[], out: SpecChild[]): void {
 export function collectChildren(spec: Spec): SpecChild[] {
   const children: SpecChild[] = [];
   const containers = hasFrames(spec)
-    ? (spec as { frames: { children?: AnyChild[] }[] }).frames
+    ? (spec as { frames: { children?: AnyChild[]; layout?: unknown }[] }).frames
     : hasSections(spec)
-      ? (spec as { sections: { children?: AnyChild[] }[] }).sections
+      ? (spec as { sections: { children?: AnyChild[]; layout?: unknown }[] }).sections
       : [];
   for (const container of containers) {
-    walkChildren(container.children ?? [], children);
+    walkChildren(container.children ?? [], children, container.layout !== undefined);
   }
   return children;
 }

@@ -155,6 +155,64 @@ describe("checkGeometry", () => {
       checkGeometry({ edits: [{ id: "1", set: { x: 1 } }] }, baseReport(), 0.5).check.status,
     ).toBe("SKIP");
   });
+
+  // ── Auto-layout awareness — Figma re-flows these; the spec's pixels are stale ──
+
+  it("skips x/y for children of auto-layout containers (Figma positions them)", () => {
+    const spec = {
+      editor: "figma",
+      frames: [{
+        name: "col", x: 0, y: 0, width: 200, height: 400,
+        layout: { mode: "vertical", gap: 16 },
+        children: [
+          { type: "shape", name: "card", x: 10, y: 20, width: 30, height: 40, fill: "#1E88E5" },
+        ],
+      }],
+    };
+    // Rendered position drifted far beyond tolerance — but the parent is
+    // auto-layout, so the drift is Figma's re-flow, not a defect.
+    const report = baseReport({
+      nodes: [{ id: "1:2", name: "card", type: "shape", x: 84, y: 300, w: 30, h: 40 }],
+    });
+    expect(checkGeometry(spec, report, 0.5).check.status).toBe("PASS");
+  });
+
+  it("skips width/height on axes the child declares as fill/hug", () => {
+    const spec = {
+      editor: "figma",
+      frames: [{
+        name: "col", x: 0, y: 0, width: 200, height: 400,
+        layout: { mode: "vertical" },
+        children: [
+          { name: "row", x: 0, y: 0, width: 100, height: 40,
+            layout: { mode: "horizontal" }, sizing: { horizontal: "fill", vertical: "hug" }, children: [] },
+        ],
+      }],
+    };
+    // FILL stretched the width, HUG recomputed the height — both are expected.
+    const report = baseReport({
+      nodes: [{ id: "1:3", name: "row", type: "FRAME", x: 0, y: 0, w: 200, h: 220 }],
+    });
+    expect(checkGeometry(spec, report, 0.5).check.status).toBe("PASS");
+  });
+
+  it("still fails geometry inside plain (non-auto-layout) containers", () => {
+    const spec = {
+      editor: "figma",
+      frames: [{
+        name: "plain", x: 0, y: 0, width: 200, height: 400,
+        children: [
+          { type: "shape", name: "box", x: 10, y: 20, width: 30, height: 40, fill: "#1E88E5" },
+        ],
+      }],
+    };
+    const report = baseReport({
+      nodes: [{ id: "1:2", name: "box", type: "shape", x: 99, y: 20, w: 30, h: 40 }],
+    });
+    const out = checkGeometry(spec, report, 0.5);
+    expect(out.check.status).toBe("FAIL");
+    expect(out.failures[0]).toMatchObject({ property: "x", expected: 10, actual: 99 });
+  });
 });
 
 describe("checkEdits", () => {

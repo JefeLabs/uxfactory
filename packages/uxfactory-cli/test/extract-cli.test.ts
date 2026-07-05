@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { extractCmd } from "../src/commands/extract.js";
@@ -178,5 +178,28 @@ describe("extractCmd — registry viewports", () => {
     );
     // Per-view specs keep the offset so published frames land side by side.
     expect(mob.frames[0].x).toBe(1540);
+  });
+});
+
+describe("extractCmd — stale output cleanup", () => {
+  it("clears leftover *.designspec.json from previous runs before writing", async () => {
+    const outDir = path.join(root, ".uxfactory/batch/designspec");
+    await mkdir(outDir, { recursive: true });
+    // A stale per-view spec from an earlier run (e.g. a different viewport set).
+    await writeFile(path.join(outDir, "old-view@mobile.designspec.json"), "{}");
+
+    const io = makeIO();
+    const code = await extractCmd(
+      "design",
+      { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root },
+      io,
+      { renderViews: async () => [snap("success")] },
+    );
+    expect(code).toBe(EXIT.OK);
+
+    const files = await readdir(outDir);
+    expect(files).not.toContain("old-view@mobile.designspec.json");
+    expect(files).toContain("design.designspec.json");
+    expect(files).toContain("checkout-success.designspec.json");
   });
 });
