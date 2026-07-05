@@ -1197,6 +1197,11 @@ describe("Generate config column", () => {
 
     const toggle = screen.getByRole("button", { name: "Generate config" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // Config column sits on the RIGHT of the prompt input (textarea first in DOM).
+    const textarea = screen.getByRole("textbox", { name: "Prompt" });
+    expect(
+      textarea.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     await user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");

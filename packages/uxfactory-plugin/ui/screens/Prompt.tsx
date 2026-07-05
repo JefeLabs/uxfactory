@@ -332,12 +332,17 @@ function ViewportMultiSelect({
         />
       </button>
       {/* Opens DOWNWARD: the composer sits at the top of the scroll area, so an
-          upward popup clips its first rows against the scroll container edge. */}
+          upward popup clips its first rows against the scroll container edge.
+          fullWidth = the right-edge config column: anchor right so the popup
+          (wider than the column) grows leftward instead of off-panel. */}
       {open && (
         <div
           role="group"
           aria-label="Viewport options"
-          className="absolute top-full left-0 mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-col gap-1"
+          className={[
+            "absolute top-full mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-col gap-1",
+            fullWidth ? "right-0" : "left-0",
+          ].join(" ")}
         >
           {options.map((o) => {
             const checked = selected.includes(o.value);
@@ -710,9 +715,18 @@ export function Prompt({
         {/* ── Composer card (indigo outline) ─────────────────────────────── */}
         <div className="bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
           <div className="flex items-start gap-2">
+            <textarea
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              placeholder={COMPOSER_PLACEHOLDER}
+              rows={configOpen ? 8 : 4}
+              aria-label="Prompt"
+              className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
+            />
+
             {/* Config column — a chip aligned with the placeholder; clicking
-                it stacks the five generate configs vertically on the left,
-                all sharing the column's width. */}
+                it stacks the five generate configs vertically on the RIGHT of
+                the input, all sharing the column's width. */}
             <div
               className={[
                 "flex flex-col gap-1.5 shrink-0",
@@ -726,7 +740,7 @@ export function Prompt({
                 title="Generate config"
                 onClick={() => setConfigOpen((v) => !v)}
                 className={[
-                  "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none self-start",
+                  "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none self-end",
                   configOpen
                     ? "bg-primary-50 border-primary-600 text-primary-600"
                     : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
@@ -780,15 +794,6 @@ export function Prompt({
                 </>
               )}
             </div>
-
-            <textarea
-              value={promptText}
-              onChange={(e) => setPromptText(e.target.value)}
-              placeholder={COMPOSER_PLACEHOLDER}
-              rows={configOpen ? 8 : 4}
-              aria-label="Prompt"
-              className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
-            />
           </div>
 
           <div className="flex items-center justify-end">
