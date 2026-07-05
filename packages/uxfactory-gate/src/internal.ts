@@ -39,7 +39,10 @@ type AnyChild = {
 };
 
 /** Recursively push each child into `out`. Nested frames (no `type`) are pushed AND recursed;
- *  typed leaves (component-instance, shape, text, etc.) are pushed but NOT recursed. */
+ *  typed leaves (component-instance, shape, text, etc.) are pushed but NOT recursed.
+ *  `inAutoLayout` propagates down the WHOLE subtree: once any ancestor is
+ *  auto-layout, Figma's re-flow (hug/fill/stacking) cascades through every
+ *  descendant, so none of the subtree's spec pixels remain authoritative. */
 function walkChildren(children: AnyChild[], out: SpecChild[], inAutoLayout: boolean): void {
   for (const child of children) {
     out.push({
@@ -48,7 +51,7 @@ function walkChildren(children: AnyChild[], out: SpecChild[], inAutoLayout: bool
       ...(child.sizing !== undefined ? { sizing: child.sizing } : {}),
     });
     if (child.type === undefined && Array.isArray(child.children)) {
-      walkChildren(child.children, out, child.layout !== undefined);
+      walkChildren(child.children, out, inAutoLayout || child.layout !== undefined);
     }
   }
 }

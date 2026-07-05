@@ -196,6 +196,31 @@ describe("checkGeometry", () => {
     expect(checkGeometry(spec, report, 0.5).check.status).toBe("PASS");
   });
 
+  it("auto-layout re-flow cascades: geometry skips for the WHOLE subtree", () => {
+    const spec = {
+      editor: "figma",
+      frames: [{
+        name: "page", x: 0, y: 0, width: 1440, height: 2000,
+        layout: { mode: "vertical" },
+        children: [
+          // Plain (non-layout) container nested INSIDE the auto-layout page:
+          // its own hug/stretch re-flow shifts everything beneath it.
+          { name: "band", x: 0, y: 0, width: 1280, height: 400,
+            children: [
+              { type: "shape", name: "chip", x: 40, y: 60, width: 200, height: 50, fill: "#1E88E5" },
+            ] },
+        ],
+      }],
+    };
+    const report = baseReport({
+      nodes: [
+        { id: "1:2", name: "band", type: "FRAME", x: 0, y: 0, w: 579, h: 400 },
+        { id: "1:3", name: "chip", type: "shape", x: 12, y: 300, w: 200, h: 50 },
+      ],
+    });
+    expect(checkGeometry(spec, report, 0.5).check.status).toBe("PASS");
+  });
+
   it("still fails geometry inside plain (non-auto-layout) containers", () => {
     const spec = {
       editor: "figma",
