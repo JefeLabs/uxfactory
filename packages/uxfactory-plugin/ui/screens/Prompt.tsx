@@ -712,17 +712,36 @@ export function Prompt({
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4">
 
-        {/* ── Composer row: card (indigo outline) + config column OUTSIDE it ── */}
+        {/* ── Composer row: card (indigo outline) + config droplists OUTSIDE ── */}
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0 bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
-            <textarea
-              value={promptText}
-              onChange={(e) => setPromptText(e.target.value)}
-              placeholder={COMPOSER_PLACEHOLDER}
-              rows={configOpen ? 8 : 4}
-              aria-label="Prompt"
-              className="w-full text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
-            />
+            <div className="flex items-start gap-2">
+              <textarea
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+                placeholder={COMPOSER_PLACEHOLDER}
+                rows={4}
+                aria-label="Prompt"
+                className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
+              />
+              {/* Config toggle INSIDE the input area — the droplists deploy
+                  outside the card so the textarea never resizes. */}
+              <button
+                type="button"
+                aria-label="Generate config"
+                aria-expanded={configOpen}
+                title="Generate config"
+                onClick={() => setConfigOpen((v) => !v)}
+                className={[
+                  "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none shrink-0",
+                  configOpen
+                    ? "bg-primary-50 border-primary-600 text-primary-600"
+                    : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
+                ].join(" ")}
+              >
+                <SlidersHorizontal size={13} aria-hidden="true" />
+              </button>
+            </div>
 
             <div className="flex items-center justify-end">
               {/* Circular submit button (↑) */}
@@ -744,30 +763,9 @@ export function Prompt({
             </div>
           </div>
 
-          {/* Config column — a chip beside the input; clicking it stacks the
-              five generate configs vertically outside the card's right edge. */}
-          <div
-            className={[
-              "flex flex-col gap-1.5 shrink-0",
-              configOpen ? "w-40 items-stretch" : "items-start",
-            ].join(" ")}
-          >
-            <button
-              type="button"
-              aria-label="Generate config"
-              aria-expanded={configOpen}
-              title="Generate config"
-              onClick={() => setConfigOpen((v) => !v)}
-              className={[
-                "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none self-end",
-                configOpen
-                  ? "bg-primary-50 border-primary-600 text-primary-600"
-                  : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
-              ].join(" ")}
-            >
-              <SlidersHorizontal size={13} aria-hidden="true" />
-            </button>
-            {configOpen && (
+          {/* Config droplists — deployed beside the card only while open. */}
+          {configOpen && (
+            <div className="w-40 flex flex-col gap-1.5 items-stretch shrink-0">
               <>
                 <ChipSelect
                   value={composerUnitType}
@@ -811,8 +809,8 @@ export function Prompt({
                   fullWidth
                 />
               </>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* ── GROUNDED IN chips ─────────────────────────────────────────── */}
