@@ -712,107 +712,106 @@ export function Prompt({
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4">
 
-        {/* ── Composer card (indigo outline) ─────────────────────────────── */}
-        <div className="bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
-          <div className="flex items-start gap-2">
+        {/* ── Composer row: card (indigo outline) + config column OUTSIDE it ── */}
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0 bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
             <textarea
               value={promptText}
               onChange={(e) => setPromptText(e.target.value)}
               placeholder={COMPOSER_PLACEHOLDER}
               rows={configOpen ? 8 : 4}
               aria-label="Prompt"
-              className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
+              className="w-full text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
             />
 
-            {/* Config column — a chip aligned with the placeholder; clicking
-                it stacks the five generate configs vertically on the RIGHT of
-                the input, all sharing the column's width. */}
-            <div
-              className={[
-                "flex flex-col gap-1.5 shrink-0",
-                configOpen ? "w-40 items-stretch" : "items-start",
-              ].join(" ")}
-            >
+            <div className="flex items-center justify-end">
+              {/* Circular submit button (↑) */}
               <button
                 type="button"
-                aria-label="Generate config"
-                aria-expanded={configOpen}
-                title="Generate config"
-                onClick={() => setConfigOpen((v) => !v)}
+                onClick={() => void handleSubmit()}
+                disabled={!promptText.trim() || isSubmitting}
+                aria-label="Generate design"
+                aria-busy={isSubmitting}
                 className={[
-                  "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none self-end",
-                  configOpen
-                    ? "bg-primary-50 border-primary-600 text-primary-600"
-                    : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
+                  "flex items-center justify-center w-9 h-9 rounded-full text-lg font-bold shrink-0 transition-colors",
+                  promptText.trim() && !isSubmitting
+                    ? "bg-primary-600 text-white hover:bg-primary-700"
+                    : "bg-primary-300 text-white cursor-not-allowed",
                 ].join(" ")}
               >
-                <SlidersHorizontal size={13} aria-hidden="true" />
+                ↑
               </button>
-              {configOpen && (
-                <>
-                  <ChipSelect
-                    value={composerUnitType}
-                    onChange={handleUnitTypeChange}
-                    options={UNIT_OPTIONS}
-                    ariaLabel="Unit type"
-                    fullWidth
-                  />
-                  <ViewportMultiSelect
-                    options={viewportOptionsFor(deviceConfig)}
-                    selected={selectedViewports}
-                    single={isUserFlow}
-                    onToggle={handleViewportToggle}
-                    fullWidth
-                  />
-                  <ChipSelect
-                    value={String(composerVariations)}
-                    onChange={handleVariationsChange}
-                    options={VARIATION_OPTIONS}
-                    ariaLabel="Variations"
-                    disabled={isUserFlow}
-                    fullWidth
-                  />
-                  <ChipSelect
-                    value={composerFidelity}
-                    onChange={(v) => setComposerState({ composerFidelity: v })}
-                    options={FIDELITY_OPTIONS.map((o) =>
-                      o.value === "high" && composerVariations > 1
-                        ? { ...o, disabled: true }
-                        : o,
-                    )}
-                    ariaLabel="Fidelity"
-                    fullWidth
-                  />
-                  <ChipSelect
-                    value={composerDesignStyle}
-                    onChange={(v) => setComposerState({ composerDesignStyle: v })}
-                    options={[styleSentinelOption(projectDesignStyle)]}
-                    groups={styleOptionGroups(suggestedDesignStyle)}
-                    ariaLabel="Design style"
-                    fullWidth
-                  />
-                </>
-              )}
             </div>
           </div>
 
-          <div className="flex items-center justify-end">
-            {/* Circular submit button (↑) */}
+          {/* Config column — a chip beside the input; clicking it stacks the
+              five generate configs vertically outside the card's right edge. */}
+          <div
+            className={[
+              "flex flex-col gap-1.5 shrink-0",
+              configOpen ? "w-40 items-stretch" : "items-start",
+            ].join(" ")}
+          >
             <button
               type="button"
-              onClick={() => void handleSubmit()}
-              disabled={!promptText.trim() || isSubmitting}
-              aria-label="Generate design"
-              aria-busy={isSubmitting}
+              aria-label="Generate config"
+              aria-expanded={configOpen}
+              title="Generate config"
+              onClick={() => setConfigOpen((v) => !v)}
               className={[
-                "flex items-center justify-center w-9 h-9 rounded-full text-lg font-bold shrink-0 transition-colors",
-                promptText.trim() && !isSubmitting
-                  ? "bg-primary-600 text-white hover:bg-primary-700"
-                  : "bg-primary-300 text-white cursor-not-allowed",
+                "inline-flex items-center justify-center p-1.5 rounded-full border cursor-pointer transition-colors select-none self-end",
+                configOpen
+                  ? "bg-primary-50 border-primary-600 text-primary-600"
+                  : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
               ].join(" ")}
             >
-              ↑
+              <SlidersHorizontal size={13} aria-hidden="true" />
             </button>
+            {configOpen && (
+              <>
+                <ChipSelect
+                  value={composerUnitType}
+                  onChange={handleUnitTypeChange}
+                  options={UNIT_OPTIONS}
+                  ariaLabel="Unit type"
+                  fullWidth
+                />
+                <ViewportMultiSelect
+                  options={viewportOptionsFor(deviceConfig)}
+                  selected={selectedViewports}
+                  single={isUserFlow}
+                  onToggle={handleViewportToggle}
+                  fullWidth
+                />
+                <ChipSelect
+                  value={String(composerVariations)}
+                  onChange={handleVariationsChange}
+                  options={VARIATION_OPTIONS}
+                  ariaLabel="Variations"
+                  disabled={isUserFlow}
+                  fullWidth
+                />
+                <ChipSelect
+                  value={composerFidelity}
+                  onChange={(v) => setComposerState({ composerFidelity: v })}
+                  options={FIDELITY_OPTIONS.map((o) =>
+                    o.value === "high" && composerVariations > 1
+                      ? { ...o, disabled: true }
+                      : o,
+                  )}
+                  ariaLabel="Fidelity"
+                  fullWidth
+                />
+                <ChipSelect
+                  value={composerDesignStyle}
+                  onChange={(v) => setComposerState({ composerDesignStyle: v })}
+                  options={[styleSentinelOption(projectDesignStyle)]}
+                  groups={styleOptionGroups(suggestedDesignStyle)}
+                  ariaLabel="Design style"
+                  fullWidth
+                />
+              </>
+            )}
           </div>
         </div>
 
