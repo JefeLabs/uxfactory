@@ -370,7 +370,7 @@ function ContextBar(): React.JSX.Element {
   return (
     <div className="bg-white border-b border-gray-200 shrink-0">
       {/* Project name bar — file name leads; repo path is a subtext + hover detail */}
-      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+      <div className="flex items-center gap-2 px-3 pt-2 pb-2.5">
         <div
           className="flex-1 min-w-0"
           title={connection.repoPath !== "" ? connection.repoPath : undefined}
@@ -424,7 +424,7 @@ function ContextBar(): React.JSX.Element {
 
       {/* Chips bar — collapsed to a label + total count; expanded chips edit inline */}
       {cls !== null && (
-        <div className="flex items-start gap-1 px-3 pb-1.5">
+        <div className="flex items-start gap-1 px-3 pb-3">
           <span className="text-[11px] text-gray-400 shrink-0 leading-5 select-none">
             Project config:
           </span>
