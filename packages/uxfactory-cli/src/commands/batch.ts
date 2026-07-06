@@ -184,6 +184,7 @@ export async function batchCmd(
       specsDir, flags, io, reg.inputs, profileScope,
       reg.registry.scope, reg.registry.unit, reg.registry.viewports,
       reg.registry.designStyle, undefined, reg.registry.ungoverned,
+      reg.registry.storyRefs,
     );
   }
 
@@ -338,6 +339,7 @@ export async function batchCmd(
     reuseSpecs,
     flow: flowData,
     features,
+    ...(reg.registry.storyRefs !== undefined ? { storyRefs: reg.registry.storyRefs } : {}),
     scope,
   });
 

@@ -58,6 +58,12 @@ export interface EnsureBatchRegistryOptions {
    * Same set-or-clear semantics as `unit`.
    */
   ungoverned?: boolean | undefined;
+  /**
+   * Story-scoped contract for THIS run: the unit is accountable to exactly
+   * these stories. Set-or-clear like `unit` — omitting the key leaves the
+   * prior value; undefined clears it.
+   */
+  storyRefs?: string[] | undefined;
 }
 
 /** Conventional generation paths — keep in sync with generative.ts TARGET_MAP. */
@@ -161,6 +167,13 @@ export async function ensureBatchRegistry(
   if ('ungoverned' in options) {
     if (options.ungoverned === true) registry['ungoverned'] = true;
     else delete registry['ungoverned'];
+  }
+  if ('storyRefs' in options) {
+    if (options.storyRefs !== undefined && options.storyRefs.length > 0) {
+      registry['storyRefs'] = options.storyRefs;
+    } else {
+      delete registry['storyRefs'];
+    }
   }
 
   await writeFile(file, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');

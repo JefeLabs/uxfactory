@@ -1466,3 +1466,60 @@ describe("quadrant-aware grounding", () => {
     expect(screen.getByText(/5 required artifacts missing/)).toBeInTheDocument();
   });
 });
+
+// ─── Story-scoped generation contract ─────────────────────────────────────────
+
+describe("story scope picker", () => {
+  const TRACE = {
+    features: [],
+    unassigned: [
+      { storyId: "browse-faq", actor: "visitor", want: "read answers", status: "registered", coveredBy: [], acceptanceCriteria: [] },
+      { storyId: "contact-support", actor: "visitor", want: "reach support", status: "registered", coveredBy: [], acceptanceCriteria: [] },
+    ],
+  };
+
+  it("a strict subset rides the wire as storyRefs; the full set stays clean", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    (bridge as { trace?: unknown }).trace = vi.fn().mockResolvedValue(TRACE);
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+
+    // Both stories start checked (all = no contract).
+    const contact = await screen.findByLabelText("Scope to story contact-support");
+    await user.click(contact); // uncheck → scope to browse-faq only
+
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "FAQ page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    const body = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(body.payload["storyRefs"]).toEqual(["browse-faq"]);
+
+    // Re-check → back to the full set → the key must NOT ride.
+    await user.click(await screen.findByLabelText("Scope to story contact-support"));
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "FAQ again");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() =>
+      expect((bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2),
+    );
+    const second = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[1]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(second.payload).not.toHaveProperty("storyRefs");
+  });
+
+  it("hidden without trace data (bridges without the endpoint)", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+    expect(screen.queryByText(/Stories · all/)).not.toBeInTheDocument();
+  });
+});

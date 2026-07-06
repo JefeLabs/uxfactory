@@ -26,7 +26,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChevronDown, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
@@ -40,7 +40,7 @@ import {
 import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
-import { enqueueMutation } from "../queries.js";
+import { traceQuery, enqueueMutation } from "../queries.js";
 import {
   ARTIFACT_PREREQS,
   ARTIFACT_REGISTRY,
@@ -698,6 +698,28 @@ export function Prompt({
 
   // ── Derived: type-aware grounding chips from the component-type mapping ────
   const artifacts = Array.isArray(snapshotArtifacts) ? snapshotArtifacts : [];
+  // Story-scoped contract: null = all registered stories (no contract on the wire).
+  const traceResult = useQuery(traceQuery(bridge));
+  const storyOptions = React.useMemo(() => {
+    const data = traceResult.data;
+    if (data === undefined) return [] as Array<{ id: string; want: string }>;
+    const seen = new Set<string>();
+    const out: Array<{ id: string; want: string }> = [];
+    for (const s of [...data.features.flatMap((f) => f.stories), ...data.unassigned]) {
+      if (seen.has(s.storyId)) continue;
+      seen.add(s.storyId);
+      out.push({ id: s.storyId, want: s.want });
+    }
+    return out;
+  }, [traceResult.data]);
+  const [scopedStories, setScopedStories] = useState<string[] | null>(null);
+  const toggleStory = (id: string): void => {
+    setScopedStories((prev) => {
+      const base = prev ?? storyOptions.map((o) => o.id);
+      const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+      return next.length === storyOptions.length ? null : next;
+    });
+  };
   const projectQuadrant = normalizeQuadrant(snapshotClassification?.["quadrant"]);
   const groundingChips = groundingChipsFor(composerUnitType, artifacts, projectQuadrant);
   const missingBlocking = missingBlockingCount(composerUnitType, artifacts, projectQuadrant);
@@ -799,6 +821,9 @@ export function Prompt({
           ...(designStyle !== "" ? { designStyle } : {}),
           ...(isCustomDevices ? { viewportSizes } : {}),
           ...(ungoverned ? { ungoverned: true } : {}),
+          ...(scopedStories !== null && scopedStories.length > 0
+            ? { storyRefs: scopedStories }
+            : {}),
         },
       });
 
@@ -950,6 +975,38 @@ export function Prompt({
                   fullWidth
                   size="sm"
                 />
+                {storyOptions.length > 1 &&
+                  groundingChips.some((c) => c.key === "stories") && (
+                    <fieldset className="w-full border border-gray-200 rounded px-2 py-1.5">
+                      <legend className="text-[11px] text-gray-400 px-1">
+                        Stories{" "}
+                        {scopedStories === null
+                          ? "· all"
+                          : `· ${scopedStories.length} of ${storyOptions.length}`}
+                      </legend>
+                      <div className="flex flex-col gap-0.5">
+                        {storyOptions.map((o) => {
+                          const checked =
+                            scopedStories === null || scopedStories.includes(o.id);
+                          return (
+                            <label
+                              key={o.id}
+                              className="flex items-center gap-1.5 text-[11px] text-gray-700"
+                              title={o.want}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleStory(o.id)}
+                                aria-label={`Scope to story ${o.id}`}
+                              />
+                              <span className="truncate">{o.id}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  )}
                 <ChipSelect
                   value={String(composerVariations)}
                   onChange={handleVariationsChange}

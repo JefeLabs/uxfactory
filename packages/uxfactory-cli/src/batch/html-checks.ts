@@ -1,4 +1,4 @@
-import { featureCoverage } from "./checks.js";
+import { featureCoverage, scopeStories } from "./checks.js";
 import type { BatchFinding, CheckResult, ImpliedState, Severity, StorySet, TokenSet , FeatureSet, FeatureCoverage} from "./checks.js";
 import type { CapturedNode } from "../render/dom-capture.js";
 import { binds } from "./scope.js";
@@ -426,6 +426,8 @@ export interface RunHtmlBatchInput {
   ungoverned?: boolean;
   /** Feature groupings — Coverage metric denominator (decision 12). Never gates. */
   features?: FeatureSet | null;
+  /** Story-scoped contract: the unit is accountable to exactly these stories. */
+  storyRefs?: string[];
 }
 
 interface HtmlGateEntry {
@@ -480,6 +482,17 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
  */
 export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   const { scope, unit, designStyle } = input;
+
+  // Story-scoped contract: gate against EXACTLY the declared stories; a ref
+  // naming no registered story becomes a must finding on render-coverage.
+  let effective = input;
+  let unknownRefFindings: BatchFinding[] = [];
+  if (input.storyRefs !== undefined && input.stories !== null) {
+    const scoped = scopeStories(input.stories, input.storyRefs);
+    effective = { ...input, stories: scoped.scoped };
+    unknownRefFindings = scoped.unknownRefFindings;
+  }
+
   const checks: CheckResult[] = [];
   const rubric: string[] = [];
   for (const entry of HTML_GATE_ENTRIES) {
@@ -492,7 +505,12 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
     const doesBind = t !== undefined && (binds(t, scope) || forcedByA11ySpec) && predicateBinds;
     if (doesBind) {
       rubric.push(entry.id);
-      checks.push(entry.run(input));
+      const result = entry.run(effective);
+      if (entry.id === "render-coverage" && unknownRefFindings.length > 0) {
+        result.findings.push(...unknownRefFindings);
+        result.status = "fail";
+      }
+      checks.push(result);
     } else {
       checks.push({
         id: entry.id, status: "not-owed", severity: entry.severity, findings: [],
@@ -507,11 +525,17 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   // Coverage METRIC (decision 12) — derived from render-coverage findings
   // (story-id-prefixed refs); advisory metadata only, never gates.
   let metric: FeatureCoverage | undefined;
-  if (input.features != null && input.stories !== null) {
+  if (input.features != null && effective.stories !== null) {
+    const scopedIds = new Set(effective.stories.stories.map((s) => s.id));
+    // A scoped run can only attest features it actually rendered.
+    const attestable: FeatureSet =
+      input.storyRefs !== undefined
+        ? { features: input.features.features.filter((f) => f.storyRefs.every((r) => scopedIds.has(r))) }
+        : input.features;
     const coverage = checks.find((c) => c.id === "render-coverage");
     metric = featureCoverage(
-      input.features,
-      new Set(input.stories.stories.map((s) => s.id)),
+      attestable,
+      scopedIds,
       coverage?.status === "fail" ? coverage.findings : [],
     );
   }
@@ -522,6 +546,7 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
     ...(designStyle !== undefined ? { designStyle } : {}),
     ...(input.ungoverned === true ? { ungoverned: true as const } : {}),
     ...(metric !== undefined ? { featureCoverage: metric } : {}),
+    ...(input.storyRefs !== undefined ? { storyRefs: input.storyRefs } : {}),
     rubric,
     checks,
     mustPassFailed,

@@ -1064,7 +1064,7 @@ interface GenerativePlan {
 function planGenerative(
   req: PipelineRequest,
   ctx: DispatchCtx,
-  extras?: { designStyle?: string; ungoverned?: boolean },
+  extras?: { designStyle?: string; ungoverned?: boolean; storyRefs?: string[] },
 ): GenerativePlan {
   const p = asObject(req.payload);
 
@@ -1198,6 +1198,11 @@ function planGenerative(
       platforms.length > 0
         ? `Target platforms: ${platforms.join(', ')} — lay out and size every screen for these viewports. `
         : '';
+    const storyRefsNote =
+      extras?.storyRefs !== undefined && extras.storyRefs.length > 0
+        ? `STORY SCOPE: this unit implements EXACTLY these stories: ${extras.storyRefs.join(', ')}. ` +
+          'Cover each of them fully in trace.json; do not claim coverage for any other story. '
+        : '';
     const ungovernedNote =
       extras?.ungoverned === true
         ? 'NOTE: this is an UNGOVERNED DRAFT — required grounding artifacts are missing ' +
@@ -1211,6 +1216,7 @@ function planGenerative(
       scopeNote +
       styleNote +
       platformsNote +
+      storyRefsNote +
       ungovernedNote +
       'Author REAL, self-contained UI screens as `design/screens/<page>.html` files ' +
       '(inline <style> + <script>, no external assets) that cover the stories and ' +
@@ -1269,7 +1275,15 @@ export async function runGenerative(
     }
     const ungoverned =
       req.kind === 'generate-design' && asObject(req.payload)['ungoverned'] === true;
-    const plan = planGenerative(req, ctx, { designStyle, ungoverned });
+    const payloadRefs = asObject(req.payload)['storyRefs'];
+    const storyRefs =
+      req.kind === 'generate-design' &&
+      Array.isArray(payloadRefs) &&
+      payloadRefs.length > 0 &&
+      payloadRefs.every((r) => typeof r === 'string' && r !== '')
+        ? (payloadRefs as string[])
+        : undefined;
+    const plan = planGenerative(req, ctx, { designStyle, ungoverned, storyRefs });
 
     // Grant the headless skill the least tools it needs (shell uxfactory + write
     // files) inside the sandboxed project tree before invoking the adapter.
@@ -1299,6 +1313,9 @@ export async function runGenerative(
         // Escape-hatch provenance: the report records that this run generated
         // without its required grounding artifacts (cleared on governed runs).
         ungoverned: ungoverned ? true : undefined,
+        // Story-scoped contract: the gate holds this run to exactly these
+        // stories (cleared when the composer targets the full set).
+        storyRefs,
       });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
       await provisionCraftRubric(ctx.projectRoot, designStyle);

@@ -87,6 +87,12 @@ export interface BatchRegistry {
    * with required grounding artifacts missing. Reported, never gating.
    */
   ungoverned?: boolean;
+  /**
+   * Story-scoped generation contract (stamped by the worker from the
+   * composer): the unit is accountable to EXACTLY these stories — the
+   * coverage denominator scopes to them; an unknown ref is a must finding.
+   */
+  storyRefs?: string[];
 }
 
 /** Registry input paths resolved to absolute filesystem paths (null = not registered). */
@@ -160,6 +166,12 @@ export function validateRegistry(
   }
   if (raw["ungoverned"] !== undefined && raw["ungoverned"] !== true) {
     return { ok: false, message: "registry.ungoverned must be true when present" };
+  }
+  if (raw["storyRefs"] !== undefined) {
+    const refs = raw["storyRefs"];
+    if (!Array.isArray(refs) || refs.some((r) => typeof r !== "string" || r === "")) {
+      return { ok: false, message: "registry.storyRefs must be an array of non-empty story ids" };
+    }
   }
   if (raw["designStyle"] !== undefined) {
     const s = raw["designStyle"];

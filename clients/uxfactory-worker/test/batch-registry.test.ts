@@ -197,6 +197,34 @@ describe('canonical stories directory', () => {
   });
 });
 
+// ─── storyRefs stamp (story-scoped contract) ──────────────────────────────────
+
+describe('storyRefs stamp', () => {
+  it('stamps the declared refs and clears them on the next full-set run', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root, { storyRefs: ['browse-faq', 'contact-support'] });
+      expect((await readReg(root))['storyRefs']).toEqual(['browse-faq', 'contact-support']);
+
+      await ensureBatchRegistry(root, { storyRefs: undefined });
+      expect('storyRefs' in (await readReg(root))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('an empty array clears rather than stamping a vacuous contract', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root, { storyRefs: ['browse-faq'] });
+      await ensureBatchRegistry(root, { storyRefs: [] });
+      expect('storyRefs' in (await readReg(root))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 // ─── ungoverned stamp (escape-hatch provenance) ───────────────────────────────
 
 describe('ungoverned stamp', () => {

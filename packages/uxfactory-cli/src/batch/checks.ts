@@ -125,6 +125,28 @@ export function featureCoverage(
   };
 }
 
+/**
+ * Scope a story set to a declared storyRefs contract. Returns the scoped set
+ * plus a must finding per declared ref that names no registered story — a
+ * contract you cannot verify is a broken contract, loudly.
+ */
+export function scopeStories(
+  stories: StorySet,
+  storyRefs: string[],
+): { scoped: StorySet; unknownRefFindings: BatchFinding[] } {
+  const refs = new Set(storyRefs);
+  const known = new Set(stories.stories.map((s) => s.id));
+  return {
+    scoped: { stories: stories.stories.filter((s) => refs.has(s.id)) },
+    unknownRefFindings: storyRefs
+      .filter((r) => !known.has(r))
+      .map((r) => ({
+        detail: `declared story ref "${r}" is not a registered story`,
+        ref: r,
+      })),
+  };
+}
+
 /** flow.json (v1): an ordered sequence of node/frame names. */
 export interface Flow {
   steps: string[];

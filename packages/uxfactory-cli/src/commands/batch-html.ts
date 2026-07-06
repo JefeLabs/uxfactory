@@ -58,6 +58,7 @@ export async function batchHtmlMode(
   registryDesignStyle: string | undefined,
   deps?: HtmlRenderDeps,
   registryUngoverned?: boolean,
+  registryStoryRefs?: string[],
 ): Promise<number> {
   void specsDir; // HTML mode reads the screens dir from the registry, not the positional arg
 
@@ -160,6 +161,7 @@ export async function batchHtmlMode(
     snapshots,
     stories,
     features,
+    ...(registryStoryRefs !== undefined ? { storyRefs: registryStoryRefs } : {}),
     tokens,
     scope,
     ...(registryUnit !== undefined ? { unit: registryUnit } : {}),
