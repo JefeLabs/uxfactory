@@ -23,7 +23,7 @@
  * throws an infinite-update error.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ArrowUp, ChevronDown, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
@@ -617,6 +617,16 @@ export function Prompt({
   // controls as a column on the left inside the input area.
   const [configOpen, setConfigOpen] = useState(false);
 
+  // Autosize: the prompt grows with its content (4 rows is the floor) instead
+  // of scrolling inside a fixed box. height:auto first so shrinking works too.
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = promptRef.current;
+    if (el === null) return;
+    el.style.height = "auto";
+    if (el.scrollHeight > 0) el.style.height = `${el.scrollHeight}px`;
+  }, [promptText, configOpen]);
+
   // ── Derived: classification platforms ─────────────────────────────────────
   // Safe to derive here (not in a selector) — no new array literal in selectors.
   const classificationPlatforms: string[] = Array.isArray(
@@ -819,12 +829,13 @@ export function Prompt({
           <div className="flex-1 min-w-0 bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
             <div className="flex items-stretch gap-2 flex-1 min-h-0">
               <textarea
+                ref={promptRef}
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
                 placeholder={COMPOSER_PLACEHOLDER}
                 rows={4}
                 aria-label="Prompt"
-                className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none"
+                className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none overflow-hidden"
               />
               {/* Config toggle INSIDE the input area — the droplists deploy
                   outside the card so the textarea never resizes. Sized
