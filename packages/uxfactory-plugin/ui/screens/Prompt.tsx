@@ -41,6 +41,7 @@ import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { enqueueMutation } from "../queries.js";
+import { resolveRequirements } from "@uxfactory/spec";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ interface WorkerPayload {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const UNIT_OPTIONS: { label: string; value: string }[] = [
+export const UNIT_OPTIONS: { label: string; value: string }[] = [
   { label: "User Flow", value: "user-flow" },
   { label: "Home Page", value: "home-page" },
   { label: "Secondary Page", value: "secondary-page" },
@@ -80,24 +81,70 @@ const UNIT_OPTIONS: { label: string; value: string }[] = [
 ];
 
 /**
- * Artifact keys consumed during generation (grounding set).
- * Order matches the PRD chip row.
+ * Registry artifact IDs (component-type mapping) → the panel's snapshot
+ * artifact keys. Only registered artifacts have a panel key; planned IDs
+ * render as coming-soon chips and never resolve a status.
  */
-const GROUNDING_KEYS = [
-  "requirements",
-  "brand-colors",
-  "fonts",
-  "grid",
-  "icons",
-] as const;
-
-const GROUNDING_LABELS: Record<string, string> = {
-  "requirements": "Requirements",
-  "brand-colors": "Brand colors",
-  "fonts": "Font pairings",
-  "grid": "Grid & viewports",
-  "icons": "Icon set",
+const ARTIFACT_KEY_BY_ID: Record<string, string> = {
+  "product-brief": "brief",
+  "acceptance-criteria": "requirements",
+  "sitemap": "sitemap",
+  "flows": "flows",
+  "brand-colors": "brand-colors",
+  "palettes": "palettes",
+  "fonts": "fonts",
+  "grid": "grid",
+  "tokens": "tokens",
+  "icons": "icons",
+  "photography": "photography",
+  "illustrations": "illustrations",
 };
+
+/** One grounding chip, resolved from the mapping for the selected type. */
+interface GroundingChipModel {
+  key: string;
+  label: string;
+  level: "required" | "recommended" | "optional";
+  planned: boolean;
+  status: "up-to-date" | "draft" | "missing";
+}
+
+/**
+ * Resolve the selected type's artifact requirements into chip models.
+ * PRD §2 semantics: planned → disabled coming-soon (never blocks);
+ * optional → shown only when the artifact exists; n/a already dropped.
+ */
+function groundingChipsFor(
+  unitType: string,
+  artifacts: { key: string; status: string }[],
+): GroundingChipModel[] {
+  return resolveRequirements(unitType).flatMap((req) => {
+    if (req.status === "planned") {
+      if (req.level === "optional") return [];
+      return [{
+        key: req.artifactId, label: req.label, level: req.level,
+        planned: true, status: "missing" as const,
+      }];
+    }
+    const key = ARTIFACT_KEY_BY_ID[req.artifactId] ?? req.artifactId;
+    const status = (artifacts.find((a) => a.key === key)?.status ?? "missing") as
+      | "up-to-date" | "draft" | "missing";
+    if (req.level === "optional" && status === "missing") return [];
+    return [{ key, label: req.label, level: req.level, planned: false, status }];
+  });
+}
+
+/** Blocking requirements (required + registered) currently missing. */
+function missingBlockingCount(
+  unitType: string,
+  artifacts: { key: string; status: string }[],
+): number {
+  return resolveRequirements(unitType).filter((req) => {
+    if (!req.blocking) return false;
+    const key = ARTIFACT_KEY_BY_ID[req.artifactId] ?? req.artifactId;
+    return (artifacts.find((a) => a.key === key)?.status ?? "missing") === "missing";
+  }).length;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -417,13 +464,33 @@ function GroundingChip({
   label,
   artifactStatus,
   onClick,
+  level = "recommended",
+  planned = false,
 }: {
   label: string;
   artifactStatus: "up-to-date" | "draft" | "missing";
   onClick: () => void;
+  /** Requirement level from the component-type mapping. */
+  level?: "required" | "recommended" | "optional";
+  /** Planned registry artifacts render disabled — they cannot be created yet. */
+  planned?: boolean;
 }) {
   const base =
     "inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs cursor-pointer transition-colors select-none";
+
+  if (planned) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="Coming soon"
+        aria-label={`${label} — coming soon`}
+        className={`${base} bg-gray-50 border-dashed border-gray-300 text-gray-400 cursor-not-allowed`}
+      >
+        {label}
+      </button>
+    );
+  }
 
   if (artifactStatus === "up-to-date") {
     return (
@@ -448,6 +515,22 @@ function GroundingChip({
         className={`${base} bg-amber-50 border-amber-500 text-amber-700`}
       >
         <span aria-hidden="true">!</span>
+        {label}
+      </button>
+    );
+  }
+
+  // required + missing — the create/link affordance chip (PRD §2)
+  if (level === "required") {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title="Required — click to create"
+        aria-label={`${label} — required, missing`}
+        className={`${base} bg-white border-red-300 text-red-600 hover:border-red-400`}
+      >
+        <span aria-hidden="true">+</span>
         {label}
       </button>
     );
@@ -575,17 +658,13 @@ export function Prompt({
   // User-flow is a single journey: one viewport, no variations.
   const isUserFlow = composerUnitType === "user-flow";
 
-  // ── Derived: grounding chips from snapshot artifacts ───────────────────────
+  // ── Derived: type-aware grounding chips from the component-type mapping ────
   const artifacts = Array.isArray(snapshotArtifacts) ? snapshotArtifacts : [];
-  const groundingChips = GROUNDING_KEYS.map((key) => {
-    const artifact = artifacts.find((a) => a.key === key);
-    return {
-      key,
-      label: GROUNDING_LABELS[key] ?? key,
-      status: (artifact?.status ?? "missing") as "up-to-date" | "draft" | "missing",
-    };
-  });
-  const allMissing = groundingChips.every((c) => c.status === "missing");
+  const groundingChips = groundingChipsFor(composerUnitType, artifacts);
+  const missingBlocking = missingBlockingCount(composerUnitType, artifacts);
+  const allMissing = groundingChips
+    .filter((c) => !c.planned)
+    .every((c) => c.status === "missing");
 
   // ── SSE subscription — bridge events → run progress / completion ───────────
   useEffect(() => {
@@ -658,6 +737,13 @@ export function Prompt({
       viewportSizes.tablet !== sizeOf(DEFAULT_DEVICE_CONFIG.tablet) ||
       viewportSizes.mobile !== sizeOf(DEFAULT_DEVICE_CONFIG.mobile);
 
+    // Escape-hatch semantics (mapping decision 1): missing blocking artifacts
+    // never block submission, but the run is annotated as an ungoverned draft.
+    const submitArtifacts = Array.isArray(useAppStore.getState().snapshot?.artifacts)
+      ? useAppStore.getState().snapshot!.artifacts
+      : [];
+    const ungoverned = missingBlockingCount(unitType, submitArtifacts) > 0;
+
     setIsSubmitting(true);
     try {
       const { id } = await enqueue.mutateAsync({
@@ -670,6 +756,7 @@ export function Prompt({
           ...(fidelity !== "medium" ? { fidelity } : {}),
           ...(designStyle !== "" ? { designStyle } : {}),
           ...(isCustomDevices ? { viewportSizes } : {}),
+          ...(ungoverned ? { ungoverned: true } : {}),
         },
       });
 
@@ -856,21 +943,31 @@ export function Prompt({
           )}
         </div>
 
-        {/* ── GROUNDED IN chips ─────────────────────────────────────────── */}
+        {/* ── GROUNDED IN chips — resolved per selected type from the mapping ── */}
         <div>
           <SectionHeader>GROUNDED IN</SectionHeader>
           <div className="flex flex-wrap gap-2 px-3 pt-1 pb-2">
-            {groundingChips.map(({ key, label, status }) => (
+            {groundingChips.map(({ key, label, status, level, planned }) => (
               <GroundingChip
                 key={key}
                 label={label}
                 artifactStatus={status}
+                level={level}
+                planned={planned}
                 onClick={() => {
                   void navigate({ to: "/tabs/artifacts", search: { focus: key } });
                 }}
               />
             ))}
           </div>
+
+          {/* Missing blocking requirements → runs are annotated as ungoverned */}
+          {missingBlocking > 0 && (
+            <p className="px-3 pb-1 text-xs text-amber-700">
+              {missingBlocking} required artifact{missingBlocking === 1 ? "" : "s"} missing —
+              runs generate as ungoverned drafts.
+            </p>
+          )}
 
           {/* Empty-artifacts callout: all grounding chips hollow */}
           {allMissing && (

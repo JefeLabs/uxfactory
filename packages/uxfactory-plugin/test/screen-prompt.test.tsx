@@ -31,7 +31,8 @@ import type { Bridge, BridgeEvent, ProjectSnapshot } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../ui/stores/runs.js";
-import { Prompt } from "../ui/screens/Prompt.js";
+import { Prompt, UNIT_OPTIONS } from "../ui/screens/Prompt.js";
+import { COMPONENT_TYPE_MAPPING } from "@uxfactory/spec";
 import { renderWithProviders } from "./test-utils.js";
 
 // ─── Snapshot factory ─────────────────────────────────────────────────────────
@@ -179,6 +180,7 @@ describe("AC-1: submit enqueues exact payload, adds generating row, clears texta
         prompt: "An order-confirmation page with delivery tracking",
         unitType: "page",
         platforms: expect.arrayContaining(["desktop", "mobile"]),
+        ungoverned: true,
       },
     });
 
@@ -445,17 +447,19 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
     expect(screen.getByLabelText("Brand colors — draft")).toBeInTheDocument();
   });
 
-  it("missing artifact shows hollow gray chip with defaults tooltip", async () => {
-    // Default snapshot has no artifacts → all missing
+  it("missing REQUIRED artifact shows the distinct required-missing chip", async () => {
+    // Default snapshot has no artifacts → all missing. For the default "page"
+    // type, Requirements is a REQUIRED registered artifact.
     const { bridge } = makeBridge();
     const bus = makeBus();
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
 
-    // All grounding chips should be missing (hollow)
+    expect(screen.getByLabelText("Requirements — required, missing")).toBeInTheDocument();
+    // Recommended registered artifacts keep the soft missing treatment.
     expect(
-      screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
+      screen.getByLabelText("Tokens — missing, generation proceeds with defaults"),
     ).toBeInTheDocument();
   });
 
@@ -467,9 +471,7 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       initialEntries: ["/tabs/prompt"],
     });
 
-    await user.click(
-      screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
-    );
+    await user.click(screen.getByLabelText("Requirements — required, missing"));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/tabs/artifacts");
@@ -477,6 +479,110 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
     });
   });
 
+  it("planned artifacts render as disabled coming-soon chips", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    const stories = screen.getByLabelText("Stories — coming soon");
+    expect(stories).toBeDisabled();
+    expect(screen.getByLabelText("Typography — coming soon")).toBeDisabled();
+  });
+
+  it("chips are type-aware: the channel surface swaps the requirement set", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+
+    await user.selectOptions(screen.getByLabelText("Unit type"), "x-post");
+
+    // Channel types hinge on the creative brief, not ACs.
+    expect(screen.queryByLabelText(/Requirements —/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Creative brief — coming soon")).toBeDisabled();
+    expect(screen.getByLabelText("Brand colors — required, missing")).toBeInTheDocument();
+    // x-post requires no grid/icons.
+    expect(screen.queryByLabelText(/Grid —/)).not.toBeInTheDocument();
+  });
+
+  it("optional artifacts appear only when they exist", async () => {
+    // page → reference-set optional+planned: never shown. illustrations is not
+    // in page's requires at all; brand-usage optional on home-page only shows
+    // when registered — planned, so never. Assert the optional-planned drop:
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    expect(screen.queryByLabelText(/Reference set/)).not.toBeInTheDocument();
+  });
+
+  it("unit-type ids stay in sync with the spec mapping", () => {
+    expect(UNIT_OPTIONS.map((o) => o.value).sort()).toEqual(
+      Object.keys(COMPONENT_TYPE_MAPPING).sort(),
+    );
+  });
+});
+
+// ─── Ungoverned drafts: missing blocking requirements annotate the run ────────
+
+describe("ungoverned draft annotation", () => {
+  it("submitting with missing required artifacts adds ungoverned:true + a hint", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    expect(screen.getByText(/required artifacts? missing/i)).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    const body = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(body.payload["ungoverned"]).toBe(true);
+  });
+
+  it("with every blocking requirement satisfied the wire stays clean", async () => {
+    const satisfied = (key: string, group: string) => ({
+      key, group, label: key, status: "up-to-date" as const, meta: "", path: null,
+    });
+    useAppStore.setState({
+      ...BASE_APP_STATE,
+      snapshot: makeSnapshot({
+        artifacts: [
+          satisfied("requirements", "product"),
+          satisfied("brand-colors", "design"),
+          satisfied("fonts", "design"),
+          satisfied("grid", "design"),
+        ],
+      }),
+    });
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    expect(screen.queryByText(/required artifacts? missing/i)).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Prompt" }), "A page");
+    await user.click(screen.getByRole("button", { name: "Generate design" }));
+    await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
+    const body = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(body.payload).not.toHaveProperty("ungoverned");
+  });
 });
 
 // ─── AC-5: Empty-artifacts callout renders + generation still enqueues ────────
@@ -759,6 +865,7 @@ describe("platform sentinel: __all__ stores [] and expands at submit", () => {
         prompt: "All-platform run",
         unitType: "page",
         platforms: ["desktop", "mobile"],
+        ungoverned: true,
       },
     });
   });
@@ -846,6 +953,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
           tablet: "768x1024",
           mobile: "430x932",
         },
+        ungoverned: true,
       },
     });
   });
@@ -933,6 +1041,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
         unitType: "page",
         platforms: ["desktop", "mobile"],
         designStyle: "cyberpunk",
+        ungoverned: true,
       },
     });
   });
@@ -966,7 +1075,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
     await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-design",
-      payload: { prompt: "A pricing page", unitType: "page", platforms: ["desktop"] },
+      payload: { prompt: "A pricing page", unitType: "page", platforms: ["desktop"], ungoverned: true },
     });
   });
 
@@ -1032,6 +1141,7 @@ describe("composer: viewports, orientation, variations, fidelity", () => {
         platforms: ["desktop", "mobile-portrait", "mobile-landscape"],
         variations: 2,
         fidelity: "low",
+        ungoverned: true,
       },
     });
   });

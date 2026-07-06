@@ -1,0 +1,132 @@
+/**
+ * component-type-mapping.test.ts — the mapping is DATA with invariants.
+ *
+ * Source of truth: .plans/component-type-artifact-mapping.md §§1–5.
+ * Consistency tests encode the doc's schema invariants so mapping edits
+ * cannot silently drift; resolver tests pin the resolution order:
+ * base requires → quadrant overrides → n/a dropped → planned never blocks.
+ */
+import { describe, it, expect } from "vitest";
+import {
+  ARTIFACT_REGISTRY,
+  COMPONENT_TYPE_MAPPING,
+  QUADRANT_MODIFIERS,
+  resolveRequirements,
+} from "../src/component-type-mapping.js";
+
+const TYPE_IDS = Object.keys(COMPONENT_TYPE_MAPPING);
+
+describe("mapping consistency invariants", () => {
+  it("covers exactly the 15 composer unit types", () => {
+    expect(TYPE_IDS.sort()).toEqual(
+      [
+        "user-flow", "home-page", "secondary-page", "tertiary-page", "page",
+        "template", "organism", "molecule", "atom",
+        "email", "instagram-post", "instagram-story", "youtube-thumbnail",
+        "facebook-post", "x-post",
+      ].sort(),
+    );
+  });
+
+  it("every requires key and quadrant override targets a registry artifact", () => {
+    for (const [typeId, entry] of Object.entries(COMPONENT_TYPE_MAPPING)) {
+      for (const artifactId of Object.keys(entry.requires)) {
+        expect(ARTIFACT_REGISTRY[artifactId], `${typeId} → ${artifactId}`).toBeDefined();
+      }
+    }
+    for (const overrides of Object.values(QUADRANT_MODIFIERS)) {
+      for (const artifactId of Object.keys(overrides)) {
+        expect(ARTIFACT_REGISTRY[artifactId], `quadrant → ${artifactId}`).toBeDefined();
+      }
+    }
+  });
+
+  it("stories/acceptance-criteria lockstep: both listed at the same level, or neither", () => {
+    for (const [typeId, entry] of Object.entries(COMPONENT_TYPE_MAPPING)) {
+      const stories = entry.requires["stories"];
+      const acs = entry.requires["acceptance-criteria"];
+      expect(stories, `${typeId}: lockstep pair mismatch`).toBe(acs);
+    }
+  });
+
+  it("the resolver-consumed class never appears in a requires block", () => {
+    for (const entry of Object.values(COMPONENT_TYPE_MAPPING)) {
+      for (const id of ["features", "conformance-policy", "generation-config"]) {
+        expect(entry.requires[id]).toBeUndefined();
+      }
+    }
+  });
+
+  it("registry marks exactly the 12 shipped artifacts as registered", () => {
+    const registered = Object.entries(ARTIFACT_REGISTRY)
+      .filter(([, e]) => e.status === "registered")
+      .map(([id]) => id)
+      .sort();
+    expect(registered).toEqual(
+      [
+        "product-brief", "acceptance-criteria", "sitemap", "flows",
+        "brand-colors", "palettes", "fonts", "grid", "tokens",
+        "icons", "photography", "illustrations",
+      ].sort(),
+    );
+  });
+});
+
+describe("resolveRequirements", () => {
+  it("unknown type resolves to an empty list", () => {
+    expect(resolveRequirements("dashboard")).toEqual([]);
+  });
+
+  it("drops n/a and preserves the mapping's declaration order", () => {
+    const atom = resolveRequirements("atom");
+    expect(atom.map((r) => r.artifactId)).toEqual([
+      "brand-colors", "fonts", "typography", "tokens", "a11y-spec", "interaction-states",
+    ]);
+  });
+
+  it("required + registered blocks; required + planned never blocks", () => {
+    const home = resolveRequirements("home-page");
+    const sitemap = home.find((r) => r.artifactId === "sitemap")!;
+    expect(sitemap).toMatchObject({ level: "required", status: "registered", blocking: true });
+    const typography = home.find((r) => r.artifactId === "typography")!;
+    expect(typography).toMatchObject({ level: "required", status: "planned", blocking: false });
+  });
+
+  it("greenfield applies no relaxation", () => {
+    expect(resolveRequirements("home-page", "greenfield")).toEqual(
+      resolveRequirements("home-page"),
+    );
+  });
+
+  it("re-skin relaxes stories/ACs/sitemap to recommended and product-brief to optional", () => {
+    const home = resolveRequirements("home-page", "re-skin");
+    expect(home.find((r) => r.artifactId === "acceptance-criteria")).toMatchObject({
+      level: "recommended",
+      blocking: false,
+    });
+    expect(home.find((r) => r.artifactId === "sitemap")).toMatchObject({
+      level: "recommended",
+      blocking: false,
+    });
+    expect(home.find((r) => r.artifactId === "product-brief")).toMatchObject({
+      level: "optional",
+    });
+    // Overrides only touch listed artifacts — grid stays required + blocking.
+    expect(home.find((r) => r.artifactId === "grid")).toMatchObject({
+      level: "required",
+      blocking: true,
+    });
+  });
+
+  it("quadrant overrides never add artifacts a type does not require", () => {
+    // x-post requires no sitemap; re-skin's sitemap override must not create one.
+    const xpost = resolveRequirements("x-post", "re-skin");
+    expect(xpost.find((r) => r.artifactId === "sitemap")).toBeUndefined();
+  });
+
+  it("every resolved requirement carries a human label", () => {
+    for (const r of resolveRequirements("home-page")) {
+      expect(r.label.length).toBeGreaterThan(0);
+    }
+  });
+});
