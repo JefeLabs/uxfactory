@@ -166,7 +166,18 @@ function platformsLabel(platforms: string[]): string {
   return platforms.map(capitalize).join(" + ");
 }
 
-const COMPOSER_PLACEHOLDER = "Describe the component(s) to generate";
+/** Words that keep their brand casing when the unit label is lowercased. */
+const BRAND_WORDS = new Set(["YouTube", "Instagram", "Facebook", "X"]);
+
+/** "Describe the {componentType} to generate" — follows the active unit type. */
+function composerPlaceholder(unitType: string): string {
+  const label = UNIT_OPTIONS.find((o) => o.value === unitType)?.label ?? "component(s)";
+  const phrase = label
+    .split(" ")
+    .map((word) => (BRAND_WORDS.has(word) ? word : word.toLowerCase()))
+    .join(" ");
+  return `Describe the ${phrase} to generate`;
+}
 
 /**
  * Viewport = device × orientation, one flat pick-list. Dimensions come from the
@@ -864,7 +875,7 @@ export function Prompt({
                 ref={promptRef}
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
-                placeholder={COMPOSER_PLACEHOLDER}
+                placeholder={composerPlaceholder(composerUnitType)}
                 rows={4}
                 aria-label="Prompt"
                 className="flex-1 min-w-0 text-sm text-gray-700 placeholder-gray-400 resize-none focus:outline-none overflow-hidden"

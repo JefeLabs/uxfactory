@@ -1247,15 +1247,28 @@ describe("Footer hint line", () => {
     ).toBeInTheDocument();
   });
 
-  it("composer placeholder invites describing component(s)", async () => {
+  it("composer placeholder names the active component type", async () => {
+    const user = userEvent.setup();
     const { bridge } = makeBridge();
     const bus = makeBus();
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
 
+    // Default type is Page.
     expect(
-      screen.getByPlaceholderText("Describe the component(s) to generate"),
+      screen.getByPlaceholderText("Describe the page to generate"),
+    ).toBeInTheDocument();
+
+    // Switching the type follows in the placeholder; brand casing survives.
+    await openConfig();
+    await user.selectOptions(screen.getByLabelText("Unit type"), "youtube-thumbnail");
+    expect(
+      screen.getByPlaceholderText("Describe the YouTube thumbnail to generate"),
+    ).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Unit type"), "user-flow");
+    expect(
+      screen.getByPlaceholderText("Describe the user flow to generate"),
     ).toBeInTheDocument();
   });
 
