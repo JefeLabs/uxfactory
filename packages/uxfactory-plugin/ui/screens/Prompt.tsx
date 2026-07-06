@@ -41,7 +41,12 @@ import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { enqueueMutation } from "../queries.js";
-import { AUTHORING_ORDER, resolveRequirements } from "@uxfactory/spec";
+import {
+  ARTIFACT_PREREQS,
+  ARTIFACT_REGISTRY,
+  AUTHORING_ORDER,
+  resolveRequirements,
+} from "@uxfactory/spec";
 import { ARTIFACT_KEY_BY_ID } from "../lib/artifact-mapping.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -88,6 +93,8 @@ interface GroundingChipModel {
   level: "required" | "recommended" | "optional";
   planned: boolean;
   status: "up-to-date" | "draft" | "missing";
+  /** Tooltip naming MISSING trace-graph prerequisites (real edges only). */
+  prereqHint?: string;
 }
 
 /**
@@ -119,7 +126,21 @@ function groundingChipsFor(
     const status = (artifacts.find((a) => a.key === key)?.status ?? "missing") as
       | "up-to-date" | "draft" | "missing";
     if (req.level === "optional" && status === "missing") return [];
-    return [{ key, label: req.label, level: req.level, planned: false, status }];
+    // Only real edges, and only when the prerequisite is itself missing.
+    const missingPrereqs = (ARTIFACT_PREREQS[req.artifactId] ?? [])
+      .filter((dep) => {
+        const depKey = ARTIFACT_KEY_BY_ID[dep] ?? dep;
+        return (artifacts.find((a) => a.key === depKey)?.status ?? "missing") === "missing";
+      })
+      .map((dep) => ARTIFACT_REGISTRY[dep]?.label ?? dep);
+    const prereqHint =
+      status === "missing" && missingPrereqs.length > 0
+        ? `Needs ${missingPrereqs.join(", ")} first — created in sequence on click`
+        : undefined;
+    return [{
+      key, label: req.label, level: req.level, planned: false, status,
+      ...(prereqHint !== undefined ? { prereqHint } : {}),
+    }];
   });
 }
 
@@ -455,6 +476,7 @@ function GroundingChip({
   onClick,
   level = "recommended",
   planned = false,
+  prereqHint,
 }: {
   label: string;
   artifactStatus: "up-to-date" | "draft" | "missing";
@@ -463,6 +485,8 @@ function GroundingChip({
   level?: "required" | "recommended" | "optional";
   /** Planned registry artifacts render disabled — they cannot be created yet. */
   planned?: boolean;
+  /** Tooltip naming missing trace-graph prerequisites (real edges only). */
+  prereqHint?: string;
 }) {
   const base =
     "inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs cursor-pointer transition-colors select-none";
@@ -515,7 +539,7 @@ function GroundingChip({
       <button
         type="button"
         onClick={onClick}
-        title="Required — click to create"
+        title={prereqHint ?? "Required — click to create"}
         aria-label={`${label} — required, missing`}
         className={`${base} bg-white border-red-300 text-red-600 hover:border-red-400`}
       >
@@ -530,7 +554,7 @@ function GroundingChip({
     <button
       type="button"
       onClick={onClick}
-      title="Generation proceeds with defaults"
+      title={prereqHint ?? "Generation proceeds with defaults"}
       aria-label={`${label} — missing, generation proceeds with defaults`}
       className={`${base} bg-white border-gray-300 text-gray-400`}
     >
@@ -949,13 +973,14 @@ export function Prompt({
         <div>
           <SectionHeader>GROUNDED IN</SectionHeader>
           <div className="flex flex-wrap gap-2 px-3 pt-1 pb-2">
-            {groundingChips.map(({ key, label, status, level, planned }) => (
+            {groundingChips.map(({ key, label, status, level, planned, prereqHint }) => (
               <GroundingChip
                 key={key}
                 label={label}
                 artifactStatus={status}
                 level={level}
                 planned={planned}
+                prereqHint={prereqHint}
                 onClick={() => {
                   void navigate({ to: "/tabs/artifacts", search: { focus: key } });
                 }}

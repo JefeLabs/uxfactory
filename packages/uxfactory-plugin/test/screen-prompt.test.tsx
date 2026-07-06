@@ -1400,3 +1400,25 @@ describe("grounding chips are listed in supply order", () => {
     ]);
   });
 });
+
+// ─── Prerequisite tooltips on grounding chips ─────────────────────────────────
+
+describe("grounding chip prerequisite tooltips", () => {
+  it("a missing chip with missing prerequisites names them in its tooltip", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    // Tokens (missing) needs brand-colors, palettes, grid — all missing here.
+    const tokens = screen.getByLabelText(/^Tokens —/);
+    expect(tokens).toHaveAttribute(
+      "title",
+      "Needs Brand colors, Palettes, Grid first — created in sequence on click",
+    );
+    // A chip without prerequisites keeps its plain tooltip.
+    const grid = screen.getByLabelText("Grid — required, missing");
+    expect(grid).toHaveAttribute("title", "Required — click to create");
+  });
+});
