@@ -16,10 +16,11 @@
 
 import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ARTIFACT_ELICITATION } from "@uxfactory/spec";
+import { ARTIFACT_ELICITATION, CATEGORY_TAXONOMY, normalizeCategory } from "@uxfactory/spec";
 import type { ElicitationQuestion } from "@uxfactory/spec";
 import { createGuidanceCopyFor } from "../lib/artifact-schemas.js";
 import { REGISTRY_ID_BY_KEY } from "../lib/artifact-mapping.js";
+import { useAppStore } from "../stores/app.js";
 
 // ─── Re-export for backward-compat (tests import guidanceCopyFor from here) ──
 
@@ -32,6 +33,19 @@ export function guidanceCopyFor(artifactKey: string): string {
 export function questionsFor(artifactKey: string): ElicitationQuestion[] {
   const registryId = REGISTRY_ID_BY_KEY[artifactKey] ?? artifactKey;
   return ARTIFACT_ELICITATION[registryId] ?? [];
+}
+
+/**
+ * [D]-grade dynamic prefills — derived from the project, rendered as
+ * editable confirmations (elicitation rule 2: derived beats elicited).
+ * Sitemap: candidate pages come from the category's IA seed.
+ */
+function dynamicPrefills(artifactKey: string): Record<string, string> {
+  if (artifactKey !== "sitemap") return {};
+  const cls = useAppStore.getState().snapshot?.classification;
+  const category = typeof cls?.["category"] === "string" ? (cls["category"] as string) : "";
+  const seed = CATEGORY_TAXONOMY[normalizeCategory(category)]?.iaSeed ?? [];
+  return seed.length > 0 ? { pages: seed.join(", ") } : {};
 }
 
 /** Compose answered questions + free guidance into one wire guidance string. */
@@ -82,13 +96,14 @@ export function CreateArtifactDialog({
   useEffect(() => {
     if (open) {
       setGuidance("");
-      setAnswers(
-        Object.fromEntries(
+      setAnswers({
+        ...Object.fromEntries(
           questionsFor(artifactKey)
             .filter((q) => q.defaultValue !== undefined)
             .map((q) => [q.id, q.defaultValue!]),
         ),
-      );
+        ...dynamicPrefills(artifactKey),
+      });
     }
   }, [open, artifactKey]);
 

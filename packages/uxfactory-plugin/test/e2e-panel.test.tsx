@@ -697,3 +697,40 @@ describe("E2E: wizard walk — Connect → setup-1 → setup-2 → tabs", () => 
     expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute("data-state", "active");
   });
 });
+
+// ─── Compliance nudges under the Project config chips ─────────────────────────
+
+describe("E2E: compliance nudges surface under Project config", () => {
+  it("under-18 × commerce category surfaces the COPPA-class advisory", async () => {
+    const snapshot = {
+      ...DEMO_SNAPSHOT,
+      classification: { ...DEMO_SNAPSHOT.classification, ageGroup: "under-18" },
+    };
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
+      fileInfo: { name: "My Product", fileKey: "file-abc" },
+      snapshot: snapshot as never,
+      toasts: [],
+    });
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(snapshot);
+    await renderApp(bridge);
+
+    expect(screen.getByText(/COPPA-class considerations/)).toBeInTheDocument();
+  });
+
+  it("unremarkable configurations show no nudges", async () => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
+      fileInfo: { name: "My Product", fileKey: "file-abc" },
+      snapshot: DEMO_SNAPSHOT,
+      toasts: [],
+    });
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(DEMO_SNAPSHOT);
+    await renderApp(bridge);
+
+    expect(screen.queryByText(/COPPA-class/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Regulated industry/)).not.toBeInTheDocument();
+  });
+});

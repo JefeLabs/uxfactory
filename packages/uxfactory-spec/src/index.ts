@@ -42,3 +42,5 @@ export {
   industryDrivers,
 } from "./industry-taxonomy.js";
 export type { ComplianceFlag, IndustryProfile } from "./industry-taxonomy.js";
+export { complianceNudges } from "./compliance-nudges.js";
+export type { ClassificationLike } from "./compliance-nudges.js";

@@ -39,7 +39,7 @@ import {
 } from "./components/index.js";
 import type { ChipField, StatusPillStatus } from "./components/index.js";
 import { designStyleLabel, suggestDesignStyle } from "./lib/design-styles.js";
-import { categoryLabel, industryLabel } from "@uxfactory/spec";
+import { categoryLabel, complianceNudges, industryLabel } from "@uxfactory/spec";
 import { engineToLabel } from "./lib/dials.js";
 import type { Bridge } from "./lib/bridge.js";
 import type { PluginBus } from "./lib/plugin-bus.js";
@@ -265,6 +265,15 @@ function ContextBar(): React.JSX.Element {
     configChips.push({ field: d.field, label: d.label, value: d.display });
   }
 
+  // Advisory compliance nudges from the taxonomy flags — never blocking,
+  // always visible (they exist to be seen before generation, not after).
+  const nudges = complianceNudges({
+    category: category ?? undefined,
+    industry: industry ?? undefined,
+    ageGroup: ageGroup ?? undefined,
+    locale: locale ?? undefined,
+  });
+
   // Collapsed default: a "Project config:" label + ONE chip carrying the
   // total count. Expanding (+N or the chevron) reveals every chip, each
   // editable inline.
@@ -463,6 +472,17 @@ function ContextBar(): React.JSX.Element {
           >
             {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
+        </div>
+      )}
+
+      {/* Advisory compliance nudges — taxonomy flags made visible */}
+      {nudges.length > 0 && (
+        <div className="px-3 pb-2 flex flex-col gap-0.5">
+          {nudges.map((nudge) => (
+            <p key={nudge} className="text-[11px] text-amber-700">
+              {nudge}
+            </p>
+          ))}
         </div>
       )}
 

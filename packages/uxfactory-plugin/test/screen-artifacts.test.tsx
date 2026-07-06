@@ -1503,3 +1503,25 @@ describe("prerequisite chaining in the create dialog", () => {
     expect(within(dialog).queryByText(/Step \d+ of/)).not.toBeInTheDocument();
   });
 });
+
+// ─── IA seeds prefill the sitemap interview ───────────────────────────────────
+
+describe("sitemap interview is seeded from the category's IA seed", () => {
+  it("the pages question arrives prefilled from the taxonomy (editable [D])", async () => {
+    const user = userEvent.setup();
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: /Regenerate Sitemap/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const pages = within(dialog).getByLabelText(/List the pages/) as HTMLTextAreaElement;
+    // Meridian classification: legacy "ecommerce" → ecommerce-storefront's seed.
+    expect(pages.value).toContain("Product (PDP)");
+    expect(pages.value).toContain("Checkout");
+    // Prefill satisfies the [E] gate — Generate is immediately available.
+    expect(within(dialog).getByRole("button", { name: /^Generate$/i })).toBeEnabled();
+  });
+});
