@@ -16,3 +16,5 @@ export type {
   TypeGroup,
   TypeMappingEntry,
 } from "./component-type-mapping.js";
+export { ARTIFACT_ELICITATION } from "./artifact-elicitation.js";
+export type { ElicitationQuestion } from "./artifact-elicitation.js";

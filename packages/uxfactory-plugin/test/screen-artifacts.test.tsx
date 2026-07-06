@@ -322,8 +322,9 @@ afterEach(cleanup);
 // ─── Dialog-flow helper ───────────────────────────────────────────────────────
 
 /**
- * Click a Create/Regenerate row action, wait for the guided dialog, optionally
- * type guidance, then click Generate.
+ * Click a Create/Regenerate row action, wait for the elicitation dialog,
+ * answer every required interview question, optionally type guidance, then
+ * click Generate.
  */
 async function generateViaDialog(
   user: ReturnType<typeof userEvent.setup>,
@@ -333,8 +334,18 @@ async function generateViaDialog(
   const button = await screen.findByRole("button", { name: rowButtonName });
   await user.click(button);
   const dialog = await screen.findByRole("dialog");
+  // Required [E] interview questions block Generate until answered.
+  for (const box of within(dialog).getAllByRole("textbox")) {
+    if (box.getAttribute("aria-required") === "true" && (box as HTMLTextAreaElement).value === "") {
+      await user.type(box, "test answer");
+    }
+  }
   if (guidance !== undefined && guidance !== "") {
-    await user.type(within(dialog).getByRole("textbox"), guidance);
+    const label = /^Guidance for /;
+    const guidanceBox = within(dialog)
+      .getAllByRole("textbox")
+      .find((b) => label.test(b.getAttribute("aria-label") ?? ""))!;
+    await user.type(guidanceBox, guidance);
   }
   await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
 }
@@ -574,24 +585,29 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
 // ─── AC-3: Create enqueues, shows progress, flips green after snapshot update ─
 
 describe("AC-3: Create → dialog → Generate enqueues, shows generating…, flips green", () => {
-  it("Create on Illustrations opens the dialog; Generate enqueues with empty guidance", async () => {
+  it("Create on Illustrations opens the dialog; interview gates Generate", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
     await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    // Clicking Create alone does NOT enqueue — it opens the guided dialog
+    // Clicking Create alone does NOT enqueue — it opens the elicitation dialog
     await user.click(
       await screen.findByRole("button", { name: /Create Illustrations/i }),
     );
     expect(bridge.enqueue).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    // Generate with the textarea left empty is allowed
+    // Generate is blocked until the required [E] question is answered.
+    expect(screen.getByRole("button", { name: /^Generate$/i })).toBeDisabled();
+    await user.type(screen.getByLabelText("Illustration style in a phrase"), "flat geometric");
     await user.click(screen.getByRole("button", { name: /^Generate$/i }));
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "illustrations", guidance: "" },
+      payload: {
+        artifact: "illustrations",
+        guidance: "Illustration style in a phrase\nflat geometric",
+      },
     });
   });
 
@@ -956,7 +972,10 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "sitemap", guidance: "" },
+      payload: {
+        artifact: "sitemap",
+        guidance: expect.stringContaining("List the pages this product needs"),
+      },
     });
   });
 
@@ -1005,13 +1024,20 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 
     await user.keyboard("{Enter}");
 
-    // Enter opens the guided dialog; Generate completes the enqueue
+    // Enter opens the elicitation dialog; answering the interview completes it
     const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText(/List the pages this product needs/),
+      "Home, Pricing",
+    );
     await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "sitemap", guidance: "" },
+      payload: {
+        artifact: "sitemap",
+        guidance: expect.stringContaining("Home, Pricing"),
+      },
     });
   });
 });
@@ -1071,10 +1097,14 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
     expect(
       within(dialog).getByText("Create Illustrations"),
     ).toBeInTheDocument();
-    // Illustration-specific guiding copy above the textarea
+    // Illustration-specific guiding copy above the interview
     expect(
-      within(dialog).getByText(/illustration style/i),
-    ).toBeInTheDocument();
+      within(dialog).getAllByText(/illustration style/i).length,
+    ).toBeGreaterThan(0);
+    // The interview question renders as a required field.
+    expect(
+      within(dialog).getByLabelText("Illustration style in a phrase"),
+    ).toHaveAttribute("aria-required", "true");
     expect(
       within(dialog).getByPlaceholderText(
         "Optional — leave empty to let the agent infer from the project",
@@ -1108,16 +1138,16 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
       "flat geometric, warm palette",
     );
 
-    expect(bridge.enqueue).toHaveBeenCalledWith({
-      kind: "generate-artifact",
-      payload: {
-        artifact: "illustrations",
-        guidance: "flat geometric, warm palette",
-      },
-    });
+    const call = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      kind: string; payload: { artifact: string; guidance: string };
+    };
+    expect(call.kind).toBe("generate-artifact");
+    expect(call.payload.artifact).toBe("illustrations");
+    expect(call.payload.guidance).toContain("Illustration style in a phrase");
+    expect(call.payload.guidance).toContain("Additional guidance:\nflat geometric, warm palette");
   });
 
-  it("Generate with empty guidance enqueues guidance: ''", async () => {
+  it("empty free-guidance still ships the interview answers on the wire", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge();
     await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
@@ -1126,7 +1156,10 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: { artifact: "illustrations", guidance: "" },
+      payload: {
+        artifact: "illustrations",
+        guidance: expect.stringContaining("Illustration style in a phrase"),
+      },
     });
   });
 
@@ -1139,7 +1172,7 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
       await screen.findByRole("button", { name: /Create Illustrations/i }),
     );
     const dialog = await screen.findByRole("dialog");
-    await user.type(within(dialog).getByRole("textbox"), "some guidance");
+    await user.type(within(dialog).getByLabelText(/^Guidance for /), "some guidance");
     await user.click(within(dialog).getByRole("button", { name: /^Cancel$/i }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -1280,6 +1313,9 @@ describe("Failure surfacing — 5-minute pending timeout with Retry", () => {
       fireEvent.click(
         screen.getByRole("button", { name: /Create Illustrations/i }),
       );
+      fireEvent.change(screen.getByLabelText("Illustration style in a phrase"), {
+        target: { value: "flat geometric" },
+      });
       fireEvent.click(screen.getByRole("button", { name: /^Generate$/i }));
       await act(async () => {}); // flush enqueue resolution
 

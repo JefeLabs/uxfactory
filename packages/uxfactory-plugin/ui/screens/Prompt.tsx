@@ -42,6 +42,7 @@ import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { enqueueMutation } from "../queries.js";
 import { resolveRequirements } from "@uxfactory/spec";
+import { ARTIFACT_KEY_BY_ID } from "../lib/artifact-mapping.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -79,26 +80,6 @@ export const UNIT_OPTIONS: { label: string; value: string }[] = [
   { label: "Facebook Post", value: "facebook-post" },
   { label: "X Post", value: "x-post" },
 ];
-
-/**
- * Registry artifact IDs (component-type mapping) → the panel's snapshot
- * artifact keys. Only registered artifacts have a panel key; planned IDs
- * render as coming-soon chips and never resolve a status.
- */
-const ARTIFACT_KEY_BY_ID: Record<string, string> = {
-  "product-brief": "brief",
-  "acceptance-criteria": "requirements",
-  "sitemap": "sitemap",
-  "flows": "flows",
-  "brand-colors": "brand-colors",
-  "palettes": "palettes",
-  "fonts": "fonts",
-  "grid": "grid",
-  "tokens": "tokens",
-  "icons": "icons",
-  "photography": "photography",
-  "illustrations": "illustrations",
-};
 
 /** One grounding chip, resolved from the mapping for the selected type. */
 interface GroundingChipModel {
