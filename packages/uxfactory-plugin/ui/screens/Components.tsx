@@ -187,7 +187,7 @@ export function Components({
 
   // ── AC id click: open stories file path from requirements artifact ─────────
   function handleAcClick(_acId: string): void {
-    const reqArtifact = snapshot?.artifacts.find((a) => a.key === "requirements");
+    const reqArtifact = snapshot?.artifacts.find((a) => a.key === "stories");
     const path = reqArtifact?.path ?? null;
     if (path !== null) {
       void bridge.openPath(path).catch(() => {});

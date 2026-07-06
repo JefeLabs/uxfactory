@@ -94,9 +94,9 @@ function makeSnapshot(overrides: Partial<ProjectSnapshot> = {}): ProjectSnapshot
     profile: null,
     artifacts: [
       {
-        key: "requirements",
+        key: "stories",
         group: "product" as const,
-        label: "Requirements",
+        label: "Stories",
         status: "up-to-date" as const,
         meta: "",
         path: "/docs/requirements.md",

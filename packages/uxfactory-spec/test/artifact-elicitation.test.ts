@@ -72,9 +72,16 @@ describe("prerequisite chaining", () => {
   });
 
   it("chains missing prerequisites in dependency order, target last", () => {
-    const missing = (id: string) => ["flows", "sitemap", "acceptance-criteria"].includes(id);
+    const missing = (id: string) => ["flows", "sitemap", "stories"].includes(id);
     expect(resolveCreationChain("flows", missing)).toEqual([
-      "acceptance-criteria", "sitemap", "flows",
+      "stories", "sitemap", "flows",
+    ]);
+  });
+
+  it("chains transitively through stories to personas when both are missing", () => {
+    const missing = (id: string) => ["flows", "stories", "personas"].includes(id);
+    expect(resolveCreationChain("flows", missing)).toEqual([
+      "personas", "stories", "flows",
     ]);
   });
 

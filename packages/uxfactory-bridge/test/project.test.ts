@@ -352,8 +352,8 @@ describe("GET /project/snapshot — full Meridian-shaped project", () => {
     };
     const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
 
-    // design/acceptance-criteria.json is present → requirements artifact up-to-date.
-    expect(byKey["requirements"]?.status).toBe("up-to-date");
+    // design/acceptance-criteria.json is present → the stories artifact is up-to-date.
+    expect(byKey["stories"]?.status).toBe("up-to-date");
 
     // design/token-set.json with 3 colors → up-to-date + "3 colors".
     expect(byKey["tokens"]?.status).toBe("up-to-date");
@@ -978,9 +978,9 @@ describe("registry-path resolution — non-conventional stories + tokens paths",
       artifacts: Array<{ key: string; status: string; meta: string }>;
     };
 
-    // requirements artifact and list come from specs/acs.json.
+    // stories artifact and requirements list come from specs/acs.json.
     const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
-    expect(byKey["requirements"]?.status).toBe("up-to-date");
+    expect(byKey["stories"]?.status).toBe("up-to-date");
     expect(snap.requirements).toHaveLength(2);
     expect(snap.requirements[0]).toEqual({ id: "AC-10.1", title: "Registry story one" });
     expect(snap.requirements[1]).toEqual({ id: "AC-10.2", title: "Registry story two" });
@@ -994,6 +994,72 @@ describe("registry-path resolution — non-conventional stories + tokens paths",
       await app.inject({ method: "GET", url: "/stats" })
     ).json() as { tokenCount: number | null };
     expect(stats.tokenCount).toBe(5);
+  });
+});
+
+describe("stories set artifact — migrated project (inputs.stories is a directory)", () => {
+  it("reports a set row with member count and derives requirements from canonical members", async () => {
+    await addGitMarker(root);
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { stories: ".uxfactory/artifacts/stories" },
+    });
+    await mkdir(path.join(root, ".uxfactory/artifacts/stories"), { recursive: true });
+    await writeJson(path.join(root, ".uxfactory/artifacts/stories/browse-faq.json"), {
+      storyId: "browse-faq",
+      actor: "visitor",
+      want: "read answers",
+      soThat: "quick help",
+      featureRef: null,
+      acceptanceCriteria: [
+        { acId: "AC-001", given: "page open", when: "scanning", then: "answers visible", checkable: "auto" },
+      ],
+      status: "registered",
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/stories/contact.json"), {
+      id: "contact-support",
+      role: "visitor",
+      goal: "reach support",
+      benefit: "help",
+      acceptanceCriteria: [{ statement: "a contact banner is visible", impliedState: "success" }],
+    });
+
+    app = await createBridge({ dataDir });
+    const snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as {
+      requirements: Array<{ id: string; title: string }>;
+      artifacts: Array<{ key: string; status: string; meta: string }>;
+    };
+
+    const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["stories"]?.status).toBe("up-to-date");
+    expect(byKey["stories"]?.meta).toBe("2 stories");
+
+    // Requirements derive from the members: canonical GWT renders a statement;
+    // legacy statements pass through. acIds restart per story (AC-001 in every
+    // file), so ids are story-namespaced to stay collision-free.
+    const byId = Object.fromEntries(snap.requirements.map((r) => [r.id, r.title]));
+    expect(byId["browse-faq/AC-001"]).toBe(
+      "Given page open, when scanning, then answers visible",
+    );
+    expect(byId["contact-support/AC-001"]).toBe("a contact banner is visible");
+  });
+
+  it("an empty stories directory reports the set row missing", async () => {
+    await addGitMarker(root);
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { stories: ".uxfactory/artifacts/stories" },
+    });
+    await mkdir(path.join(root, ".uxfactory/artifacts/stories"), { recursive: true });
+
+    app = await createBridge({ dataDir });
+    const snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string }> };
+    const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["stories"]?.status).toBe("missing");
   });
 });
 
@@ -1029,7 +1095,7 @@ describe("registry-path resolution — unparseable registry falls back to conven
 
     // Conventional stories file is found.
     const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
-    expect(byKey["requirements"]?.status).toBe("up-to-date");
+    expect(byKey["stories"]?.status).toBe("up-to-date");
     expect(snap.requirements).toHaveLength(1);
     expect(snap.requirements[0]).toEqual({ id: "AC-99.1", title: "Fallback story" });
 

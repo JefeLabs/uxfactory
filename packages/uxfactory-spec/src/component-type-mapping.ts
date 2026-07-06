@@ -14,7 +14,7 @@
  */
 
 export type RequirementLevel = "required" | "recommended" | "optional" | "n/a";
-export type RegistryStatus = "registered" | "planned";
+export type RegistryStatus = "registered" | "planned" | "superseded";
 export type TypeGroup = "flows" | "pages" | "components" | "channel";
 export type ProjectQuadrant = "re-skin" | "extend" | "redesign" | "greenfield";
 
@@ -32,15 +32,18 @@ export interface ArtifactRegistryEntry {
     | "governance";
   /** `planned` IDs may appear in mappings; they render disabled and never block. */
   status: RegistryStatus;
+  /** `superseded` only: the registered artifact that absorbed this one. */
+  supersededBy?: string;
 }
 
 /** §1 — canonical artifact IDs. IDs are stable; paths may move. */
 export const ARTIFACT_REGISTRY: Record<string, ArtifactRegistryEntry> = {
   "product-brief": { label: "Brief", category: "product", status: "registered" },
   "creative-brief": { label: "Creative brief", category: "product", status: "planned" },
-  "stories": { label: "Stories", category: "product", status: "planned" },
+  "stories": { label: "Stories", category: "product", status: "registered" },
   "features": { label: "Features", category: "product", status: "planned" },
-  "acceptance-criteria": { label: "Requirements", category: "product", status: "registered" },
+  // ACs nest inside stories (decision 6) — the legacy file is only a migration source.
+  "acceptance-criteria": { label: "Requirements", category: "product", status: "superseded", supersededBy: "stories" },
   "audience": { label: "Audience", category: "product", status: "planned" },
   "personas": { label: "Personas", category: "product", status: "registered" },
   "sitemap": { label: "Sitemap", category: "ia-ux", status: "registered" },
@@ -81,7 +84,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "flows",
     requires: {
       "stories": "required",
-      "acceptance-criteria": "required",
       "personas": "required",
       "flows": "required",
       "sitemap": "recommended",
@@ -99,7 +101,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "pages",
     requires: {
       "stories": "required",
-      "acceptance-criteria": "required",
       "product-brief": "required",
       "sitemap": "required",
       "brand-colors": "required",
@@ -125,7 +126,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "pages",
     requires: {
       "stories": "required",
-      "acceptance-criteria": "required",
       "sitemap": "required",
       "brand-colors": "required",
       "fonts": "required",
@@ -147,7 +147,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "pages",
     requires: {
       "stories": "required",
-      "acceptance-criteria": "required",
       "sitemap": "recommended",
       "brand-colors": "required",
       "fonts": "required",
@@ -165,7 +164,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "pages",
     requires: {
       "stories": "required",
-      "acceptance-criteria": "required",
       "brand-colors": "required",
       "fonts": "required",
       "typography": "required",
@@ -183,7 +181,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "components",
     requires: {
       "stories": "optional",
-      "acceptance-criteria": "optional",
       "grid": "required",
       "typography": "required",
       "brand-colors": "required",
@@ -198,7 +195,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "components",
     requires: {
       "stories": "required",
-      "acceptance-criteria": "required",
       "brand-colors": "required",
       "fonts": "required",
       "typography": "required",
@@ -216,7 +212,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "components",
     requires: {
       "stories": "optional",
-      "acceptance-criteria": "optional",
       "brand-colors": "required",
       "fonts": "required",
       "typography": "required",
@@ -231,7 +226,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "components",
     requires: {
       "stories": "n/a",
-      "acceptance-criteria": "n/a",
       "brand-colors": "required",
       "fonts": "required",
       "typography": "required",
@@ -244,7 +238,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
     group: "channel",
     requires: {
       "stories": "n/a",
-      "acceptance-criteria": "n/a",
       "creative-brief": "required",
       "copy-deck": "required",
       "voice-tone": "required",
@@ -344,7 +337,6 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
 export const QUADRANT_MODIFIERS: Record<ProjectQuadrant, Record<string, RequirementLevel>> = {
   "re-skin": {
     "stories": "recommended",
-    "acceptance-criteria": "recommended",
     "sitemap": "recommended",
     "product-brief": "optional",
   },

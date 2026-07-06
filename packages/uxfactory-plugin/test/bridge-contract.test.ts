@@ -177,7 +177,7 @@ describe("contract: snapshot", () => {
     expect(snap.root).toBe(root);
 
     const byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
-    expect(byKey["requirements"]?.status).toBe("up-to-date");
+    expect(byKey["stories"]?.status).toBe("up-to-date");
     expect(byKey["tokens"]?.status).toBe("up-to-date");
     expect(byKey["tokens"]?.meta).toBe("3 colors");
 

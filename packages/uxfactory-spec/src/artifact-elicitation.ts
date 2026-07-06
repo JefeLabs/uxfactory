@@ -104,14 +104,14 @@ export const ARTIFACT_PREREQS: Record<string, string[]> = {
   // palettes are role assignments OVER brand colors — nothing to assign without them.
   "palettes": ["brand-colors"],
   // flows pick their stories and step through sitemap nodes.
-  "flows": ["acceptance-criteria", "sitemap"],
+  "flows": ["stories", "sitemap"],
   // tokens are MATERIALIZED from the system artifacts.
   "tokens": ["brand-colors", "palettes", "typography", "grid"],
   // type tokens derive from the fonts inventory's default pairing.
   "typography": ["fonts"],
   // illustration palettes are a subset of brand colors.
   "illustrations": ["brand-colors"],
-  // the doc's canonical hard dependency (both still planned).
+  // the doc's canonical hard dependency: every actor references a persona.
   "stories": ["personas"],
 };
 

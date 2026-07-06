@@ -32,6 +32,7 @@ import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
+import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
 
 const execFileAsync = promisify(execFile);
@@ -124,7 +125,7 @@ const LEGACY_DESIGN_SYSTEM_PATH = "design/design-system.json";
  */
 const CONCERN_CANONICAL: Record<string, string> = {
   brief: `${ARTIFACTS_DIR}/brief.md`,
-  requirements: STORIES_PATH,
+  stories: STORIES_PATH,
   sitemap: `${ARTIFACTS_DIR}/sitemap.json`,
   flows: `${ARTIFACTS_DIR}/flows.json`,
   "brand-colors": DESIGN_SYSTEM_PATH,
@@ -323,8 +324,10 @@ async function resolveConcernPath(
   let writePath = path.join(root, CONCERN_CANONICAL[key]!);
   let exists = false;
 
-  if (key === "requirements") {
+  if (key === "stories") {
     // Engine gate input — registry-first; reads and writes share one path.
+    // Migrated projects resolve to the set DIRECTORY; the panel hides the
+    // single-file editor for set artifacts, so file semantics are never hit.
     const { storiesPath } = await resolveInputPaths(root);
     absolutePath = storiesPath;
     writePath = storiesPath;
@@ -380,10 +383,16 @@ async function buildArtifacts(
     });
   }
 
-  // ── product: requirements ─────────────────────────────────────────────────
+  // ── product: stories — a set once migrated, the single legacy file before ──
   {
-    const r = await checkJsonArtifact(storiesPath);
-    rows.push({ key: "requirements", group: "product", label: "Requirements", ...r });
+    let isDir = false;
+    try {
+      isDir = (await stat(storiesPath)).isDirectory();
+    } catch { /* absent → file semantics report missing */ }
+    const r = isDir
+      ? await checkSetArtifact(storiesPath, "stories")
+      : await checkJsonArtifact(storiesPath);
+    rows.push({ key: "stories", group: "product", label: "Stories", ...r });
   }
 
   // ── product: personas — the first SET artifact (one file per instance) ────
@@ -510,6 +519,31 @@ async function buildArtifacts(
 }
 
 async function buildRequirements(storiesPath: string): Promise<Requirement[]> {
+  // Migrated set directory: one canonical story per file; ACs keep their acIds
+  // and GWT triples render into engine statements (shared spec normalizer).
+  try {
+    if ((await stat(storiesPath)).isDirectory()) {
+      const reqs: Requirement[] = [];
+      const members = (await readdir(storiesPath)).filter((e) => e.endsWith(".json")).sort();
+      for (const member of members) {
+        try {
+          const raw = JSON.parse(
+            await readFile(path.join(storiesPath, member), "utf8"),
+          ) as unknown;
+          const parsed = parseStoryFile(raw);
+          if (!parsed.ok) continue;
+          const engine = storyToEngine(parsed.story);
+          engine.acceptanceCriteria.forEach((ac, i) => {
+            // acIds are per-story (AC-001 restarts in every file) — namespace
+            // them so the snapshot's requirements list stays collision-free.
+            const acId = parsed.story.acceptanceCriteria[i]?.acId ?? `AC-${i + 1}`;
+            reqs.push({ id: `${parsed.story.storyId}/${acId}`, title: ac.statement });
+          });
+        } catch { /* unreadable member — skip, the artifact row reports draft */ }
+      }
+      return reqs;
+    }
+  } catch { /* absent → fall through to file semantics */ }
   try {
     const raw = await readFile(storiesPath, "utf8");
     const data = JSON.parse(raw) as {

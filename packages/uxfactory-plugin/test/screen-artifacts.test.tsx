@@ -116,12 +116,12 @@ const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
     path: "/home/user/meridian/brief.md",
   },
   {
-    key: "requirements",
+    key: "stories",
     group: "product",
-    label: "Requirements",
+    label: "Stories",
     status: "up-to-date",
-    meta: "6 criteria",
-    path: "/home/user/meridian/design/acceptance-criteria.json",
+    meta: "3 stories",
+    path: "/home/user/meridian/.uxfactory/artifacts/stories",
   },
   {
     key: "personas",
@@ -422,12 +422,12 @@ describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () =
     );
   });
 
-  it("renders PRODUCT section with Brief and Requirements", async () => {
+  it("renders PRODUCT section with Brief and Stories", async () => {
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     await waitFor(() => {
       const productSection = screen.getByRole("region", { name: "PRODUCT" });
       expect(within(productSection).getByText("Brief")).toBeInTheDocument();
-      expect(within(productSection).getByText("Requirements")).toBeInTheDocument();
+      expect(within(productSection).getByText("Stories")).toBeInTheDocument();
     });
   });
 
@@ -1110,12 +1110,12 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     // Wait for inventory to load before tabbing
     await waitFor(() => screen.getByRole("button", { name: /Regenerate Sitemap/i }));
 
-    // Tab order now includes ↗ buttons after each Open button:
-    //   Open Brief → ↗ Brief → Open Requirements → ↗ Requirements → Regenerate Sitemap
+    // Tab order includes ↗ buttons after each Open button; stories is a SET
+    // artifact (no in-panel Open — only ↗):
+    //   Open Brief → ↗ Brief → ↗ Stories → Create Personas → Regenerate Sitemap
     await user.tab(); // Open Brief
     await user.tab(); // ↗ (Brief)
-    await user.tab(); // Open Requirements
-    await user.tab(); // ↗ (Requirements)
+    await user.tab(); // ↗ (Stories — set row, no Open)
     await user.tab(); // Create Personas (set artifact row)
     await user.tab(); // Regenerate Sitemap
 
@@ -1463,13 +1463,15 @@ describe("Failure surfacing — 5-minute pending timeout with Retry", () => {
 // ─── Prerequisite chaining — create affordance runs upstream interviews first ─
 
 describe("prerequisite chaining in the create dialog", () => {
+  // stories/sitemap/flows missing; personas missing in the base fixture too —
+  // the chain resolves transitively: personas ← stories ← flows.
   const chainArtifacts = MERIDIAN_ARTIFACTS.map((a) =>
-    ["requirements", "sitemap", "flows"].includes(a.key)
+    ["stories", "sitemap", "flows"].includes(a.key)
       ? { ...a, status: "missing" as const, path: null, meta: "" }
       : a,
   );
 
-  it("Create Flows chains Requirements → Sitemap → Flows in one guided run", async () => {
+  it("Create Flows chains Personas → Stories → Sitemap → Flows in one guided run", async () => {
     const user = userEvent.setup();
     const bridge = makeBridge({
       snapshot: vi.fn().mockResolvedValue(
@@ -1482,30 +1484,42 @@ describe("prerequisite chaining in the create dialog", () => {
 
     await user.click(await screen.findByRole("button", { name: /Create Flows/i }));
 
-    // Step 1: Requirements — chained before Flows (guidance-only interview).
-    let dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Create Requirements")).toBeInTheDocument();
-    expect(within(dialog).getByText(/Step 1 of 3/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/needed before Flows/i)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+    // Steps run in trace-graph order; every [E] question is answered generically.
+    const answerAndGenerate = async () => {
+      const dialog = await screen.findByRole("dialog");
+      for (const box of within(dialog).getAllByRole("textbox")) {
+        if (box.getAttribute("aria-required") === "true") {
+          await user.type(box, "answer");
+        }
+      }
+      await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+      return dialog;
+    };
 
-    // Step 2: Sitemap.
+    // Step 1: Personas — the actor hard-dependency chains transitively.
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Personas")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Step 1 of 4/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/needed before Flows/i)).toBeInTheDocument();
+    await answerAndGenerate();
+
+    // Step 2: Stories (per-story interview).
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Stories")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Step 2 of 4/)).toBeInTheDocument();
+    await answerAndGenerate();
+
+    // Step 3: Sitemap.
     dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Create Sitemap")).toBeInTheDocument();
-    expect(within(dialog).getByText(/Step 2 of 3/)).toBeInTheDocument();
-    await user.type(within(dialog).getByLabelText(/List the pages/), "Home, FAQ");
-    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+    expect(within(dialog).getByText(/Step 3 of 4/)).toBeInTheDocument();
+    await answerAndGenerate();
 
-    // Step 3: the target itself.
+    // Step 4: the target itself.
     dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Create Flows")).toBeInTheDocument();
-    expect(within(dialog).getByText(/Step 3 of 3/)).toBeInTheDocument();
-    for (const box of within(dialog).getAllByRole("textbox")) {
-      if (box.getAttribute("aria-required") === "true") {
-        await user.type(box, "answer");
-      }
-    }
-    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+    expect(within(dialog).getByText(/Step 4 of 4/)).toBeInTheDocument();
+    await answerAndGenerate();
 
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
@@ -1513,7 +1527,7 @@ describe("prerequisite chaining in the create dialog", () => {
     const order = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls.map(
       (c) => (c[0] as { payload: { artifact: string } }).payload.artifact,
     );
-    expect(order).toEqual(["requirements", "sitemap", "flows"]);
+    expect(order).toEqual(["personas", "stories", "sitemap", "flows"]);
   });
 
   it("satisfied prerequisites skip the chain entirely", async () => {

@@ -77,8 +77,8 @@ export const CREATE_GUIDANCE: Record<string, string> = {
     "Your accessibility contract. Defaults cover WCAG 2.2 AA — its value is in checking, not authoring.",
   brief:
     "Describe the product, its audience, and what success looks like — the agent drafts the product brief from this.",
-  requirements:
-    "List the capabilities and acceptance criteria that matter most — the agent turns them into testable requirements.",
+  stories:
+    "One story per file: an actor (persona), what they want, why — and at least one Given/When/Then that proves it works.",
   sitemap:
     "List the main areas or journeys your product needs — the agent proposes the page map.",
   flows:

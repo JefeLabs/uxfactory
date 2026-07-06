@@ -43,12 +43,27 @@ describe("mapping consistency invariants", () => {
     }
   });
 
-  it("stories/acceptance-criteria lockstep: both listed at the same level, or neither", () => {
+  it("acceptance-criteria is absorbed into stories (decision 6): in NO requires block", () => {
     for (const [typeId, entry] of Object.entries(COMPONENT_TYPE_MAPPING)) {
-      const stories = entry.requires["stories"];
-      const acs = entry.requires["acceptance-criteria"];
-      expect(stories, `${typeId}: lockstep pair mismatch`).toBe(acs);
+      expect(entry.requires["acceptance-criteria"], typeId).toBeUndefined();
     }
+    for (const overrides of Object.values(QUADRANT_MODIFIERS)) {
+      expect(overrides["acceptance-criteria"]).toBeUndefined();
+    }
+  });
+
+  it("every superseded entry names a registered successor", () => {
+    for (const [id, entry] of Object.entries(ARTIFACT_REGISTRY)) {
+      if (entry.status !== "superseded") continue;
+      expect(entry.supersededBy, id).toBeDefined();
+      expect(ARTIFACT_REGISTRY[entry.supersededBy!]?.status, `${id} → ${entry.supersededBy}`).toBe(
+        "registered",
+      );
+    }
+    expect(ARTIFACT_REGISTRY["acceptance-criteria"]).toMatchObject({
+      status: "superseded",
+      supersededBy: "stories",
+    });
   });
 
   it("the resolver-consumed class never appears in a requires block", () => {
@@ -59,14 +74,14 @@ describe("mapping consistency invariants", () => {
     }
   });
 
-  it("registry marks exactly the 15 shipped artifacts as registered", () => {
+  it("registry marks exactly the 16 shipped artifacts as registered", () => {
     const registered = Object.entries(ARTIFACT_REGISTRY)
       .filter(([, e]) => e.status === "registered")
       .map(([id]) => id)
       .sort();
     expect(registered).toEqual(
       [
-        "product-brief", "acceptance-criteria", "sitemap", "flows",
+        "product-brief", "stories", "sitemap", "flows",
         "brand-colors", "palettes", "fonts", "grid", "tokens",
         "typography", "a11y-spec", "personas",
         "icons", "photography", "illustrations",
@@ -97,6 +112,9 @@ describe("resolveRequirements", () => {
     expect(copyDeck).toMatchObject({ level: "required", status: "planned", blocking: false });
     const typography = home.find((r) => r.artifactId === "typography")!;
     expect(typography).toMatchObject({ level: "required", status: "registered", blocking: true });
+    // stories carries the intent slot alone now — registered and blocking.
+    const stories = home.find((r) => r.artifactId === "stories")!;
+    expect(stories).toMatchObject({ level: "required", status: "registered", blocking: true });
   });
 
   it("greenfield applies no relaxation", () => {
@@ -105,9 +123,9 @@ describe("resolveRequirements", () => {
     );
   });
 
-  it("re-skin relaxes stories/ACs/sitemap to recommended and product-brief to optional", () => {
+  it("re-skin relaxes stories/sitemap to recommended and product-brief to optional", () => {
     const home = resolveRequirements("home-page", "re-skin");
-    expect(home.find((r) => r.artifactId === "acceptance-criteria")).toMatchObject({
+    expect(home.find((r) => r.artifactId === "stories")).toMatchObject({
       level: "recommended",
       blocking: false,
     });

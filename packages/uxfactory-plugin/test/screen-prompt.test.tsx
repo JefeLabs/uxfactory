@@ -401,9 +401,9 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       snapshot: makeSnapshot({
         artifacts: [
           {
-            key: "requirements",
+            key: "stories",
             group: "product",
-            label: "Requirements",
+            label: "Stories",
             status: "up-to-date",
             meta: "",
             path: null,
@@ -418,7 +418,7 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       initialEntries: ["/tabs/prompt"],
     });
 
-    expect(screen.getByLabelText("Requirements — up to date")).toBeInTheDocument();
+    expect(screen.getByLabelText("Stories — up to date")).toBeInTheDocument();
   });
 
   it("draft artifact shows ! amber chip", async () => {
@@ -449,14 +449,14 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
 
   it("missing REQUIRED artifact shows the distinct required-missing chip", async () => {
     // Default snapshot has no artifacts → all missing. For the default "page"
-    // type, Requirements is a REQUIRED registered artifact.
+    // type, Stories is a REQUIRED registered artifact.
     const { bridge } = makeBridge();
     const bus = makeBus();
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
 
-    expect(screen.getByLabelText("Requirements — required, missing")).toBeInTheDocument();
+    expect(screen.getByLabelText("Stories — required, missing")).toBeInTheDocument();
     // Recommended registered artifacts keep the soft missing treatment.
     expect(
       screen.getByLabelText("Tokens — missing, generation proceeds with defaults"),
@@ -471,11 +471,11 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       initialEntries: ["/tabs/prompt"],
     });
 
-    await user.click(screen.getByLabelText("Requirements — required, missing"));
+    await user.click(screen.getByLabelText("Stories — required, missing"));
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/tabs/artifacts");
-      expect(router.state.location.search).toEqual({ focus: "requirements" });
+      expect(router.state.location.search).toEqual({ focus: "stories" });
     });
   });
 
@@ -486,9 +486,8 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       initialEntries: ["/tabs/prompt"],
     });
 
-    const stories = screen.getByLabelText("Stories — coming soon");
-    expect(stories).toBeDisabled();
-    // Typography shipped — it is a real (required, missing) chip now.
+    // Stories shipped (nested ACs) — a real required chip; copy-deck stays planned.
+    expect(screen.getByLabelText("Stories — required, missing")).toBeInTheDocument();
     expect(screen.getByLabelText("Typography — required, missing")).toBeInTheDocument();
     expect(screen.getByLabelText("Copy deck — coming soon")).toBeDisabled();
   });
@@ -504,8 +503,8 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
 
     await user.selectOptions(screen.getByLabelText("Unit type"), "x-post");
 
-    // Channel types hinge on the creative brief, not ACs.
-    expect(screen.queryByLabelText(/Requirements —/)).not.toBeInTheDocument();
+    // Channel types hinge on the creative brief, not stories.
+    expect(screen.queryByLabelText(/Stories —/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("Creative brief — coming soon")).toBeDisabled();
     expect(screen.getByLabelText("Brand colors — required, missing")).toBeInTheDocument();
     // x-post requires no grid/icons.
@@ -561,7 +560,7 @@ describe("ungoverned draft annotation", () => {
       ...BASE_APP_STATE,
       snapshot: makeSnapshot({
         artifacts: [
-          satisfied("requirements", "product"),
+          satisfied("stories", "product"),
           satisfied("brand-colors", "design"),
           satisfied("fonts", "design"),
           satisfied("grid", "design"),
@@ -650,9 +649,9 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
       snapshot: makeSnapshot({
         artifacts: [
           {
-            key: "requirements",
+            key: "stories",
             group: "product",
-            label: "Requirements",
+            label: "Stories",
             status: "up-to-date",
             meta: "",
             path: null,
@@ -1411,7 +1410,7 @@ describe("grounding chips are listed in supply order", () => {
       .map((b) => (b.getAttribute("aria-label") ?? "").split(" — ")[0])
       .filter((l) => l !== "");
     expect(labels).toEqual([
-      "Stories", "Requirements", "A11y spec", "Brand colors", "Fonts",
+      "Stories", "A11y spec", "Brand colors", "Fonts",
       "Typography", "Grid", "Tokens", "Glossary", "Interaction states",
       "Icons", "Copy deck",
     ]);
@@ -1459,9 +1458,9 @@ describe("quadrant-aware grounding", () => {
     });
 
     // Requirements drops from required to recommended under re-skin.
-    expect(screen.queryByLabelText("Requirements — required, missing")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Stories — required, missing")).not.toBeInTheDocument();
     expect(
-      screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
+      screen.getByLabelText("Stories — missing, generation proceeds with defaults"),
     ).toBeInTheDocument();
     // page under re-skin: blocking = brand-colors, fonts, typography, grid, a11y-spec (5).
     expect(screen.getByText(/5 required artifacts missing/)).toBeInTheDocument();
