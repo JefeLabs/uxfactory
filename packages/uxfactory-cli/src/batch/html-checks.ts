@@ -37,6 +37,10 @@ export interface StyleStats {
   visibleElements: number;
   /** Visible blocks with a border radius ≥ 8px and a non-trivial area. */
   roundedBlocks: number;
+  /** Smallest computed font-size (px) among body-copy elements (≥40 chars); null when none. */
+  minBodyFontPx?: number | null;
+  /** Longest approximate measure (chars per rendered line) among body copy; null when none. */
+  maxLineLengthCh?: number | null;
 }
 
 /** The deterministic per-(page,view) record the pure checks consume. */
@@ -314,6 +318,84 @@ export function styleConformance(
   return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
 }
 
+/** Readability limits from the typography artifact (design-system.json#typography). */
+export interface TypographyLimits {
+  minBodySizePx?: number;
+  lineLengthChMax?: number;
+}
+
+/**
+ * Extract TypographyLimits from a parsed design-system document. Returns null
+ * when no typography section exists (the check then does not bind).
+ * `limits.minBodySizePx` may be a number or a per-device map — the strictest
+ * (largest minimum) value applies.
+ */
+export function typographyLimitsFrom(designSystem: unknown): TypographyLimits | null {
+  if (designSystem === null || typeof designSystem !== "object") return null;
+  const typography = (designSystem as Record<string, unknown>)["typography"];
+  if (typography === null || typeof typography !== "object") return null;
+  const limits = (typography as Record<string, unknown>)["limits"];
+  const out: TypographyLimits = {};
+  if (limits !== null && typeof limits === "object") {
+    const l = limits as Record<string, unknown>;
+    const minBody = l["minBodySizePx"];
+    if (typeof minBody === "number") out.minBodySizePx = minBody;
+    else if (minBody !== null && typeof minBody === "object") {
+      const values = Object.values(minBody as Record<string, unknown>).filter(
+        (v): v is number => typeof v === "number",
+      );
+      if (values.length > 0) out.minBodySizePx = Math.max(...values);
+    }
+    const lineLength = l["lineLengthCh"];
+    if (lineLength !== null && typeof lineLength === "object") {
+      const max = (lineLength as Record<string, unknown>)["max"];
+      if (typeof max === "number") out.lineLengthChMax = max;
+    }
+  }
+  return out; // typography section exists → the check binds even with no limits
+}
+
+/** typography-conformance (advisory) — readability limits from the artifact. */
+export function typographyConformance(
+  snapshots: RenderSnapshot[],
+  limits: TypographyLimits,
+): CheckResult {
+  const id = "typography-conformance";
+  const measured = snapshots.filter(
+    (s) => s.ok && s.styleStats !== undefined && "minBodyFontPx" in s.styleStats,
+  );
+  if (measured.length === 0) {
+    return {
+      id, status: "skip", severity: "advisory", findings: [],
+      reason: "renderer did not capture typography stats",
+    };
+  }
+  const findings = measured.flatMap((s) => {
+    const out: BatchFinding[] = [];
+    const stats = s.styleStats!;
+    if (
+      limits.minBodySizePx !== undefined &&
+      typeof stats.minBodyFontPx === "number" &&
+      stats.minBodyFontPx < limits.minBodySizePx
+    ) {
+      out.push({
+        detail: `${s.page} › ${s.view}: body text at ${stats.minBodyFontPx}px is below the ${limits.minBodySizePx}px minimum`,
+      });
+    }
+    if (
+      limits.lineLengthChMax !== undefined &&
+      typeof stats.maxLineLengthCh === "number" &&
+      stats.maxLineLengthCh > limits.lineLengthChMax
+    ) {
+      out.push({
+        detail: `${s.page} › ${s.view}: measure runs ${Math.round(stats.maxLineLengthCh)}ch — beyond the ${limits.lineLengthChMax}ch maximum`,
+      });
+    }
+    return out;
+  });
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
+}
+
 /** Per-gate binding thresholds for the HTML tier (kept separate from spec-mode GATE_THRESHOLDS). */
 export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   "render-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "low", min_flow: "none" },
@@ -322,6 +404,7 @@ export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "flow-steps": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "style-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
+  "typography-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
 };
 
 /** Everything one deterministic HTML gate pass needs (snapshots already captured). */
@@ -334,6 +417,10 @@ export interface RunHtmlBatchInput {
   unit?: string;
   /** Optional design style (registry `designStyle`) — enables advisory style checks. */
   designStyle?: string;
+  /** Readability limits from the typography artifact — enables typography-conformance. */
+  typography?: TypographyLimits;
+  /** True when an accessibility contract is registered — a11y/contrast bind at ANY fidelity. */
+  a11ySpec?: boolean;
 }
 
 interface HtmlGateEntry {
@@ -372,6 +459,13 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
     bindsWhen: (i) => i.designStyle !== undefined,
     notOwedReason: "no design style declared",
   },
+  {
+    id: "typography-conformance",
+    severity: "advisory",
+    run: (i) => typographyConformance(i.snapshots, i.typography!),
+    bindsWhen: (i) => i.typography !== undefined,
+    notOwedReason: "no typography artifact registered",
+  },
 ];
 
 /**
@@ -386,7 +480,11 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   for (const entry of HTML_GATE_ENTRIES) {
     const t = HTML_GATE_THRESHOLDS[entry.id];
     const predicateBinds = entry.bindsWhen?.(input) ?? true;
-    const doesBind = t !== undefined && binds(t, scope) && predicateBinds;
+    // A registered accessibility contract escalates a11y/contrast to bound at
+    // ANY fidelity (mapping decision 14: registration upgrades the posture).
+    const forcedByA11ySpec =
+      input.a11ySpec === true && (entry.id === "a11y" || entry.id === "contrast");
+    const doesBind = t !== undefined && (binds(t, scope) || forcedByA11ySpec) && predicateBinds;
     if (doesBind) {
       rubric.push(entry.id);
       checks.push(entry.run(input));

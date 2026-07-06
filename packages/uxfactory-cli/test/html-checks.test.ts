@@ -126,10 +126,10 @@ describe("runHtmlBatch", () => {
     const r = runHtmlBatch({ snapshots: [goodSnap], stories, tokens, scope: VISUAL_MEDIUM });
     expect(r.clean).toBe(true);
     expect(r.checks.map((c) => c.id).sort()).toEqual([
-      "a11y", "contrast", "flow-steps", "render-coverage", "style-conformance", "token-conformance",
+      "a11y", "contrast", "flow-steps", "render-coverage", "style-conformance", "token-conformance", "typography-conformance",
     ]);
     // flow-steps/style-conformance are not-owed without a unit/style; the rest pass.
-    const conditional = new Set(["flow-steps", "style-conformance"]);
+    const conditional = new Set(["flow-steps", "style-conformance", "typography-conformance"]);
     expect(
       r.checks.every((c) => (conditional.has(c.id) ? c.status === "not-owed" : c.status === "pass")),
     ).toBe(true);
@@ -356,5 +356,94 @@ describe("style-conformance: advisory deterministic style checks", () => {
       stories, tokens, scope: SCOPE, designStyle: "flat",
     });
     expect(noStats.checks.find((c) => c.id === "style-conformance")!.status).toBe("skip");
+  });
+});
+
+// ─── typography-conformance: advisory limits from the typography artifact ─────
+
+describe("typography-conformance: advisory readability limits", () => {
+  const SCOPE: RenderScope = { visual: "medium", editorial: "low", coverage: "medium", flow: "low" };
+  const fullCover = [
+    { story: "checkout", impliedState: "success" as const, selector: "#ok", found: true, visible: true },
+    { story: "checkout", impliedState: "error" as const, selector: "#err", found: true, visible: true },
+  ];
+  const typoSnap = (minBodyFontPx: number | null, maxLineLengthCh: number | null) =>
+    snap({
+      coverChecks: fullCover,
+      paintedColors: [{ hex: "#1e88e5", exampleSelector: "b" }],
+      styleStats: {
+        shadowCount: 0, fontFamilies: ["inter"], visibleElements: 40, roundedBlocks: 0,
+        minBodyFontPx, maxLineLengthCh,
+      },
+    });
+
+  it("body text below the minimum and overlong measures fail ADVISORY", () => {
+    const r = runHtmlBatch({
+      snapshots: [typoSnap(13, 92)],
+      stories, tokens, scope: SCOPE,
+      typography: { minBodySizePx: 16, lineLengthChMax: 75 },
+    });
+    const tc = r.checks.find((c) => c.id === "typography-conformance")!;
+    expect(tc.status).toBe("fail");
+    expect(tc.severity).toBe("advisory");
+    expect(tc.findings.some((f) => f.detail.includes("13px"))).toBe(true);
+    expect(tc.findings.some((f) => f.detail.includes("92ch"))).toBe(true);
+    // Advisory failures never fail the gate.
+    expect(r.mustPassFailed).toBe(false);
+    expect(r.rubric).toContain("typography-conformance");
+  });
+
+  it("within limits passes; without a typography artifact the check is not owed", () => {
+    const ok = runHtmlBatch({
+      snapshots: [typoSnap(16, 68)],
+      stories, tokens, scope: SCOPE,
+      typography: { minBodySizePx: 16, lineLengthChMax: 75 },
+    });
+    expect(ok.checks.find((c) => c.id === "typography-conformance")!.status).toBe("pass");
+
+    const unowned = runHtmlBatch({ snapshots: [typoSnap(13, 92)], stories, tokens, scope: SCOPE });
+    expect(unowned.checks.find((c) => c.id === "typography-conformance")!.status).toBe("not-owed");
+  });
+
+  it("skips when the renderer captured no typography measurements", () => {
+    const legacy = snap({
+      coverChecks: fullCover,
+      paintedColors: [{ hex: "#1e88e5", exampleSelector: "b" }],
+      styleStats: { shadowCount: 0, fontFamilies: ["inter"], visibleElements: 40, roundedBlocks: 0 },
+    });
+    const r = runHtmlBatch({
+      snapshots: [legacy], stories, tokens, scope: SCOPE,
+      typography: { minBodySizePx: 16 },
+    });
+    expect(r.checks.find((c) => c.id === "typography-conformance")!.status).toBe("skip");
+  });
+});
+
+// ─── a11y-spec: a registered accessibility contract forces binding ────────────
+
+describe("a11y-spec forces a11y/contrast binding below the visual threshold", () => {
+  const LOW_SCOPE: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "low" };
+  const coverSnap = snap({
+    coverChecks: [
+      { story: "checkout", impliedState: "success" as const, selector: "#ok", found: true, visible: true },
+      { story: "checkout", impliedState: "error" as const, selector: "#err", found: true, visible: true },
+    ],
+    paintedColors: [{ hex: "#1e88e5", exampleSelector: "b" }],
+  });
+
+  it("without the artifact, a11y/contrast stay not-owed at visual:low", () => {
+    const r = runHtmlBatch({ snapshots: [coverSnap], stories, tokens, scope: LOW_SCOPE });
+    expect(r.checks.find((c) => c.id === "a11y")!.status).toBe("not-owed");
+    expect(r.checks.find((c) => c.id === "contrast")!.status).toBe("not-owed");
+  });
+
+  it("registering the accessibility contract binds them regardless of fidelity", () => {
+    const r = runHtmlBatch({
+      snapshots: [coverSnap], stories, tokens, scope: LOW_SCOPE, a11ySpec: true,
+    });
+    expect(r.checks.find((c) => c.id === "a11y")!.status).toBe("pass");
+    expect(r.checks.find((c) => c.id === "contrast")!.status).toBe("pass");
+    expect(r.rubric).toContain("a11y");
+    expect(r.rubric).toContain("contrast");
   });
 });

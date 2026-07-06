@@ -45,6 +45,8 @@ const CAPTURE_FN = `(covers) => {
   let shadowCount = 0;
   let visibleElements = 0;
   let roundedBlocks = 0;
+  let minBodyFontPx = null;
+  let maxLineLengthCh = null;
   const fontSet = new Set();
   for (const el of document.querySelectorAll("*")) {
     if (!visible(el)) continue;
@@ -62,6 +64,18 @@ const CAPTURE_FN = `(covers) => {
     const radius = parseFloat(s.borderTopLeftRadius) || 0;
     const r = el.getBoundingClientRect();
     if (radius >= 8 && r.width * r.height >= 10000) roundedBlocks += 1;
+    // Typography measurements over body copy (direct text >= 40 chars).
+    let direct = "";
+    for (const n of el.childNodes) if (n.nodeType === 3) direct += n.textContent;
+    direct = direct.trim();
+    if (direct.length >= 40) {
+      const fs = parseFloat(s.fontSize) || 0;
+      if (fs > 0 && (minBodyFontPx === null || fs < minBodyFontPx)) minBodyFontPx = fs;
+      const lh = parseFloat(s.lineHeight) || fs * 1.4;
+      const lines = lh > 0 ? Math.max(1, Math.round(r.height / lh)) : 1;
+      const chPerLine = direct.length / lines;
+      if (maxLineLengthCh === null || chPerLine > maxLineLengthCh) maxLineLengthCh = chPerLine;
+    }
   }
   const paintedColors = [...colorMap.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([hex, exampleSelector]) => ({ hex, exampleSelector }));
   const styleStats = {
@@ -69,6 +83,8 @@ const CAPTURE_FN = `(covers) => {
     fontFamilies: [...fontSet].sort(),
     visibleElements,
     roundedBlocks,
+    minBodyFontPx,
+    maxLineLengthCh: maxLineLengthCh === null ? null : Math.round(maxLineLengthCh),
   };
   return { coverChecks, paintedColors, styleStats };
 }`;

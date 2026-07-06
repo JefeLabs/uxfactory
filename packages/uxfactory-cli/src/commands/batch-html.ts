@@ -1,10 +1,10 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { access, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "../exit.js";
 import { loadStoriesInput, loadTokensInput } from "../batch/inputs.js";
 import { readTrace } from "../batch/trace.js";
 import { renderHtml, type HtmlRenderDeps } from "../render/html-render.js";
-import { runHtmlBatch } from "../batch/html-checks.js";
+import { runHtmlBatch, typographyLimitsFrom, type TypographyLimits } from "../batch/html-checks.js";
 import { resolveScope, checkReadiness, parseScope } from "../batch/scope.js";
 import type { Dial, DialLevel, RenderScope } from "../batch/scope.js";
 import type { ResolvedInputs, RegistryViewport } from "../batch/registry.js";
@@ -21,6 +21,31 @@ const VALID_DIAL_LEVELS = new Set(["low", "medium", "high"]);
  * snapshots, write report.json + screenshots, and return the loop-termination exit code.
  * The renderer is injectable (`deps`) so tests run without a browser.
  */
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Typography limits from the design-system artifact (canonical, then legacy). */
+async function readTypographyLimits(projectRoot: string): Promise<TypographyLimits | null> {
+  for (const rel of [
+    path.join(".uxfactory", "artifacts", "design-system.json"),
+    path.join("design", "design-system.json"),
+  ]) {
+    try {
+      const raw = await readFile(path.join(projectRoot, rel), "utf8");
+      return typographyLimitsFrom(JSON.parse(raw));
+    } catch {
+      // missing/unparseable → try the next location
+    }
+  }
+  return null;
+}
+
 export async function batchHtmlMode(
   specsDir: string,
   flags: BatchFlags,
@@ -113,6 +138,15 @@ export async function batchHtmlMode(
     return EXIT.TRANSPORT;
   }
 
+  // System-artifact inputs: typography limits enable the advisory
+  // typography-conformance check; a registered accessibility contract
+  // escalates a11y/contrast to bound at any fidelity.
+  const projectRoot = path.dirname(flags.dataDir);
+  const typography = await readTypographyLimits(projectRoot);
+  const a11ySpec = await fileExists(
+    path.join(projectRoot, ".uxfactory", "artifacts", "accessibility.json"),
+  );
+
   // Pure gate over the snapshots.
   const report: BatchReport = runHtmlBatch({
     snapshots,
@@ -121,6 +155,8 @@ export async function batchHtmlMode(
     scope,
     ...(registryUnit !== undefined ? { unit: registryUnit } : {}),
     ...(registryDesignStyle !== undefined ? { designStyle: registryDesignStyle } : {}),
+    ...(typography !== null ? { typography } : {}),
+    ...(a11ySpec ? { a11ySpec } : {}),
   });
 
   const reportDoc = {
