@@ -360,6 +360,21 @@ describe("I-2: annotation routing fields — nodeName and requirement", () => {
     expect(row(model, "T1").stats).toBe("2 of 3 features conformed");
   });
 
+  it("model carries the report's ungoverned provenance flag", () => {
+    const report = {
+      rubric: ["render-coverage"],
+      checks: [
+        { id: "render-coverage", status: "pass", severity: "must", findings: [] },
+      ],
+      mustPassFailed: false,
+      clean: true,
+      ungoverned: true,
+    };
+    expect(toTierModel({ batchReport: report }).ungoverned).toBe(true);
+    const { ungoverned: _drop, ...governed } = report;
+    expect(toTierModel({ batchReport: governed }).ungoverned).toBeUndefined();
+  });
+
   it("T1 stats keep the plain wording when no featureCoverage is present", () => {
     const noMetric = {
       rubric: ["render-coverage"],

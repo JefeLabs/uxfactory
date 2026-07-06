@@ -35,6 +35,8 @@ export interface TierModel {
   rows: TierRowModel[];
   failedTier: TierId | null;
   openFindings: number;
+  /** Escape-hatch provenance: the run generated without its required grounding. */
+  ungoverned?: boolean;
 }
 
 export function toTierModel(input: {
@@ -72,6 +74,8 @@ interface BatchReport {
   clean?: boolean;
   /** Coverage METRIC (decision 12): conformed features / total. Advisory only. */
   featureCoverage?: { conformed: number; total: number };
+  /** Escape-hatch provenance from the registry — reported verbatim, never gating. */
+  ungoverned?: boolean;
 }
 
 interface GateCheck {
@@ -533,7 +537,12 @@ function buildTierModel(input: {
   const failedRow = rows.find((r) => r.status === "fail");
   const failedTier: TierId | null = failedRow ? failedRow.tier : null;
 
-  return { rows, failedTier, openFindings };
+  return {
+    rows,
+    failedTier,
+    openFindings,
+    ...(batch?.ungoverned === true ? { ungoverned: true } : {}),
+  };
 }
 
 /** True when any local (non-VLM) row failed — used to gate VLM. */

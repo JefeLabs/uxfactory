@@ -434,7 +434,15 @@ export function ChecksView({
 
   // ── Shared Refresh header (visible in all states as escape hatch) ────────────
   const refreshHeader = (
-    <div className="flex items-center justify-end px-4 py-2 border-b border-gray-100">
+    <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-gray-100">
+      {model.ungoverned === true && (
+        <span
+          className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 mr-auto"
+          title="Generated with required grounding artifacts missing — results are a draft, not a governed run."
+        >
+          Ungoverned draft
+        </span>
+      )}
       <button
         type="button"
         onClick={onRefresh}

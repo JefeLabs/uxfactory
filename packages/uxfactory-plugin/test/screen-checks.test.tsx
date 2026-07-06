@@ -216,6 +216,29 @@ function makeDefaultProps(overrides: Partial<ChecksViewProps> = {}): ChecksViewP
   };
 }
 
+// ─── Ungoverned badge — escape-hatch provenance surfaces in the header ────────
+
+describe("ungoverned provenance badge", () => {
+  it("renders the badge with an explanatory title when the model is ungoverned", () => {
+    render(
+      <ChecksView
+        {...makeDefaultProps({ model: { ...FAILING_MODEL, ungoverned: true } })}
+      />,
+    );
+    const badge = screen.getByText("Ungoverned draft");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute(
+      "title",
+      expect.stringMatching(/required grounding artifacts missing/i),
+    );
+  });
+
+  it("no badge on a governed run", () => {
+    render(<ChecksView {...makeDefaultProps()} />);
+    expect(screen.queryByText("Ungoverned draft")).not.toBeInTheDocument();
+  });
+});
+
 // ─── Fake bridge factory ──────────────────────────────────────────────────────
 
 function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
