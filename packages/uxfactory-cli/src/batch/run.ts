@@ -1,11 +1,12 @@
 import {
+  featureCoverage,
   tokenConformance,
   requirementCoverage,
   coverageOrphans,
   reuse,
   flowReachability,
 } from "./checks.js";
-import type { CheckResult, LoadedSpec, TokenSet, StorySet, Flow, Severity } from "./checks.js";
+import type { CheckResult, LoadedSpec, TokenSet, StorySet, Flow, Severity , FeatureSet, FeatureCoverage} from "./checks.js";
 import type { Spec } from "@uxfactory/spec";
 import { GATE_THRESHOLDS, binds, bindingGateIds, declaredFuture } from "./scope.js";
 import type { RenderScope } from "./scope.js";
@@ -17,6 +18,8 @@ export interface RunBatchInput {
   stories: StorySet | null;
   reuseSpecs: Spec[] | null;
   flow: Flow | null;
+  /** Feature groupings — Coverage metric denominator (decision 12). Never gates. */
+  features?: FeatureSet | null;
   /** The resolved render scope — gates bind only when scope meets their per-dial thresholds. */
   scope: RenderScope;
 }
@@ -31,6 +34,8 @@ export interface BatchReport {
   designStyle?: string;
   /** Escape-hatch provenance: the run generated without its required grounding. */
   ungoverned?: true;
+  /** Coverage METRIC (decision 12): conformed features / total. Never gates. */
+  featureCoverage?: FeatureCoverage;
   /** The binding gate ids (the rubric) for this scope. */
   rubric: string[];
   checks: CheckResult[];
@@ -123,5 +128,25 @@ export function runBatch(input: RunBatchInput): BatchReport {
   const rubric = bindingGateIds(scope);
   // Only a BINDING must gate with status:"fail" counts — not-owed/declared/advisory never gate.
   const mustPassFailed = checks.some((c) => c.severity === "must" && c.status === "fail");
-  return { scope, rubric, checks, mustPassFailed, clean: !mustPassFailed };
+
+  // Coverage METRIC (decision 12) — derived from the coverage gate's findings;
+  // advisory metadata only, so it can never flip mustPassFailed.
+  let metric: FeatureCoverage | undefined;
+  if (input.features != null && input.stories !== null) {
+    const coverage = checks.find((c) => c.id === "requirement-coverage");
+    metric = featureCoverage(
+      input.features,
+      new Set(input.stories.stories.map((s) => s.id)),
+      coverage?.status === "fail" ? coverage.findings : [],
+    );
+  }
+
+  return {
+    scope,
+    rubric,
+    checks,
+    mustPassFailed,
+    clean: !mustPassFailed,
+    ...(metric !== undefined ? { featureCoverage: metric } : {}),
+  };
 }

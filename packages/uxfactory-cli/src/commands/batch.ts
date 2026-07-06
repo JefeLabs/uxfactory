@@ -3,7 +3,7 @@ import path from "node:path";
 import { EXIT, TransportError } from "../exit.js";
 import { loadSpec, printSpecProblem } from "../spec-file.js";
 import { readRegistry } from "../batch/registry.js";
-import { loadTokensInput, loadStoriesInput, loadFlowInput } from "../batch/inputs.js";
+import { loadTokensInput, loadStoriesInput, loadFlowInput, loadFeaturesInput } from "../batch/inputs.js";
 import { runBatch } from "../batch/run.js";
 import { specToSvg } from "../render/svg.js";
 import { rasterize } from "../render/raster-select.js";
@@ -225,6 +225,13 @@ export async function batchCmd(
   }
   const stories: StorySet | null = storiesResult.state === "ok" ? storiesResult.value : null;
 
+  const featuresResult = await loadFeaturesInput(reg.inputs.features);
+  if (featuresResult.state === "broken") {
+    io.err(featuresResult.message);
+    return EXIT.TRANSPORT;
+  }
+  const features = featuresResult.state === "ok" ? featuresResult.value : null;
+
   const flowResult = await loadFlowInput(reg.inputs.flow);
   if (flowResult.state === "broken") {
     io.err(flowResult.message);
@@ -330,6 +337,7 @@ export async function batchCmd(
     stories,
     reuseSpecs,
     flow: flowData,
+    features,
     scope,
   });
 

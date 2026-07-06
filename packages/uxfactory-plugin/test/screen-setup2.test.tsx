@@ -160,7 +160,7 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/defaults"],
     });
-    const group = screen.getByRole("radiogroup", { name: "Coverage" });
+    const group = screen.getByRole("radiogroup", { name: "Breadth" });
     expect(within(group).getByRole("radio", { name: "Medium" })).toHaveAttribute(
       "data-state",
       "checked",
@@ -493,12 +493,12 @@ describe("PRD §6.6 — tooltips on Visual and Coverage state binding consequenc
     expect(btn).toBeInTheDocument();
   });
 
-  it("Coverage info button aria-label includes T1 binding line", async () => {
+  it("Breadth info button aria-label includes T1 binding line", async () => {
     await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/defaults"],
     });
     const btn = screen.getByRole("button", {
-      name: /coverage ≥ low → requirement coverage binds \(t1\)/i,
+      name: /breadth ≥ low → requirement coverage binds \(t1\)/i,
     });
     expect(btn).toBeInTheDocument();
   });

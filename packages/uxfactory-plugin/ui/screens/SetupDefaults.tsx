@@ -62,7 +62,7 @@ const COVERAGE_CAPTION =
 const VISUAL_TOOLTIP = "At Medium+, a11y/contrast/token checks bind";
 // Coverage tooltip: caption + T1 binding consequence (PRD 02 §3).
 const COVERAGE_TOOLTIP =
-  `${COVERAGE_CAPTION} Coverage ≥ Low → requirement coverage binds (T1).`;
+  `${COVERAGE_CAPTION} Breadth ≥ Low → requirement coverage binds (T1).`;
 
 // ─── Category display labels ──────────────────────────────────────────────────
 
@@ -272,7 +272,7 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
             </Field>
 
             {/* Coverage — info tooltip + caption */}
-            <Field label="Coverage">
+            <Field label="Breadth">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <div className="flex-1">
@@ -280,11 +280,11 @@ export function SetupDefaults({ bridge }: { bridge: Bridge }) {
                       options={COVERAGE_OPTIONS}
                       value={coverage}
                       onChange={(v) => setDefault("coverage", v)}
-                      ariaLabel="Coverage"
+                      ariaLabel="Breadth"
                     />
                   </div>
                   <InfoTooltip
-                    label={`Coverage: ${COVERAGE_TOOLTIP}`}
+                    label={`Breadth: ${COVERAGE_TOOLTIP}`}
                     content={COVERAGE_TOOLTIP}
                   />
                 </div>

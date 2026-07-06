@@ -117,7 +117,7 @@ const DIAL_CONFIGS: Record<DialKey, DialConfig> = {
     },
   },
   coverage: {
-    label: "Coverage",
+    label: "Breadth",
     wireKey: "coverage",
     options: Object.entries(labelToEngine.coverage).map(([label, value]) => ({ label, value })),
     getValue: (s) => String(scopeOf(s)["coverage"] ?? "medium"),

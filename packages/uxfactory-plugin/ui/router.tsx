@@ -236,7 +236,8 @@ function ContextBar(): React.JSX.Element {
   pushDial("visual", "Visual", scopeRec["visual"], engineToLabel.visual);
   pushDial("editorial", "Editorial", scopeRec["editorial"], engineToLabel.editorial);
   pushDial("flow", "Flows", scopeRec["flow"], engineToLabel.flows);
-  pushDial("coverage", "Coverage", scopeRec["coverage"], engineToLabel.coverage);
+  // Display renamed to Breadth (decision 12) — the Coverage NAME now belongs to the metric.
+  pushDial("coverage", "Breadth", scopeRec["coverage"], engineToLabel.coverage);
   pushDial("coherence", "Coherence", experimentalRec["coherence"], engineToLabel.coherence);
 
   // Design style: a generative default with an explicit exploring state.

@@ -63,6 +63,68 @@ export interface StorySet {
   stories: Story[];
 }
 
+/** One feature: groups stories — never gates, only scopes (mapping decision 12). */
+export interface Feature {
+  featureId: string;
+  name: string;
+  storyRefs: string[];
+  origin?: "inherited" | "net-new";
+  status?: string;
+}
+
+/** features.json (v1). */
+export interface FeatureSet {
+  features: Feature[];
+}
+
+/** The Coverage METRIC: conformed features / total. Advisory metadata — never gates. */
+export interface FeatureCoverage {
+  conformed: number;
+  total: number;
+  features: Array<{
+    featureId: string;
+    name: string;
+    conformed: boolean;
+    uncoveredStories: string[];
+  }>;
+}
+
+/**
+ * Derive the Coverage metric from a coverage check's findings. A feature is
+ * conformed when every storyRef names an existing story that contributes no
+ * coverage finding. Mode-agnostic by construction: requirement-coverage refs
+ * are plain story ids and render-coverage refs are `storyId/state[@vp]` —
+ * both key on the segment before the first "/"; refs that match no known
+ * story id (render failures, dead selectors) are ignored.
+ */
+export function featureCoverage(
+  features: FeatureSet,
+  storyIds: ReadonlySet<string>,
+  coverageFindings: BatchFinding[],
+): FeatureCoverage {
+  const uncovered = new Set<string>();
+  for (const f of coverageFindings) {
+    const id = (f.ref ?? "").split("/")[0]!;
+    if (storyIds.has(id)) uncovered.add(id);
+  }
+  const rows = features.features.map((feature) => {
+    const missing = feature.storyRefs.filter(
+      (ref) => !storyIds.has(ref) || uncovered.has(ref),
+    );
+    return {
+      featureId: feature.featureId,
+      name: feature.name,
+      conformed: missing.length === 0,
+      uncoveredStories: missing,
+    };
+  });
+  return {
+    conformed: rows.filter((r) => r.conformed).length,
+    total: rows.length,
+    features: rows,
+  };
+}
+
 /** flow.json (v1): an ordered sequence of node/frame names. */
 export interface Flow {
   steps: string[];

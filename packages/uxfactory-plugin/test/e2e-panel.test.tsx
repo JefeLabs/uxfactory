@@ -388,7 +388,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     expect(screen.getByRole("checkbox", { name: "Visual High" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Editorial Medium" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Flows Shallow" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Coverage Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Breadth Medium" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Coherence High" })).toBeInTheDocument();
 
     // Full order mirrors project setup: step-1 facts, then step-2 defaults.
@@ -397,7 +397,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
       .map((c) => (c.getAttribute("aria-label") ?? "").split(" ")[0]);
     expect(prefixes).toEqual([
       "Category", "Industry", "Locale", "Platform", "Layout", "Age", "Quadrant",
-      "Style", "Tone", "Visual", "Editorial", "Flows", "Coverage", "Coherence",
+      "Style", "Tone", "Visual", "Editorial", "Flows", "Breadth", "Coherence",
     ]);
   });
 

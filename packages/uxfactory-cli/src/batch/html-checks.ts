@@ -1,4 +1,5 @@
-import type { BatchFinding, CheckResult, ImpliedState, Severity, StorySet, TokenSet } from "./checks.js";
+import { featureCoverage } from "./checks.js";
+import type { BatchFinding, CheckResult, ImpliedState, Severity, StorySet, TokenSet , FeatureSet, FeatureCoverage} from "./checks.js";
 import type { CapturedNode } from "../render/dom-capture.js";
 import { binds } from "./scope.js";
 import type { GateThresholds, RenderScope } from "./scope.js";
@@ -423,6 +424,8 @@ export interface RunHtmlBatchInput {
   a11ySpec?: boolean;
   /** Escape-hatch provenance from the registry — reported verbatim, never gating. */
   ungoverned?: boolean;
+  /** Feature groupings — Coverage metric denominator (decision 12). Never gates. */
+  features?: FeatureSet | null;
 }
 
 interface HtmlGateEntry {
@@ -500,11 +503,25 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
     }
   }
   const mustPassFailed = checks.some((c) => c.severity === "must" && c.status === "fail");
+
+  // Coverage METRIC (decision 12) — derived from render-coverage findings
+  // (story-id-prefixed refs); advisory metadata only, never gates.
+  let metric: FeatureCoverage | undefined;
+  if (input.features != null && input.stories !== null) {
+    const coverage = checks.find((c) => c.id === "render-coverage");
+    metric = featureCoverage(
+      input.features,
+      new Set(input.stories.stories.map((s) => s.id)),
+      coverage?.status === "fail" ? coverage.findings : [],
+    );
+  }
+
   return {
     scope,
     ...(unit !== undefined ? { unit } : {}),
     ...(designStyle !== undefined ? { designStyle } : {}),
     ...(input.ungoverned === true ? { ungoverned: true as const } : {}),
+    ...(metric !== undefined ? { featureCoverage: metric } : {}),
     rubric,
     checks,
     mustPassFailed,

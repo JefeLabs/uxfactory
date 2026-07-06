@@ -1145,13 +1145,13 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 // ─── Dial label coverage — Coverage and Style ─────────────────────────────────
 
 describe("quick-dial Segmented label coverage", () => {
-  it("Coverage dial shows Thin and Exhaustive labels", async () => {
+  it("Breadth dial (renamed from Coverage) shows Thin and Exhaustive labels", async () => {
     const user = userEvent.setup();
     await renderWithProviders(<ExpandedHeader bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(screen.getByRole("checkbox", { name: /Coverage/i }));
+    await user.click(screen.getByRole("checkbox", { name: /Breadth/i }));
 
-    const group = screen.getByRole("radiogroup", { name: /Coverage fidelity/i });
+    const group = screen.getByRole("radiogroup", { name: /Breadth fidelity/i });
     expect(within(group).getByRole("radio", { name: "Thin" })).toBeInTheDocument();
     expect(within(group).getByRole("radio", { name: "Exhaustive" })).toBeInTheDocument();
   });

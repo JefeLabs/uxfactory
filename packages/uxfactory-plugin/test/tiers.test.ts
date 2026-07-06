@@ -346,6 +346,33 @@ describe("I-1: hintPrefix — 'nearest: ' for token findings, undefined for craf
 // ─── I-2: nodeName and requirement fields ────────────────────────────────────
 
 describe("I-2: annotation routing fields — nodeName and requirement", () => {
+  it("T1 stats surface the Coverage metric when the report carries featureCoverage", () => {
+    const withMetric = {
+      rubric: ["render-coverage"],
+      checks: [
+        { id: "render-coverage", status: "pass", severity: "must", findings: [] },
+      ],
+      mustPassFailed: false,
+      clean: true,
+      featureCoverage: { conformed: 2, total: 3, features: [] },
+    };
+    const model = toTierModel({ batchReport: withMetric });
+    expect(row(model, "T1").stats).toBe("2 of 3 features conformed");
+  });
+
+  it("T1 stats keep the plain wording when no featureCoverage is present", () => {
+    const noMetric = {
+      rubric: ["render-coverage"],
+      checks: [
+        { id: "render-coverage", status: "pass", severity: "must", findings: [] },
+      ],
+      mustPassFailed: false,
+      clean: true,
+    };
+    const model = toTierModel({ batchReport: noMetric });
+    expect(row(model, "T1").stats).toBe("all covered");
+  });
+
   it("T1 coverage finding has requirement set from ref (story · state)", () => {
     const model = toTierModel({ batchReport: COVERAGE_FAIL_BATCH });
     const t1Finding = row(model, "T1").findings[0]!;

@@ -11,7 +11,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
-import type { TokenSet, StorySet, Flow } from "./checks.js";
+import type { TokenSet, StorySet, Flow, FeatureSet } from "./checks.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -134,6 +134,30 @@ export async function loadStoriesInput(absPath: string | null): Promise<InputLoa
     };
   }
   return { state: "ok", value: raw as unknown as StorySet };
+}
+
+/**
+ * Load and shape-validate a registered features input (features.json).
+ * Feeds the Coverage METRIC only (decision 12) — never a gate.
+ */
+export async function loadFeaturesInput(
+  absPath: string | null,
+): Promise<InputLoadResult<FeatureSet>> {
+  if (absPath === null) return { state: "absent" };
+  const result = await loadRawJson(absPath, "features");
+  if (!result.ok) return { state: "broken", message: result.message };
+  const raw = result.raw;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { state: "broken", message: `malformed features file: expected a JSON object` };
+  }
+  const features = (raw as Record<string, unknown>)["features"];
+  if (!Array.isArray(features)) {
+    return {
+      state: "broken",
+      message: `malformed features file: "features" must be an array (got ${JSON.stringify(typeof features)})`,
+    };
+  }
+  return { state: "ok", value: raw as unknown as FeatureSet };
 }
 
 /**

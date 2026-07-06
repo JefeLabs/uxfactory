@@ -10,6 +10,8 @@ export interface BatchInputs {
   stories?: string;
   /** A declared user-flow step sequence. */
   flow?: string;
+  /** Feature groupings over stories — Coverage metric denominator (never gates). */
+  features?: string;
   /** Existing spec files to compose/reuse against. */
   reuse?: string[];
   /** HTML tier: directory of authored HTML pages (presence selects HTML mode). */
@@ -92,6 +94,7 @@ export interface ResolvedInputs {
   tokens: string | null;
   stories: string | null;
   flow: string | null;
+  features: string | null;
   reuse: string[];
   screens: string | null;
   trace: string | null;
@@ -115,7 +118,7 @@ export function validateRegistry(
     return { ok: false, message: "registry.inputs must be an object" };
 
   const inputs = raw["inputs"];
-  for (const key of ["tokens", "stories", "flow", "screens", "trace"] as const) {
+  for (const key of ["tokens", "stories", "flow", "features", "screens", "trace"] as const) {
     const v = inputs[key];
     if (v !== undefined && typeof v !== "string") {
       return { ok: false, message: `registry.inputs.${key} must be a string path` };
@@ -192,11 +195,12 @@ export function validateRegistry(
 /** Resolve each registered input path relative to the manifest's directory. */
 export function resolveInputs(registry: BatchRegistry, registryDir: string): ResolvedInputs {
   const abs = (p: string): string => path.resolve(registryDir, p);
-  const { tokens, stories, flow, reuse, screens, trace } = registry.inputs;
+  const { tokens, stories, flow, features, reuse, screens, trace } = registry.inputs;
   return {
     tokens: tokens !== undefined ? abs(tokens) : null,
     stories: stories !== undefined ? abs(stories) : null,
     flow: flow !== undefined ? abs(flow) : null,
+    features: features !== undefined ? abs(features) : null,
     reuse: reuse !== undefined ? reuse.map(abs) : [],
     screens: screens !== undefined ? abs(screens) : null,
     trace: trace !== undefined ? abs(trace) : null,

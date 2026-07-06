@@ -1,7 +1,7 @@
 import { access, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "../exit.js";
-import { loadStoriesInput, loadTokensInput } from "../batch/inputs.js";
+import { loadFeaturesInput, loadStoriesInput, loadTokensInput } from "../batch/inputs.js";
 import { readTrace } from "../batch/trace.js";
 import { renderHtml, type HtmlRenderDeps } from "../render/html-render.js";
 import { runHtmlBatch, typographyLimitsFrom, type TypographyLimits } from "../batch/html-checks.js";
@@ -91,6 +91,13 @@ export async function batchHtmlMode(
   if (storiesResult.state === "broken") { io.err(storiesResult.message); return EXIT.TRANSPORT; }
   const stories: StorySet | null = storiesResult.state === "ok" ? storiesResult.value : null;
 
+  const featuresResult = await loadFeaturesInput(inputs.features);
+  if (featuresResult.state === "broken") {
+    io.err(featuresResult.message);
+    return EXIT.TRANSPORT;
+  }
+  const features = featuresResult.state === "ok" ? featuresResult.value : null;
+
   const tokensResult = await loadTokensInput(inputs.tokens);
   if (tokensResult.state === "broken") { io.err(tokensResult.message); return EXIT.TRANSPORT; }
   const tokens: TokenSet | null = tokensResult.state === "ok" ? tokensResult.value : null;
@@ -152,6 +159,7 @@ export async function batchHtmlMode(
   const report: BatchReport = runHtmlBatch({
     snapshots,
     stories,
+    features,
     tokens,
     scope,
     ...(registryUnit !== undefined ? { unit: registryUnit } : {}),

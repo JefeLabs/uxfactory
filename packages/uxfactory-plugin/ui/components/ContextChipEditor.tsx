@@ -69,7 +69,7 @@ export const CHIP_FIELD_LABEL: Record<ChipField, string> = {
   visual: "visual",
   editorial: "editorial",
   flow: "flows",
-  coverage: "coverage",
+  coverage: "breadth",
   coherence: "coherence",
 };
 
@@ -92,7 +92,7 @@ const CHIP_FIELD_HELP: Partial<Record<ChipField, string>> = {
   editorial: "How polished generated copy is — placeholder to publication-ready.",
   flow: "How deep generated user flows go — happy path to edge cases.",
   coverage:
-    "Floor for generation without specs — when requirements exist, they take precedence. Coverage ≥ Low → requirement coverage binds (T1).",
+    "Floor for generation without specs — when requirements exist, they take precedence. Breadth ≥ Low → requirement coverage binds (T1).",
   coherence: "Experimental — how strongly designs stay visually consistent with each other.",
 };
 
@@ -238,7 +238,7 @@ function renderControl(
       );
     case "coverage":
       return (
-        <Segmented options={COVERAGE_OPTIONS} value={draft as string} onChange={onChange} ariaLabel="Coverage" />
+        <Segmented options={COVERAGE_OPTIONS} value={draft as string} onChange={onChange} ariaLabel="Breadth" />
       );
     case "coherence":
       return (

@@ -24,7 +24,7 @@ import { access, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /** A conventional input registry key. */
-export type BatchInputKey = 'stories' | 'flow' | 'tokens' | 'screens' | 'trace';
+export type BatchInputKey = 'stories' | 'flow' | 'tokens' | 'features' | 'screens' | 'trace';
 
 /** Options for {@link ensureBatchRegistry}. */
 export interface EnsureBatchRegistryOptions {
@@ -66,6 +66,7 @@ const CONVENTIONAL_INPUTS: ReadonlyArray<{
   rel: string;
 }> = [
   { key: 'stories', rel: 'design/acceptance-criteria.json' }, // AcceptanceCriterion (user-story + acceptance-criteria targets)
+  { key: 'features', rel: '.uxfactory/artifacts/features.json' }, // Coverage metric denominator (never gates)
   { key: 'flow', rel: 'design/user-flow.json' }, // UserFlow (user-journey target)
   { key: 'tokens', rel: 'design/token-set.json' }, // TokenSet (not worker-generated; honored if user-provided)
   { key: 'screens', rel: 'design/screens' }, // HTML tier: directory of authored pages

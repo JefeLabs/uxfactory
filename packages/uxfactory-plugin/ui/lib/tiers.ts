@@ -70,6 +70,8 @@ interface BatchReport {
   checks?: BatchCheckResult[];
   mustPassFailed?: boolean;
   clean?: boolean;
+  /** Coverage METRIC (decision 12): conformed features / total. Advisory only. */
+  featureCoverage?: { conformed: number; total: number };
 }
 
 interface GateCheck {
@@ -214,6 +216,12 @@ function buildT0(batch: BatchReport | null): TierRowModel {
 function buildT1(batch: BatchReport | null): TierRowModel {
   const tier: TierId = "T1";
   const name = "Coverage";
+  // The Coverage METRIC (decision 12) — features as denominator, when stamped.
+  const fc = batch?.featureCoverage;
+  const metricStats =
+    fc !== undefined && typeof fc.total === "number" && fc.total > 0
+      ? `${fc.conformed} of ${fc.total} features conformed`
+      : undefined;
 
   if (!batch) {
     return { tier, name, status: "pending", findings: [] };
@@ -254,12 +262,15 @@ function buildT1(batch: BatchReport | null): TierRowModel {
       tier,
       name,
       status: "fail",
-      stats: `${findings.length} uncovered`,
+      stats:
+        metricStats !== undefined
+          ? `${findings.length} uncovered · ${metricStats}`
+          : `${findings.length} uncovered`,
       findings,
     };
   }
 
-  return { tier, name, status: "pass", stats: "all covered", findings: [] };
+  return { tier, name, status: "pass", stats: metricStats ?? "all covered", findings: [] };
 }
 
 function buildT2(batch: BatchReport | null): TierRowModel {
