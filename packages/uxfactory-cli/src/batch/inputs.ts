@@ -8,7 +8,9 @@
  *
  * Single source of truth for shape checks; batch and review cannot drift from each other.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import path from "node:path";
+import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
 import type { TokenSet, StorySet, Flow } from "./checks.js";
 
 // ---------------------------------------------------------------------------
@@ -67,13 +69,57 @@ export async function loadTokensInput(absPath: string | null): Promise<InputLoad
 }
 
 /**
- * Load and shape-validate a registered stories input (stories.json).
+ * Load a directory of canonical per-story files (`.uxfactory/artifacts/
+ * stories/*.json`, nested-ACs migration) into one engine StorySet. Members
+ * normalize through @uxfactory/spec's story schema — canonical or legacy
+ * member shape both accepted — sorted by filename for determinism. Any
+ * malformed member breaks the whole input (setup error), naming the file.
+ */
+async function loadStoriesDir(dirAbs: string): Promise<InputLoadResult<StorySet>> {
+  let entries: string[];
+  try {
+    entries = (await readdir(dirAbs)).filter((e) => e.endsWith(".json")).sort();
+  } catch (err) {
+    return {
+      state: "broken",
+      message: `cannot read registered stories input '${dirAbs}': ${(err as Error).message}`,
+    };
+  }
+  const stories: StorySet["stories"] = [];
+  for (const entry of entries) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await readFile(path.join(dirAbs, entry), "utf8")) as unknown;
+    } catch (err) {
+      return {
+        state: "broken",
+        message: `malformed story file '${entry}': ${(err as Error).message}`,
+      };
+    }
+    const parsed = parseStoryFile(raw);
+    if (!parsed.ok) {
+      return { state: "broken", message: `malformed story file '${entry}': ${parsed.message}` };
+    }
+    stories.push(storyToEngine(parsed.story));
+  }
+  return { state: "ok", value: { stories } };
+}
+
+/**
+ * Load and shape-validate a registered stories input.
  *
  * Absent (null path) → { state:"absent" }.
+ * Directory → canonical per-story set (see {@link loadStoriesDir}).
+ * File → the legacy `{stories:[…]}` shape, byte-identical behavior.
  * Unreadable / invalid JSON / `stories` not an array → { state:"broken", message }.
  */
 export async function loadStoriesInput(absPath: string | null): Promise<InputLoadResult<StorySet>> {
   if (absPath === null) return { state: "absent" };
+  try {
+    if ((await stat(absPath)).isDirectory()) return loadStoriesDir(absPath);
+  } catch {
+    // Unreadable path: fall through so the file loader reports its usual message.
+  }
   const result = await loadRawJson(absPath, "stories");
   if (!result.ok) return { state: "broken", message: result.message };
   const raw = result.raw;

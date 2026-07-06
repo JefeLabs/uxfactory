@@ -18,6 +18,7 @@ import { batchCmd } from "./commands/batch.js";
 import { generateSpecsCmd } from "./commands/generate-specs.js";
 import { reviewCmd } from "./commands/review.js";
 import { classifyCmd } from "./commands/classify.js";
+import { migrateStoriesCmd } from "./commands/migrate-stories.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
 // renderCmd and bridgeCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
@@ -304,6 +305,15 @@ export function buildProgram(): Command {
         },
         consoleIO,
       );
+    });
+
+  program
+    .command("migrate-stories")
+    .description(
+      "Split the legacy acceptance-criteria file into canonical per-story files (nested ACs)",
+    )
+    .action(async () => {
+      lastCode = await migrateStoriesCmd({ cwd: process.cwd() }, consoleIO);
     });
 
   program

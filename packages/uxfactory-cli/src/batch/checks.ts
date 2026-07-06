@@ -45,6 +45,8 @@ export type ImpliedState = "empty" | "loading" | "error" | "success" | "edge";
 export interface AcceptanceCriterion {
   statement: string;
   impliedState: ImpliedState;
+  /** manual = human sign-off; the deterministic gate never enforces it. Absent = auto. */
+  checkable?: "auto" | "manual";
 }
 
 /** One user story with its acceptance criteria. */
@@ -339,6 +341,7 @@ export function requirementCoverage(specs: LoadedSpec[], stories: StorySet | nul
     // Fix 1: AC states checked only against nodes in THIS story's covering frames
     const storyNodes = storyNodeNames(specs, story.id).map((n) => n.toLowerCase());
     for (const ac of story.acceptanceCriteria ?? []) {
+      if (ac.checkable === "manual") continue; // human sign-off — never auto-gated
       const kw = ac.impliedState.toLowerCase();
       if (!storyNodes.some((n) => n.includes(kw))) {
         findings.push({
