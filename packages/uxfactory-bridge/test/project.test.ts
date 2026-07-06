@@ -602,6 +602,54 @@ describe("GET + PUT /project/links", () => {
   });
 });
 
+// ─── typography + a11y-spec rows ──────────────────────────────────────────────
+
+describe("snapshot rows: typography and a11y-spec", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  it("typography is a design-system section concern; a11y-spec its own file", async () => {
+    await writeJson(path.join(root, ".uxfactory/artifacts/design-system.json"), {
+      "brand-colors": ["#111111"],
+      typography: { scale: { base: 16, ratio: 1.25 } },
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/accessibility.json"), {
+      target: "WCAG-2.2-AA",
+    });
+
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    const rows = (res.json() as { artifacts: Array<{ key: string; status: string; group: string }> }).artifacts;
+    const typography = rows.find((r) => r.key === "typography");
+    expect(typography).toMatchObject({ group: "design", status: "up-to-date" });
+    const a11y = rows.find((r) => r.key === "a11y-spec");
+    expect(a11y).toMatchObject({ group: "design", status: "up-to-date" });
+  });
+
+  it("both report missing on an empty project; typography missing when its section is absent", async () => {
+    await writeJson(path.join(root, ".uxfactory/artifacts/design-system.json"), {
+      "brand-colors": ["#111111"],
+    });
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    const rows = (res.json() as { artifacts: Array<{ key: string; status: string }> }).artifacts;
+    expect(rows.find((r) => r.key === "typography")?.status).toBe("missing");
+    expect(rows.find((r) => r.key === "a11y-spec")?.status).toBe("missing");
+  });
+
+  it("a11y-spec is writable through PUT /project/artifact", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "a11y-spec", content: JSON.stringify({ target: "WCAG-2.2-AA" }) },
+    });
+    expect(put.statusCode).toBe(200);
+    const get = await app.inject({ method: "GET", url: "/project/artifact?key=a11y-spec" });
+    expect(get.statusCode).toBe(200);
+    expect((get.json() as { path: string }).path).toContain("accessibility.json");
+  });
+});
+
 // ─── POST /project/reset ─────────────────────────────────────────────────────
 
 describe("POST /project/reset — soft reset: archive Figma associations + project definition", () => {

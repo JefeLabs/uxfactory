@@ -947,6 +947,8 @@ export type PanelArtifactKey =
   | 'brand-colors'
   | 'palettes'
   | 'fonts'
+  | 'typography'
+  | 'a11y-spec'
   | 'grid'
   | 'tokens'
   | 'icons'
@@ -992,6 +994,12 @@ const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
   },
   fonts: { label: 'Fonts', path: '.uxfactory/artifacts/design-system.json', sectionKey: 'fonts' },
   grid: { label: 'Grid', path: '.uxfactory/artifacts/design-system.json', sectionKey: 'grid' },
+  typography: {
+    label: 'Typography',
+    path: '.uxfactory/artifacts/design-system.json',
+    sectionKey: 'typography',
+  },
+  'a11y-spec': { label: 'A11y Spec', path: '.uxfactory/artifacts/accessibility.json' },
   tokens: { label: 'Tokens', path: 'design/token-set.json' },
   icons: { label: 'Icons', path: '.uxfactory/artifacts/assets/icons.json' },
   photography: { label: 'Photography', path: '.uxfactory/artifacts/assets/photography.json' },

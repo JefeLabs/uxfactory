@@ -5,7 +5,7 @@
  *
  * Test names map 1-to-1 with PRD §6 acceptance criteria (AC-1 … AC-7).
  *
- * Fixture: MERIDIAN_SNAPSHOT — 12 registered concerns, 10 up-to-date,
+ * Fixture: MERIDIAN_SNAPSHOT — 14 registered concerns, 10 up-to-date,
  * 1 draft (sitemap), 1 missing (illustrations). Matches the "10 of 12"
  * rollup shown in the mock screenshot.
  *
@@ -104,7 +104,7 @@ const BRIEF_ARTIFACT: ArtifactContent = {
 };
 
 // ─── Meridian fixture artifacts ───────────────────────────────────────────────
-// 12 registered concerns · 10 up-to-date · 1 draft · 1 missing = "10 of 12"
+// 14 registered concerns · 10 up-to-date · 1 draft · 1 missing = "10 of 12"
 
 const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
   {
@@ -170,6 +170,22 @@ const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
     status: "up-to-date",
     meta: "",
     path: "/home/user/meridian/design/design-system.json",
+  },
+  {
+    key: "typography",
+    group: "design",
+    label: "Typography",
+    status: "missing",
+    meta: "",
+    path: null,
+  },
+  {
+    key: "a11y-spec",
+    group: "design",
+    label: "A11y Spec",
+    status: "missing",
+    meta: "",
+    path: null,
   },
   {
     key: "tokens",
@@ -380,10 +396,10 @@ describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () =
     );
   });
 
-  it("displays '10 of 12 up to date' rollup", async () => {
+  it("displays '10 of 14 up to date' rollup", async () => {
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     await waitFor(() =>
-      expect(screen.getByText(/10 of 12 up to date/i)).toBeInTheDocument(),
+      expect(screen.getByText(/10 of 14 up to date/i)).toBeInTheDocument(),
     );
   });
 
@@ -899,10 +915,12 @@ describe("planned registry artifacts render as coming-soon rows", () => {
     });
     await waitFor(() => screen.getByText("Illustrations"));
 
-    // Design gains its planned members…
+    // Typography/A11y spec are registered now — real rows with Create.
     const design = screen.getByRole("region", { name: "DESIGN" });
-    expect(within(design).getByText("Typography")).toBeInTheDocument();
-    expect(within(design).getByText("A11y spec")).toBeInTheDocument();
+    expect(within(design).getByRole("button", { name: /Create Typography/i })).toBeInTheDocument();
+    expect(within(design).getByRole("button", { name: /Create A11y Spec/i })).toBeInTheDocument();
+    // Still-planned design members keep the coming-soon treatment.
+    expect(within(design).getByText("Interaction states")).toBeInTheDocument();
     // …and the new registry categories appear as sections.
     const content = screen.getByRole("region", { name: "CONTENT" });
     expect(within(content).getByText("Copy deck")).toBeInTheDocument();
@@ -917,14 +935,14 @@ describe("planned registry artifacts render as coming-soon rows", () => {
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
       initialEntries: ["/tabs/artifacts"],
     });
-    await waitFor(() => screen.getByText("Typography"));
+    await waitFor(() => screen.getByText("Interaction states"));
 
     expect(screen.getAllByText("Coming soon").length).toBeGreaterThan(0);
     expect(
-      screen.queryByRole("button", { name: /Create Typography/i }),
+      screen.queryByRole("button", { name: /Create Interaction states/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Open Typography/i }),
+      screen.queryByRole("button", { name: /Open Interaction states/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -932,11 +950,11 @@ describe("planned registry artifacts render as coming-soon rows", () => {
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
       initialEntries: ["/tabs/artifacts"],
     });
-    await waitFor(() => screen.getByText("Typography"));
+    await waitFor(() => screen.getByText("Interaction states"));
 
-    // Meridian snapshot ships 12 rows — planned registry entries must not
+    // Meridian snapshot ships 14 rows — planned registry entries must not
     // inflate the denominator.
-    expect(screen.getByLabelText("Freshness rollup").textContent).toMatch(/of 12 up to date/);
+    expect(screen.getByLabelText("Freshness rollup").textContent).toMatch(/of 14 up to date/);
   });
 });
 

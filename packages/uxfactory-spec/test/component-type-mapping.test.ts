@@ -57,7 +57,7 @@ describe("mapping consistency invariants", () => {
     }
   });
 
-  it("registry marks exactly the 12 shipped artifacts as registered", () => {
+  it("registry marks exactly the 14 shipped artifacts as registered", () => {
     const registered = Object.entries(ARTIFACT_REGISTRY)
       .filter(([, e]) => e.status === "registered")
       .map(([id]) => id)
@@ -66,6 +66,7 @@ describe("mapping consistency invariants", () => {
       [
         "product-brief", "acceptance-criteria", "sitemap", "flows",
         "brand-colors", "palettes", "fonts", "grid", "tokens",
+        "typography", "a11y-spec",
         "icons", "photography", "illustrations",
       ].sort(),
     );
@@ -88,8 +89,12 @@ describe("resolveRequirements", () => {
     const home = resolveRequirements("home-page");
     const sitemap = home.find((r) => r.artifactId === "sitemap")!;
     expect(sitemap).toMatchObject({ level: "required", status: "registered", blocking: true });
+    // typography/a11y-spec are registered now — copy-deck remains the
+    // required-but-planned example.
+    const copyDeck = home.find((r) => r.artifactId === "copy-deck")!;
+    expect(copyDeck).toMatchObject({ level: "required", status: "planned", blocking: false });
     const typography = home.find((r) => r.artifactId === "typography")!;
-    expect(typography).toMatchObject({ level: "required", status: "planned", blocking: false });
+    expect(typography).toMatchObject({ level: "required", status: "registered", blocking: true });
   });
 
   it("greenfield applies no relaxation", () => {

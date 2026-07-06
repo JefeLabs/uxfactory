@@ -53,6 +53,15 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "columns", tag: "F", question: "Columns and spacing base", defaultValue: "4/8/12 columns at an 8px base" },
   ],
   "tokens": [],
+  "typography": [
+    { id: "base-ratio", tag: "F", question: "Base size and scale ratio", defaultValue: "16px base, 1.25 ratio" },
+    { id: "limits", tag: "F", question: "Readability limits", defaultValue: "min body 16px, line length 45–75ch" },
+    { id: "house-rules", tag: "E", question: "Any house rules? (e.g. no italics, sentence-case headings — write 'none' if none)", placeholder: "none" },
+  ],
+  "a11y-spec": [
+    { id: "target", tag: "F", question: "Conformance target", defaultValue: "WCAG 2.2 AA" },
+    { id: "exceptions", tag: "E", question: "Known exceptions? Each needs a justification and expiry — write 'none' if none.", placeholder: "none" },
+  ],
   "icons": [
     { id: "set", tag: "E", question: "Icon set preference — lucide, material, or custom (link if custom)?" },
     { id: "grid", tag: "F", question: "Icon grid and stroke", defaultValue: "24px grid, 1.5px stroke" },
@@ -82,7 +91,9 @@ export const ARTIFACT_PREREQS: Record<string, string[]> = {
   // flows pick their stories and step through sitemap nodes.
   "flows": ["acceptance-criteria", "sitemap"],
   // tokens are MATERIALIZED from the system artifacts.
-  "tokens": ["brand-colors", "palettes", "grid"],
+  "tokens": ["brand-colors", "palettes", "typography", "grid"],
+  // type tokens derive from the fonts inventory's default pairing.
+  "typography": ["fonts"],
   // illustration palettes are a subset of brand colors.
   "illustrations": ["brand-colors"],
   // the doc's canonical hard dependency (both still planned).

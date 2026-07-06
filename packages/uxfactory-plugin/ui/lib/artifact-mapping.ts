@@ -14,6 +14,8 @@ export const ARTIFACT_KEY_BY_ID: Record<string, string> = {
   "palettes": "palettes",
   "fonts": "fonts",
   "grid": "grid",
+  "typography": "typography",
+  "a11y-spec": "a11y-spec",
   "tokens": "tokens",
   "icons": "icons",
   "photography": "photography",

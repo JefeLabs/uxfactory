@@ -73,9 +73,9 @@ describe("prerequisite chaining", () => {
 
   it("transitive chains dedupe shared prerequisites", () => {
     const missing = () => true;
-    // tokens → brand-colors, palettes (→ brand-colors), grid — brand-colors once.
+    // tokens → colors, palettes (→ colors), typography (→ fonts), grid.
     expect(resolveCreationChain("tokens", missing)).toEqual([
-      "brand-colors", "palettes", "grid", "tokens",
+      "brand-colors", "palettes", "fonts", "typography", "grid", "tokens",
     ]);
   });
 

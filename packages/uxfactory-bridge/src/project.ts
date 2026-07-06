@@ -131,6 +131,8 @@ const CONCERN_CANONICAL: Record<string, string> = {
   palettes: DESIGN_SYSTEM_PATH,
   fonts: DESIGN_SYSTEM_PATH,
   grid: DESIGN_SYSTEM_PATH,
+  typography: DESIGN_SYSTEM_PATH,
+  "a11y-spec": `${ARTIFACTS_DIR}/accessibility.json`,
   tokens: TOKENS_PATH,
   icons: `${ARTIFACTS_DIR}/assets/icons.json`,
   photography: `${ARTIFACTS_DIR}/assets/photography.json`,
@@ -394,6 +396,7 @@ async function buildArtifacts(
       { key: "palettes", label: "Palettes" },
       { key: "fonts", label: "Fonts" },
       { key: "grid", label: "Grid" },
+      { key: "typography", label: "Typography" },
     ] as const;
 
     for (const { key, label } of sections) {
@@ -442,6 +445,15 @@ async function buildArtifacts(
         });
       }
     }
+  }
+
+  // ── design: a11y-spec (own file — the accessibility contract) ─────────────
+  {
+    const abs =
+      (await findConcernFile(root, "a11y-spec")) ??
+      path.join(root, CONCERN_CANONICAL["a11y-spec"]!);
+    const r = await checkJsonArtifact(abs);
+    rows.push({ key: "a11y-spec", group: "design", label: "A11y Spec", ...r });
   }
 
   // ── assets: icons, photography, illustrations ─────────────────────────────

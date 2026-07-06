@@ -488,7 +488,9 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
 
     const stories = screen.getByLabelText("Stories — coming soon");
     expect(stories).toBeDisabled();
-    expect(screen.getByLabelText("Typography — coming soon")).toBeDisabled();
+    // Typography shipped — it is a real (required, missing) chip now.
+    expect(screen.getByLabelText("Typography — required, missing")).toBeInTheDocument();
+    expect(screen.getByLabelText("Copy deck — coming soon")).toBeDisabled();
   });
 
   it("chips are type-aware: the channel surface swaps the requirement set", async () => {
@@ -563,6 +565,8 @@ describe("ungoverned draft annotation", () => {
           satisfied("brand-colors", "design"),
           satisfied("fonts", "design"),
           satisfied("grid", "design"),
+          satisfied("typography", "design"),
+          satisfied("a11y-spec", "design"),
         ],
       }),
     });
@@ -1415,7 +1419,7 @@ describe("grounding chip prerequisite tooltips", () => {
     const tokens = screen.getByLabelText(/^Tokens —/);
     expect(tokens).toHaveAttribute(
       "title",
-      "Needs Brand colors, Palettes, Grid first — created in sequence on click",
+      "Needs Brand colors, Palettes, Typography, Grid first — created in sequence on click",
     );
     // A chip without prerequisites keeps its plain tooltip.
     const grid = screen.getByLabelText("Grid — required, missing");

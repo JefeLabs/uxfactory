@@ -69,6 +69,10 @@ export function sectionGuidanceFor(
  * Create / Regenerate dialog.
  */
 export const CREATE_GUIDANCE: Record<string, string> = {
+  typography:
+    "The type system: scale, hierarchy rules, and readability limits — the checkable side of your fonts.",
+  "a11y-spec":
+    "Your accessibility contract. Defaults cover WCAG 2.2 AA — its value is in checking, not authoring.",
   brief:
     "Describe the product, its audience, and what success looks like — the agent drafts the product brief from this.",
   requirements:
