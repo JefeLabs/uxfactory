@@ -54,6 +54,16 @@ export function snapshotQuery(bridge: Bridge) {
   });
 }
 
+/** The traceability tree (features → stories → ACs/links/pages). */
+export function traceQuery(bridge: Bridge) {
+  return queryOptions({
+    queryKey: [...queryKeys.snapshot(activeRoot(bridge)), "trace"],
+    queryFn: () => bridge.trace!(),
+    enabled: typeof bridge.trace === "function",
+    staleTime: 5_000,
+  });
+}
+
 /** Pending render jobs awaiting approval — polled so the badge stays live. */
 export function renderQueueQuery(bridge: Bridge) {
   return queryOptions({

@@ -608,6 +608,185 @@ export async function buildSnapshot(
   };
 }
 
+// ─── Trace join (features → stories → ACs/links/pages) ──────────────────────
+
+interface TraceAC {
+  acId: string;
+  statement: string;
+  checkable: string;
+  linkedNodes: Array<{ nodeId: string; unitName: string; unitType: string }>;
+}
+
+interface TraceStory {
+  storyId: string;
+  actor: string;
+  want: string;
+  status: string;
+  coveredBy: Array<{ page: string; view: string }>;
+  acceptanceCriteria: TraceAC[];
+}
+
+interface TraceFeature {
+  featureId: string;
+  name: string;
+  /** From the latest report's featureCoverage; null when no report carries it. */
+  conformed: boolean | null;
+  stories: TraceStory[];
+}
+
+/** Parse every story reachable at the resolved stories path (set dir or legacy file). */
+async function readTraceStories(storiesPath: string): Promise<
+  Array<{ storyId: string; actor: string; want: string; status: string; acs: Array<{ acId: string; statement: string; checkable: string }> }>
+> {
+  const bodies: unknown[] = [];
+  try {
+    if ((await stat(storiesPath)).isDirectory()) {
+      const members = (await readdir(storiesPath)).filter((e) => e.endsWith(".json")).sort();
+      for (const m of members) {
+        try {
+          bodies.push(JSON.parse(await readFile(path.join(storiesPath, m), "utf8")) as unknown);
+        } catch { /* unreadable member — skip */ }
+      }
+    } else {
+      const raw = JSON.parse(await readFile(storiesPath, "utf8")) as { stories?: unknown[] };
+      for (const m of raw.stories ?? []) bodies.push(m);
+    }
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const body of bodies) {
+    const parsed = parseStoryFile(body);
+    if (!parsed.ok) continue;
+    const engine = storyToEngine(parsed.story);
+    out.push({
+      storyId: parsed.story.storyId,
+      actor: parsed.story.actor,
+      want: parsed.story.want,
+      status: parsed.story.status,
+      acs: engine.acceptanceCriteria.map((ac, i) => ({
+        acId: parsed.story.acceptanceCriteria[i]?.acId ?? `AC-${i + 1}`,
+        statement: ac.statement,
+        checkable: parsed.story.acceptanceCriteria[i]?.checkable ?? "auto",
+      })),
+    });
+  }
+  return out;
+}
+
+/**
+ * Compose the traceability tree: features → stories → ACs (with canvas links)
+ * plus each story's covering pages/views from trace.json and the feature's
+ * conformance from the latest report's Coverage metric. Every source is
+ * optional — absence degrades to empty lists / null conformance, never a 500.
+ */
+async function buildTrace(root: string, dataDir: string): Promise<{
+  features: TraceFeature[];
+  unassigned: TraceStory[];
+}> {
+  // Registry-aware input paths (stories via the shared resolver; features/trace direct).
+  const { storiesPath } = await resolveInputPaths(root);
+  let featuresPath = path.join(root, ARTIFACTS_DIR, "features.json");
+  let tracePath = path.join(root, "design/trace.json");
+  try {
+    const reg = JSON.parse(await readFile(path.join(root, "uxfactory.batch.json"), "utf8")) as {
+      inputs?: Record<string, unknown>;
+    };
+    if (typeof reg.inputs?.["features"] === "string") {
+      featuresPath = path.resolve(root, reg.inputs["features"]);
+    }
+    if (typeof reg.inputs?.["trace"] === "string") {
+      tracePath = path.resolve(root, reg.inputs["trace"]);
+    }
+  } catch { /* conventional fallbacks stand */ }
+
+  const stories = await readTraceStories(storiesPath);
+
+  // trace.json → story → covering page/view list
+  const coveredBy = new Map<string, Array<{ page: string; view: string }>>();
+  try {
+    const trace = JSON.parse(await readFile(tracePath, "utf8")) as {
+      pages?: Array<{ file?: string; views?: Array<{ id?: string; covers?: Array<{ story?: string }> }> }>;
+    };
+    for (const page of trace.pages ?? []) {
+      for (const view of page.views ?? []) {
+        const seen = new Set<string>();
+        for (const cover of view.covers ?? []) {
+          if (typeof cover.story !== "string" || seen.has(cover.story)) continue;
+          seen.add(cover.story);
+          const list = coveredBy.get(cover.story) ?? [];
+          list.push({ page: page.file ?? "", view: view.id ?? "" });
+          coveredBy.set(cover.story, list);
+        }
+      }
+    }
+  } catch { /* no trace — coveredBy stays empty */ }
+
+  // links registry → story-namespaced AC id (legacy plain ids matched too)
+  let links: Link[] = [];
+  try {
+    links = JSON.parse(await readFile(path.join(dataDir, "links.json"), "utf8")) as Link[];
+  } catch { /* no links yet */ }
+
+  // latest report → per-feature conformance
+  const conformedById = new Map<string, boolean>();
+  try {
+    const report = JSON.parse(
+      await readFile(path.join(dataDir, "batch", "report.json"), "utf8"),
+    ) as { featureCoverage?: { features?: Array<{ featureId?: string; conformed?: boolean }> } };
+    for (const f of report.featureCoverage?.features ?? []) {
+      if (typeof f.featureId === "string" && typeof f.conformed === "boolean") {
+        conformedById.set(f.featureId, f.conformed);
+      }
+    }
+  } catch { /* no report — conformance null */ }
+
+  const toTraceStory = (s: (typeof stories)[number]): TraceStory => ({
+    storyId: s.storyId,
+    actor: s.actor,
+    want: s.want,
+    status: s.status,
+    coveredBy: coveredBy.get(s.storyId) ?? [],
+    acceptanceCriteria: s.acs.map((ac) => ({
+      ...ac,
+      linkedNodes: links
+        .filter((l) => l.acId === `${s.storyId}/${ac.acId}` || l.acId === ac.acId)
+        .map((l) => ({ nodeId: l.nodeId, unitName: l.unitName, unitType: l.unitType })),
+    })),
+  });
+
+  const storyById = new Map(stories.map((s) => [s.storyId, s]));
+  const assigned = new Set<string>();
+  const features: TraceFeature[] = [];
+  try {
+    const raw = JSON.parse(await readFile(featuresPath, "utf8")) as {
+      features?: Array<{ featureId?: string; name?: string; storyRefs?: unknown }>;
+    };
+    for (const f of raw.features ?? []) {
+      if (typeof f.featureId !== "string") continue;
+      const refs = Array.isArray(f.storyRefs)
+        ? f.storyRefs.filter((r): r is string => typeof r === "string")
+        : [];
+      const rows: TraceStory[] = [];
+      for (const ref of refs) {
+        const s = storyById.get(ref);
+        if (s === undefined) continue; // broken ref — the metric flags it; the tree skips it
+        assigned.add(ref);
+        rows.push(toTraceStory(s));
+      }
+      features.push({
+        featureId: f.featureId,
+        name: typeof f.name === "string" ? f.name : f.featureId,
+        conformed: conformedById.get(f.featureId) ?? null,
+        stories: rows,
+      });
+    }
+  } catch { /* no features file — everything unassigned */ }
+
+  const unassigned = stories.filter((s) => !assigned.has(s.storyId)).map(toTraceStory);
+  return { features, unassigned };
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -770,6 +949,13 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
     } catch {
       return { links: [] as Link[] };
     }
+  });
+
+  // ── GET /project/trace ───────────────────────────────────────────────────
+  app.get<{ Querystring: { root?: string } }>("/project/trace", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
+    return buildTrace(ctx.root, ctx.dataDir);
   });
 
   // ── PUT /project/links ───────────────────────────────────────────────────

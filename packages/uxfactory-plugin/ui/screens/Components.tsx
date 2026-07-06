@@ -24,11 +24,12 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { TraceView } from "../components/TraceView.js";
 import type { Bridge, Link } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { Card } from "../components/index.js";
-import { linksQuery, putLinksMutation, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
+import { traceQuery, linksQuery, putLinksMutation, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ export function Components({
   // ── Server state — links via TanStack Query ───────────────────────────────
   const queryClient = useQueryClient();
   const linksResult = useQuery(linksQuery(bridge));
+  const traceResult = useQuery(traceQuery(bridge));
   const links = linksResult.data?.links ?? [];
   const putLinks = useMutation({ ...putLinksMutation(bridge) });
   const enqueue = useMutation(enqueueMutation(bridge));
@@ -263,6 +265,16 @@ export function Components({
             </div>
           )}
         </Card>
+
+        {/* ── Trace tree: features → stories → ACs/links/pages ─────────── */}
+        {traceResult.data !== undefined && (
+          <Card>
+            <TraceView
+              features={traceResult.data.features}
+              unassigned={traceResult.data.unassigned}
+            />
+          </Card>
+        )}
 
         {/* ── Zero-ACs callout ─────────────────────────────────────────── */}
         {requirements.length === 0 && (

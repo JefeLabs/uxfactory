@@ -1086,6 +1086,118 @@ describe("features artifact — single JSON at .uxfactory/artifacts/features.jso
   });
 });
 
+describe("GET /project/trace — the traceability join", () => {
+  it("composes features → stories → ACs (+links) with covering pages and conformance", async () => {
+    await addGitMarker(root);
+    // stories set (canonical + one AC each)
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: {
+        stories: ".uxfactory/artifacts/stories",
+        features: ".uxfactory/artifacts/features.json",
+        trace: "design/trace.json",
+      },
+    });
+    await mkdir(path.join(root, ".uxfactory/artifacts/stories"), { recursive: true });
+    await writeJson(path.join(root, ".uxfactory/artifacts/stories/browse-faq.json"), {
+      storyId: "browse-faq", actor: "visitor", want: "read answers", soThat: "quick help",
+      featureRef: null, status: "registered",
+      acceptanceCriteria: [
+        { acId: "AC-001", statement: "answers visible", impliedState: "success", checkable: "auto" },
+      ],
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/stories/orphan.json"), {
+      storyId: "orphan-story", actor: "visitor", want: "wander", soThat: "",
+      featureRef: null, status: "draft", acceptanceCriteria: [],
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/features.json"), {
+      features: [
+        { featureId: "F-01", name: "Self-serve answers", storyRefs: ["browse-faq"], origin: "net-new", status: "shipped" },
+      ],
+    });
+    await mkdir(path.join(root, "design"), { recursive: true });
+    await writeJson(path.join(root, "design/trace.json"), {
+      version: 1,
+      pages: [
+        { file: "screens/faq.html", views: [
+          { id: "default", covers: [
+            { story: "browse-faq", impliedState: "success", selector: "[data-ac='x']" },
+          ] },
+        ] },
+      ],
+    });
+    // canvas link against the namespaced AC id
+    await mkdir(dataDir, { recursive: true });
+    await writeJson(path.join(dataDir, "links.json"), [
+      { nodeId: "1:23", unitName: "FAQ list", unitType: "organism", acId: "browse-faq/AC-001" },
+    ]);
+    // latest report with the Coverage metric
+    await mkdir(path.join(dataDir, "batch"), { recursive: true });
+    await writeJson(path.join(dataDir, "batch/report.json"), {
+      clean: true,
+      featureCoverage: {
+        conformed: 1, total: 1,
+        features: [{ featureId: "F-01", name: "Self-serve answers", conformed: true, uncoveredStories: [] }],
+      },
+    });
+
+    app = await createBridge({ dataDir });
+    const res = await app.inject({ method: "GET", url: "/project/trace" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      features: Array<{
+        featureId: string; name: string; conformed: boolean | null;
+        stories: Array<{
+          storyId: string; actor: string; want: string;
+          coveredBy: Array<{ page: string; view: string }>;
+          acceptanceCriteria: Array<{
+            acId: string; statement: string; checkable: string;
+            linkedNodes: Array<{ nodeId: string; unitName: string; unitType: string }>;
+          }>;
+        }>;
+      }>;
+      unassigned: Array<{ storyId: string }>;
+    };
+
+    expect(body.features).toHaveLength(1);
+    const f = body.features[0]!;
+    expect(f).toMatchObject({ featureId: "F-01", conformed: true });
+    expect(f.stories).toHaveLength(1);
+    const s = f.stories[0]!;
+    expect(s).toMatchObject({ storyId: "browse-faq", actor: "visitor", want: "read answers" });
+    expect(s.coveredBy).toEqual([{ page: "screens/faq.html", view: "default" }]);
+    expect(s.acceptanceCriteria[0]).toMatchObject({
+      acId: "AC-001",
+      statement: "answers visible",
+      linkedNodes: [{ nodeId: "1:23", unitName: "FAQ list", unitType: "organism" }],
+    });
+    // stories no feature references land in the unassigned bucket
+    expect(body.unassigned.map((u) => u.storyId)).toEqual(["orphan-story"]);
+  });
+
+  it("degrades gracefully: no features/trace/report → stories all unassigned, nulls elsewhere", async () => {
+    await addGitMarker(root);
+    await writeJson(path.join(root, "design/acceptance-criteria.json"), {
+      stories: [
+        { id: "solo", role: "user", goal: "g", benefit: "b",
+          acceptanceCriteria: [{ statement: "works", impliedState: "success" }] },
+      ],
+    });
+    app = await createBridge({ dataDir });
+    const body = (
+      await app.inject({ method: "GET", url: "/project/trace" })
+    ).json() as {
+      features: unknown[];
+      unassigned: Array<{ storyId: string; coveredBy: unknown[]; acceptanceCriteria: Array<{ linkedNodes: unknown[] }> }>;
+    };
+    expect(body.features).toEqual([]);
+    expect(body.unassigned).toHaveLength(1);
+    expect(body.unassigned[0]!.storyId).toBe("solo");
+    expect(body.unassigned[0]!.coveredBy).toEqual([]);
+    expect(body.unassigned[0]!.acceptanceCriteria[0]!.linkedNodes).toEqual([]);
+  });
+});
+
 describe("registry-path resolution — unparseable registry falls back to conventional paths", () => {
   it("snapshot works (no throw) and reads conventional paths when registry is unparseable", async () => {
     await addGitMarker(root);

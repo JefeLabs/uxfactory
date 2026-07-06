@@ -182,6 +182,8 @@ export interface Bridge {
   nextRenderJob?(): Promise<{ jobId?: string; spec: unknown } | null>;
   /** POST /rendered — forward the main thread's render report to the bridge. */
   postRenderReport?(report: unknown): Promise<{ renderId: string }>;
+  /** GET /project/trace — features → stories → ACs/links/pages join. */
+  trace?(): Promise<TraceResponse>;
   /** GET /queue — pending render jobs awaiting approval (non-destructive). */
   listRenderQueue?(): Promise<{ jobs: RenderQueueJob[] }>;
   /** POST /queue/:id/approve — claim exactly this job for rendering. */
@@ -198,6 +200,38 @@ export interface Bridge {
    * project had nothing to archive.
    */
   resetProject?(): Promise<{ ok: boolean; archived: string[]; archiveDir: string | null }>;
+}
+
+/** One AC row in the traceability tree, with its linked canvas nodes. */
+export interface TraceAC {
+  acId: string;
+  statement: string;
+  checkable: string;
+  linkedNodes: Array<{ nodeId: string; unitName: string; unitType: string }>;
+}
+
+/** One story in the traceability tree with its covering pages/views. */
+export interface TraceStory {
+  storyId: string;
+  actor: string;
+  want: string;
+  status: string;
+  coveredBy: Array<{ page: string; view: string }>;
+  acceptanceCriteria: TraceAC[];
+}
+
+/** One feature node: stories + conformance from the latest report's metric. */
+export interface TraceFeature {
+  featureId: string;
+  name: string;
+  conformed: boolean | null;
+  stories: TraceStory[];
+}
+
+/** GET /project/trace — features → stories → ACs, plus the unassigned bucket. */
+export interface TraceResponse {
+  features: TraceFeature[];
+  unassigned: TraceStory[];
 }
 
 /** One pending render job in the approval queue. */
@@ -446,6 +480,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     postRenderReport(report: unknown) {
       return post<{ renderId: string }>(rooted("/rendered"), report);
+    },
+
+    trace() {
+      return request<TraceResponse>(rooted("/project/trace"));
     },
 
     listRenderQueue() {
