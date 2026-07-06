@@ -32,7 +32,7 @@ Canonical IDs derived from the current inventory. IDs are stable; paths may move
 | `icons` | Assets | `.uxfactory/artifacts/assets/icons.json` | registered |
 | `photography` | Assets | `.uxfactory/artifacts/assets/photography.json` | registered |
 | `illustrations` | Assets | `.uxfactory/artifacts/assets/illustrations.json` | registered |
-| `copy-deck` | Content *(proposed)* | `.uxfactory/artifacts/content/copy-deck.md` | **unregistered** |
+| `copy-deck` | Content *(proposed)* | `.uxfactory/artifacts/content/copy-deck.json` | **unregistered** |
 | `voice-tone` | Content *(proposed)* | `.uxfactory/artifacts/content/voice-tone.json` | **unregistered** |
 | `glossary` | Content *(proposed)* | `.uxfactory/artifacts/content/glossary.json` — sanctioned/forbidden terms, capitalization; locale-aware (gives the `en-US` config chip a governed referent) | **unregistered** |
 | `component-spec` | Components *(proposed)* | `.uxfactory/artifacts/components/*.json` | **unregistered** |
