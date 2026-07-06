@@ -1,3 +1,4 @@
+import { normalizeCategory } from "@uxfactory/spec";
 /**
  * SetupClassification.tsx — Setup wizard step 1: project classification + starting mode.
  *
@@ -18,9 +19,8 @@ import { putClassificationMutation } from "../queries.js";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
-import { ChipGroup, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
+import { CategorySelect, ChipGroup, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
 import {
-  CATEGORY_OPTIONS,
   INDUSTRY_OPTIONS,
   LOCALE_OPTIONS,
   PLATFORM_OPTIONS,
@@ -136,6 +136,7 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
   const existingBadge = getExistingBadge(snapshot);
   const isEmpty = !hasExistingWork(snapshot) && !snapshot?.hasClassification;
   const canContinue = Boolean(category);
+  const categoryId = useId();
   const industryId = useId();
   const localeId = useId();
   const [saving, setSaving] = useState(false);
@@ -159,7 +160,8 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
     if (!canContinue || saving) return;
     setSaving(true);
     putClassification.mutate({
-      category, industry, locale, platforms, layout, ageGroup,
+      category: normalizeCategory(category),
+      industry, locale, platforms, layout, ageGroup,
       ...(designStyleDraft ? { designStyle: designStyleDraft } : {}),
     });
   }
@@ -200,12 +202,11 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
 
           {/* Classification form */}
           <div className="space-y-4">
-            <Field label="Category" error={!category ? undefined : undefined}>
-              <ChipGroup
-                options={CATEGORY_OPTIONS}
+            <Field label="Category" id={categoryId} align="start">
+              <CategorySelect
+                id={categoryId}
                 value={category}
-                onChange={(v) => setClassification({ category: v as typeof category })}
-                ariaLabel="Category"
+                onChange={(v) => setClassification({ category: v })}
               />
             </Field>
 

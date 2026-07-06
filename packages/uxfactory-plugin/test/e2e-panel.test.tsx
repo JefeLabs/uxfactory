@@ -223,7 +223,7 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
       .getAllByRole("checkbox")
       .map((c) => c.getAttribute("aria-label") ?? c.textContent);
     expect(names).toEqual([
-      "Category ecommerce",
+      "Category Ecommerce storefront",
       "Industry corporate",
       "Locale en-US",
       "Platform desktop|mobile",
@@ -406,23 +406,28 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     await renderApp(bridge);
 
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
-    const catChip = screen.getByRole("checkbox", { name: "Category ecommerce" });
+    const catChip = screen.getByRole("checkbox", { name: "Category Ecommerce storefront" });
     // Filled quietly by default: light gray backfill, no visible outline.
     expect(catChip.className).toContain("bg-gray-100");
     expect(catChip.className).toContain("border-gray-100");
     await user.click(catChip);
     // …and the chip being edited gets the primary border.
     expect(catChip.className).toContain("border-primary-600");
-    const group = screen.getByRole("radiogroup", { name: "Category" });
     // Every chip editor carries help text explaining what the field drives.
     expect(screen.getByText(/drives suggested styles/i)).toBeInTheDocument();
-    await user.click(within(group).getByRole("radio", { name: "Web App" }));
+    // Grouped taxonomy droplist (legacy "ecommerce" normalizes on render);
+    // the caption previews the selection's consequences before commit.
+    const select = screen.getByLabelText("Category") as HTMLSelectElement;
+    expect(select.value).toBe("ecommerce-storefront");
+    expect(select.querySelectorAll("optgroup").length).toBe(8);
+    await user.selectOptions(select, "dashboard-analytics");
+    expect(screen.getByText(/Sets editorial low · activates dataviz/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Save category" }));
 
     await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
     expect(bridge.putClassification).toHaveBeenCalledWith({
       ...FULL_SNAPSHOT.classification,
-      category: "webapp",
+      category: "dashboard-analytics",
     });
   });
 
@@ -666,7 +671,7 @@ describe("E2E: wizard walk — Connect → setup-1 → setup-2 → tabs", () => 
         screen.getByRole("heading", { name: /This looks like a new project/i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("group", { name: /Category/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Category")).toBeInTheDocument();
 
     // Continue — category "ecommerce" is pre-selected so canContinue is true
     const continueBtn = screen.getByRole("button", { name: /^Continue$/ });

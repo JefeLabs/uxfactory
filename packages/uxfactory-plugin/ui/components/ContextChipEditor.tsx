@@ -10,12 +10,12 @@
  * The ContextBar owns that routing — this component only renders the control.
  */
 import React from "react";
+import { CategorySelect } from "./CategorySelect.js";
 import { ChipGroup } from "./ChipGroup.js";
 import { Segmented } from "./Segmented.js";
 import type { SegmentedOption } from "./Segmented.js";
 import { DesignStylePicker } from "./DesignStylePicker.js";
 import {
-  CATEGORY_OPTIONS,
   INDUSTRY_OPTIONS,
   LOCALE_OPTIONS,
   PLATFORM_OPTIONS,
@@ -144,11 +144,9 @@ function renderControl(
       );
     case "category":
       return (
-        <ChipGroup
-          options={CATEGORY_OPTIONS}
+        <CategorySelect
           value={draft as string}
-          onChange={(v) => onChange(v as string)}
-          ariaLabel="Category"
+          onChange={(v) => onChange(v)}
         />
       );
     case "industry":

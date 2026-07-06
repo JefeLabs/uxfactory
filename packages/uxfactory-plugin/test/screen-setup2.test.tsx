@@ -182,7 +182,7 @@ describe("PRD §6.1 — suggested defaults render for ecommerce · corporate", (
     await renderWithProviders(<SetupDefaults bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/defaults"],
     });
-    expect(screen.getByText(/Ecommerce · Corporate/)).toBeInTheDocument();
+    expect(screen.getByText(/Ecommerce storefront · Corporate/)).toBeInTheDocument();
   });
 });
 

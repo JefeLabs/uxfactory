@@ -33,3 +33,6 @@ export type { DesignStylePickerProps } from "./DesignStylePicker.js";
 
 export { ContextChipEditor, CHIP_FIELD_LABEL, CLASSIFICATION_FIELDS } from "./ContextChipEditor.js";
 export type { ChipField, ContextChipEditorProps } from "./ContextChipEditor.js";
+
+export { CategorySelect } from "./CategorySelect.js";
+export type { CategorySelectProps } from "./CategorySelect.js";

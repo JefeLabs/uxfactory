@@ -20,3 +20,16 @@ export { ARTIFACT_ELICITATION } from "./artifact-elicitation.js";
 export type { ElicitationQuestion } from "./artifact-elicitation.js";
 export { ARTIFACT_PREREQS, resolveCreationChain } from "./artifact-elicitation.js";
 export { AUTHORING_ORDER } from "./artifact-elicitation.js";
+export {
+  CATEGORY_GROUPS,
+  CATEGORY_TAXONOMY,
+  LEGACY_CATEGORY_ALIASES,
+  normalizeCategory,
+  categoryLabel,
+  categoryConsequences,
+} from "./category-taxonomy.js";
+export type {
+  CategoryDialDefaults,
+  CategoryOrientation,
+  CategoryProfile,
+} from "./category-taxonomy.js";

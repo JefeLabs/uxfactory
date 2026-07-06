@@ -796,8 +796,8 @@ describe("AC-5: classification chip click → prefillFrom(snapshot) + navigate('
 
     await user.click(categoryChip);
 
-    // Wizard classification should be prefilled from snapshot (category = "ecommerce")
-    expect(useWizardStore.getState().classification.category).toBe("ecommerce");
+    // Prefilled from snapshot; legacy "ecommerce" normalizes to the taxonomy id.
+    expect(useWizardStore.getState().classification.category).toBe("ecommerce-storefront");
   });
 
   it("clicking any classification chip navigates to /setup/classification", async () => {

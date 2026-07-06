@@ -5,13 +5,6 @@
  */
 import type { ChipGroupOption, SegmentedOption } from "../components/index.js";
 
-export const CATEGORY_OPTIONS: ChipGroupOption[] = [
-  { label: "Marketing", value: "marketing" },
-  { label: "Ecommerce", value: "ecommerce" },
-  { label: "Web App", value: "webapp" },
-  { label: "News", value: "news" },
-];
-
 export const INDUSTRY_OPTIONS: { label: string; value: string }[] = [
   { label: "Corporate", value: "corporate" },
   { label: "Finance", value: "finance" },

@@ -1,3 +1,4 @@
+import { CATEGORY_TAXONOMY, normalizeCategory } from "@uxfactory/spec";
 /**
  * design-styles.ts — the design-style vocabulary (classification.designStyle).
  *
@@ -437,7 +438,9 @@ export function suggestDesignStyle(
   if (/(developer|devtool|infra|monitor|security)/.test(ind)) return "cyberpunk";
   if (/(eco|sustain|garden|farm|outdoor|wellness)/.test(ind)) return "organic";
   if (/(education|academ|library|research)/.test(ind)) return "dark-academia";
-  if (category === "webapp") return "bento";
-  if (category === "ecommerce") return "flat";
+  const cat = normalizeCategory(category ?? "");
+  const group = CATEGORY_TAXONOMY[cat]?.group;
+  if (group === "saas-tools") return "bento";
+  if (group === "commerce") return "flat";
   return "minimalism";
 }

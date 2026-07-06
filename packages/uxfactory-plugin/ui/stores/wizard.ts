@@ -13,11 +13,14 @@
  */
 
 import { create } from "zustand";
+import { CATEGORY_TAXONOMY, normalizeCategory } from "@uxfactory/spec";
 import type { ProjectSnapshot } from "../lib/bridge.js";
 
 // ─── Classification draft ─────────────────────────────────────────────────────
 
-export type Category = "marketing" | "ecommerce" | "webapp" | "news";
+// Widened to the 34-entry taxonomy (spec CATEGORY_TAXONOMY); legacy four
+// values remain accepted via normalizeCategory.
+export type Category = string;
 export type Layout = "responsive" | "adaptive";
 export type StartingMode = "start-fresh" | "use-existing";
 
@@ -69,10 +72,30 @@ export interface DefaultsSuggestion {
  * All other combinations: reasonable balanced defaults.
  */
 export function suggestFor(classification: Partial<ClassificationDraft>): DefaultsSuggestion {
-  const { category, industry } = classification;
+  const { industry } = classification;
+  const category = normalizeCategory(classification.category ?? "");
+  const base = heuristicSuggestion(category, industry);
+  // Category taxonomy dial defaults overlay the heuristic (PRD: category is
+  // a defaults-driver). Taxonomy keys tone/flows map to store keys style/flow.
+  const dials = CATEGORY_TAXONOMY[category]?.dials ?? {};
+  return {
+    ...base,
+    ...(dials.tone !== undefined ? { style: dials.tone } : {}),
+    ...(dials.visual !== undefined ? { visual: dials.visual } : {}),
+    ...(dials.editorial !== undefined ? { editorial: dials.editorial } : {}),
+    ...(dials.flows !== undefined ? { flow: dials.flows } : {}),
+    ...(dials.coverage !== undefined ? { coverage: dials.coverage } : {}),
+    ...(dials.coherence !== undefined ? { coherence: dials.coherence } : {}),
+  };
+}
+
+function heuristicSuggestion(
+  category: string,
+  industry: string | undefined,
+): DefaultsSuggestion {
 
   // Primary suggestion: Ecommerce + Corporate
-  if (category === "ecommerce" && industry?.toLowerCase() === "corporate") {
+  if (category === "ecommerce-storefront" && industry?.toLowerCase() === "corporate") {
     return {
       style: "mix",
       visual: "high",
@@ -84,7 +107,7 @@ export function suggestFor(classification: Partial<ClassificationDraft>): Defaul
   }
 
   // Marketing sites — more visual, shallower flows
-  if (category === "marketing") {
+  if (CATEGORY_TAXONOMY[category]?.group === "marketing") {
     return {
       style: "informal",
       visual: "high",
@@ -96,7 +119,7 @@ export function suggestFor(classification: Partial<ClassificationDraft>): Defaul
   }
 
   // Web apps — deeper flows, stricter coverage
-  if (category === "webapp") {
+  if (CATEGORY_TAXONOMY[category]?.group === "saas-tools") {
     return {
       style: "formal",
       visual: "medium",
@@ -216,7 +239,7 @@ export const useWizardStore = create<WizardStore>((set, get) => ({
 
     if (cls) {
       const patch: Partial<ClassificationDraft> = {};
-      if (typeof cls["category"] === "string") patch.category = cls["category"] as Category;
+      if (typeof cls["category"] === "string") patch.category = normalizeCategory(cls["category"]);
       if (typeof cls["industry"] === "string") patch.industry = cls["industry"];
       if (typeof cls["locale"] === "string") patch.locale = cls["locale"];
       if (Array.isArray(cls["platforms"])) {

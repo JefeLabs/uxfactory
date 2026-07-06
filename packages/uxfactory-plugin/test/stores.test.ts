@@ -350,7 +350,8 @@ describe("wizard store — userEdited guard", () => {
     });
     useWizardStore.getState().prefillFrom(snapshot);
     const { classification } = useWizardStore.getState();
-    expect(classification.category).toBe("webapp");
+    // Legacy "webapp" normalizes to its taxonomy id on prefill.
+    expect(classification.category).toBe("productivity-collaboration");
     expect(classification.industry).toBe("fintech");
     expect(classification.locale).toBe("de-DE");
     expect(classification.layout).toBe("adaptive");

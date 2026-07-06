@@ -1,3 +1,4 @@
+import { categoryLabel } from "@uxfactory/spec";
 /**
  * SetupDefaults.tsx — Setup wizard step 2: generation defaults (profile dials).
  *
@@ -65,16 +66,6 @@ const COVERAGE_TOOLTIP =
 
 // ─── Category display labels ──────────────────────────────────────────────────
 
-const CATEGORY_LABELS: Record<string, string> = {
-  marketing: "Marketing",
-  ecommerce: "Ecommerce",
-  webapp: "Web App",
-  news: "News",
-};
-
-function categoryLabel(cat: string): string {
-  return CATEGORY_LABELS[cat] ?? cat;
-}
 
 function industryLabel(ind: string): string {
   return ind.charAt(0).toUpperCase() + ind.slice(1);

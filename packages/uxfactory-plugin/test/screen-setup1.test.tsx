@@ -109,15 +109,15 @@ function resetStores(snapshot: ProjectSnapshot | null = makeSnapshot()) {
 describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
   beforeEach(() => resetStores(makeSnapshot()));
 
-  it("Category 'Ecommerce' chip is selected", async () => {
+  it("Category droplist is grouped and shows the (normalized) selection", async () => {
     await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/classification"],
     });
-    const group = screen.getByRole("radiogroup", { name: "Category" });
-    expect(within(group).getByRole("radio", { name: "Ecommerce" })).toHaveAttribute(
-      "data-state",
-      "on",
-    );
+    const select = screen.getByLabelText("Category") as HTMLSelectElement;
+    // Legacy "ecommerce" normalizes to the taxonomy id on render.
+    expect(select.value).toBe("ecommerce-storefront");
+    expect(select.querySelectorAll("optgroup")).toHaveLength(8);
+    expect(select.options).toHaveLength(34);
   });
 
   it("Industry select shows 'Corporate'", async () => {
@@ -247,7 +247,7 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
 
     expect(bridge.putClassification).toHaveBeenCalledOnce();
     expect(bridge.putClassification).toHaveBeenCalledWith({
-      category: "ecommerce",
+      category: "ecommerce-storefront",
       industry: "corporate",
       locale: "en-US",
       platforms: ["desktop", "mobile"],
