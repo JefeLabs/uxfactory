@@ -5,7 +5,7 @@
  *
  * Test names map 1-to-1 with PRD §6 acceptance criteria (AC-1 … AC-7).
  *
- * Fixture: MERIDIAN_SNAPSHOT — 14 registered concerns, 10 up-to-date,
+ * Fixture: MERIDIAN_SNAPSHOT — 15 registered concerns, 10 up-to-date,
  * 1 draft (sitemap), 1 missing (illustrations). Matches the "10 of 12"
  * rollup shown in the mock screenshot.
  *
@@ -104,7 +104,7 @@ const BRIEF_ARTIFACT: ArtifactContent = {
 };
 
 // ─── Meridian fixture artifacts ───────────────────────────────────────────────
-// 14 registered concerns · 10 up-to-date · 1 draft · 1 missing = "10 of 12"
+// 15 registered concerns · 10 up-to-date · 1 draft · 1 missing = "10 of 12"
 
 const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
   {
@@ -122,6 +122,14 @@ const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
     status: "up-to-date",
     meta: "6 criteria",
     path: "/home/user/meridian/design/acceptance-criteria.json",
+  },
+  {
+    key: "personas",
+    group: "product",
+    label: "Personas",
+    status: "missing",
+    meta: "",
+    path: null,
   },
   {
     key: "sitemap",
@@ -396,10 +404,10 @@ describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () =
     );
   });
 
-  it("displays '10 of 14 up to date' rollup", async () => {
+  it("displays '10 of 15 up to date' rollup", async () => {
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     await waitFor(() =>
-      expect(screen.getByText(/10 of 14 up to date/i)).toBeInTheDocument(),
+      expect(screen.getByText(/10 of 15 up to date/i)).toBeInTheDocument(),
     );
   });
 
@@ -952,9 +960,9 @@ describe("planned registry artifacts render as coming-soon rows", () => {
     });
     await waitFor(() => screen.getByText("Interaction states"));
 
-    // Meridian snapshot ships 14 rows — planned registry entries must not
+    // Meridian snapshot ships 15 rows — planned registry entries must not
     // inflate the denominator.
-    expect(screen.getByLabelText("Freshness rollup").textContent).toMatch(/of 14 up to date/);
+    expect(screen.getByLabelText("Freshness rollup").textContent).toMatch(/of 15 up to date/);
   });
 });
 
@@ -1108,6 +1116,7 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     await user.tab(); // ↗ (Brief)
     await user.tab(); // Open Requirements
     await user.tab(); // ↗ (Requirements)
+    await user.tab(); // Create Personas (set artifact row)
     await user.tab(); // Regenerate Sitemap
 
     const regenerateBtn = screen.getByRole("button", { name: /Regenerate Sitemap/i });

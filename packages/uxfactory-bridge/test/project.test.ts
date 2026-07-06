@@ -650,6 +650,54 @@ describe("snapshot rows: typography and a11y-spec", () => {
   });
 });
 
+// ─── personas: the first SET artifact (one file per instance) ─────────────────
+
+describe("snapshot rows: personas set artifact", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  async function personasRow() {
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    return (res.json() as { artifacts: Array<{ key: string; status: string; meta: string; group: string }> })
+      .artifacts.find((r) => r.key === "personas");
+  }
+
+  it("missing when the set directory is absent or empty", async () => {
+    expect(await personasRow()).toMatchObject({ group: "product", status: "missing" });
+    await mkdir(path.join(root, ".uxfactory/artifacts/personas"), { recursive: true });
+    expect(await personasRow()).toMatchObject({ status: "missing" });
+  });
+
+  it("up-to-date with a member count when instances exist", async () => {
+    await writeJson(path.join(root, ".uxfactory/artifacts/personas/P-01.json"), {
+      personaId: "P-01", name: "Returning Buyer",
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/personas/P-02.json"), {
+      personaId: "P-02", name: "First Timer",
+    });
+    expect(await personasRow()).toMatchObject({ status: "up-to-date", meta: "2 personas" });
+  });
+
+  it("draft when any member is unparseable", async () => {
+    await writeJson(path.join(root, ".uxfactory/artifacts/personas/P-01.json"), { personaId: "P-01" });
+    await writeTxt(path.join(root, ".uxfactory/artifacts/personas/P-02.json"), "{nope");
+    expect(await personasRow()).toMatchObject({ status: "draft" });
+  });
+
+  it("single-file artifact GET/PUT rejects set keys with a clear error", async () => {
+    const get = await app.inject({ method: "GET", url: "/project/artifact?key=personas" });
+    expect(get.statusCode).toBe(400);
+    const put = await app.inject({
+      method: "PUT",
+      url: "/project/artifact",
+      payload: { key: "personas", content: "{}" },
+    });
+    expect(put.statusCode).toBe(400);
+  });
+});
+
 // ─── POST /project/reset ─────────────────────────────────────────────────────
 
 describe("POST /project/reset — soft reset: archive Figma associations + project definition", () => {

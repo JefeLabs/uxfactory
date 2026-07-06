@@ -42,7 +42,7 @@ export const ARTIFACT_REGISTRY: Record<string, ArtifactRegistryEntry> = {
   "features": { label: "Features", category: "product", status: "planned" },
   "acceptance-criteria": { label: "Requirements", category: "product", status: "registered" },
   "audience": { label: "Audience", category: "product", status: "planned" },
-  "personas": { label: "Personas", category: "product", status: "planned" },
+  "personas": { label: "Personas", category: "product", status: "registered" },
   "sitemap": { label: "Sitemap", category: "ia-ux", status: "registered" },
   "flows": { label: "Flows", category: "ia-ux", status: "registered" },
   "journey-map": { label: "Journey map", category: "ia-ux", status: "planned" },

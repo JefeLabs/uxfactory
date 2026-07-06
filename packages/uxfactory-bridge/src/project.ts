@@ -213,6 +213,33 @@ async function checkJsonArtifact(
 }
 
 /**
+ * Check status for a SET artifact (one JSON file per instance under a dir).
+ * No dir / no members → missing; any unparseable/draft member → draft;
+ * else up-to-date with a member count.
+ */
+async function checkSetArtifact(
+  dirAbs: string,
+  noun: string,
+): Promise<{ status: ArtifactStatus; path: string | null; meta: string }> {
+  let members: string[];
+  try {
+    members = (await readdir(dirAbs)).filter((e) => e.endsWith(".json"));
+  } catch {
+    return { status: "missing", path: null, meta: "" };
+  }
+  if (members.length === 0) return { status: "missing", path: null, meta: "" };
+  for (const member of members) {
+    const { data, draft } = await tryReadJson(path.join(dirAbs, member));
+    if (data === null || draft) return { status: "draft", path: dirAbs, meta: "" };
+  }
+  return {
+    status: "up-to-date",
+    path: dirAbs,
+    meta: `${members.length} ${noun}`,
+  };
+}
+
+/**
  * Look for the first file in `dir` whose basename starts with `prefix.`.
  * Returns the absolute path of the first match, or null.
  */
@@ -357,6 +384,15 @@ async function buildArtifacts(
   {
     const r = await checkJsonArtifact(storiesPath);
     rows.push({ key: "requirements", group: "product", label: "Requirements", ...r });
+  }
+
+  // ── product: personas — the first SET artifact (one file per instance) ────
+  {
+    const r = await checkSetArtifact(
+      path.join(root, ARTIFACTS_DIR, "personas"),
+      "personas",
+    );
+    rows.push({ key: "personas", group: "product", label: "Personas", ...r });
   }
 
   // ── ia-ux: sitemap + flows (canonical exact, then legacy design/ prefix) ──

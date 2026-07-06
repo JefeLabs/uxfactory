@@ -40,7 +40,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ARTIFACT_REGISTRY, resolveCreationChain } from "@uxfactory/spec";
-import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY } from "../lib/artifact-mapping.js";
+import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY, SET_ARTIFACT_KEYS } from "../lib/artifact-mapping.js";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import { Card, Row, SectionHeader } from "../components/index.js";
@@ -498,14 +498,17 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                             Regenerate
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => setEditingKey(row.key)}
-                          className="text-xs text-primary-600 hover:underline font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                          aria-label={`Open ${row.label}`}
-                        >
-                          Open
-                        </button>
+                        {/* Set artifacts are directories — no single-file editor */}
+                        {!SET_ARTIFACT_KEYS.has(row.key) && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingKey(row.key)}
+                            className="text-xs text-primary-600 hover:underline font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                            aria-label={`Open ${row.label}`}
+                          >
+                            Open
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => void handleExternalOpen(row)}

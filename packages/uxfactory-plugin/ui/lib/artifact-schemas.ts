@@ -69,6 +69,8 @@ export function sectionGuidanceFor(
  * Create / Regenerate dialog.
  */
 export const CREATE_GUIDANCE: Record<string, string> = {
+  personas:
+    "Behavioral archetypes — the 'As a ___' every story resolves to. Two to four, each with goals and frustrations.",
   typography:
     "The type system: scale, hierarchy rules, and readability limits — the checkable side of your fonts.",
   "a11y-spec":

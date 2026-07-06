@@ -57,7 +57,7 @@ describe("mapping consistency invariants", () => {
     }
   });
 
-  it("registry marks exactly the 14 shipped artifacts as registered", () => {
+  it("registry marks exactly the 15 shipped artifacts as registered", () => {
     const registered = Object.entries(ARTIFACT_REGISTRY)
       .filter(([, e]) => e.status === "registered")
       .map(([id]) => id)
@@ -66,7 +66,7 @@ describe("mapping consistency invariants", () => {
       [
         "product-brief", "acceptance-criteria", "sitemap", "flows",
         "brand-colors", "palettes", "fonts", "grid", "tokens",
-        "typography", "a11y-spec",
+        "typography", "a11y-spec", "personas",
         "icons", "photography", "illustrations",
       ].sort(),
     );

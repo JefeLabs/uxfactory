@@ -31,6 +31,13 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "constraints", tag: "E", question: "What constraints are non-negotiable (technical, legal, brand, budget)?" },
   ],
   "acceptance-criteria": [],
+  "personas": [
+    { id: "archetypes", tag: "E", question: "Name each persona with a one-line archetype (2–4 total)", placeholder: "Returning Buyer — knows what she wants, hates friction" },
+    { id: "goals", tag: "E", question: "Top 2–3 goals per persona when using the product" },
+    { id: "frustrations", tag: "E", question: "Top frustrations or anxieties per persona" },
+    { id: "context", tag: "E", question: "Expertise level and usage frequency per persona", placeholder: "novice, weekly — expert, daily" },
+    { id: "quote", tag: "F", question: "Signature quotes", defaultValue: "generated from goals and frustrations — cosmetic, never load-bearing" },
+  ],
   "sitemap": [
     { id: "pages", tag: "E", question: "List the pages this product needs — and flag anything the current sitemap is missing.", placeholder: "Home, Pricing, Docs, …" },
   ],

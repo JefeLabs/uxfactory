@@ -949,6 +949,7 @@ export type PanelArtifactKey =
   | 'fonts'
   | 'typography'
   | 'a11y-spec'
+  | 'personas'
   | 'grid'
   | 'tokens'
   | 'icons'
@@ -971,6 +972,8 @@ interface PanelArtifactEntry {
    * exactly this section without touching the others.
    */
   sectionKey?: string;
+  /** Set artifact: one JSON file per instance under `path` (a directory). */
+  set?: boolean;
 }
 
 /**
@@ -1000,6 +1003,11 @@ const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
     sectionKey: 'typography',
   },
   'a11y-spec': { label: 'A11y Spec', path: '.uxfactory/artifacts/accessibility.json' },
+  personas: {
+    label: 'Personas',
+    path: '.uxfactory/artifacts/personas',
+    set: true,
+  },
   tokens: { label: 'Tokens', path: 'design/token-set.json' },
   icons: { label: 'Icons', path: '.uxfactory/artifacts/assets/icons.json' },
   photography: { label: 'Photography', path: '.uxfactory/artifacts/assets/photography.json' },
@@ -1089,10 +1097,16 @@ function planGenerative(
         guidance !== undefined && guidance.trim() !== ''
           ? ` USER GUIDANCE (honor verbatim): ${guidance}`
           : '';
+      const setNote =
+        entry.set === true
+          ? ` This is a SET artifact: ${entry.path} is a DIRECTORY — write one JSON file per` +
+            ` instance (e.g. P-01.json, P-02.json), each with a unique id field. 2–4 instances` +
+            ` unless the guidance says otherwise; never write a single combined file.`
+          : '';
       const user =
         `Write the ${entry.label} artifact to ${entry.path} inside ${ctx.projectRoot}.` +
         ` Ground the content in uxfactory.classification.json and uxfactory.profile.json` +
-        ` (read both first).${sectionNote}${briefNote}` +
+        ` (read both first).${sectionNote}${briefNote}${setNote}` +
         ` Keep the output strictly the artifact file:` +
         ` valid JSON for .json targets, Markdown for .md targets.` +
         ` Report the written path once done.${guidanceNote}`;

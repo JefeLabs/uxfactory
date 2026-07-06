@@ -8,6 +8,7 @@
 export const ARTIFACT_KEY_BY_ID: Record<string, string> = {
   "product-brief": "brief",
   "acceptance-criteria": "requirements",
+  "personas": "personas",
   "sitemap": "sitemap",
   "flows": "flows",
   "brand-colors": "brand-colors",
@@ -26,3 +27,6 @@ export const ARTIFACT_KEY_BY_ID: Record<string, string> = {
 export const REGISTRY_ID_BY_KEY: Record<string, string> = Object.fromEntries(
   Object.entries(ARTIFACT_KEY_BY_ID).map(([id, key]) => [key, id]),
 );
+
+/** Set artifacts (a directory of instances) — no single-file in-panel editor. */
+export const SET_ARTIFACT_KEYS: ReadonlySet<string> = new Set(["personas"]);
