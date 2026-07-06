@@ -80,6 +80,11 @@ export interface BatchRegistry {
    * Loose slug validation — the gate only has rules for a subset of styles.
    */
   designStyle?: string;
+  /**
+   * Escape-hatch provenance (stamped by the worker): the run was submitted
+   * with required grounding artifacts missing. Reported, never gating.
+   */
+  ungoverned?: boolean;
 }
 
 /** Registry input paths resolved to absolute filesystem paths (null = not registered). */
@@ -149,6 +154,9 @@ export function validateRegistry(
         message: `registry.unit must be one of: ${UNIT_TYPES.join(", ")}`,
       };
     }
+  }
+  if (raw["ungoverned"] !== undefined && raw["ungoverned"] !== true) {
+    return { ok: false, message: "registry.ungoverned must be true when present" };
   }
   if (raw["designStyle"] !== undefined) {
     const s = raw["designStyle"];

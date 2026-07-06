@@ -29,6 +29,8 @@ export interface BatchReport {
   unit?: string;
   /** The design style advisory checks ran against (registry `designStyle`). */
   designStyle?: string;
+  /** Escape-hatch provenance: the run generated without its required grounding. */
+  ungoverned?: true;
   /** The binding gate ids (the rubric) for this scope. */
   rubric: string[];
   checks: CheckResult[];

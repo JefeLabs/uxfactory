@@ -421,6 +421,8 @@ export interface RunHtmlBatchInput {
   typography?: TypographyLimits;
   /** True when an accessibility contract is registered — a11y/contrast bind at ANY fidelity. */
   a11ySpec?: boolean;
+  /** Escape-hatch provenance from the registry — reported verbatim, never gating. */
+  ungoverned?: boolean;
 }
 
 interface HtmlGateEntry {
@@ -502,6 +504,7 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
     scope,
     ...(unit !== undefined ? { unit } : {}),
     ...(designStyle !== undefined ? { designStyle } : {}),
+    ...(input.ungoverned === true ? { ungoverned: true as const } : {}),
     rubric,
     checks,
     mustPassFailed,

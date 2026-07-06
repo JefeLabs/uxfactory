@@ -447,3 +447,23 @@ describe("a11y-spec forces a11y/contrast binding below the visual threshold", ()
     expect(r.rubric).toContain("contrast");
   });
 });
+
+
+// ─── ungoverned provenance rides the report ───────────────────────────────────
+
+describe("ungoverned provenance in the report", () => {
+  const SCOPE: RenderScope = { visual: "low", editorial: "low", coverage: "low", flow: "low" };
+  const okSnap = snap({
+    coverChecks: [
+      { story: "checkout", impliedState: "success" as const, selector: "#ok", found: true, visible: true },
+      { story: "checkout", impliedState: "error" as const, selector: "#err", found: true, visible: true },
+    ],
+  });
+
+  it("stamped runs carry ungoverned:true; governed runs omit the key", () => {
+    const stamped = runHtmlBatch({ snapshots: [okSnap], stories, tokens, scope: SCOPE, ungoverned: true });
+    expect(stamped.ungoverned).toBe(true);
+    const governed = runHtmlBatch({ snapshots: [okSnap], stories, tokens, scope: SCOPE });
+    expect("ungoverned" in governed).toBe(false);
+  });
+});

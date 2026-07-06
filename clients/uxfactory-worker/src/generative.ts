@@ -1056,7 +1056,7 @@ interface GenerativePlan {
 function planGenerative(
   req: PipelineRequest,
   ctx: DispatchCtx,
-  extras?: { designStyle?: string },
+  extras?: { designStyle?: string; ungoverned?: boolean },
 ): GenerativePlan {
   const p = asObject(req.payload);
 
@@ -1190,12 +1190,20 @@ function planGenerative(
       platforms.length > 0
         ? `Target platforms: ${platforms.join(', ')} — lay out and size every screen for these viewports. `
         : '';
+    const ungovernedNote =
+      extras?.ungoverned === true
+        ? 'NOTE: this is an UNGOVERNED DRAFT — required grounding artifacts are missing ' +
+          'from the project. Proceed, but state your assumptions prominently wherever a ' +
+          'registered artifact would normally decide (colors, type, grid, requirements), ' +
+          'and never present invented brand values as if they were registered. '
+        : '';
 
     const user =
       requestNote +
       scopeNote +
       styleNote +
       platformsNote +
+      ungovernedNote +
       'Author REAL, self-contained UI screens as `design/screens/<page>.html` files ' +
       '(inline <style> + <script>, no external assets) that cover the stories and ' +
       'acceptance criteria in design/acceptance-criteria.json — one file per page, each ' +
@@ -1251,7 +1259,9 @@ export async function runGenerative(
           ? payloadStyle
           : await readDesignStyle(ctx.projectRoot);
     }
-    const plan = planGenerative(req, ctx, { designStyle });
+    const ungoverned =
+      req.kind === 'generate-design' && asObject(req.payload)['ungoverned'] === true;
+    const plan = planGenerative(req, ctx, { designStyle, ungoverned });
 
     // Grant the headless skill the least tools it needs (shell uxfactory + write
     // files) inside the sandboxed project tree before invoking the adapter.
@@ -1278,6 +1288,9 @@ export async function runGenerative(
         // The effective style (payload override or classification default) so
         // the CLI's advisory style-conformance check runs against it.
         designStyle,
+        // Escape-hatch provenance: the report records that this run generated
+        // without its required grounding artifacts (cleared on governed runs).
+        ungoverned: ungoverned ? true : undefined,
       });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
       await provisionCraftRubric(ctx.projectRoot, designStyle);

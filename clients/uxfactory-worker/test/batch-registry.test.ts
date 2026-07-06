@@ -151,3 +151,31 @@ describe('ensureBatchRegistry', () => {
     }
   });
 });
+
+// ─── ungoverned stamp (escape-hatch provenance) ───────────────────────────────
+
+describe('ungoverned stamp', () => {
+  it('stamps ungoverned:true and clears it on the next governed run', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root, { ungoverned: true });
+      expect((await readReg(root))['ungoverned']).toBe(true);
+
+      await ensureBatchRegistry(root, { ungoverned: undefined });
+      expect('ungoverned' in (await readReg(root))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the field untouched when the key is omitted', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root, { ungoverned: true });
+      await ensureBatchRegistry(root, {});
+      expect((await readReg(root))['ungoverned']).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

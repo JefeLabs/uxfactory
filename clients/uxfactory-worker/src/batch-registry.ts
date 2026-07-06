@@ -52,6 +52,12 @@ export interface EnsureBatchRegistryOptions {
    * set-or-clear semantics as `unit`.
    */
   designStyle?: string | undefined;
+  /**
+   * Escape-hatch provenance for THIS run (registry top-level `ungoverned`):
+   * true when the panel submitted with required grounding artifacts missing.
+   * Same set-or-clear semantics as `unit`.
+   */
+  ungoverned?: boolean | undefined;
 }
 
 /** Conventional generation paths — keep in sync with generative.ts TARGET_MAP. */
@@ -134,6 +140,10 @@ export async function ensureBatchRegistry(
   if ('designStyle' in options) {
     if (options.designStyle !== undefined) registry['designStyle'] = options.designStyle;
     else delete registry['designStyle'];
+  }
+  if ('ungoverned' in options) {
+    if (options.ungoverned === true) registry['ungoverned'] = true;
+    else delete registry['ungoverned'];
   }
 
   await writeFile(file, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
