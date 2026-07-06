@@ -31,6 +31,14 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "constraints", tag: "E", question: "What constraints are non-negotiable (technical, legal, brand, budget)?" },
   ],
   "acceptance-criteria": [],
+  "stories": [
+    // Per-story interview. [D] questions (actor picked from registered
+    // personas, feature assignment) are derived, never rendered as blanks.
+    { id: "want", tag: "E", question: "What does this actor want to do?", placeholder: "the \"I want\" clause" },
+    { id: "so-that", tag: "E", question: "Why — what does it get them?", placeholder: "the \"so that\" clause" },
+    { id: "acceptance", tag: "E", question: "How do we know it works? Give at least one Given/When/Then.", placeholder: "Given the FAQ page is open, when …, then …" },
+    { id: "checkable", tag: "F", question: "Checkability per criterion", defaultValue: "auto when the Then clause references observable UI; else manual (flagged)" },
+  ],
   "personas": [
     { id: "archetypes", tag: "E", question: "Name each persona with a one-line archetype (2–4 total)", placeholder: "Returning Buyer — knows what she wants, hates friction" },
     { id: "goals", tag: "E", question: "Top 2–3 goals per persona when using the product" },

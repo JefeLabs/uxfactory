@@ -18,6 +18,17 @@ export type {
   TypeGroup,
   TypeMappingEntry,
 } from "./component-type-mapping.js";
+export { parseStoryFile, storyToEngine, deriveImpliedState } from "./story-schema.js";
+export type {
+  ACCheckable,
+  CanonicalAC,
+  CanonicalStory,
+  EngineAC,
+  EngineStory,
+  StoryImpliedState,
+  StoryParseResult,
+  StoryStatus,
+} from "./story-schema.js";
 export { ARTIFACT_ELICITATION } from "./artifact-elicitation.js";
 export type { ElicitationQuestion } from "./artifact-elicitation.js";
 export { ARTIFACT_PREREQS, resolveCreationChain } from "./artifact-elicitation.js";

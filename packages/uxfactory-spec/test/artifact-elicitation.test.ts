@@ -40,6 +40,18 @@ describe("elicitation discipline", () => {
     expect(ARTIFACT_ELICITATION["acceptance-criteria"]).toEqual([]);
     expect(ARTIFACT_ELICITATION["tokens"]).toEqual([]);
   });
+
+  it("stories interview: per-story want/so-that/ACs [E] + checkable [F] (decision 6)", () => {
+    const questions = ARTIFACT_ELICITATION["stories"]!;
+    // [D] questions (actor from personas, feature assignment) are the
+    // resolver's job and never encoded — only the E/F residue appears.
+    expect(questions.filter((q) => q.tag === "E").map((q) => q.id)).toEqual([
+      "want", "so-that", "acceptance",
+    ]);
+    const checkable = questions.find((q) => q.id === "checkable")!;
+    expect(checkable.tag).toBe("F");
+    expect(checkable.defaultValue).toMatch(/auto/);
+  });
 });
 
 // ─── Prerequisite chaining ────────────────────────────────────────────────────
