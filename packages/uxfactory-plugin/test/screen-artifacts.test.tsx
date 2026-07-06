@@ -1432,3 +1432,74 @@ describe("Failure surfacing — 5-minute pending timeout with Retry", () => {
     }
   });
 });
+
+// ─── Prerequisite chaining — create affordance runs upstream interviews first ─
+
+describe("prerequisite chaining in the create dialog", () => {
+  const chainArtifacts = MERIDIAN_ARTIFACTS.map((a) =>
+    ["requirements", "sitemap", "flows"].includes(a.key)
+      ? { ...a, status: "missing" as const, path: null, meta: "" }
+      : a,
+  );
+
+  it("Create Flows chains Requirements → Sitemap → Flows in one guided run", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: chainArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+
+    await user.click(await screen.findByRole("button", { name: /Create Flows/i }));
+
+    // Step 1: Requirements — chained before Flows (guidance-only interview).
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Requirements")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Step 1 of 3/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/needed before Flows/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+
+    // Step 2: Sitemap.
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Sitemap")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Step 2 of 3/)).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText(/List the pages/), "Home, FAQ");
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+
+    // Step 3: the target itself.
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Flows")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Step 3 of 3/)).toBeInTheDocument();
+    for (const box of within(dialog).getAllByRole("textbox")) {
+      if (box.getAttribute("aria-required") === "true") {
+        await user.type(box, "answer");
+      }
+    }
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    const order = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => (c[0] as { payload: { artifact: string } }).payload.artifact,
+    );
+    expect(order).toEqual(["requirements", "sitemap", "flows"]);
+  });
+
+  it("satisfied prerequisites skip the chain entirely", async () => {
+    // Fixture default: brand-colors is up-to-date → Illustrations opens direct.
+    const user = userEvent.setup();
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await user.click(
+      await screen.findByRole("button", { name: /Create Illustrations/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Illustrations")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Step \d+ of/)).not.toBeInTheDocument();
+  });
+});

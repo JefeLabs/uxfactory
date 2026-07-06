@@ -39,7 +39,8 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ARTIFACT_REGISTRY } from "@uxfactory/spec";
+import { ARTIFACT_REGISTRY, resolveCreationChain } from "@uxfactory/spec";
+import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY } from "../lib/artifact-mapping.js";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import { Card, Row, SectionHeader } from "../components/index.js";
@@ -134,8 +135,12 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const [openErrors, setOpenErrors] = useState<Record<string, string>>({});
   /** Row-level generation errors (SSE failure or timeout): key → message. */
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
-  /** Row whose guided-Create dialog is open (null = closed). */
-  const [dialogRow, setDialogRow] = useState<ArtifactRow | null>(null);
+  /** Creation chain: missing prerequisites first, target last. Head = the
+   *  dialog currently shown; empty = dialog closed. */
+  const [dialogChain, setDialogChain] = useState<ArtifactRow[]>([]);
+  const [chainTotal, setChainTotal] = useState(0);
+  const [chainTarget, setChainTarget] = useState("");
+  const dialogRow = dialogChain[0] ?? null;
   /** Highlighted artifact key (from focus intent). */
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
   /** Key of the artifact currently open in the in-panel editor (null = inventory). */
@@ -166,7 +171,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
 
     const row = snapshot.artifacts.find((r) => r.key === focusArtifactKey);
     if (row !== undefined && row.status === "missing") {
-      setDialogRow(row);
+      openDialog(row); // chains missing prerequisites first
     }
 
     void navigate({ to: "/tabs/artifacts", search: {} });
@@ -273,7 +278,10 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   // ── Enqueue generate-artifact job (from the dialog's Generate) ──────────────
 
   async function handleGenerate(row: ArtifactRow, guidance: string): Promise<void> {
-    setDialogRow(null);
+    // Advance the chain: the next prerequisite's interview opens immediately;
+    // an empty chain closes the dialog. Drafts enqueue in dependency order —
+    // the worker processes sequentially, so downstream drafts see upstream files.
+    setDialogChain((c) => c.slice(1));
     setGenErrors((prev) => {
       if (!(row.key in prev)) return prev;
       const { [row.key]: _dropped, ...rest } = prev;
@@ -307,8 +315,25 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
 
   // ── Dialog open/retry ────────────────────────────────────────────────────────
 
+  /**
+   * Open the create dialog for `row`, chaining MISSING trace-graph
+   * prerequisites first (elicitation doc, cross-cutting rule 1). Each chained
+   * step is its own interview; Generate advances to the next.
+   */
   function openDialog(row: ArtifactRow): void {
-    setDialogRow(row);
+    const rows = snapshot?.artifacts ?? [];
+    const isMissing = (id: string) => {
+      const key = ARTIFACT_KEY_BY_ID[id] ?? id;
+      return (rows.find((a) => a.key === key)?.status ?? "missing") === "missing";
+    };
+    const ids = resolveCreationChain(REGISTRY_ID_BY_KEY[row.key] ?? row.key, isMissing);
+    const chain = ids
+      .map((id) => rows.find((a) => a.key === (ARTIFACT_KEY_BY_ID[id] ?? id)))
+      .filter((r): r is ArtifactRow => r !== undefined);
+    const finalChain = chain.length > 0 ? chain : [row];
+    setDialogChain(finalChain);
+    setChainTotal(finalChain.length);
+    setChainTarget(finalChain[finalChain.length - 1]!.label);
   }
 
   function handleRetry(row: ArtifactRow): void {
@@ -316,7 +341,9 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       const { [row.key]: _dropped, ...rest } = prev;
       return rest;
     });
-    setDialogRow(row);
+    setDialogChain([row]);
+    setChainTotal(1);
+    setChainTarget(row.label);
   }
 
   // ── Rollup ───────────────────────────────────────────────────────────────────
@@ -356,8 +383,17 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       artifactKey={dialogRow?.key ?? ""}
       artifactLabel={dialogRow?.label ?? ""}
       open={dialogRow !== null}
+      chainInfo={
+        chainTotal > 1 && dialogRow !== null
+          ? {
+              step: chainTotal - dialogChain.length + 1,
+              total: chainTotal,
+              targetLabel: chainTarget,
+            }
+          : undefined
+      }
       onOpenChange={(open) => {
-        if (!open) setDialogRow(null);
+        if (!open) setDialogChain([]);
       }}
       onGenerate={(guidance) => {
         if (dialogRow !== null) void handleGenerate(dialogRow, guidance);

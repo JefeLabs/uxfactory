@@ -18,3 +18,4 @@ export type {
 } from "./component-type-mapping.js";
 export { ARTIFACT_ELICITATION } from "./artifact-elicitation.js";
 export type { ElicitationQuestion } from "./artifact-elicitation.js";
+export { ARTIFACT_PREREQS, resolveCreationChain } from "./artifact-elicitation.js";

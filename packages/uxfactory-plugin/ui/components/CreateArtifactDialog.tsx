@@ -62,6 +62,8 @@ export interface CreateArtifactDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Fired on Generate with the composed interview + guidance ("" is allowed). */
   onGenerate: (guidance: string) => void;
+  /** Present while running a prerequisite chain — step position + the target. */
+  chainInfo?: { step: number; total: number; targetLabel: string };
 }
 
 export function CreateArtifactDialog({
@@ -70,6 +72,7 @@ export function CreateArtifactDialog({
   open,
   onOpenChange,
   onGenerate,
+  chainInfo,
 }: CreateArtifactDialogProps): React.JSX.Element {
   const [guidance, setGuidance] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -102,6 +105,16 @@ export function CreateArtifactDialog({
           <Dialog.Title className="text-sm font-semibold text-gray-900">
             Create {artifactLabel}
           </Dialog.Title>
+
+          {/* Prerequisite-chain position — trace-graph order, target last */}
+          {chainInfo !== undefined && (
+            <p className="text-[11px] font-medium text-primary-600 -mt-2">
+              Step {chainInfo.step} of {chainInfo.total}
+              {artifactLabel !== chainInfo.targetLabel
+                ? ` — needed before ${chainInfo.targetLabel}`
+                : ""}
+            </p>
+          )}
 
           {/* Artifact-specific guiding copy above the interview */}
           <Dialog.Description className="text-xs text-gray-500">

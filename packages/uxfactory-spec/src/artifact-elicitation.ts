@@ -66,3 +66,47 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "style", tag: "E", question: "Illustration style in a phrase", placeholder: "flat geometric, duotone, hand-drawn" },
   ],
 };
+
+// ─── Prerequisite chaining ────────────────────────────────────────────────────
+
+/**
+ * Trace-graph prerequisites: an artifact's interview derives [D] answers from
+ * these, so they must exist FIRST (cross-cutting rule 1 — "the wizard never
+ * runs a story interview before personas exist; a chip's create affordance
+ * chains prerequisite interviews"). Only hard derivation edges are listed;
+ * [F]-grade derivations (defaults) never chain.
+ */
+export const ARTIFACT_PREREQS: Record<string, string[]> = {
+  // palettes are role assignments OVER brand colors — nothing to assign without them.
+  "palettes": ["brand-colors"],
+  // flows pick their stories and step through sitemap nodes.
+  "flows": ["acceptance-criteria", "sitemap"],
+  // tokens are MATERIALIZED from the system artifacts.
+  "tokens": ["brand-colors", "palettes", "grid"],
+  // illustration palettes are a subset of brand colors.
+  "illustrations": ["brand-colors"],
+  // the doc's canonical hard dependency (both still planned).
+  "stories": ["personas"],
+};
+
+/**
+ * Resolve the creation chain for `target`: missing prerequisites first (in
+ * dependency order, deduplicated), the target last. `missing` reports whether
+ * an artifact id currently lacks a file. Cycles are broken defensively.
+ */
+export function resolveCreationChain(
+  target: string,
+  missing: (artifactId: string) => boolean,
+): string[] {
+  const chain: string[] = [];
+  const visit = (id: string, stack: Set<string>): void => {
+    if (stack.has(id) || chain.includes(id)) return;
+    stack.add(id);
+    for (const dep of ARTIFACT_PREREQS[id] ?? []) {
+      if (missing(dep)) visit(dep, stack);
+    }
+    chain.push(id);
+  };
+  visit(target, new Set());
+  return chain;
+}
