@@ -126,6 +126,7 @@ const LEGACY_DESIGN_SYSTEM_PATH = "design/design-system.json";
 const CONCERN_CANONICAL: Record<string, string> = {
   brief: `${ARTIFACTS_DIR}/brief.md`,
   stories: STORIES_PATH,
+  features: `${ARTIFACTS_DIR}/features.json`,
   sitemap: `${ARTIFACTS_DIR}/sitemap.json`,
   flows: `${ARTIFACTS_DIR}/flows.json`,
   "brand-colors": DESIGN_SYSTEM_PATH,
@@ -402,6 +403,12 @@ async function buildArtifacts(
       "personas",
     );
     rows.push({ key: "personas", group: "product", label: "Personas", ...r });
+  }
+
+  // ── product: features — groups stories; never gates, only scopes ──────────
+  {
+    const r = await checkJsonArtifact(path.join(root, ARTIFACTS_DIR, "features.json"));
+    rows.push({ key: "features", group: "product", label: "Features", ...r });
   }
 
   // ── ia-ux: sitemap + flows (canonical exact, then legacy design/ prefix) ──

@@ -79,6 +79,8 @@ export const CREATE_GUIDANCE: Record<string, string> = {
     "Describe the product, its audience, and what success looks like — the agent drafts the product brief from this.",
   stories:
     "One story per file: an actor (persona), what they want, why — and at least one Given/When/Then that proves it works.",
+  features:
+    "Name the capabilities a user would recognize — the agent clusters your registered stories under them and derives inherited vs net-new from the project quadrant.",
   sitemap:
     "List the main areas or journeys your product needs — the agent proposes the page map.",
   flows:

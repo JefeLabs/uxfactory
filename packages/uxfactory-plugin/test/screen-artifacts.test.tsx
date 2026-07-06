@@ -1530,6 +1530,47 @@ describe("prerequisite chaining in the create dialog", () => {
     expect(order).toEqual(["personas", "stories", "sitemap", "flows"]);
   });
 
+  it("Create Features opens its interview directly when stories are satisfied", async () => {
+    const user = userEvent.setup();
+    const withFeatures = [
+      ...MERIDIAN_ARTIFACTS,
+      {
+        key: "features",
+        group: "product" as const,
+        label: "Features",
+        status: "missing" as const,
+        meta: "",
+        path: null,
+      },
+    ];
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: withFeatures }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+
+    await user.click(await screen.findByRole("button", { name: /Create Features/i }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Features")).toBeInTheDocument();
+    // stories are up-to-date in the fixture — no chain steps.
+    expect(within(dialog).queryByText(/Step \d+ of/)).not.toBeInTheDocument();
+    await user.type(
+      within(dialog).getByLabelText(/major capabilities/i),
+      "Browse FAQ, Contact support",
+    );
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: {
+        artifact: "features",
+        guidance: expect.stringContaining("Browse FAQ, Contact support"),
+      },
+    });
+  });
+
   it("satisfied prerequisites skip the chain entirely", async () => {
     // Fixture default: brand-colors is up-to-date → Illustrations opens direct.
     const user = userEvent.setup();

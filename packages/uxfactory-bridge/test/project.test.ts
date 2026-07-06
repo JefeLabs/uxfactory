@@ -1063,6 +1063,29 @@ describe("stories set artifact — migrated project (inputs.stories is a directo
   });
 });
 
+describe("features artifact — single JSON at .uxfactory/artifacts/features.json", () => {
+  it("reports up-to-date when present and missing when absent", async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+    let snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string }> };
+    let byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["features"]?.status).toBe("missing");
+
+    await writeJson(path.join(root, ".uxfactory/artifacts/features.json"), {
+      features: [
+        { featureId: "F-01", name: "Browse FAQ", storyRefs: ["browse-faq"], origin: "net-new", status: "planned" },
+      ],
+    });
+    snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string }> };
+    byKey = Object.fromEntries(snap.artifacts.map((a) => [a.key, a]));
+    expect(byKey["features"]?.status).toBe("up-to-date");
+  });
+});
+
 describe("registry-path resolution — unparseable registry falls back to conventional paths", () => {
   it("snapshot works (no throw) and reads conventional paths when registry is unparseable", async () => {
     await addGitMarker(root);

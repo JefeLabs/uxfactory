@@ -41,6 +41,16 @@ describe("elicitation discipline", () => {
     expect(ARTIFACT_ELICITATION["tokens"]).toEqual([]);
   });
 
+  it("features interview: [E] capabilities + [F] status — assignment/origin are derived", () => {
+    const questions = ARTIFACT_ELICITATION["features"]!;
+    // [D] questions (story assignment clusters the registered stories set,
+    // origin derives from the project quadrant) never render as blanks.
+    expect(questions.filter((q) => q.tag === "E").map((q) => q.id)).toEqual(["capabilities"]);
+    const status = questions.find((q) => q.id === "status")!;
+    expect(status.tag).toBe("F");
+    expect(status.defaultValue).toMatch(/planned/);
+  });
+
   it("stories interview: per-story want/so-that/ACs [E] + checkable [F] (decision 6)", () => {
     const questions = ARTIFACT_ELICITATION["stories"]!;
     // [D] questions (actor from personas, feature assignment) are the
@@ -76,6 +86,11 @@ describe("prerequisite chaining", () => {
     expect(resolveCreationChain("flows", missing)).toEqual([
       "stories", "sitemap", "flows",
     ]);
+  });
+
+  it("features chains from stories (assignment derives from the registered set)", () => {
+    const missing = (id: string) => ["features", "stories"].includes(id);
+    expect(resolveCreationChain("features", missing)).toEqual(["stories", "features"]);
   });
 
   it("chains transitively through stories to personas when both are missing", () => {

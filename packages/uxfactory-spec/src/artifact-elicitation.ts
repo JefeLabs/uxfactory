@@ -39,6 +39,13 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "acceptance", tag: "E", question: "How do we know it works? Give at least one Given/When/Then.", placeholder: "Given the FAQ page is open, when …, then …" },
     { id: "checkable", tag: "F", question: "Checkability per criterion", defaultValue: "auto when the Then clause references observable UI; else manual (flagged)" },
   ],
+  "features": [
+    // Groups stories — never gates, only scopes (coverage denominator,
+    // generation scoping, extend unit). [D]: story assignment clusters the
+    // registered stories; origin derives from the project quadrant.
+    { id: "capabilities", tag: "E", question: "Name the major capabilities of this product — chunks a user would recognize (5–12 typically).", placeholder: "Browse catalog, Checkout, Order tracking, …" },
+    { id: "status", tag: "F", question: "Initial status per feature", defaultValue: "planned" },
+  ],
   "personas": [
     { id: "archetypes", tag: "E", question: "Name each persona with a one-line archetype (2–4 total)", placeholder: "Returning Buyer — knows what she wants, hates friction" },
     { id: "goals", tag: "E", question: "Top 2–3 goals per persona when using the product" },
@@ -113,6 +120,8 @@ export const ARTIFACT_PREREQS: Record<string, string[]> = {
   "illustrations": ["brand-colors"],
   // the doc's canonical hard dependency: every actor references a persona.
   "stories": ["personas"],
+  // story assignment clusters the REGISTERED stories set — nothing to group without it.
+  "features": ["stories"],
 };
 
 /**

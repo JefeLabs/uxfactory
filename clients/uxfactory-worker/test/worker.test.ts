@@ -959,6 +959,30 @@ describe('runGenerative', () => {
     );
   });
 
+  it('generate-artifact artifact:features resolves the features.json path', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_features',
+        kind: 'generate-artifact',
+        payload: { artifact: 'features' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('.uxfactory/artifacts/features.json');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe(
+      '.uxfactory/artifacts/features.json',
+    );
+  });
+
   it('generate-artifact with an unknown artifact key → status 2 (never invokes the adapter)', async () => {
     const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
     const bridge = new FakeBridge();
