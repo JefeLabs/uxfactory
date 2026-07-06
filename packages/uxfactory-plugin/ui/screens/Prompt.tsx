@@ -812,10 +812,12 @@ export function Prompt({
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4">
 
-        {/* ── Composer row: card (indigo outline) + config droplists OUTSIDE ── */}
-        <div className="flex items-start gap-2">
+        {/* ── Composer row: card (indigo outline) + config droplists OUTSIDE.
+              items-stretch: the card matches the open config column's height,
+              and the textarea flex-fills the card — no dead space below it. ── */}
+        <div className="flex items-stretch gap-2">
           <div className="flex-1 min-w-0 bg-white border-2 border-primary-600 rounded-[var(--radius-card)] p-3 flex flex-col gap-2">
-            <div className="flex items-start gap-2">
+            <div className="flex items-stretch gap-2 flex-1 min-h-0">
               <textarea
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
@@ -834,7 +836,7 @@ export function Prompt({
                 title="Generate config"
                 onClick={() => setConfigOpen((v) => !v)}
                 className={[
-                  "flex items-center justify-center w-8 h-8 rounded-full border cursor-pointer transition-colors select-none shrink-0",
+                  "flex items-center justify-center w-8 h-8 rounded-full border cursor-pointer transition-colors select-none shrink-0 self-start",
                   configOpen
                     ? "bg-primary-50 border-primary-600 text-primary-600"
                     : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
