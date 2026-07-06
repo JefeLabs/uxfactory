@@ -1,4 +1,4 @@
-import { categoryLabel } from "@uxfactory/spec";
+import { categoryLabel, industryLabel } from "@uxfactory/spec";
 /**
  * SetupDefaults.tsx — Setup wizard step 2: generation defaults (profile dials).
  *
@@ -67,9 +67,7 @@ const COVERAGE_TOOLTIP =
 // ─── Category display labels ──────────────────────────────────────────────────
 
 
-function industryLabel(ind: string): string {
-  return ind.charAt(0).toUpperCase() + ind.slice(1);
-}
+
 
 // ─── InfoTooltip ─────────────────────────────────────────────────────────────
 

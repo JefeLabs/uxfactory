@@ -1,4 +1,4 @@
-import { normalizeCategory } from "@uxfactory/spec";
+import { normalizeCategory, normalizeIndustry } from "@uxfactory/spec";
 /**
  * SetupClassification.tsx — Setup wizard step 1: project classification + starting mode.
  *
@@ -19,9 +19,8 @@ import { putClassificationMutation } from "../queries.js";
 import type { Bridge, ProjectSnapshot } from "../lib/bridge.js";
 import { useAppStore } from "../stores/app.js";
 import { useWizardStore } from "../stores/wizard.js";
-import { CategorySelect, ChipGroup, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
+import { CategorySelect, ChipGroup, IndustrySelect, Segmented, RadioCard, Field, StatusPill } from "../components/index.js";
 import {
-  INDUSTRY_OPTIONS,
   LOCALE_OPTIONS,
   PLATFORM_OPTIONS,
   LAYOUT_OPTIONS,
@@ -161,7 +160,8 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
     setSaving(true);
     putClassification.mutate({
       category: normalizeCategory(category),
-      industry, locale, platforms, layout, ageGroup,
+      industry: normalizeIndustry(industry),
+      locale, platforms, layout, ageGroup,
       ...(designStyleDraft ? { designStyle: designStyleDraft } : {}),
     });
   }
@@ -210,12 +210,11 @@ export function SetupClassification({ bridge }: { bridge: Bridge }) {
               />
             </Field>
 
-            <Field label="Industry" id={industryId}>
-              <NativeSelect
+            <Field label="Industry" id={industryId} align="start">
+              <IndustrySelect
                 id={industryId}
                 value={industry}
                 onChange={(v) => setClassification({ industry: v })}
-                options={INDUSTRY_OPTIONS}
               />
             </Field>
 

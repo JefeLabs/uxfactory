@@ -120,14 +120,16 @@ describe("PRD §6.1 — empty repo renders screenshot defaults exactly", () => {
     expect(select.options).toHaveLength(34);
   });
 
-  it("Industry select shows 'Corporate'", async () => {
+  it("Industry droplist is grouped by sector and normalizes legacy 'corporate'", async () => {
     await renderWithProviders(<SetupClassification bridge={makeFakeBridge()} />, {
       initialEntries: ["/setup/classification"],
     });
     const select = screen.getByLabelText("Industry") as HTMLSelectElement;
-    expect(select.value).toBe("corporate");
-    // Displayed option text
-    expect(screen.getByDisplayValue("Corporate")).toBeInTheDocument();
+    // "Corporate" is retired (business-model axis, not a vertical) —
+    // it normalizes to its nearest profile, Consulting.
+    expect(select.value).toBe("consulting");
+    expect(select.querySelectorAll("optgroup")).toHaveLength(13);
+    expect(select.options).toHaveLength(76);
   });
 
   it("Locale select shows 'English (US)'", async () => {
@@ -248,7 +250,7 @@ describe("PRD §6.2 — Continue writes classification body + routes to setup-2"
     expect(bridge.putClassification).toHaveBeenCalledOnce();
     expect(bridge.putClassification).toHaveBeenCalledWith({
       category: "ecommerce-storefront",
-      industry: "corporate",
+      industry: "consulting",
       locale: "en-US",
       platforms: ["desktop", "mobile"],
       layout: "responsive",

@@ -11,12 +11,12 @@
  */
 import React from "react";
 import { CategorySelect } from "./CategorySelect.js";
+import { IndustrySelect } from "./IndustrySelect.js";
 import { ChipGroup } from "./ChipGroup.js";
 import { Segmented } from "./Segmented.js";
 import type { SegmentedOption } from "./Segmented.js";
 import { DesignStylePicker } from "./DesignStylePicker.js";
 import {
-  INDUSTRY_OPTIONS,
   LOCALE_OPTIONS,
   PLATFORM_OPTIONS,
   LAYOUT_OPTIONS,
@@ -150,23 +150,24 @@ function renderControl(
         />
       );
     case "industry":
-    case "locale": {
-      const options = field === "industry" ? INDUSTRY_OPTIONS : LOCALE_OPTIONS;
+      return (
+        <IndustrySelect value={draft as string} onChange={(v) => onChange(v)} />
+      );
+    case "locale":
       return (
         <select
-          aria-label={field === "industry" ? "Industry" : "Locale"}
+          aria-label="Locale"
           value={draft as string}
           onChange={(e) => onChange(e.target.value)}
           className="w-full text-sm border border-gray-300 rounded-[var(--radius-card)] px-3 py-2 bg-white text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
         >
-          {options.map((o) => (
+          {LOCALE_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
         </select>
       );
-    }
     case "platforms":
       return (
         <ChipGroup

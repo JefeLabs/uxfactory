@@ -36,3 +36,6 @@ export type { ChipField, ContextChipEditorProps } from "./ContextChipEditor.js";
 
 export { CategorySelect } from "./CategorySelect.js";
 export type { CategorySelectProps } from "./CategorySelect.js";
+
+export { IndustrySelect } from "./IndustrySelect.js";
+export type { IndustrySelectProps } from "./IndustrySelect.js";

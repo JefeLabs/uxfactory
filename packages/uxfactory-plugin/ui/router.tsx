@@ -39,7 +39,7 @@ import {
 } from "./components/index.js";
 import type { ChipField, StatusPillStatus } from "./components/index.js";
 import { designStyleLabel, suggestDesignStyle } from "./lib/design-styles.js";
-import { categoryLabel } from "@uxfactory/spec";
+import { categoryLabel, industryLabel } from "@uxfactory/spec";
 import { engineToLabel } from "./lib/dials.js";
 import type { Bridge } from "./lib/bridge.js";
 import type { PluginBus } from "./lib/plugin-bus.js";
@@ -251,7 +251,7 @@ function ContextBar(): React.JSX.Element {
     if (value !== null && value !== "") configChips.push({ field, label, value });
   };
   pushChip("category", "Category", category !== null ? categoryLabel(category) : null);
-  pushChip("industry", "Industry", industry);
+  pushChip("industry", "Industry", industry !== null ? industryLabel(industry) : null);
   pushChip("locale", "Locale", locale);
   pushChip("platforms", "Platform", platforms.length > 0 ? platforms.join("|") : null);
   pushChip("layout", "Layout", layout);

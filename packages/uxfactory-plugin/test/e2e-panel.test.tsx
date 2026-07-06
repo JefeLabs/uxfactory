@@ -224,7 +224,7 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
       .map((c) => c.getAttribute("aria-label") ?? c.textContent);
     expect(names).toEqual([
       "Category Ecommerce storefront",
-      "Industry corporate",
+      "Industry Consulting",
       "Locale en-US",
       "Platform desktop|mobile",
       "Layout responsive",

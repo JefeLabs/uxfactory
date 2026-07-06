@@ -33,3 +33,12 @@ export type {
   CategoryOrientation,
   CategoryProfile,
 } from "./category-taxonomy.js";
+export {
+  INDUSTRY_SECTORS,
+  INDUSTRY_TAXONOMY,
+  LEGACY_INDUSTRY_ALIASES,
+  normalizeIndustry,
+  industryLabel,
+  industryDrivers,
+} from "./industry-taxonomy.js";
+export type { ComplianceFlag, IndustryProfile } from "./industry-taxonomy.js";
