@@ -890,6 +890,56 @@ describe("AC-6: focus search param → row highlighted + search cleared", () => 
   });
 });
 
+// ─── Planned registry artifacts appear in the inventory ───────────────────────
+
+describe("planned registry artifacts render as coming-soon rows", () => {
+  it("shows planned artifacts inside their category sections", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await waitFor(() => screen.getByText("Illustrations"));
+
+    // Design gains its planned members…
+    const design = screen.getByRole("region", { name: "DESIGN" });
+    expect(within(design).getByText("Typography")).toBeInTheDocument();
+    expect(within(design).getByText("A11y spec")).toBeInTheDocument();
+    // …and the new registry categories appear as sections.
+    const content = screen.getByRole("region", { name: "CONTENT" });
+    expect(within(content).getByText("Copy deck")).toBeInTheDocument();
+    expect(within(content).getByText("Glossary")).toBeInTheDocument();
+    const governance = screen.getByRole("region", { name: "GOVERNANCE" });
+    expect(within(governance).getByText("Conformance policy")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "COMPONENTS" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "REFERENCES" })).toBeInTheDocument();
+  });
+
+  it("planned rows say coming soon and offer no Create/Open action", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await waitFor(() => screen.getByText("Typography"));
+
+    expect(screen.getAllByText("Coming soon").length).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: /Create Typography/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Open Typography/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("the freshness rollup counts only real (file-backed) artifacts", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await waitFor(() => screen.getByText("Typography"));
+
+    // Meridian snapshot ships 12 rows — planned registry entries must not
+    // inflate the denominator.
+    expect(screen.getByLabelText("Freshness rollup").textContent).toMatch(/of 12 up to date/);
+  });
+});
+
 // ─── AC-7: Keyboard — rows focusable; sections are landmarks ─────────────────
 
 describe("AC-7: keyboard accessibility — rows focusable, sections are landmarks", () => {

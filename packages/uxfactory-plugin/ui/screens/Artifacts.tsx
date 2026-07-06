@@ -39,9 +39,9 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ARTIFACT_REGISTRY } from "@uxfactory/spec";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
-import type { ArtifactGroup } from "../lib/bridge.js";
 import { Card, Row, SectionHeader } from "../components/index.js";
 import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { ArtifactEditor } from "./ArtifactEditor.js";
@@ -57,11 +57,16 @@ const artifactsRouteApi = getRouteApi("/tabs/artifacts");
 
 // ─── Group registry (fixed order per PRD §4) ─────────────────────────────────
 
-const GROUPS: Array<{ group: ArtifactGroup; label: string }> = [
+const GROUPS: Array<{ group: string; label: string }> = [
   { group: "product", label: "PRODUCT" },
   { group: "ia-ux", label: "IA & UX" },
   { group: "design", label: "DESIGN" },
   { group: "assets", label: "ASSETS" },
+  // Registry-only categories — populated by planned (coming-soon) artifacts.
+  { group: "content", label: "CONTENT" },
+  { group: "components", label: "COMPONENTS" },
+  { group: "references", label: "REFERENCES" },
+  { group: "governance", label: "GOVERNANCE" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -315,10 +320,16 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   }
 
   // ── Rollup ───────────────────────────────────────────────────────────────────
+  // Freshness counts only file-backed artifacts; planned registry entries are
+  // visible inventory (coming soon) but never inflate the denominator.
 
   const artifacts = snapshot?.artifacts ?? [];
   const upToDateCount = artifacts.filter((r) => r.status === "up-to-date").length;
   const totalCount = artifacts.length;
+
+  const plannedRows = Object.entries(ARTIFACT_REGISTRY)
+    .filter(([, entry]) => entry.status === "planned")
+    .map(([id, entry]) => ({ key: id, group: entry.category as string, label: entry.label }));
 
   // ── Empty / loading state ────────────────────────────────────────────────────
 
@@ -394,7 +405,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
         {/* Grouped inventory */}
         {GROUPS.map(({ group, label }) => {
           const rows = artifacts.filter((r) => r.group === group);
-          if (rows.length === 0) return null;
+          const planned = plannedRows.filter((r) => r.group === group);
+          if (rows.length === 0 && planned.length === 0) return null;
 
           return (
             <section key={group} role="region" aria-label={label}>
@@ -519,6 +531,20 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                     </div>
                   );
                 })}
+
+                {/* Planned registry artifacts — inventory-visible, not yet creatable */}
+                {planned.map((row) => (
+                  <Row
+                    key={row.key}
+                    dot="hollow"
+                    name={row.label}
+                    action={
+                      <span className="text-xs text-gray-400 italic select-none">
+                        Coming soon
+                      </span>
+                    }
+                  />
+                ))}
               </Card>
             </section>
           );
