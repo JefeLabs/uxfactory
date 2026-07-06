@@ -152,6 +152,51 @@ describe('ensureBatchRegistry', () => {
   });
 });
 
+// ─── canonical stories directory (nested-ACs migration) ──────────────────────
+
+describe('canonical stories directory', () => {
+  it('prefers .uxfactory/artifacts/stories over the legacy file when both exist', async () => {
+    const root = await mkProject();
+    try {
+      await writeDesign(root, 'design/acceptance-criteria.json', '{"stories":[]}');
+      await mkdir(path.join(root, '.uxfactory/artifacts/stories'), { recursive: true });
+      await ensureBatchRegistry(root);
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.stories).toBe('.uxfactory/artifacts/stories');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('registers the directory when only it exists (no legacy file)', async () => {
+    const root = await mkProject();
+    try {
+      await mkdir(path.join(root, '.uxfactory/artifacts/stories'), { recursive: true });
+      await ensureBatchRegistry(root);
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.stories).toBe('.uxfactory/artifacts/stories');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('stays non-clobbering: an existing stories registration wins over the directory', async () => {
+    const root = await mkProject();
+    try {
+      await mkdir(path.join(root, '.uxfactory/artifacts/stories'), { recursive: true });
+      await writeFile(
+        path.join(root, 'uxfactory.batch.json'),
+        JSON.stringify({ version: 1, inputs: { stories: 'custom/stories.json' } }),
+      );
+      await ensureBatchRegistry(root);
+      const inputs = (await readReg(root)).inputs as Record<string, unknown>;
+      expect(inputs.stories).toBe('custom/stories.json');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 // ─── ungoverned stamp (escape-hatch provenance) ───────────────────────────────
 
 describe('ungoverned stamp', () => {

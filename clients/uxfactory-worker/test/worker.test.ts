@@ -933,6 +933,32 @@ describe('runGenerative', () => {
     expect(user).not.toContain('USER GUIDANCE');
   });
 
+  it('generate-artifact artifact:stories frames a SET artifact at the stories directory', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_stories',
+        kind: 'generate-artifact',
+        payload: { artifact: 'stories', guidance: 'checkout happy path first' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('.uxfactory/artifacts/stories');
+    expect(user).toContain('SET artifact');
+    expect(user).toContain('checkout happy path first');
+    expect((out.result as { artifactPath: string }).artifactPath).toBe(
+      '.uxfactory/artifacts/stories',
+    );
+  });
+
   it('generate-artifact with an unknown artifact key → status 2 (never invokes the adapter)', async () => {
     const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
     const bridge = new FakeBridge();

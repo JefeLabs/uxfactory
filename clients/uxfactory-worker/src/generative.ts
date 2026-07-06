@@ -950,6 +950,7 @@ export type PanelArtifactKey =
   | 'typography'
   | 'a11y-spec'
   | 'personas'
+  | 'stories'
   | 'grid'
   | 'tokens'
   | 'icons'
@@ -1006,6 +1007,11 @@ const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
   personas: {
     label: 'Personas',
     path: '.uxfactory/artifacts/personas',
+    set: true,
+  },
+  stories: {
+    label: 'Stories',
+    path: '.uxfactory/artifacts/stories',
     set: true,
   },
   tokens: { label: 'Tokens', path: 'design/token-set.json' },

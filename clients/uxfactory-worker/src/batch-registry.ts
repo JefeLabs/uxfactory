@@ -20,7 +20,7 @@
  * those two keys past the existence gate; every other key/kind stays gated.
  */
 
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /** A conventional input registry key. */
@@ -81,6 +81,17 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
+/** Canonical per-story set (nested-ACs migration) — preferred over the legacy file. */
+const CANONICAL_STORIES_DIR = '.uxfactory/artifacts/stories';
+
+async function dirExists(p: string): Promise<boolean> {
+  try {
+    return (await stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -122,6 +133,11 @@ export async function ensureBatchRegistry(
   // already exists on disk. Never overwrites an existing registration.
   for (const { key, rel } of CONVENTIONAL_INPUTS) {
     if (inputs[key] !== undefined) continue;
+    // Migrated projects: the canonical stories directory outranks the legacy file.
+    if (key === 'stories' && (await dirExists(path.join(projectRoot, CANONICAL_STORIES_DIR)))) {
+      inputs[key] = CANONICAL_STORIES_DIR;
+      continue;
+    }
     if (unconditional.has(key) || (await fileExists(path.join(projectRoot, rel)))) {
       inputs[key] = rel;
     }
