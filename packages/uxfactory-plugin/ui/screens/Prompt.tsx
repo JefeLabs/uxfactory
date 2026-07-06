@@ -45,8 +45,10 @@ import {
   ARTIFACT_PREREQS,
   ARTIFACT_REGISTRY,
   AUTHORING_ORDER,
+  normalizeQuadrant,
   resolveRequirements,
 } from "@uxfactory/spec";
+import type { ProjectQuadrant } from "@uxfactory/spec";
 import { ARTIFACT_KEY_BY_ID } from "../lib/artifact-mapping.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -106,12 +108,13 @@ interface GroundingChipModel {
 function groundingChipsFor(
   unitType: string,
   artifacts: { key: string; status: string }[],
+  quadrant: ProjectQuadrant = "greenfield",
 ): GroundingChipModel[] {
   const orderOf = (id: string) => {
     const i = AUTHORING_ORDER.indexOf(id);
     return i === -1 ? AUTHORING_ORDER.length : i;
   };
-  return resolveRequirements(unitType)
+  return resolveRequirements(unitType, quadrant)
     .slice()
     .sort((a, b) => orderOf(a.artifactId) - orderOf(b.artifactId))
     .flatMap((req) => {
@@ -148,8 +151,9 @@ function groundingChipsFor(
 function missingBlockingCount(
   unitType: string,
   artifacts: { key: string; status: string }[],
+  quadrant: ProjectQuadrant = "greenfield",
 ): number {
-  return resolveRequirements(unitType).filter((req) => {
+  return resolveRequirements(unitType, quadrant).filter((req) => {
     if (!req.blocking) return false;
     const key = ARTIFACT_KEY_BY_ID[req.artifactId] ?? req.artifactId;
     return (artifacts.find((a) => a.key === key)?.status ?? "missing") === "missing";
@@ -694,8 +698,9 @@ export function Prompt({
 
   // ── Derived: type-aware grounding chips from the component-type mapping ────
   const artifacts = Array.isArray(snapshotArtifacts) ? snapshotArtifacts : [];
-  const groundingChips = groundingChipsFor(composerUnitType, artifacts);
-  const missingBlocking = missingBlockingCount(composerUnitType, artifacts);
+  const projectQuadrant = normalizeQuadrant(snapshotClassification?.["quadrant"]);
+  const groundingChips = groundingChipsFor(composerUnitType, artifacts, projectQuadrant);
+  const missingBlocking = missingBlockingCount(composerUnitType, artifacts, projectQuadrant);
   const allMissing = groundingChips
     .filter((c) => !c.planned)
     .every((c) => c.status === "missing");
@@ -776,7 +781,10 @@ export function Prompt({
     const submitArtifacts = Array.isArray(useAppStore.getState().snapshot?.artifacts)
       ? useAppStore.getState().snapshot!.artifacts
       : [];
-    const ungoverned = missingBlockingCount(unitType, submitArtifacts) > 0;
+    const submitQuadrant = normalizeQuadrant(
+      useAppStore.getState().snapshot?.classification?.["quadrant"],
+    );
+    const ungoverned = missingBlockingCount(unitType, submitArtifacts, submitQuadrant) > 0;
 
     setIsSubmitting(true);
     try {

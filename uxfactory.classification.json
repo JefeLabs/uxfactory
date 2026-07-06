@@ -1,12 +1,14 @@
 {
-  "category": "marketing",
-  "industry": "other",
+  "category": "ecommerce",
+  "industry": "corporate",
   "locale": "en-US",
   "platforms": [
     "desktop",
-    "mobile"
+    "mobile",
+    "tablet"
   ],
   "layout": "responsive",
   "ageGroup": "18-39",
-  "style": "informal"
+  "style": "mix",
+  "designStyle": "minimalism"
 }

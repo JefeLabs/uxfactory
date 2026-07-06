@@ -355,6 +355,21 @@ export const QUADRANT_MODIFIERS: Record<ProjectQuadrant, Record<string, Requirem
   "greenfield": {},
 };
 
+/** The four project quadrants — greenfield is the default (full gate). */
+export const PROJECT_QUADRANTS: { id: ProjectQuadrant; label: string; description: string }[] = [
+  { id: "greenfield", label: "Greenfield", description: "No relaxation. Full gate." },
+  { id: "re-skin", label: "Re-skin", description: "Intent inherited and frozen; presentation regenerated." },
+  { id: "extend", label: "Extend", description: "Existing intent inherited; new nodes need new intent." },
+  { id: "redesign", label: "Redesign", description: "Brownfield: intent inherited, presentation regenerated." },
+];
+
+/** Narrow a stored value to a known quadrant; anything else means greenfield. */
+export function normalizeQuadrant(value: unknown): ProjectQuadrant {
+  return value === "re-skin" || value === "extend" || value === "redesign"
+    ? value
+    : "greenfield";
+}
+
 export interface ResolvedRequirement {
   artifactId: string;
   label: string;

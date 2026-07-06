@@ -39,7 +39,7 @@ import {
 } from "./components/index.js";
 import type { ChipField, StatusPillStatus } from "./components/index.js";
 import { designStyleLabel, suggestDesignStyle } from "./lib/design-styles.js";
-import { categoryLabel, complianceNudges, industryLabel } from "@uxfactory/spec";
+import { PROJECT_QUADRANTS, categoryLabel, complianceNudges, industryLabel, normalizeQuadrant } from "@uxfactory/spec";
 import { engineToLabel } from "./lib/dials.js";
 import type { Bridge } from "./lib/bridge.js";
 import type { PluginBus } from "./lib/plugin-bus.js";
@@ -256,6 +256,13 @@ function ContextBar(): React.JSX.Element {
   pushChip("platforms", "Platform", platforms.length > 0 ? platforms.join("|") : null);
   pushChip("layout", "Layout", layout);
   pushChip("ageGroup", "Age", ageGroup);
+  // Quadrant always shows — greenfield is the meaningful default, not absence.
+  const quadrant = normalizeQuadrant(cls?.["quadrant"]);
+  configChips.push({
+    field: "quadrant",
+    label: "Quadrant",
+    value: PROJECT_QUADRANTS.find((q) => q.id === quadrant)?.label ?? quadrant,
+  });
   configChips.push({
     field: "designStyle",
     label: "Style",
@@ -287,6 +294,8 @@ function ContextBar(): React.JSX.Element {
     }
     if (field === "platforms") {
       setDraft(Array.isArray(cls?.["platforms"]) ? [...(cls["platforms"] as string[])] : []);
+    } else if (field === "quadrant") {
+      setDraft(normalizeQuadrant(cls?.["quadrant"]));
     } else if (CLASSIFICATION_FIELDS.has(field)) {
       setDraft(typeof cls?.[field] === "string" ? (cls[field] as string) : "");
     } else {
@@ -315,15 +324,29 @@ function ContextBar(): React.JSX.Element {
         // One merged classification body. designStyle is set-or-clear:
         // exploring ("") removes the key so the advisory style gate is not
         // owed and the composer override is the only style input.
-        const { designStyle: prevStyle, ...rest } = cls as Record<string, unknown>;
-        const body: Record<string, unknown> =
-          field === "designStyle"
-            ? { ...rest, ...(typeof draft === "string" && draft !== "" ? { designStyle: draft } : {}) }
-            : {
-                ...rest,
-                ...(prevStyle !== undefined ? { designStyle: prevStyle } : {}),
-                [field]: draft,
-              };
+        const { designStyle: prevStyle, quadrant: prevQuadrant, ...rest } =
+          cls as Record<string, unknown>;
+        const keep = {
+          ...(prevStyle !== undefined ? { designStyle: prevStyle } : {}),
+          ...(prevQuadrant !== undefined ? { quadrant: prevQuadrant } : {}),
+        };
+        let body: Record<string, unknown>;
+        if (field === "designStyle") {
+          body = {
+            ...rest,
+            ...(prevQuadrant !== undefined ? { quadrant: prevQuadrant } : {}),
+            ...(typeof draft === "string" && draft !== "" ? { designStyle: draft } : {}),
+          };
+        } else if (field === "quadrant") {
+          // Greenfield is the default — omit the key rather than stamping it.
+          body = {
+            ...rest,
+            ...(prevStyle !== undefined ? { designStyle: prevStyle } : {}),
+            ...(draft !== "greenfield" ? { quadrant: draft } : {}),
+          };
+        } else {
+          body = { ...rest, ...keep, [field]: draft };
+        }
         await bridge.putClassification(body);
         patchSnapshot((snap) => ({ ...snap, classification: body }));
       } else if (field === "tone") {

@@ -9,6 +9,8 @@
 import { describe, it, expect } from "vitest";
 import {
   ARTIFACT_REGISTRY,
+  PROJECT_QUADRANTS,
+  normalizeQuadrant,
   COMPONENT_TYPE_MAPPING,
   QUADRANT_MODIFIERS,
   resolveRequirements,
@@ -133,5 +135,21 @@ describe("resolveRequirements", () => {
     for (const r of resolveRequirements("home-page")) {
       expect(r.label.length).toBeGreaterThan(0);
     }
+  });
+});
+
+
+describe("project quadrants", () => {
+  it("covers the four quadrants with greenfield first (the default)", () => {
+    expect(PROJECT_QUADRANTS.map((q) => q.id)).toEqual([
+      "greenfield", "re-skin", "extend", "redesign",
+    ]);
+    for (const q of PROJECT_QUADRANTS) expect(q.description.length).toBeGreaterThan(0);
+  });
+
+  it("normalizeQuadrant defaults anything unknown to greenfield", () => {
+    expect(normalizeQuadrant("re-skin")).toBe("re-skin");
+    expect(normalizeQuadrant(undefined)).toBe("greenfield");
+    expect(normalizeQuadrant("brownfield")).toBe("greenfield");
   });
 });

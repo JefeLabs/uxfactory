@@ -1439,3 +1439,31 @@ describe("grounding chip prerequisite tooltips", () => {
     expect(grid).toHaveAttribute("title", "Required — click to create");
   });
 });
+
+// ─── Quadrant relaxes composer requirements ───────────────────────────────────
+
+describe("quadrant-aware grounding", () => {
+  it("re-skin relaxes Requirements to recommended and lowers the ungoverned count", async () => {
+    resetStores({
+      classification: {
+        category: "ecommerce",
+        industry: "retail",
+        platforms: ["desktop"],
+        quadrant: "re-skin",
+      },
+    });
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    // Requirements drops from required to recommended under re-skin.
+    expect(screen.queryByLabelText("Requirements — required, missing")).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Requirements — missing, generation proceeds with defaults"),
+    ).toBeInTheDocument();
+    // page under re-skin: blocking = brand-colors, fonts, typography, grid, a11y-spec (5).
+    expect(screen.getByText(/5 required artifacts missing/)).toBeInTheDocument();
+  });
+});

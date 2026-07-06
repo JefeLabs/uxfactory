@@ -199,10 +199,10 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
     await renderApp(demoBridge());
     expect(screen.getByText("Project config:")).toBeInTheDocument();
     // No individual chips while collapsed — everything folds into the count
-    // (8 = style, category, layout, industry, locale, age, 2 platforms).
+    // (8 = category, industry, locale, platform, layout, age, quadrant, style).
     expect(screen.queryByText("ecommerce")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Style exploring" })).not.toBeInTheDocument();
-    const overflow = screen.getByRole("checkbox", { name: "+7" });
+    const overflow = screen.getByRole("checkbox", { name: "+8" });
     expect(overflow.className).toContain("text-[11px]");
     // The chips bar (not the name row) hosts the expand control.
     expect(
@@ -215,7 +215,7 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
     await renderApp(demoBridge());
     expect(screen.queryByText("corporate")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("checkbox", { name: "+7" }));
+    await user.click(screen.getByRole("checkbox", { name: "+8" }));
 
     // Every chip carries its label, in the SAME order as project setup:
     // step-1 facts first, then step-2 generative defaults.
@@ -229,9 +229,10 @@ describe("E2E: ContextBar shows project name with repo subtext and a compact chi
       "Platform desktop|mobile",
       "Layout responsive",
       "Age 18-39",
+      "Quadrant Greenfield",
       "Style exploring",
     ]);
-    expect(screen.queryByRole("checkbox", { name: "+7" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "+8" })).not.toBeInTheDocument();
   });
 });
 
@@ -377,9 +378,9 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
     await renderApp(fullBridge());
 
     // Collapsed default: the label + one total chip covering EVERYTHING
-    // (14 = style + category + layout + industry + locale + age + 2 platforms + 6 dials).
+    // (14 = category…age facts + quadrant + style + 6 dials).
     expect(screen.getByText("Project config:")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "+13" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "+14" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Tone Formal" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Expand project details/i }));
 
@@ -395,7 +396,7 @@ describe("E2E: all project + generative chips in the ContextBar edit inline", ()
       .getAllByRole("checkbox")
       .map((c) => (c.getAttribute("aria-label") ?? "").split(" ")[0]);
     expect(prefixes).toEqual([
-      "Category", "Industry", "Locale", "Platform", "Layout", "Age",
+      "Category", "Industry", "Locale", "Platform", "Layout", "Age", "Quadrant",
       "Style", "Tone", "Visual", "Editorial", "Flows", "Coverage", "Coherence",
     ]);
   });
@@ -732,5 +733,61 @@ describe("E2E: compliance nudges surface under Project config", () => {
 
     expect(screen.queryByText(/COPPA-class/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Regulated industry/)).not.toBeInTheDocument();
+  });
+});
+
+// ─── Quadrant chip — the resolver's fourth input becomes settable ─────────────
+
+describe("E2E: project quadrant chip", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/home/user/demo-shop", mode: "local" },
+      fileInfo: { name: "My Product", fileKey: "file-abc" },
+      snapshot: DEMO_SNAPSHOT,
+      toasts: [],
+    });
+  });
+
+  it("defaults to Greenfield and saves re-skin set-or-clear", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(DEMO_SNAPSHOT);
+    await renderApp(bridge);
+
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+    const chip = screen.getByRole("checkbox", { name: "Quadrant Greenfield" });
+    await user.click(chip);
+
+    expect(screen.getByText(/No relaxation\. Full gate\./)).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Re-skin" }));
+    expect(screen.getByText(/Intent inherited and frozen/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save quadrant" }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    expect(bridge.putClassification).toHaveBeenCalledWith({
+      ...DEMO_SNAPSHOT.classification,
+      quadrant: "re-skin",
+    });
+  });
+
+  it("choosing Greenfield keeps the classification clean (key omitted)", async () => {
+    const withQuadrant = {
+      ...DEMO_SNAPSHOT,
+      classification: { ...DEMO_SNAPSHOT.classification, quadrant: "extend" },
+    };
+    useAppStore.setState({ snapshot: withQuadrant as never });
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    (bridge.snapshot as ReturnType<typeof vi.fn>).mockResolvedValue(withQuadrant);
+    await renderApp(bridge);
+
+    await user.click(screen.getByRole("button", { name: /Expand project details/i }));
+    await user.click(screen.getByRole("checkbox", { name: "Quadrant Extend" }));
+    await user.click(screen.getByRole("radio", { name: "Greenfield" }));
+    await user.click(screen.getByRole("button", { name: "Save quadrant" }));
+
+    await waitFor(() => expect(bridge.putClassification).toHaveBeenCalledOnce());
+    const body = (bridge.putClassification as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("quadrant");
   });
 });

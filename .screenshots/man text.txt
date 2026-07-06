@@ -1,0 +1,5 @@
+Designs validated against your specifications
+- Review designs against registered stories and acceptance criteria
+- Generate product, IA, UX, and design artifacts with AI
+- Build components with AI assistance
+- Manage your component library

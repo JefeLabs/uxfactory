@@ -3,6 +3,8 @@ export { validate, isSpec } from "./validate.js";
 export type { ValidationError, ValidationResult } from "./validate.js";
 export {
   ARTIFACT_REGISTRY,
+  PROJECT_QUADRANTS,
+  normalizeQuadrant,
   COMPONENT_TYPE_MAPPING,
   QUADRANT_MODIFIERS,
   resolveRequirements,

@@ -10,6 +10,7 @@
  * The ContextBar owns that routing — this component only renders the control.
  */
 import React from "react";
+import { PROJECT_QUADRANTS, normalizeQuadrant } from "@uxfactory/spec";
 import { CategorySelect } from "./CategorySelect.js";
 import { IndustrySelect } from "./IndustrySelect.js";
 import { ChipGroup } from "./ChipGroup.js";
@@ -41,6 +42,7 @@ export type ChipField =
   | "platforms"
   | "layout"
   | "ageGroup"
+  | "quadrant"
   | "tone"
   | "visual"
   | "editorial"
@@ -50,7 +52,7 @@ export type ChipField =
 
 /** Fields persisted via PUT /project/classification (facts + design style). */
 export const CLASSIFICATION_FIELDS: ReadonlySet<ChipField> = new Set([
-  "designStyle", "category", "industry", "locale", "platforms", "layout", "ageGroup",
+  "designStyle", "category", "industry", "locale", "platforms", "layout", "ageGroup", "quadrant",
 ]);
 
 /** Short human name — drives the Save/Cancel button accessible names. */
@@ -62,6 +64,7 @@ export const CHIP_FIELD_LABEL: Record<ChipField, string> = {
   platforms: "platforms",
   layout: "layout",
   ageGroup: "age group",
+  quadrant: "quadrant",
   tone: "tone",
   visual: "visual",
   editorial: "editorial",
@@ -82,6 +85,8 @@ const CHIP_FIELD_HELP: Partial<Record<ChipField, string>> = {
   locale: "Primary language and region for generated copy.",
   platforms: "Target devices — the default viewports for generated designs.",
   ageGroup: "Primary audience — affects tone, density, and accessibility choices.",
+  quadrant:
+    "Project nature — relaxes or tightens which artifacts generation requires (re-skin inherits intent; greenfield is the full gate).",
   tone: "Voice of generated copy — informal, mixed, or formal.",
   visual: "Visual fidelity of generated designs. At Medium+, a11y/contrast/token checks bind.",
   editorial: "How polished generated copy is — placeholder to publication-ready.",
@@ -189,6 +194,20 @@ function renderControl(
           />
           <p className="text-xs text-gray-500">
             {LAYOUT_CAPTIONS[draft as string] ?? ""}
+          </p>
+        </div>
+      );
+    case "quadrant":
+      return (
+        <div className="space-y-1">
+          <Segmented
+            options={PROJECT_QUADRANTS.map((q) => ({ label: q.label, value: q.id }))}
+            value={normalizeQuadrant(draft)}
+            onChange={(v) => onChange(v)}
+            ariaLabel="Quadrant"
+          />
+          <p className="text-xs text-gray-500">
+            {PROJECT_QUADRANTS.find((q) => q.id === normalizeQuadrant(draft))?.description ?? ""}
           </p>
         </div>
       );

@@ -1,11 +1,11 @@
 {
   "scope": {
     "visual": "high",
-    "editorial": "high",
-    "coverage": "low",
+    "editorial": "medium",
+    "coverage": "medium",
     "flow": "low"
   },
   "experimental": {
-    "coherence": "medium"
+    "coherence": "high"
   }
 }
