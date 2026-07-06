@@ -144,9 +144,13 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   // ── Focus intent: scroll-to + highlight + clear search param ────────────────
+  // Waits for the snapshot: a MISSING focused artifact auto-opens its
+  // elicitation dialog (the Generate tab's required-missing chips land here
+  // expecting the interview, not just a highlight). Consuming the param
+  // before the snapshot loads would drop that intent on the floor.
 
   useEffect(() => {
-    if (!focusArtifactKey) return;
+    if (!focusArtifactKey || snapshot === null) return;
 
     setHighlightedKey(focusArtifactKey);
 
@@ -155,12 +159,17 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
+    const row = snapshot.artifacts.find((r) => r.key === focusArtifactKey);
+    if (row !== undefined && row.status === "missing") {
+      setDialogRow(row);
+    }
+
     void navigate({ to: "/tabs/artifacts", search: {} });
 
     // Fade highlight after 2s
     const timer = setTimeout(() => setHighlightedKey(null), 2000);
     return () => clearTimeout(timer);
-  }, [focusArtifactKey, navigate]);
+  }, [focusArtifactKey, snapshot, navigate]);
 
   // ── Pending cleanup when snapshot updates ────────────────────────────────────
 

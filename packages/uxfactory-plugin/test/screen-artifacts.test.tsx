@@ -865,6 +865,29 @@ describe("AC-6: focus search param → row highlighted + search cleared", () => 
     const highlightedRows = document.querySelectorAll(".bg-primary-50");
     expect(highlightedRows).toHaveLength(0);
   });
+
+  it("focus on a MISSING artifact auto-opens its elicitation dialog", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts?focus=illustrations"],
+    });
+
+    // Clicking a required-missing chip on the Generate tab lands here — the
+    // interview must open without a second click.
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Create Illustrations")).toBeInTheDocument();
+    expect(
+      within(dialog).getByLabelText("Illustration style in a phrase"),
+    ).toBeInTheDocument();
+  });
+
+  it("focus on an up-to-date artifact only highlights — no dialog", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, {
+      initialEntries: ["/tabs/artifacts?focus=brief"],
+    });
+
+    await waitFor(() => screen.getByText("Brief"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
 
 // ─── AC-7: Keyboard — rows focusable; sections are landmarks ─────────────────
