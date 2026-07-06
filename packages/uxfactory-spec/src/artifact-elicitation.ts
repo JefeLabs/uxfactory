@@ -110,3 +110,46 @@ export function resolveCreationChain(
   visit(target, new Set());
   return chain;
 }
+
+/**
+ * Canonical authoring (supply) order — the trace graph flattened: product
+ * intent → actors → stories → scope → IA → design system (a11y before
+ * palettes: contrast math derives from it) → tokens (materialized last in
+ * the system) → content vocabulary → assets → slot-dependent content →
+ * governance. Chips and inventories sort by this; the test suite enforces
+ * that every ARTIFACT_PREREQS edge points backwards in this list.
+ */
+export const AUTHORING_ORDER: string[] = [
+  "product-brief",
+  "audience",
+  "personas",
+  "stories",
+  "acceptance-criteria",
+  "features",
+  "creative-brief",
+  "journey-map",
+  "sitemap",
+  "navigation-model",
+  "flows",
+  "a11y-spec",
+  "brand-colors",
+  "palettes",
+  "fonts",
+  "typography",
+  "grid",
+  "tokens",
+  "voice-tone",
+  "glossary",
+  "interaction-states",
+  "brand-usage",
+  "dataviz",
+  "channel-canvas",
+  "icons",
+  "photography",
+  "illustrations",
+  "component-spec",
+  "copy-deck",
+  "reference-set",
+  "conformance-policy",
+  "generation-config",
+];

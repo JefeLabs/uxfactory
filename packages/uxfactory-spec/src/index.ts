@@ -19,3 +19,4 @@ export type {
 export { ARTIFACT_ELICITATION } from "./artifact-elicitation.js";
 export type { ElicitationQuestion } from "./artifact-elicitation.js";
 export { ARTIFACT_PREREQS, resolveCreationChain } from "./artifact-elicitation.js";
+export { AUTHORING_ORDER } from "./artifact-elicitation.js";

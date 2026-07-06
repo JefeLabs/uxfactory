@@ -41,7 +41,7 @@ import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
 import { Card, SectionHeader } from "../components/index.js";
 import { enqueueMutation } from "../queries.js";
-import { resolveRequirements } from "@uxfactory/spec";
+import { AUTHORING_ORDER, resolveRequirements } from "@uxfactory/spec";
 import { ARTIFACT_KEY_BY_ID } from "../lib/artifact-mapping.js";
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -94,12 +94,20 @@ interface GroundingChipModel {
  * Resolve the selected type's artifact requirements into chip models.
  * PRD §2 semantics: planned → disabled coming-soon (never blocks);
  * optional → shown only when the artifact exists; n/a already dropped.
+ * Chips list in AUTHORING_ORDER — the order artifacts should be supplied.
  */
 function groundingChipsFor(
   unitType: string,
   artifacts: { key: string; status: string }[],
 ): GroundingChipModel[] {
-  return resolveRequirements(unitType).flatMap((req) => {
+  const orderOf = (id: string) => {
+    const i = AUTHORING_ORDER.indexOf(id);
+    return i === -1 ? AUTHORING_ORDER.length : i;
+  };
+  return resolveRequirements(unitType)
+    .slice()
+    .sort((a, b) => orderOf(a.artifactId) - orderOf(b.artifactId))
+    .flatMap((req) => {
     if (req.status === "planned") {
       if (req.level === "optional") return [];
       return [{

@@ -83,3 +83,22 @@ describe("prerequisite chaining", () => {
     expect(resolveCreationChain("brief", () => true)).toEqual(["brief"]);
   });
 });
+
+// ─── Authoring order ──────────────────────────────────────────────────────────
+
+import { AUTHORING_ORDER } from "../src/artifact-elicitation.js";
+
+describe("authoring order", () => {
+  it("covers every registry artifact exactly once", () => {
+    expect([...AUTHORING_ORDER].sort()).toEqual(Object.keys(ARTIFACT_REGISTRY).sort());
+  });
+
+  it("respects every hard prerequisite edge (prereq strictly earlier)", () => {
+    const index = new Map(AUTHORING_ORDER.map((id, i) => [id, i]));
+    for (const [id, deps] of Object.entries(ARTIFACT_PREREQS)) {
+      for (const dep of deps) {
+        expect(index.get(dep)!, `${dep} must precede ${id}`).toBeLessThan(index.get(id)!);
+      }
+    }
+  });
+});

@@ -1378,3 +1378,25 @@ describe("Generate config column", () => {
     await waitFor(() => expect(bridge.enqueue).toHaveBeenCalledOnce());
   });
 });
+
+// ─── Grounding chips follow the authoring (supply) order ──────────────────────
+
+describe("grounding chips are listed in supply order", () => {
+  it("page chips run intent → design system → assets → content", async () => {
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    const section = screen.getByText("GROUNDED IN").parentElement!;
+    const labels = Array.from(section.querySelectorAll("button"))
+      .map((b) => (b.getAttribute("aria-label") ?? "").split(" — ")[0])
+      .filter((l) => l !== "");
+    expect(labels).toEqual([
+      "Stories", "Requirements", "A11y spec", "Brand colors", "Fonts",
+      "Typography", "Grid", "Tokens", "Glossary", "Interaction states",
+      "Icons", "Copy deck",
+    ]);
+  });
+});
