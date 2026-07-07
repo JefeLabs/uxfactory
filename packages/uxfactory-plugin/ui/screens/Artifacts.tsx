@@ -275,6 +275,29 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     }
   }
 
+  // ── Seed: one-click derive-from-project draft (no interview) ────────────────
+
+  /**
+   * Guidance for a Seed draft: the worker's generate skill already grounds in
+   * classification + profile; this instructs it to ALSO derive from the
+   * project's other registered artifacts (the trace-graph neighbors — personas,
+   * stories, audience, brand, style) and infer sensible defaults, marking
+   * assumptions. "Play off other parts of the model" in one click.
+   */
+  const SEED_GUIDANCE =
+    "Derive this artifact from the project's registered artifacts — read the " +
+    "classification, profile, and every existing artifact (brief, audience, " +
+    "personas, stories, features, sitemap, brand, style) and infer a sensible, " +
+    "on-project draft. Fill unspecified details with defaults that fit the " +
+    "project's category, industry, and style; state any assumptions inline. " +
+    "This is a starting draft for the user to refine.";
+
+  function handleSeed(row: ArtifactRow): void {
+    // Seed derives from whatever EXISTS — it never chains prerequisites (unlike
+    // Create). One artifact, one job, immediate.
+    void handleGenerate(row, SEED_GUIDANCE);
+  }
+
   // ── Enqueue generate-artifact job (from the dialog's Generate) ──────────────
 
   async function handleGenerate(row: ArtifactRow, guidance: string): Promise<void> {
@@ -474,14 +497,25 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                     );
                   } else if (row.status === "missing") {
                     action = (
-                      <button
-                        type="button"
-                        onClick={() => openDialog(row)}
-                        className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                        aria-label={`Create ${row.label}`}
-                      >
-                        Create
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSeed(row)}
+                          className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                          aria-label={`Seed ${row.label}`}
+                          title="Draft from your existing artifacts — no questions"
+                        >
+                          Seed
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDialog(row)}
+                          className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                          aria-label={`Create ${row.label}`}
+                        >
+                          Create
+                        </button>
+                      </div>
                     );
                   } else if (row.path !== null) {
                     // up-to-date or draft — show Open (in-panel) + ↗ (external);

@@ -1112,13 +1112,14 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
     // Wait for inventory to load before tabbing
     await waitFor(() => screen.getByRole("button", { name: /Regenerate Sitemap/i }));
 
-    // Tab order includes ↗ buttons after each Open button; stories is a SET
-    // artifact (no in-panel Open — only ↗):
-    //   Open Brief → ↗ Brief → ↗ Stories → Create Personas → Regenerate Sitemap
+    // Tab order includes ↗ after each Open, and missing rows show Seed before
+    // Create. Stories is a SET artifact (no in-panel Open — only ↗):
+    //   Open Brief → ↗ Brief → ↗ Stories → Seed Personas → Create Personas → Regenerate Sitemap
     await user.tab(); // Open Brief
     await user.tab(); // ↗ (Brief)
     await user.tab(); // ↗ (Stories — set row, no Open)
-    await user.tab(); // Create Personas (set artifact row)
+    await user.tab(); // Seed Personas (missing row — Seed precedes Create)
+    await user.tab(); // Create Personas
     await user.tab(); // Regenerate Sitemap
 
     const regenerateBtn = screen.getByRole("button", { name: /Regenerate Sitemap/i });
@@ -1645,5 +1646,64 @@ describe("sitemap interview is seeded from the category's IA seed", () => {
     expect(pages.value).toContain("Checkout");
     // Prefill satisfies the [E] gate — Generate is immediately available.
     expect(within(dialog).getByRole("button", { name: /^Generate$/i })).toBeEnabled();
+  });
+});
+
+// ─── Seed: one-click derive-from-project draft (no interview) ─────────────────
+
+describe("Seed action — derive an artifact from the project's other artifacts", () => {
+  it("a missing row shows Seed alongside Create; Seed enqueues a derive draft without opening the dialog", async () => {
+    const user = userEvent.setup();
+    // Personas is missing in the Meridian fixture.
+    const bridge = makeBridge();
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+
+    const seed = await screen.findByRole("button", { name: /Seed Personas/i });
+    expect(seed).toBeInTheDocument();
+    // Create still present (the interview path stays available).
+    expect(screen.getByRole("button", { name: /Create Personas/i })).toBeInTheDocument();
+
+    await user.click(seed);
+
+    // No dialog — Seed is one-click.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Enqueues generate-artifact with a derive-from-project guidance.
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: {
+        artifact: "personas",
+        guidance: expect.stringMatching(/derive .* from the project's registered artifacts/i),
+      },
+    });
+    // Row flips to generating…
+    expect(await screen.findByTestId("generating-personas")).toBeInTheDocument();
+  });
+
+  it("Seed does NOT chain prerequisites — it derives from whatever exists", async () => {
+    const user = userEvent.setup();
+    // Flows missing + its prereqs (stories/sitemap) also missing.
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({
+          artifacts: MERIDIAN_ARTIFACTS.map((a) =>
+            ["flows", "stories", "sitemap"].includes(a.key)
+              ? { ...a, status: "missing" as const, path: null, meta: "" }
+              : a,
+          ),
+        }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await user.click(await screen.findByRole("button", { name: /Seed Flows/i }));
+    // Single job for flows only — no personas/stories/sitemap chain.
+    expect(bridge.enqueue).toHaveBeenCalledTimes(1);
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: { artifact: "flows", guidance: expect.stringMatching(/derive/i) },
+    });
   });
 });
