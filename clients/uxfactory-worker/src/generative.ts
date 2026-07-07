@@ -167,6 +167,12 @@ const UNIT_GUIDANCE: Record<string, string> = {
   'home-page':
     'Scope: the HOME page (primary landing) — it owns the app shell: full primary ' +
     'navigation, a hero/overview section, and entry points into every major story area.',
+  'landing-page':
+    'Scope: a STANDALONE CONVERSION page (campaign/ad destination) — one primary CTA and ' +
+    'one job; no site navigation shell (it lives outside the IA tree). The copy deck is ' +
+    'load-bearing: render its entries verbatim and let the words carry the page. Keep the ' +
+    'scroll tight (hero, proof, single CTA repeated); every section must earn its place ' +
+    'against the conversion goal.',
   'secondary-page':
     'Scope: a SECONDARY page (a section landing reached from primary navigation) — reuse ' +
     'the shared shell (nav/header) and focus on section-level content; no home hero.',

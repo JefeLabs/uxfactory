@@ -30,6 +30,7 @@ export interface BatchInputs {
 export const UNIT_TYPES = [
   "user-flow",
   "home-page",
+  "landing-page",
   "secondary-page",
   "tertiary-page",
   "page",

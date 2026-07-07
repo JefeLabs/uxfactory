@@ -122,6 +122,35 @@ export const COMPONENT_TYPE_MAPPING: Record<string, TypeMappingEntry> = {
       "brand-usage": "optional",
     },
   },
+  "landing-page": {
+    // The conversion-page hybrid: a web page with channel-asset DNA. A
+    // standalone campaign destination — one primary CTA, often OUTSIDE the
+    // IA tree (no sitemap/flows), copy-deck load-bearing, campaign intent
+    // arriving with the creative brief once it ships.
+    group: "pages",
+    requires: {
+      "stories": "recommended",
+      "product-brief": "recommended",
+      "creative-brief": "required",
+      "brand-colors": "required",
+      "fonts": "required",
+      "typography": "required",
+      "grid": "required",
+      "tokens": "recommended",
+      "icons": "recommended",
+      "photography": "recommended",
+      "illustrations": "optional",
+      "copy-deck": "required",
+      "voice-tone": "recommended",
+      "audience": "recommended",
+      "personas": "recommended",
+      "a11y-spec": "required",
+      "interaction-states": "recommended",
+      "brand-usage": "recommended",
+      "reference-set": "recommended",
+      "glossary": "optional",
+    },
+  },
   "secondary-page": {
     group: "pages",
     requires: {

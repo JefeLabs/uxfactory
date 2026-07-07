@@ -1286,6 +1286,7 @@ describe("Footer hint line", () => {
     expect(labels).toEqual([
       "User Flow",
       "Home Page",
+      "Landing Page",
       "Secondary Page",
       "Tertiary Page",
       "Page",

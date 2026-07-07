@@ -72,6 +72,7 @@ interface WorkerPayload {
 export const UNIT_OPTIONS: { label: string; value: string }[] = [
   { label: "User Flow", value: "user-flow" },
   { label: "Home Page", value: "home-page" },
+  { label: "Landing Page", value: "landing-page" },
   { label: "Secondary Page", value: "secondary-page" },
   { label: "Tertiary Page", value: "tertiary-page" },
   { label: "Page", value: "page" },

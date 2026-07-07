@@ -19,10 +19,10 @@ import {
 const TYPE_IDS = Object.keys(COMPONENT_TYPE_MAPPING);
 
 describe("mapping consistency invariants", () => {
-  it("covers exactly the 15 composer unit types", () => {
+  it("covers exactly the 16 composer unit types", () => {
     expect(TYPE_IDS.sort()).toEqual(
       [
-        "user-flow", "home-page", "secondary-page", "tertiary-page", "page",
+        "user-flow", "home-page", "landing-page", "secondary-page", "tertiary-page", "page",
         "template", "organism", "molecule", "atom",
         "email", "instagram-post", "instagram-story", "youtube-thumbnail",
         "facebook-post", "x-post",
@@ -158,6 +158,29 @@ describe("resolveRequirements", () => {
   });
 });
 
+
+describe("landing-page — the conversion-page hybrid (pages group, channel DNA)", () => {
+  it("copy-deck and the design system block; stories are recommended; sitemap never appears", () => {
+    const landing = resolveRequirements("landing-page");
+    expect(landing.find((r) => r.artifactId === "copy-deck")).toMatchObject({
+      level: "required", status: "registered", blocking: true,
+    });
+    expect(landing.find((r) => r.artifactId === "brand-colors")).toMatchObject({
+      level: "required", blocking: true,
+    });
+    // One conversion story is verifiable and valuable — but never forced.
+    expect(landing.find((r) => r.artifactId === "stories")).toMatchObject({
+      level: "recommended", blocking: false,
+    });
+    // A campaign destination lives OUTSIDE the IA tree.
+    expect(landing.find((r) => r.artifactId === "sitemap")).toBeUndefined();
+    expect(landing.find((r) => r.artifactId === "flows")).toBeUndefined();
+    // Campaign intent arrives with the creative brief — planned, never blocks.
+    expect(landing.find((r) => r.artifactId === "creative-brief")).toMatchObject({
+      level: "required", status: "planned", blocking: false,
+    });
+  });
+});
 
 describe("project quadrants", () => {
   it("covers the four quadrants with greenfield first (the default)", () => {

@@ -351,6 +351,8 @@ Quadrant modifiers are declared globally per-artifact rather than per-type — a
 
 ---
 
+**Type added 2026-07-07: `landing-page`** — the conversion-page hybrid (pages group, channel DNA): standalone campaign destination outside the IA tree; copy-deck load-bearing + design system required, stories recommended (one conversion story, never forced), creative-brief required (planned — never blocks until it ships), no sitemap/flows.
+
 ## 6. Open decisions
 
 1. ~~Escape hatch~~ **Resolved (2026-07-06, shipped)**: the hatch is default-on — missing `required` artifacts never block submission; the run is annotated `ungoverned: true` on the wire and the composer says so. `conformance-policy` will let teams lock it (`ungovernedDraft.allowed: false`). Consistent with the exploring ethos; the approval queue means nothing ungoverned reaches canvas silently.
@@ -374,7 +376,7 @@ Quadrant modifiers are declared globally per-artifact rather than per-type — a
 
 ## 7. Build priority (computed)
 
-Mechanically derived from §5: for each **unregistered** artifact, count its requirement slots across the 15 types. Gate-demand score = required×3 + recommended×1. **Regenerate this table after any mapping edit** — it is a projection of §5, not an independent opinion. (Script: parse the §5 JSON, tally levels per artifact ID, filter to unregistered.)
+Mechanically derived from §5: for each **unregistered** artifact, count its requirement slots across the 16 types. Gate-demand score = required×3 + recommended×1. **Regenerate this table after any mapping edit** — it is a projection of §5, not an independent opinion. (Script: parse the §5 JSON, tally levels per artifact ID, filter to unregistered.)
 
 | Rank | Artifact | Required | Recommended | Optional | Score | Note |
 |---|---|---|---|---|---|---|
