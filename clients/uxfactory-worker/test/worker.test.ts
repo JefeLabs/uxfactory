@@ -1168,6 +1168,50 @@ describe('runGenerative', () => {
     expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
   });
 
+  it('generate-design: a registered audience modulates the instruction; absent stays silent', async () => {
+    await mkdir(path.join(projectRoot, '.uxfactory/artifacts'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, '.uxfactory/artifacts/audience.json'),
+      JSON.stringify({
+        segments: [
+          { name: 'floor managers', ageRange: '35-55', locales: ['en-US'],
+            context: 'on the floor between tasks', deviceMix: { mobile: 0.7, desktop: 0.3 },
+            accessibilityNotes: 'age-related vision — larger type', share: 0.8 },
+          { name: 'auditors', ageRange: '25-40', locales: ['en-US'], context: 'desk review', share: 0.2 },
+        ],
+        primarySegment: 'floor managers',
+      }),
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const out = await runGenerative(
+      { id: 'pr_design_aud', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    expect(out.status).toBe(0);
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('AUDIENCE');
+    expect(user).toContain('floor managers');
+    expect(user).toContain('on the floor between tasks');
+    expect(user).toContain('age-related vision — larger type');
+
+    // Absent audience → no note (regression guard uses a fresh root).
+    const bare = await mkdtemp(path.join(os.tmpdir(), 'uxf-worker-noaud-'));
+    try {
+      const adapter2 = new FakeAdapter(bare, [{ type: 'message-stop', finishReason: 'stop' }]);
+      await runGenerative(
+        { id: 'pr_design_noaud', kind: 'generate-design', payload: {}, createdAt: 1 },
+        adapter2,
+        new FakeBridge(),
+        { ...ctx(), projectRoot: bare },
+      );
+      expect(adapter2.lastInput?.messages[0]?.content as string).not.toContain('AUDIENCE');
+    } finally {
+      await rm(bare, { recursive: true, force: true });
+    }
+  });
+
   it('generate-design: builds AgentInput from the design skill + the loop task, forwards masked chunks', async () => {
     const adapter = new FakeAdapter(projectRoot, [
       { type: 'text-delta', text: 'planning (key=sk-ant-api03-TESTSECRET00000)\n' },

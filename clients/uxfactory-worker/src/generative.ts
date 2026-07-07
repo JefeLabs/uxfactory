@@ -527,6 +527,45 @@ async function readDesignStyle(projectRoot: string): Promise<string | undefined>
   }
 }
 
+/**
+ * Read the registered audience artifact into an instruction note, or undefined.
+ * The audience modulates rendering (tone, density, editorial) — segments are
+ * quoted verbatim so the agent designs for the primary segment's context and
+ * carries accessibility-relevant characteristics into its choices.
+ */
+async function readAudienceNote(projectRoot: string): Promise<string | undefined> {
+  try {
+    const raw = JSON.parse(
+      await readFile(path.join(projectRoot, '.uxfactory/artifacts/audience.json'), 'utf8'),
+    ) as { segments?: unknown; primarySegment?: unknown };
+    if (!Array.isArray(raw.segments) || raw.segments.length === 0) return undefined;
+    const segments = raw.segments.filter(
+      (s): s is Record<string, unknown> => s !== null && typeof s === 'object',
+    );
+    if (segments.length === 0) return undefined;
+    const primary = typeof raw.primarySegment === 'string' ? raw.primarySegment : undefined;
+    const lines = segments.map((s) => {
+      const name = typeof s['name'] === 'string' ? s['name'] : 'segment';
+      const parts = [
+        typeof s['ageRange'] === 'string' ? s['ageRange'] : undefined,
+        typeof s['context'] === 'string' ? s['context'] : undefined,
+        typeof s['accessibilityNotes'] === 'string' && s['accessibilityNotes'] !== ''
+          ? `a11y: ${s['accessibilityNotes']}`
+          : undefined,
+      ].filter((p): p is string => p !== undefined);
+      const primaryTag = name === primary ? ' (PRIMARY)' : '';
+      return `${name}${primaryTag}${parts.length > 0 ? ` — ${parts.join('; ')}` : ''}`;
+    });
+    return (
+      `AUDIENCE (registered): ${lines.join(' · ')}. ` +
+      'Design for the primary segment first — its context sets tone, density, and type ' +
+      'size; honor any accessibility characteristics in every choice. '
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 /** Conventional per-category viewport sizes (mirror the panel's device defaults). */
 const DEFAULT_VIEWPORT_SIZES: Record<
   'desktop' | 'tablet' | 'mobile',
@@ -1075,7 +1114,7 @@ interface GenerativePlan {
 function planGenerative(
   req: PipelineRequest,
   ctx: DispatchCtx,
-  extras?: { designStyle?: string; ungoverned?: boolean; storyRefs?: string[] },
+  extras?: { designStyle?: string; ungoverned?: boolean; storyRefs?: string[]; audienceNote?: string },
 ): GenerativePlan {
   const p = asObject(req.payload);
 
@@ -1209,6 +1248,7 @@ function planGenerative(
       platforms.length > 0
         ? `Target platforms: ${platforms.join(', ')} — lay out and size every screen for these viewports. `
         : '';
+    const audienceNote = extras?.audienceNote ?? '';
     const storyRefsNote =
       extras?.storyRefs !== undefined && extras.storyRefs.length > 0
         ? `STORY SCOPE: this unit implements EXACTLY these stories: ${extras.storyRefs.join(', ')}. ` +
@@ -1227,6 +1267,7 @@ function planGenerative(
       scopeNote +
       styleNote +
       platformsNote +
+      audienceNote +
       storyRefsNote +
       ungovernedNote +
       'Author REAL, self-contained UI screens as `design/screens/<page>.html` files ' +
@@ -1294,7 +1335,9 @@ export async function runGenerative(
       payloadRefs.every((r) => typeof r === 'string' && r !== '')
         ? (payloadRefs as string[])
         : undefined;
-    const plan = planGenerative(req, ctx, { designStyle, ungoverned, storyRefs });
+    const audienceNote =
+      req.kind === 'generate-design' ? await readAudienceNote(ctx.projectRoot) : undefined;
+    const plan = planGenerative(req, ctx, { designStyle, ungoverned, storyRefs, audienceNote });
 
     // Grant the headless skill the least tools it needs (shell uxfactory + write
     // files) inside the sandboxed project tree before invoking the adapter.
