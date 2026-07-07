@@ -1106,7 +1106,7 @@ export function Prompt({
                             allIn
                               ? "bg-primary-50 text-primary-700 border-primary-200"
                               : selCount > 0
-                                ? "bg-primary-50/50 text-primary-600 border-primary-100"
+                                ? "bg-primary-50 text-primary-600 border-primary-100"
                                 : "bg-white text-gray-500 border-gray-200",
                           ].join(" ")}
                         >
