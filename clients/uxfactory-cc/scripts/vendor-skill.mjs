@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -31,7 +31,14 @@ const SKILLS = [
 export async function vendorSkill() {
   for (const { src, dest } of SKILLS) {
     await mkdir(path.dirname(dest), { recursive: true });
-    await copyFile(src, dest);
+    // Atomic: copy to a temp sibling, then rename into place. Test files run
+    // in parallel vitest workers and EACH calls vendorSkill() while others
+    // byte-compare the same destinations — a plain copyFile truncates first,
+    // so a concurrent reader could observe a partial file (the rare
+    // order-dependent "byte-matches canonical skill" flake).
+    const tmp = `${dest}.tmp-${process.pid}`;
+    await copyFile(src, tmp);
+    await rename(tmp, dest);
     console.log(`vendored skill: ${src} -> ${dest}`);
   }
 }
