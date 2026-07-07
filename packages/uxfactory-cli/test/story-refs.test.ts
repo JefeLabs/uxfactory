@@ -138,3 +138,70 @@ describe("runHtmlBatch with storyRefs", () => {
     expect(coverage.findings.some((f) => f.ref === "ghost-story")).toBe(true);
   });
 });
+
+// ─── flow-story-coverage — the journey must realize its bound stories ─────────
+
+describe("flow-story-coverage (user-flow unit)", () => {
+  const LOW = { visual: "low", editorial: "low", coverage: "low", flow: "low" } as const;
+  const snap = (page: string, story: string): RenderSnapshot => ({
+    page, view: "default",
+    viewport: { name: "desktop", width: 1440, height: 900 },
+    ok: true, screenshotPath: "x.png",
+    coverChecks: [{ story, impliedState: "success", selector: "[data-ac='x']", found: true, visible: true }],
+    axeViolations: [], contrastPairs: [],
+    styleStats: { fontFamilies: [], radii: [], shadowCount: 0, gradientCount: 0, colors: [] },
+  });
+
+  it("passes when every bound story's coverage sits on journey pages", () => {
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/cart.html", "browse-faq"), snap("screens/pay.html", "contact-support")],
+      stories: STORIES, tokens: null, unit: "user-flow",
+      flow: { steps: ["screens/cart.html", "screens/pay.html"], storyRefs: ["browse-faq", "contact-support"] },
+      scope: { ...LOW },
+    });
+    expect(report.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("pass");
+  });
+
+  it("fails when a bound story is covered on a page outside the declared steps", () => {
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/cart.html", "browse-faq"), snap("screens/rogue.html", "contact-support")],
+      stories: STORIES, tokens: null, unit: "user-flow",
+      flow: { steps: ["screens/cart.html"], storyRefs: ["browse-faq", "contact-support"] },
+      scope: { ...LOW },
+    });
+    const check = report.checks.find((c) => c.id === "flow-story-coverage")!;
+    expect(check.status).toBe("fail");
+    expect(check.findings.some((f) => f.ref === "contact-support@screens/rogue.html")).toBe(true);
+  });
+
+  it("an unknown bound ref and an uncovered bound story both fail loudly", () => {
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/cart.html", "browse-faq")],
+      stories: STORIES, tokens: null, unit: "user-flow",
+      flow: { steps: ["screens/cart.html"], storyRefs: ["ghost", "contact-support"] },
+      scope: { ...LOW },
+    });
+    const check = report.checks.find((c) => c.id === "flow-story-coverage")!;
+    expect(check.status).toBe("fail");
+    expect(check.findings.some((f) => f.ref === "ghost")).toBe(true);
+    expect(check.findings.some((f) => f.ref === "contact-support")).toBe(true);
+  });
+
+  it("skips when the flow binds no stories; not-owed off the user-flow unit", () => {
+    const bound = runHtmlBatch({
+      snapshots: [snap("screens/cart.html", "browse-faq")],
+      stories: STORIES, tokens: null, unit: "user-flow",
+      flow: { steps: ["screens/cart.html"] },
+      scope: { ...LOW },
+    });
+    expect(bound.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("skip");
+
+    const page = runHtmlBatch({
+      snapshots: [snap("screens/cart.html", "browse-faq")],
+      stories: STORIES, tokens: null, unit: "page",
+      flow: { steps: ["screens/cart.html"], storyRefs: ["browse-faq"] },
+      scope: { ...LOW },
+    });
+    expect(page.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("not-owed");
+  });
+});

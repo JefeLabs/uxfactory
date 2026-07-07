@@ -173,5 +173,9 @@ export async function loadFlowInput(absPath: string | null): Promise<InputLoadRe
   if (typeof result.raw !== "object" || result.raw === null) {
     return { state: "broken", message: `malformed flow file: expected a JSON object` };
   }
+  const refs = (result.raw as Record<string, unknown>)["storyRefs"];
+  if (refs !== undefined && (!Array.isArray(refs) || refs.some((r) => typeof r !== "string" || r === ""))) {
+    return { state: "broken", message: `malformed flow file: "storyRefs" must be an array of non-empty story ids` };
+  }
   return { state: "ok", value: result.raw as Flow };
 }

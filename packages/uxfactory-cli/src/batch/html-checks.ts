@@ -1,5 +1,5 @@
 import { featureCoverage, scopeStories } from "./checks.js";
-import type { BatchFinding, CheckResult, ImpliedState, Severity, StorySet, TokenSet , FeatureSet, FeatureCoverage} from "./checks.js";
+import type { BatchFinding, CheckResult, Flow, ImpliedState, Severity, StorySet, TokenSet , FeatureSet, FeatureCoverage} from "./checks.js";
 import type { CapturedNode } from "../render/dom-capture.js";
 import { binds } from "./scope.js";
 import type { GateThresholds, RenderScope } from "./scope.js";
@@ -164,6 +164,56 @@ export function renderCoverage(
       ? {}
       : { reason: "component unit — story coverage not required; claims still validated" }),
   };
+}
+
+/**
+ * flow-story-coverage (must, user-flow unit only) — the journey must REALIZE
+ * its bound stories: every visible cover for a bound story must sit on a page
+ * inside the declared step order, an unbound page-cover means the story leaks
+ * off the journey, and a bound ref naming no registered story is a finding
+ * (a contract you can't verify is a broken contract). Skip-and-declare when
+ * the flow declares no storyRefs.
+ */
+export function flowStoryCoverage(
+  snapshots: RenderSnapshot[],
+  flow: Flow | null,
+  stories: StorySet | null,
+): CheckResult {
+  const id = "flow-story-coverage";
+  if (flow === null || flow.storyRefs === undefined || flow.storyRefs.length === 0) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "flow binds no stories" };
+  }
+  if (stories === null) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
+  }
+  const known = new Set(stories.stories.map((s) => s.id));
+  const steps = new Set(flow.steps);
+  const findings: BatchFinding[] = [];
+  for (const ref of flow.storyRefs) {
+    if (!known.has(ref)) {
+      findings.push({ detail: `flow-bound story ref "${ref}" is not a registered story`, ref });
+      continue;
+    }
+    // Every visible cover for the bound story must live on a journey page.
+    const coveringPages = new Set(
+      snapshots
+        .filter((s) => s.coverChecks.some((c) => c.story === ref && c.found && c.visible))
+        .map((s) => s.page),
+    );
+    if (coveringPages.size === 0) {
+      findings.push({ detail: `flow-bound story ${ref} has no visible coverage on any rendered page`, ref });
+      continue;
+    }
+    for (const page of coveringPages) {
+      if (!steps.has(page)) {
+        findings.push({
+          detail: `story ${ref} is covered on ${page}, which is outside the flow's declared steps — the journey does not realize the story`,
+          ref: `${ref}@${page}`,
+        });
+      }
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
 }
 
 /**
@@ -404,6 +454,7 @@ export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   contrast: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "flow-steps": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
+  "flow-story-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "style-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "typography-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
 };
@@ -428,6 +479,8 @@ export interface RunHtmlBatchInput {
   features?: FeatureSet | null;
   /** Story-scoped contract: the unit is accountable to exactly these stories. */
   storyRefs?: string[];
+  /** The declared flow (registry `inputs.flow`) — enables flow-story-coverage. */
+  flow?: Flow | null;
 }
 
 interface HtmlGateEntry {
@@ -456,6 +509,13 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
     id: "flow-steps",
     severity: "must",
     run: (i) => flowSteps(i.snapshots),
+    bindsWhen: (i) => i.unit === "user-flow",
+    notOwedReason: "binds only for the user-flow unit",
+  },
+  {
+    id: "flow-story-coverage",
+    severity: "must",
+    run: (i) => flowStoryCoverage(i.snapshots, i.flow ?? null, i.stories),
     bindsWhen: (i) => i.unit === "user-flow",
     notOwedReason: "binds only for the user-flow unit",
   },

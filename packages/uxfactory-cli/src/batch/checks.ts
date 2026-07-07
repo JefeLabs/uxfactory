@@ -150,6 +150,8 @@ export function scopeStories(
 /** flow.json (v1): an ordered sequence of node/frame names. */
 export interface Flow {
   steps: string[];
+  /** Stories this flow REALIZES — their coverage must live on the journey. */
+  storyRefs?: string[];
 }
 
 // --- shared spec walkers (pure) --------------------------------------------
