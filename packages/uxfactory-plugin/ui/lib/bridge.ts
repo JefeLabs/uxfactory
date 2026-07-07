@@ -208,6 +208,8 @@ export interface TraceAC {
   statement: string;
   checkable: string;
   linkedNodes: Array<{ nodeId: string; unitName: string; unitType: string }>;
+  /** Page elements that realize this AC (trace covers carrying its acId). */
+  coveredBy: Array<{ page: string; view: string }>;
 }
 
 /** One story in the traceability tree with its covering pages/views. */

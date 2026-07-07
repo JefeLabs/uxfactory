@@ -8,6 +8,8 @@ import type { BatchReport } from "./run.js";
 /** One trace cover, resolved against the activated DOM by the render stage. */
 export interface CoverCheck {
   story: string;
+  /** The specific AC this element realizes (page-tier binding; absent on legacy trace). */
+  acId?: string;
   impliedState: ImpliedState;
   selector: string;
   found: boolean; // selector resolved ≥1 element
@@ -255,6 +257,45 @@ export function renderCoverage(
       ? {}
       : { reason: "component unit — story coverage not required; claims still validated" }),
   };
+}
+
+/**
+ * ac-binding-coverage (ADVISORY) — page components → specific ACs. Each
+ * rendered element claims an acId via its cover; this reports every
+ * auto-checkable AC not claimed by a visible element. Advisory: it nudges the
+ * agent to bind every acceptance criterion to a component without breaking
+ * legacy trace files that carry no acId. Skip-and-declare when no stories.
+ */
+export function acBindingCoverage(
+  snapshots: RenderSnapshot[],
+  stories: StorySet | null,
+): CheckResult {
+  const id = "ac-binding-coverage";
+  if (stories === null) {
+    return { id, status: "skip", severity: "advisory", findings: [], reason: "no stories registered" };
+  }
+  const claimed = new Set<string>();
+  for (const s of snapshots) {
+    if (!s.ok) continue;
+    for (const c of s.coverChecks) {
+      if (c.acId !== undefined && c.found && c.visible) claimed.add(`${c.story}/${c.acId}`);
+    }
+  }
+  const findings: BatchFinding[] = [];
+  for (const story of stories.stories ?? []) {
+    for (const ac of story.acceptanceCriteria ?? []) {
+      if (ac.checkable === "manual") continue; // human sign-off — never nudged
+      if (ac.acId === undefined) continue; // no id to bind against
+      const key = `${story.id}/${ac.acId}`;
+      if (!claimed.has(key)) {
+        findings.push({
+          detail: `story ${story.id} ${ac.acId} ("${ac.statement}") is claimed by no visible element`,
+          ref: key,
+        });
+      }
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
 }
 
 /**
@@ -544,6 +585,7 @@ export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   a11y: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   contrast: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
+  "ac-binding-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "low", min_flow: "none" },
   "flow-steps": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "flow-story-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "copy-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
@@ -599,6 +641,11 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
   { id: "a11y", severity: "must", run: (i) => a11y(i.snapshots) },
   { id: "contrast", severity: "must", run: (i) => contrast(i.snapshots) },
   { id: "token-conformance", severity: "must", run: (i) => htmlTokenConformance(i.snapshots, i.tokens) },
+  {
+    id: "ac-binding-coverage",
+    severity: "advisory",
+    run: (i) => acBindingCoverage(i.snapshots, i.stories),
+  },
   {
     id: "flow-steps",
     severity: "must",

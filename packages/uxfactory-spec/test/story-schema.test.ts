@@ -167,6 +167,12 @@ describe("storyToEngine", () => {
     expect(states).toEqual(["error", "empty", "loading", "success", "edge"]);
   });
 
+  it("carries the acId through so the gate can bind coverage to a specific AC", () => {
+    const parsed = parseStoryFile(CANONICAL);
+    if (!parsed.ok) throw new Error("parse failed");
+    expect(storyToEngine(parsed.story).acceptanceCriteria[0].acId).toBe("AC-001");
+  });
+
   it("carries checkable through so the gate can exclude manual ACs", () => {
     const parsed = parseStoryFile({
       storyId: "s",

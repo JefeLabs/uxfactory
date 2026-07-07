@@ -629,6 +629,8 @@ interface TraceAC {
   statement: string;
   checkable: string;
   linkedNodes: Array<{ nodeId: string; unitName: string; unitType: string }>;
+  /** Page elements that realize this AC (trace covers carrying its acId). */
+  coveredBy: Array<{ page: string; view: string }>;
 }
 
 interface TraceStory {
@@ -718,25 +720,40 @@ async function buildTrace(root: string, dataDir: string): Promise<{
 
   const stories = await readTraceStories(storiesPath);
 
-  // trace.json → story → covering page/view list
+  // trace.json → story-level and AC-level covering page/view lists. The
+  // AC-level map keys `${story}/${acId}` — a page ELEMENT realizing a specific
+  // acceptance criterion (page-tier component→AC binding).
   const coveredBy = new Map<string, Array<{ page: string; view: string }>>();
+  const acCoveredBy = new Map<string, Array<{ page: string; view: string }>>();
   try {
     const trace = JSON.parse(await readFile(tracePath, "utf8")) as {
-      pages?: Array<{ file?: string; views?: Array<{ id?: string; covers?: Array<{ story?: string }> }> }>;
+      pages?: Array<{
+        file?: string;
+        views?: Array<{ id?: string; covers?: Array<{ story?: string; acId?: string }> }>;
+      }>;
     };
     for (const page of trace.pages ?? []) {
       for (const view of page.views ?? []) {
+        const where = { page: page.file ?? "", view: view.id ?? "" };
         const seen = new Set<string>();
+        const acSeen = new Set<string>();
         for (const cover of view.covers ?? []) {
-          if (typeof cover.story !== "string" || seen.has(cover.story)) continue;
-          seen.add(cover.story);
-          const list = coveredBy.get(cover.story) ?? [];
-          list.push({ page: page.file ?? "", view: view.id ?? "" });
-          coveredBy.set(cover.story, list);
+          if (typeof cover.story !== "string") continue;
+          if (!seen.has(cover.story)) {
+            seen.add(cover.story);
+            coveredBy.set(cover.story, [...(coveredBy.get(cover.story) ?? []), where]);
+          }
+          if (typeof cover.acId === "string") {
+            const key = `${cover.story}/${cover.acId}`;
+            if (!acSeen.has(key)) {
+              acSeen.add(key);
+              acCoveredBy.set(key, [...(acCoveredBy.get(key) ?? []), where]);
+            }
+          }
         }
       }
     }
-  } catch { /* no trace — coveredBy stays empty */ }
+  } catch { /* no trace — coverage maps stay empty */ }
 
   // sitemap featureRefs → feature → planned page titles (IA-planned homes)
   const plannedByFeature = new Map<string, string[]>();
@@ -783,6 +800,7 @@ async function buildTrace(root: string, dataDir: string): Promise<{
     coveredBy: coveredBy.get(s.storyId) ?? [],
     acceptanceCriteria: s.acs.map((ac) => ({
       ...ac,
+      coveredBy: acCoveredBy.get(`${s.storyId}/${ac.acId}`) ?? [],
       linkedNodes: links
         .filter((l) => l.acId === `${s.storyId}/${ac.acId}` || l.acId === ac.acId)
         .map((l) => ({ nodeId: l.nodeId, unitName: l.unitName, unitType: l.unitType })),

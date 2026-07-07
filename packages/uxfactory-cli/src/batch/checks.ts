@@ -43,6 +43,8 @@ export type ImpliedState = "empty" | "loading" | "error" | "success" | "edge";
 
 /** One acceptance criterion: a statement plus the state it implies must exist. */
 export interface AcceptanceCriterion {
+  /** Stable AC id — lets element claims bind to a specific criterion (page tier). */
+  acId?: string;
   statement: string;
   impliedState: ImpliedState;
   /** manual = human sign-off; the deterministic gate never enforces it. Absent = auto. */

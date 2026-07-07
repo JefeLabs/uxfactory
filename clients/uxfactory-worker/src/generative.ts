@@ -1300,7 +1300,10 @@ function planGenerative(
       'activation contract (location.hash, a query param, or a click sequence; expose ' +
       'window.uxfReady for async states). Author design/tokens.ds.json registering every ' +
       'painted color when the profile visual dial is medium or higher. Author ' +
-      'design/trace.json mapping every (story, impliedState) to a (page, view, selector). ' +
+      'design/trace.json mapping every (story, impliedState) to a (page, view, selector); ' +
+      'on page-tier units also set each cover.acId to the specific acceptance criterion the ' +
+      'element realizes and mark that element data-ac="<story>/<acId>", so every AC binds to a ' +
+      'component (the advisory ac-binding-coverage check nudges toward full AC binding). ' +
       'If a copy deck is registered (inputs.copyDeck), render its entries VERBATIM and claim ' +
       'each with data-copy="<key>" on the element — the copy-conformance gate enforces exact text. ' +
       'Then iterate `uxfactory batch --json -- design` to a green gate (exit 0), reading ' +

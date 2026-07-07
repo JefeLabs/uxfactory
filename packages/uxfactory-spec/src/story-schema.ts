@@ -49,6 +49,8 @@ export interface CanonicalStory {
 
 /** Engine AC — what `requirementCoverage` consumes; `checkable` lets it skip manual ACs. */
 export interface EngineAC {
+  /** The AC's stable id — lets the gate bind coverage to a specific criterion. */
+  acId: string;
   statement: string;
   impliedState: StoryImpliedState;
   checkable?: ACCheckable;
@@ -150,6 +152,7 @@ function acToEngine(ac: CanonicalAC): EngineAC {
     ac.statement ??
     `Given ${ac.given ?? ""}, when ${ac.when ?? ""}, then ${ac.then ?? ""}`;
   return {
+    acId: ac.acId,
     statement,
     impliedState: ac.impliedState ?? deriveImpliedState(ac.then ?? statement),
     checkable: ac.checkable,

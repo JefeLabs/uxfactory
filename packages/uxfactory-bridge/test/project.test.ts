@@ -1166,7 +1166,7 @@ describe("GET /project/trace — the traceability join", () => {
       pages: [
         { file: "screens/faq.html", views: [
           { id: "default", covers: [
-            { story: "browse-faq", impliedState: "success", selector: "[data-ac='x']" },
+            { story: "browse-faq", acId: "AC-001", impliedState: "success", selector: "[data-ac='browse-faq/AC-001']" },
           ] },
         ] },
       ],
@@ -1207,6 +1207,7 @@ describe("GET /project/trace — the traceability join", () => {
           acceptanceCriteria: Array<{
             acId: string; statement: string; checkable: string;
             linkedNodes: Array<{ nodeId: string; unitName: string; unitType: string }>;
+            coveredBy: Array<{ page: string; view: string }>;
           }>;
         }>;
       }>;
@@ -1228,6 +1229,8 @@ describe("GET /project/trace — the traceability join", () => {
       acId: "AC-001",
       statement: "answers visible",
       linkedNodes: [{ nodeId: "1:23", unitName: "FAQ list", unitType: "organism" }],
+      // AC-level trace binding: the page element that realizes this AC.
+      coveredBy: [{ page: "screens/faq.html", view: "default" }],
     });
     // stories no feature references land in the unassigned bucket
     expect(body.unassigned.map((u) => u.storyId)).toEqual(["orphan-story"]);

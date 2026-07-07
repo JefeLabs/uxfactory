@@ -126,10 +126,12 @@ describe("runHtmlBatch", () => {
     const r = runHtmlBatch({ snapshots: [goodSnap], stories, tokens, scope: VISUAL_MEDIUM });
     expect(r.clean).toBe(true);
     expect(r.checks.map((c) => c.id).sort()).toEqual([
-      "a11y", "contrast", "copy-conformance", "flow-steps", "flow-story-coverage",
-      "render-coverage", "style-conformance", "token-conformance", "typography-conformance",
+      "a11y", "ac-binding-coverage", "contrast", "copy-conformance", "flow-steps",
+      "flow-story-coverage", "render-coverage", "style-conformance", "token-conformance",
+      "typography-conformance",
     ]);
     // conditional gates are not-owed without their unit/style/deck; the rest pass.
+    // ac-binding-coverage binds at coverage≥low and passes here (goodSnap claims its AC).
     const conditional = new Set(["copy-conformance", "flow-steps", "flow-story-coverage", "style-conformance", "typography-conformance"]);
     expect(
       r.checks.every((c) => (conditional.has(c.id) ? c.status === "not-owed" : c.status === "pass")),

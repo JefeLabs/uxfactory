@@ -51,6 +51,15 @@ function StoryRows({ story }: { story: TraceStory }): React.JSX.Element {
             {ac.checkable === "manual" && (
               <span className="px-1 rounded bg-gray-100 text-gray-500">manual</span>
             )}
+            {ac.coveredBy.map((c) => (
+              <span
+                key={`${c.page}:${c.view}`}
+                title={`Element on ${c.page} › ${c.view} realizes this AC`}
+                className="px-1.5 py-0.5 rounded bg-primary-50 text-primary-700 border border-primary-100"
+              >
+                {c.page.replace(/^.*\//, "")}
+              </span>
+            ))}
             {ac.linkedNodes.map((n) => (
               <span
                 key={n.nodeId}

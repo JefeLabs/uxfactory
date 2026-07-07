@@ -39,7 +39,7 @@ const CAPTURE_FN = `(covers) => {
   };
   const coverChecks = covers.map((c) => {
     const el = document.querySelector(c.selector);
-    return { story: c.story, impliedState: c.impliedState, selector: c.selector, found: !!el, visible: !!el && visible(el) };
+    return { story: c.story, acId: c.acId, impliedState: c.impliedState, selector: c.selector, found: !!el, visible: !!el && visible(el) };
   });
   const copyClaims = Array.from(document.querySelectorAll("[data-copy]")).map((el) => ({
     key: el.getAttribute("data-copy") || "",
@@ -169,7 +169,7 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
         } catch (err) {
           out.push({
             ...base, ok: false, error: (err as Error).message,
-            coverChecks: view.covers.map((c) => ({ story: c.story, impliedState: c.impliedState, selector: c.selector, found: false, visible: false })),
+            coverChecks: view.covers.map((c) => ({ story: c.story, acId: c.acId, impliedState: c.impliedState, selector: c.selector, found: false, visible: false })),
             paintedColors: [], axe: [],
           });
         } finally {

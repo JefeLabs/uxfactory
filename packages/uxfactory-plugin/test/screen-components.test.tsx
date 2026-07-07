@@ -549,6 +549,7 @@ describe("trace tree on the Components tab", () => {
                 acId: "AC-001",
                 statement: "answers visible",
                 checkable: "auto",
+                coveredBy: [{ page: "screens/faq.html", view: "default" }],
                 linkedNodes: [{ nodeId: "1:23", unitName: "FAQ list", unitType: "organism" }],
               },
             ],
@@ -585,6 +586,8 @@ describe("trace tree on the Components tab", () => {
     expect(screen.getByText("screens/faq.html › default")).toBeInTheDocument();
     // linked canvas component from the links registry
     expect(screen.getByText("FAQ list")).toBeInTheDocument();
+    // AC-level trace binding: the page element realizing this AC (faq.html chip)
+    expect(screen.getAllByText("faq.html").length).toBeGreaterThan(0);
     // sitemap-planned IA homes render as a feature-level chip
     expect(screen.getByText("planned: FAQ")).toBeInTheDocument();
     // stories without a feature land in the unassigned bucket

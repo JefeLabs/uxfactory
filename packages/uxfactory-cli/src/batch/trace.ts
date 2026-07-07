@@ -10,6 +10,8 @@ export type Activation =
 /** One (story, impliedState) claim, resolved by a CSS selector against the activated DOM. */
 export interface TraceCover {
   story: string;
+  /** The specific AC this element realizes — page-tier component→AC binding. */
+  acId?: string;
   impliedState: ImpliedState;
   selector: string;
 }
@@ -93,6 +95,8 @@ export function validateTrace(
           return { ok: false, message: `${cat}.impliedState must be one of empty|loading|error|success|edge` };
         if (typeof cover["selector"] !== "string" || cover["selector"].length === 0)
           return { ok: false, message: `${cat}.selector must be a non-empty string` };
+        if (cover["acId"] !== undefined && typeof cover["acId"] !== "string")
+          return { ok: false, message: `${cat}.acId must be a string when present` };
       }
     }
   }
