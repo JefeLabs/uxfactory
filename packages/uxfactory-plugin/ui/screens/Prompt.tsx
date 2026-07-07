@@ -45,6 +45,7 @@ import {
   ARTIFACT_PREREQS,
   ARTIFACT_REGISTRY,
   AUTHORING_ORDER,
+  COMPONENT_TYPE_MAPPING,
   normalizeQuadrant,
   resolveRequirements,
 } from "@uxfactory/spec";
@@ -713,14 +714,53 @@ export function Prompt({
     }
     return out;
   }, [traceResult.data]);
+  // Feature hierarchy for the scope selector — features are the unit humans
+  // reason about once the backlog grows past a handful of stories.
+  const scopeGroups = React.useMemo(() => {
+    const data = traceResult.data;
+    if (data === undefined) return [];
+    const groups = data.features
+      .filter((f) => f.stories.length > 0)
+      .map((f) => ({
+        id: f.featureId,
+        name: f.name,
+        stories: f.stories.map((s) => ({ id: s.storyId, want: s.want })),
+      }));
+    if (data.unassigned.length > 0) {
+      groups.push({
+        id: "__unassigned",
+        name: "Unassigned",
+        stories: data.unassigned.map((s) => ({ id: s.storyId, want: s.want })),
+      });
+    }
+    return groups;
+  }, [traceResult.data]);
   const [scopedStories, setScopedStories] = useState<string[] | null>(null);
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const normalizeScope = (next: string[]): string[] | null =>
+    next.length === storyOptions.length ? null : next;
   const toggleStory = (id: string): void => {
     setScopedStories((prev) => {
       const base = prev ?? storyOptions.map((o) => o.id);
-      const next = base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
-      return next.length === storyOptions.length ? null : next;
+      return normalizeScope(base.includes(id) ? base.filter((x) => x !== id) : [...base, id]);
     });
   };
+  const toggleGroup = (ids: string[]): void => {
+    setScopedStories((prev) => {
+      const base = prev ?? storyOptions.map((o) => o.id);
+      const allIn = ids.every((id) => base.includes(id));
+      const next = allIn
+        ? base.filter((x) => !ids.includes(x))
+        : [...new Set([...base, ...ids])];
+      return normalizeScope(next);
+    });
+  };
+  // Scope applies only where the gate enforces story coverage: page-tier and
+  // flow units. Component tiers are claims-only; channel units hinge on the
+  // creative brief — the selector never appears there.
+  const unitGroup = COMPONENT_TYPE_MAPPING[composerUnitType]?.group;
+  const storyScopeVisible =
+    storyOptions.length > 0 && (unitGroup === "pages" || unitGroup === "flows");
   const projectQuadrant = normalizeQuadrant(snapshotClassification?.["quadrant"]);
   const groundingChips = groundingChipsFor(composerUnitType, artifacts, projectQuadrant);
   const missingBlocking = missingBlockingCount(composerUnitType, artifacts, projectQuadrant);
@@ -976,38 +1016,6 @@ export function Prompt({
                   fullWidth
                   size="sm"
                 />
-                {storyOptions.length > 1 &&
-                  groundingChips.some((c) => c.key === "stories") && (
-                    <fieldset className="w-full border border-gray-200 rounded px-2 py-1.5">
-                      <legend className="text-[11px] text-gray-400 px-1">
-                        Stories{" "}
-                        {scopedStories === null
-                          ? "· all"
-                          : `· ${scopedStories.length} of ${storyOptions.length}`}
-                      </legend>
-                      <div className="flex flex-col gap-0.5">
-                        {storyOptions.map((o) => {
-                          const checked =
-                            scopedStories === null || scopedStories.includes(o.id);
-                          return (
-                            <label
-                              key={o.id}
-                              className="flex items-center gap-1.5 text-[11px] text-gray-700"
-                              title={o.want}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleStory(o.id)}
-                                aria-label={`Scope to story ${o.id}`}
-                              />
-                              <span className="truncate">{o.id}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </fieldset>
-                  )}
                 <ChipSelect
                   value={String(composerVariations)}
                   onChange={handleVariationsChange}
@@ -1064,6 +1072,74 @@ export function Prompt({
               />
             ))}
           </div>
+
+          {/* Story scope — feature-grouped chips; a strict subset rides as storyRefs */}
+          {storyScopeVisible && (
+            <div className="px-3 pb-2">
+              <button
+                type="button"
+                onClick={() => setScopeOpen((o) => !o)}
+                aria-expanded={scopeOpen}
+                aria-label="Story scope"
+                className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:border-primary-300"
+              >
+                Stories ·{" "}
+                {scopedStories === null
+                  ? `all (${storyOptions.length})`
+                  : `${scopedStories.length} of ${storyOptions.length}`}
+              </button>
+              {scopeOpen && (
+                <div className="mt-1.5 flex flex-col gap-1.5">
+                  {scopeGroups.map((g) => {
+                    const base = scopedStories ?? storyOptions.map((o) => o.id);
+                    const selCount = g.stories.filter((s) => base.includes(s.id)).length;
+                    const allIn = selCount === g.stories.length;
+                    return (
+                      <div key={g.id} className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(g.stories.map((s) => s.id))}
+                          aria-pressed={allIn}
+                          aria-label={`Scope feature ${g.name}`}
+                          className={[
+                            "text-[11px] px-2 py-0.5 rounded-full border font-medium",
+                            allIn
+                              ? "bg-primary-50 text-primary-700 border-primary-200"
+                              : selCount > 0
+                                ? "bg-primary-50/50 text-primary-600 border-primary-100"
+                                : "bg-white text-gray-500 border-gray-200",
+                          ].join(" ")}
+                        >
+                          {g.name} · {selCount}/{g.stories.length}
+                        </button>
+                        {g.stories.map((s) => {
+                          const sel = base.includes(s.id);
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => toggleStory(s.id)}
+                              aria-pressed={sel}
+                              aria-label={`Scope to story ${s.id}`}
+                              title={s.want}
+                              className={[
+                                "text-[11px] px-1.5 py-0.5 rounded border",
+                                sel
+                                  ? "bg-green-50 text-green-700 border-green-200"
+                                  : "bg-white text-gray-400 border-gray-200",
+                              ].join(" ")}
+                            >
+                              {s.id}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Missing blocking requirements → runs are annotated as ungoverned */}
           {missingBlocking > 0 && (

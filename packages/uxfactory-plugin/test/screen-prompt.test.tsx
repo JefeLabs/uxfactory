@@ -1470,28 +1470,48 @@ describe("quadrant-aware grounding", () => {
 
 // ─── Story-scoped generation contract ─────────────────────────────────────────
 
-describe("story scope picker", () => {
+describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
   const TRACE = {
-    features: [],
-    unassigned: [
-      { storyId: "browse-faq", actor: "visitor", want: "read answers", status: "registered", coveredBy: [], acceptanceCriteria: [] },
-      { storyId: "contact-support", actor: "visitor", want: "reach support", status: "registered", coveredBy: [], acceptanceCriteria: [] },
+    features: [
+      {
+        featureId: "F-01", name: "Answers", conformed: null, plannedPages: [],
+        stories: [
+          { storyId: "browse-faq", actor: "visitor", want: "read answers", status: "registered", coveredBy: [], acceptanceCriteria: [] },
+        ],
+      },
+      {
+        featureId: "F-02", name: "Support", conformed: null, plannedPages: [],
+        stories: [
+          { storyId: "contact-support", actor: "visitor", want: "reach support", status: "registered", coveredBy: [], acceptanceCriteria: [] },
+          { storyId: "escalate", actor: "visitor", want: "escalate", status: "registered", coveredBy: [], acceptanceCriteria: [] },
+        ],
+      },
     ],
+    unassigned: [],
   };
 
-  it("a strict subset rides the wire as storyRefs; the full set stays clean", async () => {
-    const user = userEvent.setup();
+  const renderWithTrace = async () => {
     const { bridge } = makeBridge();
     (bridge as { trace?: unknown }).trace = vi.fn().mockResolvedValue(TRACE);
     const bus = makeBus();
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
-    await openConfig();
+    return { bridge };
+  };
 
-    // Both stories start checked (all = no contract).
-    const contact = await screen.findByLabelText("Scope to story contact-support");
-    await user.click(contact); // uncheck → scope to browse-faq only
+  it("a strict subset rides the wire as storyRefs; the full set stays clean", async () => {
+    const user = userEvent.setup();
+    const { bridge } = await renderWithTrace();
+
+    // Collapsed summary shows the full-set default; expand to the groups.
+    const summary = await screen.findByRole("button", { name: "Story scope" });
+    expect(summary).toHaveTextContent("Stories · all (3)");
+    await user.click(summary);
+
+    await user.click(screen.getByLabelText("Scope to story contact-support"));
+    await user.click(screen.getByLabelText("Scope to story escalate"));
+    expect(summary).toHaveTextContent("Stories · 1 of 3");
 
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "FAQ page");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
@@ -1501,8 +1521,9 @@ describe("story scope picker", () => {
     };
     expect(body.payload["storyRefs"]).toEqual(["browse-faq"]);
 
-    // Re-check → back to the full set → the key must NOT ride.
-    await user.click(await screen.findByLabelText("Scope to story contact-support"));
+    // Feature-chip toggle re-adds the whole group → full set → no contract rides.
+    await user.click(screen.getByLabelText("Scope feature Support"));
+    expect(summary).toHaveTextContent("Stories · all (3)");
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "FAQ again");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
     await waitFor(() =>
@@ -1514,13 +1535,35 @@ describe("story scope picker", () => {
     expect(second.payload).not.toHaveProperty("storyRefs");
   });
 
+  it("the feature chip toggles its whole story group", async () => {
+    const user = userEvent.setup();
+    await renderWithTrace();
+    const summary = await screen.findByRole("button", { name: "Story scope" });
+    await user.click(summary);
+
+    const feature = screen.getByLabelText("Scope feature Support");
+    expect(feature).toHaveTextContent("Support · 2/2");
+    await user.click(feature);
+    expect(feature).toHaveTextContent("Support · 0/2");
+    expect(summary).toHaveTextContent("Stories · 1 of 3");
+  });
+
+  it("hidden for unit types whose gate does not enforce story coverage", async () => {
+    const user = userEvent.setup();
+    await renderWithTrace();
+    expect(await screen.findByRole("button", { name: "Story scope" })).toBeInTheDocument();
+
+    await openConfig();
+    await user.selectOptions(screen.getByLabelText("Unit type"), "organism");
+    expect(screen.queryByRole("button", { name: "Story scope" })).not.toBeInTheDocument();
+  });
+
   it("hidden without trace data (bridges without the endpoint)", async () => {
     const { bridge } = makeBridge();
     const bus = makeBus();
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
-    await openConfig();
-    expect(screen.queryByText(/Stories · all/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Story scope" })).not.toBeInTheDocument();
   });
 });
