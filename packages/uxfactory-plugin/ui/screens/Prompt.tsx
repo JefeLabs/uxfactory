@@ -24,7 +24,7 @@
  */
 
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight, Monitor, SlidersHorizontal, Smartphone, Tablet } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Bridge, BridgeEvent } from "../lib/bridge.js";
@@ -483,6 +483,36 @@ function ViewportMultiSelect({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Checkbox with an indeterminate (partial) state — the feature-row control in
+ * the enforcement-scope list. `indeterminate` can't be set via JSX, so a ref
+ * callback stamps the DOM property.
+ */
+function TriCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  ariaLabel,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+  ariaLabel: string;
+}): React.JSX.Element {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      aria-label={ariaLabel}
+      onChange={onChange}
+      ref={(el) => {
+        if (el) el.indeterminate = indeterminate && !checked;
+      }}
+      className="w-3.5 h-3.5 shrink-0 accent-primary-600"
+    />
   );
 }
 
@@ -1073,69 +1103,80 @@ export function Prompt({
             ))}
           </div>
 
-          {/* Story scope — feature-grouped chips; a strict subset rides as storyRefs */}
+          {/* Enforcement scope — a checkbox list of features → stories. Checked
+              stories are held by the coverage gate; a strict subset rides as
+              storyRefs, the full set sends no contract. */}
           {storyScopeVisible && (
             <div className="px-3 pb-2">
               <button
                 type="button"
                 onClick={() => setScopeOpen((o) => !o)}
                 aria-expanded={scopeOpen}
-                aria-label="Story scope"
-                className="text-[11px] px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:border-primary-300"
+                aria-label="Enforcement scope"
+                className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-primary-700"
               >
-                Stories ·{" "}
-                {scopedStories === null
-                  ? `all (${storyOptions.length})`
-                  : `${scopedStories.length} of ${storyOptions.length}`}
+                {scopeOpen ? (
+                  <ChevronDown className="w-3 h-3 text-gray-400" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-gray-400" aria-hidden="true" />
+                )}
+                <span className="font-medium">Enforce coverage for</span>
+                <span className="text-gray-400">
+                  {scopedStories === null
+                    ? `all ${storyOptions.length} stories`
+                    : `${scopedStories.length} of ${storyOptions.length} stories`}
+                </span>
               </button>
               {scopeOpen && (
-                <div className="mt-1.5 flex flex-col gap-1.5">
-                  {scopeGroups.map((g) => {
-                    const base = scopedStories ?? storyOptions.map((o) => o.id);
-                    const selCount = g.stories.filter((s) => base.includes(s.id)).length;
-                    const allIn = selCount === g.stories.length;
-                    return (
-                      <div key={g.id} className="flex flex-wrap items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => toggleGroup(g.stories.map((s) => s.id))}
-                          aria-pressed={allIn}
-                          aria-label={`Scope feature ${g.name}`}
-                          className={[
-                            "text-[11px] px-2 py-0.5 rounded-full border font-medium",
-                            allIn
-                              ? "bg-primary-50 text-primary-700 border-primary-300"
-                              : selCount > 0
-                                ? "bg-primary-50 text-primary-600 border-primary-100"
-                                : "bg-white text-gray-500 border-gray-200",
-                          ].join(" ")}
-                        >
-                          {g.name} · {selCount}/{g.stories.length}
-                        </button>
-                        {g.stories.map((s) => {
-                          const sel = base.includes(s.id);
-                          return (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => toggleStory(s.id)}
-                              aria-pressed={sel}
-                              aria-label={`Scope to story ${s.id}`}
-                              title={s.want}
-                              className={[
-                                "text-[11px] px-1.5 py-0.5 rounded border",
-                                sel
-                                  ? "bg-green-50 text-green-700 border-green-200"
-                                  : "bg-white text-gray-400 border-gray-200",
-                              ].join(" ")}
-                            >
-                              {s.id}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+                <div className="mt-1 border border-gray-200 rounded overflow-hidden">
+                  <p className="px-2 py-1 text-[11px] text-gray-400 bg-gray-50 border-b border-gray-100">
+                    Checked stories are enforced by the coverage gate on this run.
+                  </p>
+                  <ul className="max-h-52 overflow-y-auto py-0.5">
+                    {scopeGroups.map((g) => {
+                      const base = scopedStories ?? storyOptions.map((o) => o.id);
+                      const ids = g.stories.map((s) => s.id);
+                      const selCount = ids.filter((id) => base.includes(id)).length;
+                      const allIn = selCount === g.stories.length;
+                      return (
+                        <li key={g.id}>
+                          <label className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50 cursor-pointer">
+                            <TriCheckbox
+                              checked={allIn}
+                              indeterminate={selCount > 0}
+                              onChange={() => toggleGroup(ids)}
+                              ariaLabel={`Enforce feature ${g.name}`}
+                            />
+                            <span className="flex-1 truncate">{g.name}</span>
+                            <span className="text-gray-400 font-normal shrink-0">
+                              {selCount}/{g.stories.length}
+                            </span>
+                          </label>
+                          <ul>
+                            {g.stories.map((s) => {
+                              const sel = base.includes(s.id);
+                              return (
+                                <li key={s.id}>
+                                  <label className="flex items-center gap-1.5 pl-6 pr-2 py-1 text-[11px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={sel}
+                                      onChange={() => toggleStory(s.id)}
+                                      aria-label={`Enforce story ${s.id}`}
+                                      className="w-3.5 h-3.5 shrink-0 accent-primary-600"
+                                    />
+                                    <span className="flex-1 truncate" title={s.id}>
+                                      {s.want || s.id}
+                                    </span>
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               )}
             </div>

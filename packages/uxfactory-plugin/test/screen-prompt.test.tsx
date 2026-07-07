@@ -1505,13 +1505,13 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     const { bridge } = await renderWithTrace();
 
     // Collapsed summary shows the full-set default; expand to the groups.
-    const summary = await screen.findByRole("button", { name: "Story scope" });
-    expect(summary).toHaveTextContent("Stories · all (3)");
+    const summary = await screen.findByRole("button", { name: "Enforcement scope" });
+    expect(summary).toHaveTextContent("all 3 stories");
     await user.click(summary);
 
-    await user.click(screen.getByLabelText("Scope to story contact-support"));
-    await user.click(screen.getByLabelText("Scope to story escalate"));
-    expect(summary).toHaveTextContent("Stories · 1 of 3");
+    await user.click(screen.getByLabelText("Enforce story contact-support"));
+    await user.click(screen.getByLabelText("Enforce story escalate"));
+    expect(summary).toHaveTextContent("1 of 3 stories");
 
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "FAQ page");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
@@ -1522,8 +1522,8 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     expect(body.payload["storyRefs"]).toEqual(["browse-faq"]);
 
     // Feature-chip toggle re-adds the whole group → full set → no contract rides.
-    await user.click(screen.getByLabelText("Scope feature Support"));
-    expect(summary).toHaveTextContent("Stories · all (3)");
+    await user.click(screen.getByLabelText("Enforce feature Support"));
+    expect(summary).toHaveTextContent("all 3 stories");
     await user.type(screen.getByRole("textbox", { name: "Prompt" }), "FAQ again");
     await user.click(screen.getByRole("button", { name: "Generate design" }));
     await waitFor(() =>
@@ -1538,24 +1538,26 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
   it("the feature chip toggles its whole story group", async () => {
     const user = userEvent.setup();
     await renderWithTrace();
-    const summary = await screen.findByRole("button", { name: "Story scope" });
+    const summary = await screen.findByRole("button", { name: "Enforcement scope" });
     await user.click(summary);
 
-    const feature = screen.getByLabelText("Scope feature Support");
-    expect(feature).toHaveTextContent("Support · 2/2");
+    // The feature checkbox owns its whole story group; the row shows a count.
+    const feature = screen.getByLabelText("Enforce feature Support");
+    const supportRow = feature.closest("label")!;
+    expect(supportRow).toHaveTextContent("2/2");
     await user.click(feature);
-    expect(feature).toHaveTextContent("Support · 0/2");
-    expect(summary).toHaveTextContent("Stories · 1 of 3");
+    expect(supportRow).toHaveTextContent("0/2");
+    expect(summary).toHaveTextContent("1 of 3 stories");
   });
 
   it("hidden for unit types whose gate does not enforce story coverage", async () => {
     const user = userEvent.setup();
     await renderWithTrace();
-    expect(await screen.findByRole("button", { name: "Story scope" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Enforcement scope" })).toBeInTheDocument();
 
     await openConfig();
     await user.selectOptions(screen.getByLabelText("Unit type"), "organism");
-    expect(screen.queryByRole("button", { name: "Story scope" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enforcement scope" })).not.toBeInTheDocument();
   });
 
   it("hidden without trace data (bridges without the endpoint)", async () => {
@@ -1564,6 +1566,6 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/prompt"],
     });
-    expect(screen.queryByRole("button", { name: "Story scope" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enforcement scope" })).not.toBeInTheDocument();
   });
 });
