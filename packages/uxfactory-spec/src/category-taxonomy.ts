@@ -358,6 +358,7 @@ export const LEGACY_CATEGORY_ALIASES: Record<string, string> = {
   "marketing": "product-marketing-site",
   "ecommerce": "ecommerce-storefront",
   "webapp": "productivity-collaboration",
+  "web_app": "productivity-collaboration",
   "news": "news-editorial",
 };
 

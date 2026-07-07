@@ -1,9 +1,9 @@
 {
   "scope": {
-    "visual": "high",
-    "editorial": "medium",
-    "coverage": "medium",
-    "flow": "low"
+    "visual": "medium",
+    "editorial": "high",
+    "coverage": "high",
+    "flow": "high"
   },
   "experimental": {
     "coherence": "high"
