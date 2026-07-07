@@ -208,13 +208,28 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     const relay = await resolveRelayStore(req.query.root);
     if (!relay.ok) return reply.code(relay.code).send({ error: relay.error });
     const entries = await relay.store.listQueue();
-    return {
-      jobs: entries.map((e) => ({
+    const jobs = [];
+    for (const e of entries) {
+      // Publish-time provenance sidecar (queue/meta/<jobId>.json) — per-job,
+      // never inferred from current project state (stale jobs would mislabel).
+      let ungoverned = false;
+      try {
+        const meta = JSON.parse(
+          await readFile(
+            path.join(relay.store.dataDir, "queue", "meta", `${e.jobId}.json`),
+            "utf8",
+          ),
+        ) as { ungoverned?: unknown };
+        ungoverned = meta.ungoverned === true;
+      } catch { /* no sidecar — governed */ }
+      jobs.push({
         jobId: e.jobId,
         queuedAt: e.mtimeMs,
         frames: frameSummaries(e.spec),
-      })),
-    };
+        ...(ungoverned ? { ungoverned: true } : {}),
+      });
+    }
+    return { jobs };
   });
 
   app.post<{ Params: { id: string }; Querystring: { root?: string } }>(

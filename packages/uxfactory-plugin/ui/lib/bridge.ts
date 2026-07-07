@@ -239,6 +239,8 @@ export interface RenderQueueJob {
   jobId: string;
   queuedAt: number;
   frames: { name: string; width: number; height: number }[];
+  /** Publish-time provenance: the job's run generated without required grounding. */
+  ungoverned?: boolean;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────

@@ -42,3 +42,32 @@ describe("writeQueueFile preview snapshot", () => {
     expect(queued).toContain(`${jobId}.json`);
   });
 });
+
+describe("writeQueueFile provenance snapshot", () => {
+  it("snapshots the report's ungoverned flag + storyRefs to queue/meta/<jobId>.json", async () => {
+    await mkdir(path.join(dataDir, "batch"), { recursive: true });
+    await writeFile(
+      path.join(dataDir, "batch", "report.json"),
+      JSON.stringify({ clean: true, ungoverned: true, storyRefs: ["browse-faq"] }),
+    );
+    const jobId = await writeQueueFile(dataDir, SPEC);
+    const meta = JSON.parse(
+      await readFile(path.join(dataDir, "queue", "meta", `${jobId}.json`), "utf8"),
+    ) as Record<string, unknown>;
+    expect(meta).toEqual({ ungoverned: true, storyRefs: ["browse-faq"] });
+  });
+
+  it("writes no meta for a governed run without a story contract", async () => {
+    await mkdir(path.join(dataDir, "batch"), { recursive: true });
+    await writeFile(path.join(dataDir, "batch", "report.json"), JSON.stringify({ clean: true }));
+    const jobId = await writeQueueFile(dataDir, SPEC);
+    await expect(
+      readFile(path.join(dataDir, "queue", "meta", `${jobId}.json`), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("enqueues cleanly with no report at all (provenance is best-effort)", async () => {
+    const jobId = await writeQueueFile(dataDir, SPEC);
+    expect(jobId).toMatch(/^pub_/);
+  });
+});

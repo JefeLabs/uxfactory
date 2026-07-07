@@ -127,6 +127,14 @@ export function Queue({
             <Card key={job.jobId}>
               <div className="flex flex-col gap-2 p-3">
                 <JobPreview bridge={bridge} jobId={job.jobId} />
+                {job.ungoverned === true && (
+                  <span
+                    className="self-start text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                    title="This run generated with required grounding artifacts missing — approve as a draft, not a governed render."
+                  >
+                    Ungoverned draft
+                  </span>
+                )}
                 <div className="flex flex-col gap-0.5">
                   {job.frames.map((f) => (
                     <div key={f.name} className="flex items-baseline justify-between gap-2">

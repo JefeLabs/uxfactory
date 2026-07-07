@@ -125,6 +125,23 @@ describe("approval queue: /queue list + approve/discard + preview", () => {
     expect(again.json().jobs).toHaveLength(2);
   });
 
+  it("GET /queue surfaces per-job provenance from the meta sidecar", async () => {
+    const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
+    await seed.init();
+    await seed.enqueue(SPEC, "job_gov");
+    await seed.enqueue(SPEC, "job_ungov");
+    await mkdir(path.join(rootB, ".uxfactory", "queue", "meta"), { recursive: true });
+    await writeFile(
+      path.join(rootB, ".uxfactory", "queue", "meta", "job_ungov.json"),
+      JSON.stringify({ ungoverned: true, storyRefs: ["browse-faq"] }),
+    );
+
+    const res = await app.inject({ method: "GET", url: `/queue?root=${encodeURIComponent(rootB)}` });
+    const jobs = res.json().jobs as Array<{ jobId: string; ungoverned?: boolean }>;
+    expect(jobs.find((j) => j.jobId === "job_ungov")?.ungoverned).toBe(true);
+    expect(jobs.find((j) => j.jobId === "job_gov")).not.toHaveProperty("ungoverned");
+  });
+
   it("POST /queue/:id/approve dequeues exactly that job and returns its spec", async () => {
     const seed = new BridgeStore(path.join(rootB, ".uxfactory"));
     await seed.init();

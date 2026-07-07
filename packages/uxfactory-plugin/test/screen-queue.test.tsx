@@ -39,6 +39,7 @@ const JOBS = {
       jobId: "pub_2",
       queuedAt: 2_000,
       frames: [{ name: "screens/home.html/success@mobile-portrait", width: 390, height: 4384 }],
+      ungoverned: true,
     },
   ],
 };
@@ -155,5 +156,17 @@ describe("Queue screen", () => {
     await waitFor(() =>
       expect(screen.getByText(/No designs waiting for approval/i)).toBeInTheDocument(),
     );
+  });
+});
+
+describe("ungoverned provenance badge on queue jobs", () => {
+  it("shows the badge only on jobs whose sidecar carried the flag", async () => {
+    await renderWithProviders(<Queue bridge={makeBridge()} bus={makeBus()} />, {
+      initialEntries: ["/tabs/queue"],
+    });
+    const badges = await screen.findAllByText("Ungoverned draft");
+    // Fixture: job two is ungoverned, job one is governed.
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!).toHaveAttribute("title", expect.stringMatching(/grounding artifacts missing/i));
   });
 });

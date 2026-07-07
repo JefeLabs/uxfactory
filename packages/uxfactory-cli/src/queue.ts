@@ -1,4 +1,4 @@
-import { mkdir, writeFile, rename, copyFile } from "node:fs/promises";
+import { mkdir, writeFile, rename, copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
 
 let counter = 0;
@@ -29,7 +29,40 @@ export async function writeQueueFile(
   await writeFile(tmpPath, JSON.stringify(spec, null, 2), "utf8");
   await rename(tmpPath, finalPath);
   await snapshotPreview(dataDir, queueDir, id, spec);
+  await snapshotProvenance(dataDir, queueDir, id);
   return id;
+}
+
+/**
+ * Snapshot the latest report's run provenance (ungoverned flag, story-scoped
+ * contract) to `queue/meta/<jobId>.json` at publish time — the report is
+ * overwritten by every later run, so without a per-job copy an approval UI
+ * would attribute a NEWER run's provenance to an older job (the same
+ * cross-run aliasing the preview snapshot exists for). Governed, uncontracted
+ * runs write nothing. Best-effort: never blocks the enqueue.
+ */
+async function snapshotProvenance(
+  dataDir: string,
+  queueDir: string,
+  jobId: string,
+): Promise<void> {
+  try {
+    const report = JSON.parse(
+      await readFile(path.join(dataDir, "batch", "report.json"), "utf8"),
+    ) as { ungoverned?: unknown; storyRefs?: unknown };
+    const meta: Record<string, unknown> = {
+      ...(report.ungoverned === true ? { ungoverned: true } : {}),
+      ...(Array.isArray(report.storyRefs) && report.storyRefs.length > 0
+        ? { storyRefs: report.storyRefs }
+        : {}),
+    };
+    if (Object.keys(meta).length === 0) return;
+    const metaDir = path.join(queueDir, "meta");
+    await mkdir(metaDir, { recursive: true });
+    await writeFile(path.join(metaDir, `${jobId}.json`), JSON.stringify(meta, null, 2), "utf8");
+  } catch {
+    // No report / unreadable — provenance is best-effort.
+  }
 }
 
 /**
