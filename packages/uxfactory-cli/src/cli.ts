@@ -19,6 +19,7 @@ import { generateSpecsCmd } from "./commands/generate-specs.js";
 import { reviewCmd } from "./commands/review.js";
 import { classifyCmd } from "./commands/classify.js";
 import { migrateStoriesCmd } from "./commands/migrate-stories.js";
+import { validateArtifactCmd } from "./commands/validate-artifact.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
 // renderCmd and bridgeCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
@@ -314,6 +315,14 @@ export function buildProgram(): Command {
     )
     .action(async () => {
       lastCode = await migrateStoriesCmd({ cwd: process.cwd() }, consoleIO);
+    });
+
+  program
+    .command("validate-artifact <key>")
+    .description("Run the deterministic validators for an intent artifact (schema, integrity, contrast)")
+    .option("--json", "emit the validation result as JSON")
+    .action(async (key: string, opts: { json?: boolean }) => {
+      lastCode = await validateArtifactCmd(key, { json: opts.json, cwd: process.cwd() }, consoleIO);
     });
 
   program

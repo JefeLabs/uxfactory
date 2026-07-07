@@ -57,3 +57,10 @@ export {
 export type { ComplianceFlag, IndustryProfile } from "./industry-taxonomy.js";
 export { complianceNudges } from "./compliance-nudges.js";
 export type { ClassificationLike } from "./compliance-nudges.js";
+export { validateArtifact, contrastRatio } from "./artifact-validators.js";
+export type {
+  ArtifactValidation,
+  Severity as ValidationSeverity,
+  ValidationFinding,
+  ValidatorContext,
+} from "./artifact-validators.js";
