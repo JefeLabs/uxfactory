@@ -1104,7 +1104,7 @@ export function Prompt({
                           className={[
                             "text-[11px] px-2 py-0.5 rounded-full border font-medium",
                             allIn
-                              ? "bg-primary-50 text-primary-700 border-primary-200"
+                              ? "bg-primary-50 text-primary-700 border-primary-300"
                               : selCount > 0
                                 ? "bg-primary-50 text-primary-600 border-primary-100"
                                 : "bg-white text-gray-500 border-gray-200",
