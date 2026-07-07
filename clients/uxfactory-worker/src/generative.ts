@@ -35,7 +35,7 @@ import type { AgentAdapter } from './adapter.js';
 import type { PipelineRequest, BridgeLike } from './bridge-client.js';
 import type { DispatchCtx, DispatchOutcome } from './dispatch.js';
 import { ensureBatchRegistry } from './batch-registry.js';
-import { loadSkill } from './skills.js';
+import { loadSkill, loadArtifactSkill } from './skills.js';
 import { landDesign, realLandingDeps, type LandingResult } from './landing.js';
 
 // ---------------------------------------------------------------------------
@@ -1192,7 +1192,8 @@ function planGenerative(
         ` valid JSON for .json targets, Markdown for .md targets.` +
         ` Report the written path once done.${guidanceNote}`;
       return {
-        systemPrompt: loadSkill('generate'),
+        // Specialist producer skill for THIS artifact (falls back to generic).
+        systemPrompt: loadArtifactSkill(artifact),
         user,
         artifactPath: entry.path,
       };

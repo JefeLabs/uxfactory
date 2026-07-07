@@ -83,6 +83,42 @@ describe("pipeline REST relay (inject)", () => {
     await rm(launchRoot, { recursive: true, force: true });
   });
 
+  it("POST /pipeline/result applies the result's artifact write-intents (single writer)", async () => {
+    const enq = await app.inject({
+      method: "POST", url: "/pipeline/request",
+      payload: { kind: "generate-artifact", payload: { artifact: "brand-colors" } },
+    });
+    const id = enq.json().id as string;
+    const res = await app.inject({
+      method: "POST", url: "/pipeline/result",
+      payload: {
+        id, status: 0,
+        result: { writes: [
+          { path: ".uxfactory/artifacts/design-system.json", sectionKey: "brand-colors", body: { primary: "#2952E3" } },
+        ] },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const { readFile } = await import("node:fs/promises");
+    const ds = JSON.parse(
+      await readFile(path.join(launchRoot, ".uxfactory/artifacts/design-system.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(ds["brand-colors"]).toEqual({ primary: "#2952E3" });
+  });
+
+  it("a result with no write-intents is unchanged (backward compatible)", async () => {
+    const enq = await app.inject({
+      method: "POST", url: "/pipeline/request",
+      payload: { kind: "classify", payload: {} },
+    });
+    const id = enq.json().id as string;
+    const res = await app.inject({
+      method: "POST", url: "/pipeline/result",
+      payload: { id, status: 0, result: { content: "done" } },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
   it("POST /pipeline/request enqueues and returns an id", async () => {
     const res = await app.inject({
       method: "POST",

@@ -100,6 +100,8 @@ export class BridgeStore {
   // event ring all live in memory. Payloads stay opaque.
   private readonly pipelineQueue: PipelineRequest[] = [];
   private readonly pipelineResults = new Map<string, PipelineResult>();
+  /** id → project root, retained past dequeue so a result's writes resolve their target. */
+  private readonly pipelineRequestRoots = new Map<string, string>();
   private readonly pipelineEvents: PipelineEvent[] = [];
   private pipelineSeq = 0;
 
@@ -501,7 +503,13 @@ export class BridgeStore {
       root,
     };
     this.pipelineQueue.push(request);
+    this.pipelineRequestRoots.set(request.id, root);
     return request;
+  }
+
+  /** The project root a pipeline request was scoped to (null once forgotten). */
+  rootForRequest(id: string): string | null {
+    return this.pipelineRequestRoots.get(id) ?? null;
   }
 
   /** Pop the oldest queued request whose root matches; null if none match. */
@@ -516,6 +524,7 @@ export class BridgeStore {
   async savePipelineResult(id: string, status: number, result: unknown): Promise<PipelineResult> {
     const stored: PipelineResult = { id, status, result };
     this.pipelineResults.set(id, stored);
+    this.pipelineRequestRoots.delete(id);
     return stored;
   }
 

@@ -29,7 +29,7 @@ import { runCli, resolveCliBin } from '../src/run-cli.js';
 import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.js';
 import type { DispatchCtx } from '../src/dispatch.js';
 import { ensureSkillPermissions, extractArtifacts, parseProgressLine, STYLE_GUIDANCE } from '../src/generative.js';
-import { loadSkill } from '../src/skills.js';
+import { loadSkill, loadArtifactSkill } from '../src/skills.js';
 import { drain, handleRequest, runWorker } from '../src/main.js';
 
 // ---------------------------------------------------------------------------
@@ -536,6 +536,23 @@ describe('generative branch routing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// loadArtifactSkill — per-artifact specialist skill with generic fallback
+describe('loadArtifactSkill', () => {
+  it('uses the specialist skill when skill/artifacts/<key>/SKILL.md exists', () => {
+    const s = loadArtifactSkill('brand-colors');
+    expect(s).toContain('Draft brand-colors');
+    expect(s).not.toBe(loadSkill('generate'));
+  });
+
+  it('falls back to the generic generate skill for artifacts without a specialist', () => {
+    expect(loadArtifactSkill('grid')).toBe(loadSkill('generate'));
+  });
+
+  it('sanitizes the key — a traversal attempt falls back safely', () => {
+    expect(loadArtifactSkill('../../../etc/passwd')).toBe(loadSkill('generate'));
+  });
+});
+
 // loadSkill
 // ---------------------------------------------------------------------------
 

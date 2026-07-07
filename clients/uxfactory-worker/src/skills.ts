@@ -16,7 +16,7 @@
  * target project does not carry the engine's skills.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** The skills the worker may run as a systemPrompt. */
@@ -30,6 +30,23 @@ function skillPath(name: SkillName): string {
 /** Read a SKILL.md and return its body (frontmatter stripped) as the systemPrompt. */
 export function loadSkill(name: SkillName): string {
   return stripFrontmatter(readFileSync(skillPath(name), 'utf8'));
+}
+
+/**
+ * Resolve the skill for drafting a SPECIFIC artifact: the specialist skill at
+ * `skill/artifacts/<key>/SKILL.md` when it exists, else the generic `generate`
+ * skill. Lets each producer be an expert at its one artifact (the single-writer
+ * model) while unauthored artifacts keep working through the generalist. The
+ * key is sanitized to `[a-z0-9-]+` so an untrusted payload can never traverse.
+ */
+export function loadArtifactSkill(artifactKey: string): string {
+  if (/^[a-z0-9-]+$/.test(artifactKey)) {
+    const specialist = fileURLToPath(
+      new URL(`../../../skill/artifacts/${artifactKey}/SKILL.md`, import.meta.url),
+    );
+    if (existsSync(specialist)) return stripFrontmatter(readFileSync(specialist, 'utf8'));
+  }
+  return loadSkill('generate');
 }
 
 /** Drop a leading `---\n…\n---` YAML frontmatter block, if present. */

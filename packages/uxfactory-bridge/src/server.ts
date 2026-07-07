@@ -12,6 +12,8 @@ import { gate } from "@uxfactory/gate";
 import type { Spec } from "@uxfactory/spec";
 import { validate } from "@uxfactory/spec";
 import { BridgeStore } from "./store.js";
+import { applyArtifactWrite } from "./artifact-writer.js";
+import type { ArtifactWrite } from "./artifact-writer.js";
 import type { ReviewReportPayload, CanvasRequest, PipelineEvent } from "./store.js";
 import { projectPlugin } from "./project.js";
 
@@ -442,6 +444,26 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     }
     if (typeof body.status !== "number") {
       return reply.code(400).send({ error: "status must be a number" });
+    }
+    // Single-writer: apply any artifact write-intents the producer returned,
+    // BEFORE saving (which forgets the id→root mapping). Each apply is
+    // serialized per target path by applyArtifactWrite. A malformed write or an
+    // unknown root is skipped, never fatal — the result still records.
+    const result = body.result as { writes?: unknown } | null | undefined;
+    const writes = Array.isArray(result?.writes) ? (result!.writes as ArtifactWrite[]) : [];
+    if (writes.length > 0) {
+      const root = store.rootForRequest(body.id);
+      if (root !== null) {
+        for (const w of writes) {
+          if (w !== null && typeof w === "object" && typeof w.path === "string") {
+            try {
+              await applyArtifactWrite(root, w);
+            } catch (err) {
+              app.log.warn(`artifact write skipped for ${body.id}: ${(err as Error).message}`);
+            }
+          }
+        }
+      }
     }
     await store.savePipelineResult(body.id, body.status, body.result);
     // Increment the relayed-run counter surfaced via GET /stats.
