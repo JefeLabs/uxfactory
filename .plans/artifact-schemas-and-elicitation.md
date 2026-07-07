@@ -454,6 +454,8 @@ Purpose: real language for generation; the anti-lorem-ipsum artifact. Keyed to n
 
 Elicitation: 1. [D] Slot inventory derived from sitemap + component specs — the deck's skeleton is generated, never asked. 2. [E] Per slot: approve generated candidate copy (from voice-tone + glossary + story context) or supply your own. 3. [E] Who approves copy — is `approved` status gated to a role? (Feeds `conformance-policy`.)
 
+**Gate consumption (resolved 2026-07-07: slots + exact text).** Generated HTML claims deck entries via `data-copy="<key>"` attributes; the renderer captures every claim (key, whitespace-normalized visible text). The `copy-conformance` must-check binds whenever a deck is registered: entry keys bind to pages by first segment (`home.hero.headline` binds to `screens/home.html`); every bound entry must be claimed by a visible element whose normalized text EQUALS the deck text (the authored copy is the contract — paraphrase is a finding), a claim naming no deck entry is a finding, and drifted text is a finding. Mirrors the trace.json/data-ac architecture.
+
 ## `voice-tone` — `content/voice-tone.json`
 
 ```json

@@ -1,7 +1,7 @@
 import { access, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { EXIT } from "../exit.js";
-import { loadFeaturesInput, loadFlowInput, loadStoriesInput, loadTokensInput } from "../batch/inputs.js";
+import { loadCopyDeckInput, loadFeaturesInput, loadFlowInput, loadStoriesInput, loadTokensInput } from "../batch/inputs.js";
 import { readTrace } from "../batch/trace.js";
 import { renderHtml, type HtmlRenderDeps } from "../render/html-render.js";
 import { runHtmlBatch, typographyLimitsFrom, type TypographyLimits } from "../batch/html-checks.js";
@@ -103,6 +103,10 @@ export async function batchHtmlMode(
   if (flowResult.state === "broken") { io.err(flowResult.message); return EXIT.TRANSPORT; }
   const flow = flowResult.state === "ok" ? flowResult.value : null;
 
+  const copyDeckResult = await loadCopyDeckInput(inputs.copyDeck);
+  if (copyDeckResult.state === "broken") { io.err(copyDeckResult.message); return EXIT.TRANSPORT; }
+  const copyDeck = copyDeckResult.state === "ok" ? copyDeckResult.value : null;
+
   const tokensResult = await loadTokensInput(inputs.tokens);
   if (tokensResult.state === "broken") { io.err(tokensResult.message); return EXIT.TRANSPORT; }
   const tokens: TokenSet | null = tokensResult.state === "ok" ? tokensResult.value : null;
@@ -166,6 +170,7 @@ export async function batchHtmlMode(
     stories,
     features,
     flow,
+    copyDeck,
     ...(registryStoryRefs !== undefined ? { storyRefs: registryStoryRefs } : {}),
     tokens,
     scope,

@@ -7,7 +7,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { HtmlRenderRequest } from "./html-render.js";
-import type { RenderSnapshot, CoverCheck, PaintedColor, AxeFinding, StyleStats } from "../batch/html-checks.js";
+import type { RenderSnapshot, CoverCheck, PaintedColor, AxeFinding, StyleStats , CopyClaim} from "../batch/html-checks.js";
 import { EXTRACT_FN } from "./dom-capture.js";
 import type { CapturedNode } from "./dom-capture.js";
 
@@ -41,6 +41,11 @@ const CAPTURE_FN = `(covers) => {
     const el = document.querySelector(c.selector);
     return { story: c.story, impliedState: c.impliedState, selector: c.selector, found: !!el, visible: !!el && visible(el) };
   });
+  const copyClaims = Array.from(document.querySelectorAll("[data-copy]")).map((el) => ({
+    key: el.getAttribute("data-copy") || "",
+    text: (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim(),
+    visible: visible(el),
+  }));
   const colorMap = new Map();
   let shadowCount = 0;
   let visibleElements = 0;
@@ -86,7 +91,7 @@ const CAPTURE_FN = `(covers) => {
     minBodyFontPx,
     maxLineLengthCh: maxLineLengthCh === null ? null : Math.round(maxLineLengthCh),
   };
-  return { coverChecks, paintedColors, styleStats };
+  return { coverChecks, copyClaims, paintedColors, styleStats };
 }`;
 
 export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<RenderSnapshot[]> {
@@ -142,7 +147,7 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
 
           const captured = (await page.evaluate(
             `(${CAPTURE_FN})(${JSON.stringify(view.covers)})`,
-          )) as { coverChecks: CoverCheck[]; paintedColors: PaintedColor[]; styleStats: StyleStats };
+          )) as { coverChecks: CoverCheck[]; copyClaims: CopyClaim[]; paintedColors: PaintedColor[]; styleStats: StyleStats };
 
           let domTree: CapturedNode | undefined;
           if (req.captureDom === true) {
@@ -160,7 +165,7 @@ export async function renderViewsPlaywright(req: HtmlRenderRequest): Promise<Ren
             targets: v.nodes.flatMap((n) => n.target.map(String)),
           }));
 
-          out.push({ ...base, ok: true, coverChecks: captured.coverChecks, paintedColors: captured.paintedColors, styleStats: captured.styleStats, axe, ...(domTree !== undefined ? { domTree } : {}) });
+          out.push({ ...base, ok: true, coverChecks: captured.coverChecks, copyClaims: captured.copyClaims, paintedColors: captured.paintedColors, styleStats: captured.styleStats, axe, ...(domTree !== undefined ? { domTree } : {}) });
         } catch (err) {
           out.push({
             ...base, ok: false, error: (err as Error).message,

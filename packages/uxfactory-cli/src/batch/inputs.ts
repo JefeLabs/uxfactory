@@ -12,6 +12,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
 import type { TokenSet, StorySet, Flow, FeatureSet } from "./checks.js";
+import type { CopyDeck } from "./html-checks.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -158,6 +159,39 @@ export async function loadFeaturesInput(
     };
   }
   return { state: "ok", value: raw as unknown as FeatureSet };
+}
+
+/**
+ * Load and shape-validate a registered copy-deck input (copy-deck.json).
+ * Feeds copy-conformance (slots + exact text) — entries must be {key, text}.
+ */
+export async function loadCopyDeckInput(
+  absPath: string | null,
+): Promise<InputLoadResult<CopyDeck>> {
+  if (absPath === null) return { state: "absent" };
+  const result = await loadRawJson(absPath, "copy-deck");
+  if (!result.ok) return { state: "broken", message: result.message };
+  const raw = result.raw;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { state: "broken", message: `malformed copy-deck file: expected a JSON object` };
+  }
+  const entries = (raw as Record<string, unknown>)["entries"];
+  if (
+    !Array.isArray(entries) ||
+    entries.some(
+      (e) =>
+        e === null ||
+        typeof e !== "object" ||
+        typeof (e as Record<string, unknown>)["key"] !== "string" ||
+        typeof (e as Record<string, unknown>)["text"] !== "string",
+    )
+  ) {
+    return {
+      state: "broken",
+      message: `malformed copy-deck file: "entries" must be an array of {key, text}`,
+    };
+  }
+  return { state: "ok", value: raw as unknown as CopyDeck };
 }
 
 /**

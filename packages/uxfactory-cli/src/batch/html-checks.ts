@@ -53,12 +53,103 @@ export interface RenderSnapshot {
   ok: boolean; // false → render/activation/settle failed
   error?: string; // present iff ok === false
   coverChecks: CoverCheck[];
+  /** data-copy claims captured from the DOM (absent on pre-copy-deck renders). */
+  copyClaims?: CopyClaim[];
   paintedColors: PaintedColor[];
   axe: AxeFinding[];
   /** Present iff the render was requested with captureDom (SP3b extract). */
   domTree?: CapturedNode;
   /** Present when the renderer captured style facts (advisory style checks). */
   styleStats?: StyleStats;
+}
+
+/** One `data-copy="<key>"` claim captured from the rendered DOM. */
+export interface CopyClaim {
+  key: string;
+  /** Whitespace-normalized visible text of the claiming element. */
+  text: string;
+  visible: boolean;
+}
+
+/** One copy-deck entry: a named slot and its authored text (the contract). */
+export interface CopyDeckEntry {
+  key: string;
+  text: string;
+  maxChars?: number;
+  status?: string;
+}
+
+/** copy-deck.json (v1). */
+export interface CopyDeck {
+  entries: CopyDeckEntry[];
+}
+
+const normText = (t: string): string => t.replace(/\s+/g, " ").trim();
+
+/**
+ * copy-conformance (must, binds whenever a deck is registered) — slots +
+ * exact text (resolved 2026-07-07). Entry keys bind to pages by first
+ * segment (`home.hero.headline` → screens/home.html). Every bound entry must
+ * be claimed by a VISIBLE element whose normalized text EQUALS the deck text
+ * (the authored copy is the contract — paraphrase is a finding); a claim
+ * naming no deck entry is a finding. Satisfaction unions across a page's
+ * views (copy for different states may live on different views).
+ */
+export function copyConformance(
+  snapshots: RenderSnapshot[],
+  deck: CopyDeck | null,
+): CheckResult {
+  const id = "copy-conformance";
+  if (deck === null) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "no copy deck registered" };
+  }
+  const byKey = new Map(deck.entries.map((e) => [e.key, e]));
+  const findings: BatchFinding[] = [];
+  const flagged = new Set<string>();
+  const flag = (ref: string, detail: string): void => {
+    if (flagged.has(ref)) return;
+    flagged.add(ref);
+    findings.push({ detail, ref });
+  };
+
+  // Group snapshots by page; claims union across views/viewports.
+  const pages = new Map<string, CopyClaim[]>();
+  for (const s of snapshots) {
+    if (!s.ok) continue;
+    const list = pages.get(s.page) ?? [];
+    list.push(...(s.copyClaims ?? []));
+    pages.set(s.page, list);
+  }
+
+  for (const [page, claims] of pages) {
+    const base = page.replace(/^.*\//, "").replace(/\.html$/, "");
+    // Claim validity: unknown keys + drifted text, wherever they appear.
+    for (const claim of claims) {
+      const entry = byKey.get(claim.key);
+      if (entry === undefined) {
+        flag(`${claim.key}@${page}`, `${page}: data-copy claims unknown deck key "${claim.key}"`);
+      } else if (normText(claim.text) !== normText(entry.text)) {
+        flag(
+          `${claim.key}@${page}`,
+          `${page}: copy for "${claim.key}" drifted — deck says "${entry.text}", rendered "${claim.text}"`,
+        );
+      }
+    }
+    // Bound-entry coverage: every `${base}.…` entry needs a visible, equal claim.
+    for (const entry of deck.entries) {
+      if (!entry.key.startsWith(`${base}.`)) continue;
+      const satisfied = claims.some(
+        (c) => c.key === entry.key && c.visible && normText(c.text) === normText(entry.text),
+      );
+      if (!satisfied) {
+        flag(
+          `${entry.key}@${page}`,
+          `deck entry "${entry.key}" is not claimed by a visible, text-equal element on ${page}`,
+        );
+      }
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "must", findings };
 }
 
 /** Key separator (NUL char) that cannot appear in a story id or impliedState. */
@@ -455,6 +546,7 @@ export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "flow-steps": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "flow-story-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
+  "copy-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "style-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "typography-conformance": { min_visual: "none", min_editorial: "none", min_coverage: "none", min_flow: "none" },
 };
@@ -481,6 +573,8 @@ export interface RunHtmlBatchInput {
   storyRefs?: string[];
   /** The declared flow (registry `inputs.flow`) — enables flow-story-coverage. */
   flow?: Flow | null;
+  /** The registered copy deck (registry `inputs.copyDeck`) — enables copy-conformance. */
+  copyDeck?: CopyDeck | null;
 }
 
 interface HtmlGateEntry {
@@ -518,6 +612,13 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
     run: (i) => flowStoryCoverage(i.snapshots, i.flow ?? null, i.stories),
     bindsWhen: (i) => i.unit === "user-flow",
     notOwedReason: "binds only for the user-flow unit",
+  },
+  {
+    id: "copy-conformance",
+    severity: "must",
+    run: (i) => copyConformance(i.snapshots, i.copyDeck ?? null),
+    bindsWhen: (i) => i.copyDeck != null,
+    notOwedReason: "no copy deck registered",
   },
   {
     id: "style-conformance",
