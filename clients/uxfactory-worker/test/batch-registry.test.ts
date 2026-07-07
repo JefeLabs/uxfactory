@@ -197,6 +197,44 @@ describe('canonical stories directory', () => {
   });
 });
 
+// ─── maxIterations default (convergence guard) ───────────────────────────────
+
+describe('maxIterations default', () => {
+  it('stamps a default budget when absent so a run cannot loop unbounded', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root, { defaultMaxIterations: 8 });
+      expect((await readReg(root)).maxIterations).toBe(8);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('never clobbers a maxIterations the user already set', async () => {
+    const root = await mkProject();
+    try {
+      await writeFile(
+        path.join(root, 'uxfactory.batch.json'),
+        JSON.stringify({ version: 1, inputs: {}, maxIterations: 3 }),
+      );
+      await ensureBatchRegistry(root, { defaultMaxIterations: 8 });
+      expect((await readReg(root)).maxIterations).toBe(3);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves maxIterations unset when no default is requested', async () => {
+    const root = await mkProject();
+    try {
+      await ensureBatchRegistry(root);
+      expect('maxIterations' in (await readReg(root))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 // ─── storyRefs stamp (story-scoped contract) ──────────────────────────────────
 
 describe('storyRefs stamp', () => {

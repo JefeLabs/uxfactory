@@ -1398,6 +1398,9 @@ export async function runGenerative(
         // Story-scoped contract: the gate holds this run to exactly these
         // stories (cleared when the composer targets the full set).
         storyRefs,
+        // Convergence guard: bound the loop so an unsatisfiable gate can't run
+        // unbounded (non-clobbering — a user-set maxIterations wins).
+        defaultMaxIterations: 8,
       });
       // SP2: place the craft-judge rubric in the project for the in-session judge subagent.
       await provisionCraftRubric(ctx.projectRoot, designStyle);

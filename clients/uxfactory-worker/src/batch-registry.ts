@@ -53,6 +53,13 @@ export interface EnsureBatchRegistryOptions {
    */
   designStyle?: string | undefined;
   /**
+   * Convergence guard: stamp `maxIterations` ONLY when the registry has none —
+   * non-clobbering, so a user-set budget always wins. Bounds the design loop so
+   * an unsatisfiable gate (e.g. a page scoped to stories that need other pages)
+   * cannot loop unbounded and burn tokens.
+   */
+  defaultMaxIterations?: number;
+  /**
    * Escape-hatch provenance for THIS run (registry top-level `ungoverned`):
    * true when the panel submitted with required grounding artifacts missing.
    * Same set-or-clear semantics as `unit`.
@@ -168,6 +175,12 @@ export async function ensureBatchRegistry(
   if ('ungoverned' in options) {
     if (options.ungoverned === true) registry['ungoverned'] = true;
     else delete registry['ungoverned'];
+  }
+  if (
+    options.defaultMaxIterations !== undefined &&
+    registry['maxIterations'] === undefined
+  ) {
+    registry['maxIterations'] = options.defaultMaxIterations;
   }
   if ('storyRefs' in options) {
     if (options.storyRefs !== undefined && options.storyRefs.length > 0) {

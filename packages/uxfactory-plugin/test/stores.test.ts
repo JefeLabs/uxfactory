@@ -398,6 +398,15 @@ describe("runs store — cap", () => {
     expect(useRunsStore.getState().runs[1]?.id).toBe("a");
   });
 
+  it("progress carries the loop fields (iter/gate/status/findings) when present", () => {
+    useRunsStore.getState().add({ id: "run-9", prompt: "p", unitType: "page", platforms: [] });
+    useRunsStore.getState().progress("run-9", {
+      phase: "gate", note: "revising", iter: 4, gate: "render-coverage", status: "fail", findings: 3,
+    });
+    const run = useRunsStore.getState().runs.find((r) => r.id === "run-9");
+    expect(run?.progress).toMatchObject({ phase: "gate", iter: 4, status: "fail", findings: 3 });
+  });
+
   it("progress updates the matching run", () => {
     useRunsStore.getState().add({ id: "run-1", prompt: "foo", unitType: "page", platforms: [] });
     useRunsStore.getState().progress("run-1", { phase: "rendering", note: "50% done" });

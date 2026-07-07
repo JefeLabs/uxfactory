@@ -63,6 +63,12 @@ interface WorkerPayload {
   outcome?: string;
   /** Alternative status key some workers emit. */
   status?: string;
+  /** Loop iteration number (design loop `iter`). */
+  iter?: unknown;
+  /** Gate id being worked at this step. */
+  gate?: unknown;
+  /** Open-findings count at this step. */
+  findings?: unknown;
   warnings?: unknown;
   /** Node ids from the landing report (when the worker provides them). */
   nodeIds?: unknown;
@@ -617,12 +623,22 @@ function GroundingChip({
 /** Status badge for a run row in the RECENT list. */
 function RunBadge({ run }: { run: RunEntry }) {
   if (run.status === "generating") {
-    const progressText = run.progress
-      ? `${run.progress.phase}${run.progress.note ? ` · ${run.progress.note}` : ""}`
-      : "generating…";
+    const p = run.progress;
+    let progressText = "generating…";
+    if (p) {
+      const iter = p.iter !== undefined ? `iter ${p.iter}` : "";
+      const head = [iter, p.phase].filter(Boolean).join(" · ");
+      const tail = p.note ? ` · ${p.note}` : "";
+      progressText = `${head}${tail}` || "generating…";
+    }
+    // A failing-findings count is the "is it converging?" signal — surface it.
+    const failing = p && p.status === "fail" && typeof p.findings === "number" ? p.findings : null;
     return (
       <span className="text-xs text-gray-400 animate-pulse" aria-label="generating">
         {progressText}
+        {failing !== null && failing > 0 && (
+          <span className="ml-1 text-amber-600">· {failing} failing</span>
+        )}
       </span>
     );
   }
@@ -811,6 +827,10 @@ export function Prompt({
         useRunsStore.getState().progress(ev.requestId, {
           phase: String(payload.phase ?? ""),
           note: String(payload.note ?? ""),
+          ...(typeof payload.iter === "number" ? { iter: payload.iter } : {}),
+          ...(typeof payload.gate === "string" ? { gate: payload.gate } : {}),
+          ...(typeof payload.status === "string" ? { status: payload.status } : {}),
+          ...(typeof payload.findings === "number" ? { findings: payload.findings } : {}),
         });
         return;
       }

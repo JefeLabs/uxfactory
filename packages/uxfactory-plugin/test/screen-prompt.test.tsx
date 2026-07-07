@@ -1569,3 +1569,36 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     expect(screen.queryByRole("button", { name: "Enforcement scope" })).not.toBeInTheDocument();
   });
 });
+
+// ─── RunBadge — loop visibility (iteration count + failing findings) ──────────
+
+describe("RunBadge loop visibility", () => {
+  it("shows the iteration count and a failing-findings count while generating", async () => {
+    useRunsStore.getState().add({ id: "run-vis", prompt: "landing", unitType: "landing-page", platforms: [] });
+    useRunsStore.getState().progress("run-vis", {
+      phase: "gate", note: "coverage", iter: 5, gate: "render-coverage", status: "fail", findings: 11,
+    });
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    const badge = await screen.findByLabelText("generating");
+    expect(badge).toHaveTextContent("iter 5");
+    expect(badge).toHaveTextContent("11 failing");
+  });
+
+  it("falls back to phase · note when no iteration data is present", async () => {
+    useRunsStore.getState().add({ id: "run-plain", prompt: "x", unitType: "page", platforms: [] });
+    useRunsStore.getState().progress("run-plain", { phase: "draft", note: "authoring" });
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    const badge = await screen.findByLabelText("generating");
+    expect(badge).toHaveTextContent("draft");
+    expect(badge).toHaveTextContent("authoring");
+    expect(badge).not.toHaveTextContent("iter");
+  });
+});

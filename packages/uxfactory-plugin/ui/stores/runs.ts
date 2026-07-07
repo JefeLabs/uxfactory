@@ -18,6 +18,14 @@ import type { PluginBus } from "../lib/plugin-bus.js";
 export interface RunProgress {
   phase: string;
   note: string;
+  /** Loop iteration number (design loop emits `iter`). */
+  iter?: number;
+  /** The gate id being worked, when the step is a gate step. */
+  gate?: string;
+  /** pass | fail | null — the step's outcome. */
+  status?: string;
+  /** Count of open findings at this step (0 = converged). */
+  findings?: number;
 }
 
 export type RunStatus = "generating" | "checked" | "warnings" | "failed";
