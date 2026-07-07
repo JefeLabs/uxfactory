@@ -42,11 +42,11 @@ importers:
   clients/uxfactory-worker:
     dependencies:
       '@helmsmith/agent-adapter':
-        specifier: link:../../../helmsmith/core/agent-adapter-lib
-        version: link:../../../helmsmith/core/agent-adapter-lib
+        specifier: link:../../../helmsmith/platform/core/agent-adapter-lib
+        version: link:../../../helmsmith/platform/core/agent-adapter-lib
       '@helmsmith/agent-auth':
-        specifier: link:../../../helmsmith/core/agent-auth-lib
-        version: link:../../../helmsmith/core/agent-auth-lib
+        specifier: link:../../../helmsmith/platform/core/agent-auth-lib
+        version: link:../../../helmsmith/platform/core/agent-auth-lib
     devDependencies:
       '@types/node':
         specifier: 26.0.1

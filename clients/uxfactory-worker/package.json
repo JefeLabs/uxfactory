@@ -14,8 +14,8 @@
     "spike": "tsx src/spike.ts"
   },
   "dependencies": {
-    "@helmsmith/agent-adapter": "link:../../../helmsmith/core/agent-adapter-lib",
-    "@helmsmith/agent-auth": "link:../../../helmsmith/core/agent-auth-lib"
+    "@helmsmith/agent-adapter": "link:../../../helmsmith/platform/core/agent-adapter-lib",
+    "@helmsmith/agent-auth": "link:../../../helmsmith/platform/core/agent-auth-lib"
   },
   "devDependencies": {
     "@types/node": "26.0.1",
