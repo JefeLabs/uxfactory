@@ -1063,6 +1063,30 @@ describe("stories set artifact — migrated project (inputs.stories is a directo
   });
 });
 
+describe("audience artifact — single JSON at .uxfactory/artifacts/audience.json", () => {
+  it("reports up-to-date when present and missing when absent", async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+    let snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string }> };
+    expect(
+      Object.fromEntries(snap.artifacts.map((a) => [a.key, a.status]))["audience"],
+    ).toBe("missing");
+
+    await writeJson(path.join(root, ".uxfactory/artifacts/audience.json"), {
+      segments: [{ name: "managers", ageRange: "35-55", locales: ["en-US"], share: 1 }],
+      primarySegment: "managers",
+    });
+    snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string }> };
+    expect(
+      Object.fromEntries(snap.artifacts.map((a) => [a.key, a.status]))["audience"],
+    ).toBe("up-to-date");
+  });
+});
+
 describe("features artifact — single JSON at .uxfactory/artifacts/features.json", () => {
   it("reports up-to-date when present and missing when absent", async () => {
     await addGitMarker(root);

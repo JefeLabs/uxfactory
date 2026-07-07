@@ -952,6 +952,7 @@ export type PanelArtifactKey =
   | 'personas'
   | 'stories'
   | 'features'
+  | 'audience'
   | 'grid'
   | 'tokens'
   | 'icons'
@@ -1016,6 +1017,7 @@ const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
     set: true,
   },
   features: { label: 'Features', path: '.uxfactory/artifacts/features.json' },
+  audience: { label: 'Audience', path: '.uxfactory/artifacts/audience.json' },
   tokens: { label: 'Tokens', path: 'design/token-set.json' },
   icons: { label: 'Icons', path: '.uxfactory/artifacts/assets/icons.json' },
   photography: { label: 'Photography', path: '.uxfactory/artifacts/assets/photography.json' },

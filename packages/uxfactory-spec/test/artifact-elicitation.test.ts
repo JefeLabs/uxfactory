@@ -41,6 +41,16 @@ describe("elicitation discipline", () => {
     expect(ARTIFACT_ELICITATION["tokens"]).toEqual([]);
   });
 
+  it("audience interview: segments/primary/a11y [E] + config-derived defaults [F]", () => {
+    const questions = ARTIFACT_ELICITATION["audience"]!;
+    expect(questions.filter((q) => q.tag === "E").map((q) => q.id)).toEqual([
+      "segments", "primary", "a11y-characteristics",
+    ]);
+    const defaults = questions.find((q) => q.id === "defaults")!;
+    expect(defaults.tag).toBe("F");
+    expect(defaults.defaultValue).toMatch(/Platform/);
+  });
+
   it("features interview: [E] capabilities + [F] status — assignment/origin are derived", () => {
     const questions = ARTIFACT_ELICITATION["features"]!;
     // [D] questions (story assignment clusters the registered stories set,

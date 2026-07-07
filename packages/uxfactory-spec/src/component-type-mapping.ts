@@ -44,7 +44,7 @@ export const ARTIFACT_REGISTRY: Record<string, ArtifactRegistryEntry> = {
   "features": { label: "Features", category: "product", status: "registered" },
   // ACs nest inside stories (decision 6) — the legacy file is only a migration source.
   "acceptance-criteria": { label: "Requirements", category: "product", status: "superseded", supersededBy: "stories" },
-  "audience": { label: "Audience", category: "product", status: "planned" },
+  "audience": { label: "Audience", category: "product", status: "registered" },
   "personas": { label: "Personas", category: "product", status: "registered" },
   "sitemap": { label: "Sitemap", category: "ia-ux", status: "registered" },
   "flows": { label: "Flows", category: "ia-ux", status: "registered" },

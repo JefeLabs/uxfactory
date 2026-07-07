@@ -39,6 +39,14 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "acceptance", tag: "E", question: "How do we know it works? Give at least one Given/When/Then.", placeholder: "Given the FAQ page is open, when …, then …" },
     { id: "checkable", tag: "F", question: "Checkability per criterion", defaultValue: "auto when the Then clause references observable UI; else manual (flagged)" },
   ],
+  "audience": [
+    // Quantitative segmentation — modulates rendering (tone, density,
+    // editorial); the demoted Target Demographic's persistent home.
+    { id: "segments", tag: "E", question: "Who uses this? Describe each segment in a phrase (age range, context of use).", placeholder: "35–55 store managers, on the floor between tasks" },
+    { id: "primary", tag: "E", question: "Which segment is primary when they conflict?" },
+    { id: "a11y-characteristics", tag: "E", question: "Any segment with accessibility-relevant characteristics? (age-related vision, situational one-handed use — write 'none' if none)", placeholder: "none" },
+    { id: "defaults", tag: "F", question: "Device mix, locales, and share", defaultValue: "device mix from the Platform chip; locales from the project Locale; even share split" },
+  ],
   "features": [
     // Groups stories — never gates, only scopes (coverage denominator,
     // generation scoping, extend unit). [D]: story assignment clusters the
