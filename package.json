@@ -13,6 +13,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bridge:dev": "pnpm --filter @uxfactory/spec build && pnpm --filter @uxfactory/bridge build && pnpm --filter @uxfactory/cli build && node packages/uxfactory-cli/dist/src/cli.js bridge",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
