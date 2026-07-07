@@ -924,7 +924,8 @@ describe('runGenerative', () => {
     expect(out.status).toBe(0);
     expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('generate'));
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('.uxfactory/artifacts/brief.md');
+    // Producer writes to an isolated per-job scratch path; the RESULT reports canonical.
+    expect(user).toContain('.uxfactory/scratch/pr_brief/brief.md');
     expect(user).toContain('target enterprise SaaS customers');
     expect((out.result as { artifactPath: string }).artifactPath).toBe('.uxfactory/artifacts/brief.md');
   });
@@ -946,7 +947,7 @@ describe('runGenerative', () => {
     );
 
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('.uxfactory/artifacts/brief.md');
+    expect(user).toContain('.uxfactory/scratch/pr_brief_ng/brief.md');
     expect(user).not.toContain('USER GUIDANCE');
   });
 
@@ -994,10 +995,48 @@ describe('runGenerative', () => {
 
     expect(out.status).toBe(0);
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('.uxfactory/artifacts/features.json');
+    expect(user).toContain('/scratch/');
+    expect(user).toContain('features.json');
     expect((out.result as { artifactPath: string }).artifactPath).toBe(
       '.uxfactory/artifacts/features.json',
     );
+  });
+
+  it('generate-artifact producer: reads the scratch file into a write-intent for the bridge (phase 3b)', async () => {
+    // Simulate the agent writing its section content to the isolated scratch path.
+    const scratchDir = path.join(projectRoot, '.uxfactory', 'scratch', 'pr_bc_intent');
+    await mkdir(scratchDir, { recursive: true });
+    await writeFile(path.join(scratchDir, 'brand-colors.json'), JSON.stringify({ primary: '#2952E3' }));
+
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const out = await runGenerative(
+      { id: 'pr_bc_intent', kind: 'generate-artifact', payload: { artifact: 'brand-colors' }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    expect(out.status).toBe(0);
+    const writes = (out.result as { writes?: Array<Record<string, unknown>> }).writes;
+    expect(writes).toEqual([
+      { path: '.uxfactory/artifacts/design-system.json', sectionKey: 'brand-colors', body: { primary: '#2952E3' } },
+    ]);
+    // The result reports the CANONICAL path, not scratch.
+    expect((out.result as { artifactPath: string }).artifactPath).toBe('.uxfactory/artifacts/design-system.json');
+  });
+
+  it('generate-artifact producer: a whole-file artifact emits a plain write-intent', async () => {
+    const scratchDir = path.join(projectRoot, '.uxfactory', 'scratch', 'pr_sm_intent');
+    await mkdir(scratchDir, { recursive: true });
+    await writeFile(path.join(scratchDir, 'sitemap.json'), JSON.stringify({ nodes: [] }));
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const out = await runGenerative(
+      { id: 'pr_sm_intent', kind: 'generate-artifact', payload: { artifact: 'sitemap' }, createdAt: 1 },
+      adapter,
+      new FakeBridge(),
+      ctx(),
+    );
+    const writes = (out.result as { writes?: Array<Record<string, unknown>> }).writes;
+    expect(writes).toEqual([{ path: '.uxfactory/artifacts/sitemap.json', body: { nodes: [] } }]);
   });
 
   it('generate-artifact with an unknown artifact key → status 2 (never invokes the adapter)', async () => {
@@ -1068,10 +1107,11 @@ describe('runGenerative', () => {
 
     expect(out.status).toBe(0);
     const user = adapter.lastInput?.messages[0]?.content as string;
-    expect(user).toContain('.uxfactory/artifacts/design-system.json');
+    expect(user).toContain('/scratch/');
     expect(user).toContain('brand-colors');
     // section-merge instruction is present for shared-file section keys.
-    expect(user).toContain('Merge ONLY');
+    // Section content goes to scratch; the bridge does the deterministic merge now.
+    expect(user).toContain("ONLY the content of the 'brand-colors' section");
     expect((out.result as { artifactPath: string }).artifactPath).toBe('.uxfactory/artifacts/design-system.json');
   });
 

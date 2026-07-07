@@ -1132,6 +1132,27 @@ interface GenerativePlan {
    * `{ type: "progress", … }` event so the panel can render live loop progress.
    */
   progress?: boolean;
+  /**
+   * Single-writer producer (phase 3b): the agent wrote to an ISOLATED scratch
+   * path (plan.artifactPath); after the stream we read it back and emit a
+   * write-intent so the bridge — the one writer — applies it to the canonical
+   * file. The agent never touches a shared file, so producers are pool-safe.
+   */
+  producerWrite?: {
+    /** Canonical path the bridge writes (e.g. design-system.json). */
+    canonicalPath: string;
+    /** Merge the scratch body under this key (design-system sections). */
+    sectionKey?: string;
+    /** `.md` target → the scratch body is a raw string, not parsed JSON. */
+    markdown: boolean;
+  };
+}
+
+/** A write-intent posted in the result for the bridge's single writer. */
+interface ArtifactWriteIntent {
+  path: string;
+  body: unknown;
+  sectionKey?: string;
 }
 
 function planGenerative(
@@ -1178,24 +1199,48 @@ function planGenerative(
         guidance !== undefined && guidance.trim() !== ''
           ? ` USER GUIDANCE (honor verbatim): ${guidance}`
           : '';
-      const setNote =
-        entry.set === true
-          ? ` This is a SET artifact: ${entry.path} is a DIRECTORY — write one JSON file per` +
-            ` instance (e.g. P-01.json, P-02.json), each with a unique id field. 2–4 instances` +
-            ` unless the guidance says otherwise; never write a single combined file.`
-          : '';
+      // SET artifacts (directories of instances) keep the direct-write path —
+      // one file per instance is a separate producer case (deferred).
+      if (entry.set === true) {
+        const setNote =
+          ` This is a SET artifact: ${entry.path} is a DIRECTORY — write one JSON file per` +
+          ` instance (e.g. P-01.json, P-02.json), each with a unique id field. 2–4 instances` +
+          ` unless the guidance says otherwise; never write a single combined file.`;
+        const user =
+          `Write the ${entry.label} artifact to ${entry.path} inside ${ctx.projectRoot}.` +
+          ` Ground the content in uxfactory.classification.json and uxfactory.profile.json` +
+          ` (read both first).${briefNote}${setNote}${entry.note ?? ''}` +
+          ` Keep the output strictly the artifact file: valid JSON for .json targets.` +
+          ` Report the written path once done.${guidanceNote}`;
+        return { systemPrompt: loadArtifactSkill(artifact), user, artifactPath: entry.path };
+      }
+
+      // NON-set producer (phase 3b): write to an ISOLATED per-job scratch file.
+      // The worker reads it back into a write-intent; the bridge writes the
+      // canonical file. The agent never touches a shared file → pool-safe, and
+      // for section artifacts the deterministic merge moves to the bridge.
+      const isMd = entry.path.endsWith('.md');
+      const scratchRel = path.join('.uxfactory', 'scratch', req.id, `${artifact}.${isMd ? 'md' : 'json'}`);
+      const writeTarget =
+        entry.sectionKey !== undefined
+          ? `Write ONLY the content of the '${entry.sectionKey}' section — the JSON object that` +
+            ` belongs under that key — to ${scratchRel}. Do not wrap it or add other sections.`
+          : `Write the ${entry.label} artifact to ${scratchRel}.`;
       const user =
-        `Write the ${entry.label} artifact to ${entry.path} inside ${ctx.projectRoot}.` +
-        ` Ground the content in uxfactory.classification.json and uxfactory.profile.json` +
-        ` (read both first).${sectionNote}${briefNote}${setNote}${entry.note ?? ''}` +
-        ` Keep the output strictly the artifact file:` +
-        ` valid JSON for .json targets, Markdown for .md targets.` +
-        ` Report the written path once done.${guidanceNote}`;
+        `${writeTarget} Ground the content in uxfactory.classification.json and` +
+        ` uxfactory.profile.json, and read the project's other registered artifacts under` +
+        ` .uxfactory/artifacts to stay on-project (read them first).${briefNote}${entry.note ?? ''}` +
+        ` Output strictly the artifact content: valid JSON for a .json target, Markdown for a` +
+        ` .md target. Write ONLY to ${scratchRel} — nowhere else. Report the path once done.${guidanceNote}`;
       return {
-        // Specialist producer skill for THIS artifact (falls back to generic).
         systemPrompt: loadArtifactSkill(artifact),
         user,
-        artifactPath: entry.path,
+        artifactPath: scratchRel,
+        producerWrite: {
+          canonicalPath: entry.path,
+          ...(entry.sectionKey !== undefined ? { sectionKey: entry.sectionKey } : {}),
+          markdown: isMd,
+        },
       };
     }
 
@@ -1481,12 +1526,38 @@ export async function runGenerative(
       }
     }
 
+    // Single-writer producer (phase 3b): read the isolated scratch file the
+    // agent wrote and emit a write-intent for the bridge's one writer. The
+    // result reports the CANONICAL path (not scratch). A missing/unparseable
+    // scratch file omits the write-intent — the run still records cleanly.
+    let writes: ArtifactWriteIntent[] | undefined;
+    let reportedPath = plan.artifactPath;
+    if (plan.producerWrite !== undefined && plan.artifactPath !== undefined) {
+      reportedPath = plan.producerWrite.canonicalPath;
+      try {
+        const raw = await readFile(path.join(ctx.projectRoot, plan.artifactPath), 'utf8');
+        const body: unknown = plan.producerWrite.markdown ? raw : (JSON.parse(raw) as unknown);
+        writes = [
+          {
+            path: plan.producerWrite.canonicalPath,
+            ...(plan.producerWrite.sectionKey !== undefined
+              ? { sectionKey: plan.producerWrite.sectionKey }
+              : {}),
+            body,
+          },
+        ];
+      } catch {
+        // No usable scratch output — no write-intent.
+      }
+    }
+
     return {
       status: 0,
       result: {
         content,
-        ...(plan.artifactPath !== undefined ? { artifactPath: plan.artifactPath } : {}),
+        ...(reportedPath !== undefined ? { artifactPath: reportedPath } : {}),
         ...(artifacts !== undefined ? { artifacts } : {}),
+        ...(writes !== undefined ? { writes } : {}),
         ...(usage !== undefined ? { usage } : {}),
         ...(landing !== undefined ? { landing } : {}),
       },
