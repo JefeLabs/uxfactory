@@ -473,6 +473,52 @@ export function coverageOrphans(specs: LoadedSpec[], stories: StorySet | null): 
 }
 
 /**
+ * flow story coverage (ADVISORY in spec mode, mirroring flow-reachability) —
+ * when a flow declares the stories it realizes, every frame covering a bound
+ * story (token-boundary match, the spec-mode coverage convention) must appear
+ * among the flow's declared steps; an unknown bound ref or an uncovered bound
+ * story is a finding (a contract you can't verify is a broken contract).
+ * Skip-and-declare when the flow binds no stories.
+ */
+export function flowStoryCoverage(
+  specs: LoadedSpec[],
+  flow: Flow | null,
+  stories: StorySet | null,
+): CheckResult {
+  const id = "flow-story-coverage";
+  if (flow === null || flow.storyRefs === undefined || flow.storyRefs.length === 0) {
+    return { id, status: "skip", severity: "advisory", findings: [], reason: "flow binds no stories" };
+  }
+  if (stories === null) {
+    return { id, status: "skip", severity: "advisory", findings: [], reason: "no stories registered" };
+  }
+  const known = new Set(stories.stories.map((s) => s.id));
+  const steps = new Set(flow.steps);
+  const frames = frameNames(specs);
+  const findings: BatchFinding[] = [];
+  for (const ref of flow.storyRefs) {
+    if (!known.has(ref)) {
+      findings.push({ detail: `flow-bound story ref "${ref}" is not a registered story`, ref });
+      continue;
+    }
+    const covering = frames.filter((f) => tokenBoundaryMatch(f.name, ref));
+    if (covering.length === 0) {
+      findings.push({ detail: `flow-bound story ${ref} has no covering frame in the batch`, ref });
+      continue;
+    }
+    for (const f of covering) {
+      if (!steps.has(f.name)) {
+        findings.push({
+          detail: `story ${ref} is covered by frame ${f.name}, which is outside the flow's declared steps — the journey does not realize the story`,
+          ref: `${ref}@${f.name}`,
+        });
+      }
+    }
+  }
+  return { id, status: findings.length > 0 ? "fail" : "pass", severity: "advisory", findings };
+}
+
+/**
  * flow reachability (ADVISORY) — when a flow declares a step order, verify each
  * consecutive pair is reachable along the specs' connectors. Skip-and-declare when
  * no flow. Pure deterministic graph reachability — NO LLM. Always severity:"advisory",

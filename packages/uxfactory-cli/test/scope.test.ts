@@ -302,12 +302,13 @@ describe("bindingGateIds", () => {
     expect(bindingGateIds(med)).toContain("flow-reachability");
   });
 
-  it("all five gates bind at interactive/production scope", () => {
+  it("all six gates bind at interactive/production scope", () => {
     const ids = bindingGateIds(PRESETS.interactive);
     expect(ids.sort()).toEqual(
       [
         "coverage-orphans",
         "flow-reachability",
+        "flow-story-coverage",
         "requirement-coverage",
         "reuse",
         "token-conformance",

@@ -196,6 +196,12 @@ export const GATE_THRESHOLDS: Record<string, GateThresholds> = {
     min_coverage: "none",
     min_flow: "medium",
   },
+  "flow-story-coverage": {
+    min_visual: "none",
+    min_editorial: "none",
+    min_coverage: "none",
+    min_flow: "medium",
+  },
 };
 
 /**

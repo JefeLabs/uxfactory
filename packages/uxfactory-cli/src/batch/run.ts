@@ -1,5 +1,6 @@
 import {
   featureCoverage,
+  flowStoryCoverage,
   scopeStories,
   tokenConformance,
   requirementCoverage,
@@ -84,6 +85,11 @@ const GATE_ENTRIES: GateEntry[] = [
     id: "flow-reachability",
     severity: "advisory",
     run: (i) => flowReachability(i.specs, i.flow),
+  },
+  {
+    id: "flow-story-coverage",
+    severity: "advisory",
+    run: (i) => flowStoryCoverage(i.specs, i.flow, i.stories),
   },
 ];
 

@@ -205,3 +205,58 @@ describe("flow-story-coverage (user-flow unit)", () => {
     expect(page.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("not-owed");
   });
 });
+
+// ─── spec-mode flow-story-coverage — same contract, frame-name convention ─────
+
+describe("flow-story-coverage (spec mode, advisory)", () => {
+  const FLOW_HIGH = { visual: "low", editorial: "low", coverage: "high", flow: "high" } as const;
+  const TWO_FRAMES: LoadedSpec = {
+    file: "b.uxfactory.json",
+    spec: {
+      editor: "figma",
+      frames: [
+        { name: "browse-faq-page", x: 0, y: 0, width: 100, height: 100,
+          children: [{ type: "shape", name: "faq-success-list", x: 0, y: 0, width: 10, height: 10 }] },
+        { name: "contact-support-page", x: 0, y: 200, width: 100, height: 100,
+          children: [{ type: "shape", name: "banner-success", x: 0, y: 0, width: 10, height: 10 }] },
+      ],
+    } as DesignSpec,
+  };
+
+  it("passes when every covering frame sits on the declared steps", () => {
+    const report = runBatch({
+      specs: [TWO_FRAMES], tokens: null, stories: STORIES, reuseSpecs: null,
+      flow: { steps: ["browse-faq-page", "contact-support-page"], storyRefs: ["browse-faq", "contact-support"] },
+      scope: { ...FLOW_HIGH },
+    });
+    expect(report.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("pass");
+  });
+
+  it("flags a covering frame outside the steps; stays advisory (never flips clean)", () => {
+    const report = runBatch({
+      specs: [TWO_FRAMES], tokens: null, stories: STORIES, reuseSpecs: null,
+      flow: { steps: ["browse-faq-page"], storyRefs: ["browse-faq", "contact-support"] },
+      scope: { ...FLOW_HIGH },
+    });
+    const check = report.checks.find((c) => c.id === "flow-story-coverage")!;
+    expect(check.status).toBe("fail");
+    expect(check.severity).toBe("advisory");
+    expect(check.findings.some((f) => f.ref === "contact-support@contact-support-page")).toBe(true);
+    expect(report.clean).toBe(true); // advisory in spec mode — mirrors flow-reachability
+  });
+
+  it("skips when the flow binds no stories; not-owed below the flow threshold", () => {
+    const unbound = runBatch({
+      specs: [TWO_FRAMES], tokens: null, stories: STORIES, reuseSpecs: null,
+      flow: { steps: ["browse-faq-page"] }, scope: { ...FLOW_HIGH },
+    });
+    expect(unbound.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("skip");
+
+    const lowFlow = runBatch({
+      specs: [TWO_FRAMES], tokens: null, stories: STORIES, reuseSpecs: null,
+      flow: { steps: ["browse-faq-page"], storyRefs: ["browse-faq"] },
+      scope: { visual: "low", editorial: "low", coverage: "low", flow: "low" },
+    });
+    expect(lowFlow.checks.find((c) => c.id === "flow-story-coverage")!.status).toBe("not-owed");
+  });
+});
