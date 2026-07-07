@@ -638,6 +638,8 @@ interface TraceFeature {
   name: string;
   /** From the latest report's featureCoverage; null when no report carries it. */
   conformed: boolean | null;
+  /** Sitemap nodes that declare this feature (featureRefs) — planned IA homes. */
+  plannedPages: string[];
   stories: TraceStory[];
 }
 
@@ -729,6 +731,24 @@ async function buildTrace(root: string, dataDir: string): Promise<{
     }
   } catch { /* no trace — coveredBy stays empty */ }
 
+  // sitemap featureRefs → feature → planned page titles (IA-planned homes)
+  const plannedByFeature = new Map<string, string[]>();
+  try {
+    const sitemap = JSON.parse(
+      await readFile(path.join(root, ARTIFACTS_DIR, "sitemap.json"), "utf8"),
+    ) as { nodes?: Array<{ title?: string; nodeId?: string; featureRefs?: unknown }> };
+    for (const node of sitemap.nodes ?? []) {
+      const title = node.title ?? node.nodeId ?? "";
+      if (title === "" || !Array.isArray(node.featureRefs)) continue;
+      for (const ref of node.featureRefs) {
+        if (typeof ref !== "string") continue;
+        const list = plannedByFeature.get(ref) ?? [];
+        list.push(title);
+        plannedByFeature.set(ref, list);
+      }
+    }
+  } catch { /* no sitemap or no links — plannedPages stay empty */ }
+
   // links registry → story-namespaced AC id (legacy plain ids matched too)
   let links: Link[] = [];
   try {
@@ -785,6 +805,7 @@ async function buildTrace(root: string, dataDir: string): Promise<{
         featureId: f.featureId,
         name: typeof f.name === "string" ? f.name : f.featureId,
         conformed: conformedById.get(f.featureId) ?? null,
+        plannedPages: plannedByFeature.get(f.featureId) ?? [],
         stories: rows,
       });
     }

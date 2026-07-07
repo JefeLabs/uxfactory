@@ -1165,12 +1165,21 @@ describe("GET /project/trace — the traceability join", () => {
       },
     });
 
+    // sitemap featureRefs → planned IA homes per feature
+    await writeJson(path.join(root, ".uxfactory/artifacts/sitemap.json"), {
+      nodes: [
+        { nodeId: "N-faq", title: "FAQ", role: "secondary", parent: null, featureRefs: ["F-01"] },
+        { nodeId: "N-home", title: "Home", role: "home", parent: null, featureRefs: [] },
+      ],
+    });
+
     app = await createBridge({ dataDir });
     const res = await app.inject({ method: "GET", url: "/project/trace" });
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       features: Array<{
         featureId: string; name: string; conformed: boolean | null;
+        plannedPages: string[];
         stories: Array<{
           storyId: string; actor: string; want: string;
           coveredBy: Array<{ page: string; view: string }>;
@@ -1185,7 +1194,11 @@ describe("GET /project/trace — the traceability join", () => {
 
     expect(body.features).toHaveLength(1);
     const f = body.features[0]!;
-    expect(f).toMatchObject({ featureId: "F-01", conformed: true });
+    expect(f).toMatchObject({
+      featureId: "F-01",
+      conformed: true,
+      plannedPages: ["FAQ"],
+    });
     expect(f.stories).toHaveLength(1);
     const s = f.stories[0]!;
     expect(s).toMatchObject({ storyId: "browse-faq", actor: "visitor", want: "read answers" });

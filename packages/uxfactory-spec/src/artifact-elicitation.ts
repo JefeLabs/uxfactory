@@ -63,6 +63,9 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
   ],
   "sitemap": [
     { id: "pages", tag: "E", question: "List the pages this product needs — and flag anything the current sitemap is missing.", placeholder: "Home, Pricing, Docs, …" },
+    // [D]-grade: derived from the stories each page serves; the agent links
+    // nodes to features (featureRefs), stories ride transitively behind them.
+    { id: "feature-links", tag: "F", question: "Which features does each page serve?", defaultValue: "derive from the stories each page realizes — link nodes to registered features" },
   ],
   "flows": [
     // [D]-grade: candidates prefill from the registered stories; the user

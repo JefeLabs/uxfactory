@@ -104,6 +104,14 @@ export function TraceView({
               <span className="text-gray-400">
                 {f.stories.length} {f.stories.length === 1 ? "story" : "stories"}
               </span>
+              {f.plannedPages.length > 0 && (
+                <span
+                  className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500"
+                  title="Sitemap pages planned to serve this feature"
+                >
+                  planned: {f.plannedPages.join(", ")}
+                </span>
+              )}
             </button>
             {isOpen(f.featureId) &&
               f.stories.map((s) => <StoryRows key={s.storyId} story={s} />)}

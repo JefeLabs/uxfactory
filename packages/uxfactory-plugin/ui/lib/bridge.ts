@@ -225,6 +225,8 @@ export interface TraceFeature {
   featureId: string;
   name: string;
   conformed: boolean | null;
+  /** Sitemap nodes that declare this feature — planned IA homes. */
+  plannedPages: string[];
   stories: TraceStory[];
 }
 

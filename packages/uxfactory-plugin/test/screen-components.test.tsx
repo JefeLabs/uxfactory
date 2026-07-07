@@ -536,6 +536,7 @@ describe("trace tree on the Components tab", () => {
         featureId: "F-01",
         name: "Self-serve answers",
         conformed: true,
+        plannedPages: ["FAQ"],
         stories: [
           {
             storyId: "browse-faq",
@@ -584,6 +585,8 @@ describe("trace tree on the Components tab", () => {
     expect(screen.getByText("screens/faq.html › default")).toBeInTheDocument();
     // linked canvas component from the links registry
     expect(screen.getByText("FAQ list")).toBeInTheDocument();
+    // sitemap-planned IA homes render as a feature-level chip
+    expect(screen.getByText("planned: FAQ")).toBeInTheDocument();
     // stories without a feature land in the unassigned bucket
     expect(screen.getByText("Unassigned stories")).toBeInTheDocument();
     expect(screen.getByText("orphan-story")).toBeInTheDocument();

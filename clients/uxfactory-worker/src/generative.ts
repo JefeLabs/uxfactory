@@ -1027,7 +1027,14 @@ interface PanelArtifactEntry {
  */
 const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
   brief: { label: 'Product Brief', path: '.uxfactory/artifacts/brief.md' },
-  sitemap: { label: 'Sitemap', path: '.uxfactory/artifacts/sitemap.json' },
+  sitemap: {
+    label: 'Sitemap',
+    path: '.uxfactory/artifacts/sitemap.json',
+    note:
+      ' Give each node a `featureRefs` array naming the registered features' +
+      ' (.uxfactory/artifacts/features.json) whose stories the page serves — derive the' +
+      ' links from the stories each page realizes.',
+  },
   flows: {
     label: 'Flows',
     path: '.uxfactory/artifacts/flows.json',
