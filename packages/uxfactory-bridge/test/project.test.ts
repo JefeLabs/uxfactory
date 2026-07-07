@@ -1087,6 +1087,27 @@ describe("audience artifact — single JSON at .uxfactory/artifacts/audience.jso
   });
 });
 
+describe("copy-deck artifact — content group, single JSON", () => {
+  it("reports missing then up-to-date at .uxfactory/artifacts/content/copy-deck.json", async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+    let snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string; group: string }> };
+    let row = snap.artifacts.find((a) => a.key === "copy-deck")!;
+    expect(row).toMatchObject({ status: "missing", group: "content" });
+
+    await writeJson(path.join(root, ".uxfactory/artifacts/content/copy-deck.json"), {
+      entries: [{ key: "home.hero.headline", text: "Ship designs that match intent" }],
+    });
+    snap = (
+      await app.inject({ method: "GET", url: "/project/snapshot" })
+    ).json() as { artifacts: Array<{ key: string; status: string; group: string }> };
+    row = snap.artifacts.find((a) => a.key === "copy-deck")!;
+    expect(row.status).toBe("up-to-date");
+  });
+});
+
 describe("features artifact — single JSON at .uxfactory/artifacts/features.json", () => {
   it("reports up-to-date when present and missing when absent", async () => {
     await addGitMarker(root);

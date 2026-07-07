@@ -486,10 +486,10 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
       initialEntries: ["/tabs/prompt"],
     });
 
-    // Stories shipped (nested ACs) — a real required chip; copy-deck stays planned.
+    // Stories + copy-deck shipped — real chips; glossary stays the planned exemplar.
     expect(screen.getByLabelText("Stories — required, missing")).toBeInTheDocument();
     expect(screen.getByLabelText("Typography — required, missing")).toBeInTheDocument();
-    expect(screen.getByLabelText("Copy deck — coming soon")).toBeDisabled();
+    expect(screen.getByLabelText("Glossary — coming soon")).toBeDisabled();
   });
 
   it("chips are type-aware: the channel surface swaps the requirement set", async () => {

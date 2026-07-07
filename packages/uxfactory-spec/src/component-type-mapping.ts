@@ -64,7 +64,7 @@ export const ARTIFACT_REGISTRY: Record<string, ArtifactRegistryEntry> = {
   "icons": { label: "Icons", category: "assets", status: "registered" },
   "photography": { label: "Photography", category: "assets", status: "registered" },
   "illustrations": { label: "Illustrations", category: "assets", status: "registered" },
-  "copy-deck": { label: "Copy deck", category: "content", status: "planned" },
+  "copy-deck": { label: "Copy deck", category: "content", status: "registered" },
   "voice-tone": { label: "Voice & tone", category: "content", status: "planned" },
   "glossary": { label: "Glossary", category: "content", status: "planned" },
   "component-spec": { label: "Component spec", category: "components", status: "planned" },

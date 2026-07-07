@@ -98,6 +98,12 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "target", tag: "F", question: "Conformance target", defaultValue: "WCAG 2.2 AA" },
     { id: "exceptions", tag: "E", question: "Known exceptions? Each needs a justification and expiry — write 'none' if none.", placeholder: "none" },
   ],
+  "copy-deck": [
+    // [D]: the slot inventory derives from sitemap + component specs — the
+    // deck's skeleton is generated, never asked.
+    { id: "copy", tag: "E", question: "Approve the generated candidate copy per slot, or supply your own — call out anything that must read exactly as written.", placeholder: "hero headline must be: Ship designs that match intent" },
+    { id: "approver", tag: "E", question: "Who approves copy — is 'approved' status gated to a role? (write 'no gate' if anyone)", placeholder: "no gate" },
+  ],
   "icons": [
     { id: "set", tag: "E", question: "Icon set preference — lucide, material, or custom (link if custom)?" },
     { id: "grid", tag: "F", question: "Icon grid and stroke", defaultValue: "24px grid, 1.5px stroke" },

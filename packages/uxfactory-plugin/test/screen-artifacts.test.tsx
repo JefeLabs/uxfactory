@@ -931,8 +931,10 @@ describe("planned registry artifacts render as coming-soon rows", () => {
     expect(within(design).getByText("Interaction states")).toBeInTheDocument();
     // …and the new registry categories appear as sections.
     const content = screen.getByRole("region", { name: "CONTENT" });
-    expect(within(content).getByText("Copy deck")).toBeInTheDocument();
+    // Copy deck is registered now — no longer a coming-soon row here.
+    expect(within(content).queryByText("Copy deck")).not.toBeInTheDocument();
     expect(within(content).getByText("Glossary")).toBeInTheDocument();
+    expect(within(content).getByText("Voice & tone")).toBeInTheDocument();
     const governance = screen.getByRole("region", { name: "GOVERNANCE" });
     expect(within(governance).getByText("Conformance policy")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "COMPONENTS" })).toBeInTheDocument();

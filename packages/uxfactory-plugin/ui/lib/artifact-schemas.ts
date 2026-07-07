@@ -83,6 +83,8 @@ export const CREATE_GUIDANCE: Record<string, string> = {
     "Name the capabilities a user would recognize — the agent clusters your registered stories under them and derives inherited vs net-new from the project quadrant.",
   audience:
     "Describe who uses this in segments (age range, context of use) and which one wins when they conflict — device mix and locales derive from your project config.",
+  "copy-deck":
+    "Your product's real words — headlines, CTAs, error messages. The agent drafts a slot inventory from your sitemap and stories; anything you approve renders verbatim, enforced by the gate.",
   sitemap:
     "List the main areas or journeys your product needs — the agent proposes the page map.",
   flows:

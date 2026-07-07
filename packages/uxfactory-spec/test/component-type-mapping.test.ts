@@ -74,7 +74,7 @@ describe("mapping consistency invariants", () => {
     }
   });
 
-  it("registry marks exactly the 18 shipped artifacts as registered", () => {
+  it("registry marks exactly the 19 shipped artifacts as registered", () => {
     const registered = Object.entries(ARTIFACT_REGISTRY)
       .filter(([, e]) => e.status === "registered")
       .map(([id]) => id)
@@ -83,7 +83,7 @@ describe("mapping consistency invariants", () => {
       [
         "product-brief", "audience", "stories", "features", "sitemap", "flows",
         "brand-colors", "palettes", "fonts", "grid", "tokens",
-        "typography", "a11y-spec", "personas",
+        "typography", "a11y-spec", "personas", "copy-deck",
         "icons", "photography", "illustrations",
       ].sort(),
     );
@@ -106,10 +106,12 @@ describe("resolveRequirements", () => {
     const home = resolveRequirements("home-page");
     const sitemap = home.find((r) => r.artifactId === "sitemap")!;
     expect(sitemap).toMatchObject({ level: "required", status: "registered", blocking: true });
-    // typography/a11y-spec are registered now — copy-deck remains the
-    // required-but-planned example.
+    // copy-deck is registered now (the anti-lorem-ipsum gate) — it blocks;
+    // atom's interaction-states remains the required-but-planned example.
     const copyDeck = home.find((r) => r.artifactId === "copy-deck")!;
-    expect(copyDeck).toMatchObject({ level: "required", status: "planned", blocking: false });
+    expect(copyDeck).toMatchObject({ level: "required", status: "registered", blocking: true });
+    const states = resolveRequirements("atom").find((r) => r.artifactId === "interaction-states")!;
+    expect(states).toMatchObject({ level: "required", status: "planned", blocking: false });
     const typography = home.find((r) => r.artifactId === "typography")!;
     expect(typography).toMatchObject({ level: "required", status: "registered", blocking: true });
     // stories carries the intent slot alone now — registered and blocking.

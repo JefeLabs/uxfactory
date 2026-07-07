@@ -46,7 +46,7 @@ export interface ProjectShared {
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-export type ArtifactGroup = "product" | "ia-ux" | "design" | "assets";
+export type ArtifactGroup = "product" | "ia-ux" | "design" | "assets" | "content";
 export type ArtifactStatus = "up-to-date" | "draft" | "missing";
 
 export interface ArtifactRow {
@@ -128,6 +128,7 @@ const CONCERN_CANONICAL: Record<string, string> = {
   stories: STORIES_PATH,
   features: `${ARTIFACTS_DIR}/features.json`,
   audience: `${ARTIFACTS_DIR}/audience.json`,
+  "copy-deck": `${ARTIFACTS_DIR}/content/copy-deck.json`,
   sitemap: `${ARTIFACTS_DIR}/sitemap.json`,
   flows: `${ARTIFACTS_DIR}/flows.json`,
   "brand-colors": DESIGN_SYSTEM_PATH,
@@ -416,6 +417,12 @@ async function buildArtifacts(
   {
     const r = await checkJsonArtifact(path.join(root, ARTIFACTS_DIR, "audience.json"));
     rows.push({ key: "audience", group: "product", label: "Audience", ...r });
+  }
+
+  // ── content: copy deck — authored slot text; the copy-conformance contract ─
+  {
+    const r = await checkJsonArtifact(path.join(root, ARTIFACTS_DIR, "content/copy-deck.json"));
+    rows.push({ key: "copy-deck", group: "content", label: "Copy deck", ...r });
   }
 
   // ── ia-ux: sitemap + flows (canonical exact, then legacy design/ prefix) ──

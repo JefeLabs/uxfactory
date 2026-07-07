@@ -992,6 +992,7 @@ export type PanelArtifactKey =
   | 'stories'
   | 'features'
   | 'audience'
+  | 'copy-deck'
   | 'grid'
   | 'tokens'
   | 'icons'
@@ -1073,6 +1074,15 @@ const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
   },
   features: { label: 'Features', path: '.uxfactory/artifacts/features.json' },
   audience: { label: 'Audience', path: '.uxfactory/artifacts/audience.json' },
+  'copy-deck': {
+    label: 'Copy deck',
+    path: '.uxfactory/artifacts/content/copy-deck.json',
+    note:
+      ' Shape: {"entries":[{"key":"<page>.<section>.<element>","text":"…"}]} — keys bind to' +
+      ' pages by first segment. Derive the slot inventory from the sitemap and stories;' +
+      ' generation must render each entry VERBATIM and claim it with data-copy="<key>"' +
+      ' (the copy-conformance gate enforces exact text).',
+  },
   tokens: { label: 'Tokens', path: 'design/token-set.json' },
   icons: { label: 'Icons', path: '.uxfactory/artifacts/assets/icons.json' },
   photography: { label: 'Photography', path: '.uxfactory/artifacts/assets/photography.json' },
@@ -1285,6 +1295,8 @@ function planGenerative(
       'window.uxfReady for async states). Author design/tokens.ds.json registering every ' +
       'painted color when the profile visual dial is medium or higher. Author ' +
       'design/trace.json mapping every (story, impliedState) to a (page, view, selector). ' +
+      'If a copy deck is registered (inputs.copyDeck), render its entries VERBATIM and claim ' +
+      'each with data-copy="<key>" on the element — the copy-conformance gate enforces exact text. ' +
       'Then iterate `uxfactory batch --json -- design` to a green gate (exit 0), reading ' +
       '.uxfactory/batch/report.json after each run and revising the HTML/tokens/trace to ' +
       'clear every must-check finding (render-coverage · a11y · contrast · token-conformance). ' +

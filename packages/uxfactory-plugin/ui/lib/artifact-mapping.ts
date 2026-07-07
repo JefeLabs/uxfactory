@@ -10,6 +10,7 @@ export const ARTIFACT_KEY_BY_ID: Record<string, string> = {
   "stories": "stories",
   "features": "features",
   "audience": "audience",
+  "copy-deck": "copy-deck",
   "personas": "personas",
   "sitemap": "sitemap",
   "flows": "flows",
