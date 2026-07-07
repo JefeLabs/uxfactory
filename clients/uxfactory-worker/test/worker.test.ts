@@ -30,6 +30,7 @@ import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.j
 import type { DispatchCtx } from '../src/dispatch.js';
 import { ensureSkillPermissions, extractArtifacts, parseProgressLine, STYLE_GUIDANCE } from '../src/generative.js';
 import { loadSkill, loadArtifactSkill } from '../src/skills.js';
+import { runPool } from '../src/main.js';
 import { drain, handleRequest, runWorker } from '../src/main.js';
 
 // ---------------------------------------------------------------------------
@@ -370,6 +371,37 @@ describe('deterministic dispatch', () => {
     expect(bridge.results).toHaveLength(2);
     expect(bridge.results[0]).toMatchObject({ id: 'pr_s', status: 2 });
     expect(bridge.results[1]).toMatchObject({ id: 'pr_t', status: 2 });
+  });
+
+  it('runPool processes up to N jobs concurrently (the producer pool)', async () => {
+    const bridge = new FakeBridge();
+    for (let i = 0; i < 4; i++) {
+      bridge.queue.push({ id: `pr_${i}`, kind: 'generate-artifact', payload: {}, createdAt: i });
+    }
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const generative = async (): Promise<DispatchOutcome> => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await gate; // hold every in-flight job until released
+      inFlight -= 1;
+      return { status: 0, result: {} };
+    };
+    const poolDeps: WorkerDeps = {
+      bridge,
+      ctx: { projectRoot: '/tmp/x', cliBin: 'uxfactory' } as unknown as WorkerDeps['ctx'],
+      generative,
+    };
+    const stop = runPool(poolDeps, 3);
+    await new Promise((r) => setTimeout(r, 20));
+    // 3 lanes → exactly 3 jobs in flight; the 4th waits behind a lane.
+    expect(maxInFlight).toBe(3);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    stop();
+    expect(bridge.results.map((r) => r.id).sort()).toEqual(['pr_0', 'pr_1', 'pr_2', 'pr_3']);
   });
 
   it('drains the queue until pullRequest returns null (204)', async () => {

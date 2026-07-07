@@ -83,6 +83,25 @@ describe("pipeline REST relay (inject)", () => {
     await rm(launchRoot, { recursive: true, force: true });
   });
 
+  it("GET /pipeline/request/next?kinds= claims only matching kinds (typed pools)", async () => {
+    await app.inject({ method: "POST", url: "/pipeline/request", payload: { kind: "generate-artifact", payload: { artifact: "brand-colors" } } });
+    await app.inject({ method: "POST", url: "/pipeline/request", payload: { kind: "generate-design", payload: {} } });
+
+    // A producer-pool poll takes ONLY the artifact job; the design job stays.
+    const prod = await app.inject({ method: "GET", url: "/pipeline/request/next?kinds=generate-artifact" });
+    expect(prod.statusCode).toBe(200);
+    expect(prod.json().kind).toBe("generate-artifact");
+
+    // A second producer poll finds no more artifact work (204), though a design job remains.
+    const prod2 = await app.inject({ method: "GET", url: "/pipeline/request/next?kinds=generate-artifact" });
+    expect(prod2.statusCode).toBe(204);
+
+    // The design worker claims the design job.
+    const design = await app.inject({ method: "GET", url: "/pipeline/request/next?kinds=generate-design" });
+    expect(design.statusCode).toBe(200);
+    expect(design.json().kind).toBe("generate-design");
+  });
+
   it("POST /pipeline/result applies the result's artifact write-intents (single writer)", async () => {
     const enq = await app.inject({
       method: "POST", url: "/pipeline/request",

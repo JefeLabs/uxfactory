@@ -78,10 +78,33 @@ export async function drain(deps: WorkerDeps): Promise<void> {
  * missed work). Returns a stop function (unsubscribe).
  */
 export function runWorker(deps: WorkerDeps): () => void {
+  return runPool(deps, 1);
+}
+
+/**
+ * Run a POOL of `concurrency` independent drain lanes sharing one bridge. Each
+ * lane serializes its own jobs (one at a time), but the lanes run concurrently,
+ * so up to `concurrency` jobs are in flight at once. Atomic bridge claims hand
+ * each lane a DISTINCT job. Safe for artifact producers (each writes only its
+ * own scratch; the bridge is the single canonical writer). One shared wake
+ * subscription ticks every lane. Returns an unsubscribe/stop function.
+ */
+export function runPool(deps: WorkerDeps, concurrency: number): () => void {
+  const lanes = Array.from({ length: Math.max(1, concurrency) }, () => makeLane(deps));
+  const tickAll = (): void => {
+    for (const lane of lanes) lane();
+  };
+  const unsubscribe = deps.bridge.subscribeEvents(tickAll);
+  tickAll(); // initial drain on start (don't wait for the first wake)
+  return unsubscribe;
+}
+
+/** One drain lane: a busy/pending guard around drain, so the lane processes one
+ * job at a time and re-drains if woken mid-flight. Returns its tick fn. */
+function makeLane(deps: WorkerDeps): () => void {
   let busy = false;
   let pending = false;
-
-  const tick = (): void => {
+  return (): void => {
     if (busy) {
       pending = true;
       return;
@@ -100,10 +123,6 @@ export function runWorker(deps: WorkerDeps): () => void {
       }
     })();
   };
-
-  const unsubscribe = deps.bridge.subscribeEvents(tick);
-  tick(); // initial drain on start (don't wait for the first wake)
-  return unsubscribe;
 }
 
 /**
@@ -144,7 +163,7 @@ async function main(): Promise<void> {
   }
 
   const { createWorkerAdapter } = await import('./adapter.js');
-  const bridge = new WorkerBridgeClient(cfg.bridgeUrl, cfg.projectRoot);
+  const bridge = new WorkerBridgeClient(cfg.bridgeUrl, cfg.projectRoot, cfg.kinds);
   const cliBin = resolveCliBin(cfg);
   const ctx: DispatchCtx = { projectRoot: cfg.projectRoot, cliBin };
 
@@ -157,9 +176,10 @@ async function main(): Promise<void> {
   };
 
   console.error(
-    `[worker] up: bridge=${cfg.bridgeUrl} projectRoot=${cfg.projectRoot} cli=${cliBin}`,
+    `[worker] up: bridge=${cfg.bridgeUrl} projectRoot=${cfg.projectRoot} cli=${cliBin}` +
+      ` pool=${cfg.pool}${cfg.kinds !== undefined ? ` kinds=${cfg.kinds.join(',')}` : ''}`,
   );
-  runWorker({ bridge, ctx, generative });
+  runPool({ bridge, ctx, generative }, cfg.pool);
 
   // Keep the process alive (the SSE subscription + its reconnect timer are unref'd).
   await new Promise<never>(() => {});

@@ -512,9 +512,20 @@ export class BridgeStore {
     return this.pipelineRequestRoots.get(id) ?? null;
   }
 
-  /** Pop the oldest queued request whose root matches; null if none match. */
-  async dequeuePipelineRequest(root: string): Promise<PipelineRequest | null> {
-    const idx = this.pipelineQueue.findIndex((r) => r.root === root);
+  /**
+   * Pop the oldest queued request whose root matches (and, when `allowedKinds`
+   * is given, whose kind is in that set). The kind filter lets a typed worker
+   * pool claim only its kinds — a producer pool takes `generate-artifact`, the
+   * design worker takes `generate-design` — so they never steal each other's
+   * work. null when none match. Atomic (sync find+splice, no await between).
+   */
+  async dequeuePipelineRequest(
+    root: string,
+    allowedKinds?: readonly string[],
+  ): Promise<PipelineRequest | null> {
+    const idx = this.pipelineQueue.findIndex(
+      (r) => r.root === root && (allowedKinds === undefined || allowedKinds.includes(r.kind)),
+    );
     if (idx === -1) return null;
     const [request] = this.pipelineQueue.splice(idx, 1);
     return request ?? null;

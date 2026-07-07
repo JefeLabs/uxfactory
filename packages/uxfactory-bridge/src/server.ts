@@ -428,13 +428,21 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
 
   // Worker pulls the next queued request for its root (FIFO within that root); 204 when none.
   // A poll without ?root= claims launch-root jobs only (legacy worker compat).
-  app.get<{ Querystring: { root?: string } }>("/pipeline/request/next", async (req, reply) => {
-    const resolution = await registry.resolveRequestRoot(req.query.root);
-    if (!resolution.ok) return reply.code(resolution.code).send({ error: resolution.error });
-    const request = await store.dequeuePipelineRequest(resolution.root);
-    if (request === null) return reply.code(204).send();
-    return request;
-  });
+  app.get<{ Querystring: { root?: string; kinds?: string } }>(
+    "/pipeline/request/next",
+    async (req, reply) => {
+      const resolution = await registry.resolveRequestRoot(req.query.root);
+      if (!resolution.ok) return reply.code(resolution.code).send({ error: resolution.error });
+      // Typed pools: `?kinds=generate-artifact,validate` claims only those kinds.
+      const kinds =
+        typeof req.query.kinds === "string" && req.query.kinds.trim() !== ""
+          ? req.query.kinds.split(",").map((k) => k.trim()).filter((k) => k !== "")
+          : undefined;
+      const request = await store.dequeuePipelineRequest(resolution.root, kinds);
+      if (request === null) return reply.code(204).send();
+      return request;
+    },
+  );
 
   // Worker posts the terminal result (CLI/adapter exit code as `status`).
   app.post("/pipeline/result", async (req, reply) => {

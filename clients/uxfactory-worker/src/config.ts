@@ -35,6 +35,10 @@ export interface WorkerConfig {
   runtime: AgentSpecType;
   /** Model identifier passed verbatim to the adapter backend. */
   model: string;
+  /** Concurrent drain lanes (typed pool). Default 1 (serial). */
+  pool: number;
+  /** Kinds this worker claims (typed pool routing). Undefined = all kinds. */
+  kinds?: string[];
 }
 
 /** Default bridge URL — the bridge listens on 127.0.0.1:3779 (UXFACTORY_PORT). */
@@ -43,6 +47,19 @@ const DEFAULT_BRIDGE_URL = 'http://127.0.0.1:3779';
 const DEFAULT_RUNTIME: AgentSpecType = 'claude-code-cli';
 /** Default model — a `claude` CLI alias passed through as `--model`. */
 const DEFAULT_MODEL = 'sonnet';
+
+/** Parse UXFACTORY_WORKER_POOL → a positive integer lane count (default 1). */
+function parsePool(v: string | undefined): number {
+  const n = v !== undefined ? Number.parseInt(v, 10) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/** Parse UXFACTORY_WORKER_KINDS ("generate-artifact,validate") → kinds or undefined. */
+function parseKinds(v: string | undefined): string[] | undefined {
+  if (v === undefined || v.trim() === '') return undefined;
+  const kinds = v.split(',').map((k) => k.trim()).filter((k) => k !== '');
+  return kinds.length > 0 ? kinds : undefined;
+}
 
 /**
  * Build a WorkerConfig from the environment + cwd.
@@ -61,6 +78,10 @@ export function loadConfig(
     authPath: env.UXFACTORY_WORKER_AUTH ?? join(homedir(), '.agentx', 'auth.json'),
     runtime: (env.UXFACTORY_WORKER_RUNTIME ?? DEFAULT_RUNTIME) as AgentSpecType,
     model: env.UXFACTORY_WORKER_MODEL ?? DEFAULT_MODEL,
+    pool: parsePool(env.UXFACTORY_WORKER_POOL),
+    ...(parseKinds(env.UXFACTORY_WORKER_KINDS) !== undefined
+      ? { kinds: parseKinds(env.UXFACTORY_WORKER_KINDS) }
+      : {}),
     ...(env.UXFACTORY_CLI_BIN !== undefined ? { cliBin: env.UXFACTORY_CLI_BIN } : {}),
   };
 }

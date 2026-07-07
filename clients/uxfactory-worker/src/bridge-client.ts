@@ -41,19 +41,21 @@ const SSE_RECONNECT_MS = 1000;
 export class WorkerBridgeClient implements BridgeLike {
   private readonly base: string;
   private readonly projectRoot: string | null;
+  private readonly kinds: readonly string[] | null;
 
-  constructor(bridgeUrl: string, projectRoot?: string) {
+  constructor(bridgeUrl: string, projectRoot?: string, kinds?: readonly string[]) {
     // Tolerate a trailing slash so `${base}/pipeline/...` never doubles up.
     this.base = bridgeUrl.replace(/\/+$/, '');
     this.projectRoot = projectRoot ?? null;
+    this.kinds = kinds !== undefined && kinds.length > 0 ? kinds : null;
   }
 
   /** Pull the next queued request (FIFO); null when the bridge returns 204. */
   async pullRequest(): Promise<PipelineRequest | null> {
-    const qs =
-      this.projectRoot !== null
-        ? `?root=${encodeURIComponent(this.projectRoot)}`
-        : '';
+    const params = new URLSearchParams();
+    if (this.projectRoot !== null) params.set('root', this.projectRoot);
+    if (this.kinds !== null) params.set('kinds', this.kinds.join(','));
+    const qs = params.toString() !== '' ? `?${params.toString()}` : '';
     const res = await fetch(`${this.base}/pipeline/request/next${qs}`);
     if (res.status === 204) return null;
     if (!res.ok) {
