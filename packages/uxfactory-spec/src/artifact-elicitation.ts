@@ -65,6 +65,9 @@ export const ARTIFACT_ELICITATION: Record<string, ElicitationQuestion[]> = {
     { id: "pages", tag: "E", question: "List the pages this product needs — and flag anything the current sitemap is missing.", placeholder: "Home, Pricing, Docs, …" },
   ],
   "flows": [
+    // [D]-grade: candidates prefill from the registered stories; the user
+    // edits down to the subset this flow realizes (decision 6 trace graph).
+    { id: "realizes", tag: "F", question: "Which registered stories does this flow realize?", defaultValue: "all registered stories" },
     { id: "entry-exit", tag: "E", question: "Where does the flow start, and what counts as successful completion?" },
     { id: "steps", tag: "E", question: "Walk the steps: at each screen, what does the user do?" },
     { id: "branches", tag: "E", question: "Where can it branch or fail — and what happens then?" },

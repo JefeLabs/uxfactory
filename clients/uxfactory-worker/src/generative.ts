@@ -977,6 +977,8 @@ interface PanelArtifactEntry {
   sectionKey?: string;
   /** Set artifact: one JSON file per instance under `path` (a directory). */
   set?: boolean;
+  /** Artifact-specific instruction appended to the user prompt. */
+  note?: string;
 }
 
 /**
@@ -987,7 +989,14 @@ interface PanelArtifactEntry {
 const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
   brief: { label: 'Product Brief', path: '.uxfactory/artifacts/brief.md' },
   sitemap: { label: 'Sitemap', path: '.uxfactory/artifacts/sitemap.json' },
-  flows: { label: 'Flows', path: '.uxfactory/artifacts/flows.json' },
+  flows: {
+    label: 'Flows',
+    path: '.uxfactory/artifacts/flows.json',
+    note:
+      ' If the guidance names the stories this flow realizes, ALSO mirror those story ids' +
+      ' into design/user-flow.json as a `storyRefs` array — the flow-story-coverage gate' +
+      ' verifies the journey against them.',
+  },
   'brand-colors': {
     label: 'Brand Colors',
     path: '.uxfactory/artifacts/design-system.json',
@@ -1116,7 +1125,7 @@ function planGenerative(
       const user =
         `Write the ${entry.label} artifact to ${entry.path} inside ${ctx.projectRoot}.` +
         ` Ground the content in uxfactory.classification.json and uxfactory.profile.json` +
-        ` (read both first).${sectionNote}${briefNote}${setNote}` +
+        ` (read both first).${sectionNote}${briefNote}${setNote}${entry.note ?? ''}` +
         ` Keep the output strictly the artifact file:` +
         ` valid JSON for .json targets, Markdown for .md targets.` +
         ` Report the written path once done.${guidanceNote}`;

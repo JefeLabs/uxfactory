@@ -1530,6 +1530,44 @@ describe("prerequisite chaining in the create dialog", () => {
     expect(order).toEqual(["personas", "stories", "sitemap", "flows"]);
   });
 
+  it("Create Flows prefills the realizes question with registered story ids", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({
+          artifacts: MERIDIAN_ARTIFACTS.map((a) =>
+            a.key === "flows"
+              ? { ...a, status: "missing" as const, path: null, meta: "" }
+              : a,
+          ),
+          requirements: [
+            { id: "browse-faq/AC-001", title: "answers visible" },
+            { id: "contact-support/AC-001", title: "banner visible" },
+          ],
+        }),
+      ),
+    });
+    // dynamicPrefills derives story ids from the STORE snapshot's requirements.
+    useAppStore.setState({
+      snapshot: makeMeridianSnapshot({
+        requirements: [
+          { id: "browse-faq/AC-001", title: "answers visible" },
+          { id: "contact-support/AC-001", title: "banner visible" },
+        ],
+      }) as never,
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    // stories up-to-date + sitemap draft (not missing) → no chain; direct dialog.
+    await user.click(await screen.findByRole("button", { name: /Create Flows/i }));
+    const dialog = await screen.findByRole("dialog");
+    const realizes = within(dialog).getByLabelText(/Which registered stories does this flow realize/i);
+    expect((realizes as HTMLInputElement | HTMLTextAreaElement).value).toBe(
+      "browse-faq, contact-support",
+    );
+  });
+
   it("Create Features opens its interview directly when stories are satisfied", async () => {
     const user = userEvent.setup();
     const withFeatures = [

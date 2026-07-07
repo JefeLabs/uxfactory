@@ -41,11 +41,20 @@ export function questionsFor(artifactKey: string): ElicitationQuestion[] {
  * Sitemap: candidate pages come from the category's IA seed.
  */
 function dynamicPrefills(artifactKey: string): Record<string, string> {
-  if (artifactKey !== "sitemap") return {};
-  const cls = useAppStore.getState().snapshot?.classification;
-  const category = typeof cls?.["category"] === "string" ? (cls["category"] as string) : "";
-  const seed = CATEGORY_TAXONOMY[normalizeCategory(category)]?.iaSeed ?? [];
-  return seed.length > 0 ? { pages: seed.join(", ") } : {};
+  if (artifactKey === "sitemap") {
+    const cls = useAppStore.getState().snapshot?.classification;
+    const category = typeof cls?.["category"] === "string" ? (cls["category"] as string) : "";
+    const seed = CATEGORY_TAXONOMY[normalizeCategory(category)]?.iaSeed ?? [];
+    return seed.length > 0 ? { pages: seed.join(", ") } : {};
+  }
+  if (artifactKey === "flows") {
+    // Registered story ids derive from the story-namespaced requirement ids
+    // (storyId/acId) — the user edits the list down to what this flow realizes.
+    const reqs = useAppStore.getState().snapshot?.requirements ?? [];
+    const ids = [...new Set(reqs.map((r) => r.id.split("/")[0]!).filter((id) => id !== ""))];
+    return ids.length > 0 ? { realizes: ids.join(", ") } : {};
+  }
+  return {};
 }
 
 /** Compose answered questions + free guidance into one wire guidance string. */
