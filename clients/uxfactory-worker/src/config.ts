@@ -39,6 +39,8 @@ export interface WorkerConfig {
   pool: number;
   /** Kinds this worker claims (typed pool routing). Undefined = all kinds. */
   kinds?: string[];
+  /** Debug mode (UXFACTORY_WORKER_DEBUG): retain per-job scratch files. */
+  debug: boolean;
 }
 
 /** Default bridge URL — the bridge listens on 127.0.0.1:3779 (UXFACTORY_PORT). */
@@ -79,6 +81,7 @@ export function loadConfig(
     runtime: (env.UXFACTORY_WORKER_RUNTIME ?? DEFAULT_RUNTIME) as AgentSpecType,
     model: env.UXFACTORY_WORKER_MODEL ?? DEFAULT_MODEL,
     pool: parsePool(env.UXFACTORY_WORKER_POOL),
+    debug: env.UXFACTORY_WORKER_DEBUG === '1' || env.UXFACTORY_WORKER_DEBUG === 'true',
     ...(parseKinds(env.UXFACTORY_WORKER_KINDS) !== undefined
       ? { kinds: parseKinds(env.UXFACTORY_WORKER_KINDS) }
       : {}),

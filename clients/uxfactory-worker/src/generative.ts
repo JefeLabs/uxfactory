@@ -28,7 +28,7 @@
  * — or an in-band `error` chunk — is a setup/transport failure → `status 2`.
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentInput, AgentChunk } from '@helmsmith/agent-adapter';
 import type { AgentAdapter } from './adapter.js';
@@ -1544,8 +1544,9 @@ export async function runGenerative(
     let reportedPath = plan.artifactPath;
     if (plan.producerWrite !== undefined && plan.artifactPath !== undefined) {
       reportedPath = plan.producerWrite.canonicalPath;
+      const scratchAbs = path.join(ctx.projectRoot, plan.artifactPath);
       try {
-        const raw = await readFile(path.join(ctx.projectRoot, plan.artifactPath), 'utf8');
+        const raw = await readFile(scratchAbs, 'utf8');
         const body: unknown = plan.producerWrite.markdown ? raw : (JSON.parse(raw) as unknown);
         writes = [
           {
@@ -1558,6 +1559,12 @@ export async function runGenerative(
         ];
       } catch {
         // No usable scratch output — no write-intent.
+      }
+      // Clean up the per-job scratch directory once its content is in the
+      // write-intent — the bridge owns the canonical write. Debug mode retains
+      // it for inspection. Best-effort: a failed cleanup never fails the run.
+      if (ctx.debug !== true) {
+        await rm(path.dirname(scratchAbs), { recursive: true, force: true }).catch(() => {});
       }
     }
 

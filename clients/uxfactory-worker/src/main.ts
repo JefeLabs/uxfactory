@@ -165,7 +165,7 @@ async function main(): Promise<void> {
   const { createWorkerAdapter } = await import('./adapter.js');
   const bridge = new WorkerBridgeClient(cfg.bridgeUrl, cfg.projectRoot, cfg.kinds);
   const cliBin = resolveCliBin(cfg);
-  const ctx: DispatchCtx = { projectRoot: cfg.projectRoot, cliBin };
+  const ctx: DispatchCtx = { projectRoot: cfg.projectRoot, cliBin, debug: cfg.debug };
 
   // Construct the (expensive) autonomous adapter lazily — only when the first
   // generative request actually needs it.
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
 
   console.error(
     `[worker] up: bridge=${cfg.bridgeUrl} projectRoot=${cfg.projectRoot} cli=${cliBin}` +
-      ` pool=${cfg.pool}${cfg.kinds !== undefined ? ` kinds=${cfg.kinds.join(',')}` : ''}`,
+      ` pool=${cfg.pool}${cfg.kinds !== undefined ? ` kinds=${cfg.kinds.join(',')}` : ''}${cfg.debug ? ' debug' : ''}`,
   );
   runPool({ bridge, ctx, generative }, cfg.pool);
 

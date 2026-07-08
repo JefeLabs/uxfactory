@@ -33,6 +33,8 @@ export interface DispatchCtx {
    * in current deployments — both read/write the same filesystem path).
    */
   bridgeDataDir?: string;
+  /** Debug mode: retain per-job scratch files instead of cleaning them up. */
+  debug?: boolean;
 }
 
 /** A handler's terminal outcome — relayed verbatim to `postResult`. */

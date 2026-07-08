@@ -1056,6 +1056,35 @@ describe('runGenerative', () => {
     expect((out.result as { artifactPath: string }).artifactPath).toBe('.uxfactory/artifacts/design-system.json');
   });
 
+  it('generate-artifact producer: cleans up the scratch dir after building the write-intent', async () => {
+    const scratchDir = path.join(projectRoot, '.uxfactory', 'scratch', 'pr_bc_clean');
+    await mkdir(scratchDir, { recursive: true });
+    await writeFile(path.join(scratchDir, 'brand-colors.json'), JSON.stringify({ primary: '#2952E3' }));
+    const out = await runGenerative(
+      { id: 'pr_bc_clean', kind: 'generate-artifact', payload: { artifact: 'brand-colors' }, createdAt: 1 },
+      new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]),
+      new FakeBridge(),
+      ctx(),
+    );
+    // Write-intent still built, but the scratch dir is gone.
+    expect((out.result as { writes?: unknown[] }).writes).toHaveLength(1);
+    await expect(readFile(path.join(scratchDir, 'brand-colors.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('generate-artifact producer: debug mode RETAINS the scratch dir', async () => {
+    const scratchDir = path.join(projectRoot, '.uxfactory', 'scratch', 'pr_bc_debug');
+    await mkdir(scratchDir, { recursive: true });
+    await writeFile(path.join(scratchDir, 'brand-colors.json'), JSON.stringify({ primary: '#2952E3' }));
+    await runGenerative(
+      { id: 'pr_bc_debug', kind: 'generate-artifact', payload: { artifact: 'brand-colors' }, createdAt: 1 },
+      new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]),
+      new FakeBridge(),
+      { ...ctx(), debug: true },
+    );
+    // Retained for inspection.
+    expect(JSON.parse(await readFile(path.join(scratchDir, 'brand-colors.json'), 'utf8'))).toEqual({ primary: '#2952E3' });
+  });
+
   it('generate-artifact producer: a whole-file artifact emits a plain write-intent', async () => {
     const scratchDir = path.join(projectRoot, '.uxfactory', 'scratch', 'pr_sm_intent');
     await mkdir(scratchDir, { recursive: true });
