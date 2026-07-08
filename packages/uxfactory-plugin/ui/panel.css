@@ -35,3 +35,12 @@
   display: list-item;
   margin: 0.15rem 0;
 }
+
+/* Editable body text. MDXEditor's contenteditable sets no font-size, so it
+   inherits the page default (16px) and reads large next to the panel's 12–14px
+   chrome. Bring it to ~13px. Nested to 0,2,0 so it wins over MDXEditor's own
+   single-class content styles regardless of stylesheet bundling order. */
+.mdxeditor .mdxeditor-root-contenteditable {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
