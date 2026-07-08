@@ -55,3 +55,13 @@
 .mdxeditor .mdxeditor-root-contenteditable > :last-child {
   margin-bottom: 0;
 }
+
+/* Lexical (under MDXEditor) will not let a list/table/code block be the last
+   node, so it appends an empty paragraph as a caret target — rendered as
+   `<p><br></p>`, which shows as a blank line after every trailing list. Hide
+   that trailing filler. Scoped to `> p:last-child` so only the filler collapses;
+   `:empty` covers the no-<br> variant across Lexical versions. */
+.mdxeditor .mdxeditor-root-contenteditable > p:last-child:has(> br:only-child),
+.mdxeditor .mdxeditor-root-contenteditable > p:last-child:empty {
+  display: none;
+}
