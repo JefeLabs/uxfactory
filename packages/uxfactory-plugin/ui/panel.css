@@ -45,23 +45,27 @@
   line-height: 1.55;
 }
 
+/* NOTE: `.mdxeditor-root-contenteditable` labels an outer *wrapper* div; the
+   real editable region is a nested `[contenteditable]` whose direct children are
+   the rendered blocks (paragraphs, lists). Child-combinator rules must target
+   that nested element, not the wrapper. */
+
 /* Collapse the empty vertical space at the top and bottom of a section card:
-   the first block's top margin, and the last block's bottom margin — including
-   the empty trailing paragraph Lexical keeps after a list/table, which no
-   source edit can remove. Interior paragraph spacing is untouched. */
-.mdxeditor .mdxeditor-root-contenteditable > :first-child {
+   the first block's top margin and the last block's bottom margin. */
+.mdxeditor-root-contenteditable [contenteditable] > :first-child {
   margin-top: 0;
 }
-.mdxeditor .mdxeditor-root-contenteditable > :last-child {
+.mdxeditor-root-contenteditable [contenteditable] > :last-child {
   margin-bottom: 0;
 }
 
 /* Lexical (under MDXEditor) will not let a list/table/code block be the last
    node, so it appends an empty paragraph as a caret target — rendered as
    `<p><br></p>`, which shows as a blank line after every trailing list. Hide
-   that trailing filler. Scoped to `> p:last-child` so only the filler collapses;
-   `:empty` covers the no-<br> variant across Lexical versions. */
-.mdxeditor .mdxeditor-root-contenteditable > p:last-child:has(> br:only-child),
-.mdxeditor .mdxeditor-root-contenteditable > p:last-child:empty {
+   that trailing filler (verified live: collapses exactly one line). Scoped to
+   `> p:last-child` so only the filler collapses; `:empty` covers the no-<br>
+   variant across Lexical versions. */
+.mdxeditor-root-contenteditable [contenteditable] > p:last-child:has(> br:only-child),
+.mdxeditor-root-contenteditable [contenteditable] > p:last-child:empty {
   display: none;
 }
