@@ -37,36 +37,45 @@ export interface ArtifactRegistryEntry {
 }
 
 /** §1 — canonical artifact IDs. IDs are stable; paths may move. */
+// Declaration order is the canonical DISPLAY order (the panel renders each group
+// sorted by this). Product reads why → who → what; the creative brief opens the
+// Design group as the direction its visual system realizes.
 export const ARTIFACT_REGISTRY: Record<string, ArtifactRegistryEntry> = {
+  // product — why → who → what
   "product-brief": { label: "Product Brief", category: "product", status: "registered" },
-  "creative-brief": { label: "Creative brief", category: "product", status: "planned" },
+  "audience": { label: "Audience", category: "product", status: "registered" },
+  "personas": { label: "Personas", category: "product", status: "registered" },
   "stories": { label: "Stories", category: "product", status: "registered" },
   "features": { label: "Features", category: "product", status: "registered" },
   // ACs nest inside stories (decision 6) — the legacy file is only a migration source.
   "acceptance-criteria": { label: "Requirements", category: "product", status: "superseded", supersededBy: "stories" },
-  "audience": { label: "Audience", category: "product", status: "registered" },
-  "personas": { label: "Personas", category: "product", status: "registered" },
+  // ia & ux
   "sitemap": { label: "Sitemap", category: "ia-ux", status: "registered" },
   "flows": { label: "Flows", category: "ia-ux", status: "registered" },
   "journey-map": { label: "Journey map", category: "ia-ux", status: "planned" },
   "navigation-model": { label: "Navigation model", category: "ia-ux", status: "planned" },
+  // design — the creative brief sets the direction; the system below realizes it
+  "creative-brief": { label: "Creative brief", category: "design", status: "planned" },
   "brand-colors": { label: "Brand colors", category: "design", status: "registered" },
   "palettes": { label: "Palettes", category: "design", status: "registered" },
   "fonts": { label: "Fonts", category: "design", status: "registered" },
-  "typography": { label: "Typography", category: "design", status: "registered" },
   "grid": { label: "Grid", category: "design", status: "registered" },
+  "typography": { label: "Typography", category: "design", status: "registered" },
   "tokens": { label: "Tokens", category: "design", status: "registered" },
   "a11y-spec": { label: "A11y spec", category: "design", status: "registered" },
   "interaction-states": { label: "Interaction states", category: "design", status: "planned" },
   "brand-usage": { label: "Brand usage", category: "design", status: "planned" },
   "dataviz": { label: "Data viz", category: "design", status: "planned" },
   "channel-canvas": { label: "Channel canvas", category: "design", status: "planned" },
+  // assets
   "icons": { label: "Icons", category: "assets", status: "registered" },
   "photography": { label: "Photography", category: "assets", status: "registered" },
   "illustrations": { label: "Illustrations", category: "assets", status: "registered" },
+  // content
   "copy-deck": { label: "Copy deck", category: "content", status: "registered" },
   "voice-tone": { label: "Voice & tone", category: "content", status: "planned" },
   "glossary": { label: "Glossary", category: "content", status: "planned" },
+  // components / references / governance
   "component-spec": { label: "Component spec", category: "components", status: "planned" },
   "reference-set": { label: "Reference set", category: "references", status: "planned" },
   "conformance-policy": { label: "Conformance policy", category: "governance", status: "planned" },

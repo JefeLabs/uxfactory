@@ -968,6 +968,51 @@ describe("planned registry artifacts render as coming-soon rows", () => {
   });
 });
 
+// ─── Artifact ordering (single source = registry declaration order) ──────────
+
+describe("artifact ordering is registry-driven (one source, merges planned)", () => {
+  /** In-DOM order of the given labels within a section, by first text position. */
+  function labelOrder(section: HTMLElement, labels: string[]): number[] {
+    const text = section.textContent ?? "";
+    return labels.map((l) => text.indexOf(l));
+  }
+
+  it("Product renders why → who → what regardless of snapshot order", async () => {
+    // Deliberately scrambled snapshot order — the sort must impose registry order.
+    const scrambled: ArtifactRow[] = [
+      { key: "features", group: "product", label: "Features", status: "up-to-date", meta: "", path: "/x/features.json" },
+      { key: "stories", group: "product", label: "Stories", status: "up-to-date", meta: "3 stories", path: "/x/stories" },
+      { key: "brief", group: "product", label: "Product Brief", status: "up-to-date", meta: "brief.md", path: "/x/brief.md" },
+      { key: "personas", group: "product", label: "Personas", status: "up-to-date", meta: "2", path: "/x/personas" },
+      { key: "audience", group: "product", label: "Audience", status: "up-to-date", meta: "", path: "/x/audience.json" },
+    ];
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(makeMeridianSnapshot({ artifacts: scrambled })),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    const section = await screen.findByRole("region", { name: "PRODUCT" });
+
+    const idxs = labelOrder(section, ["Product Brief", "Audience", "Personas", "Stories", "Features"]);
+    expect(idxs.every((v) => v >= 0)).toBe(true);
+    expect([...idxs].sort((a, b) => a - b)).toEqual(idxs); // strictly increasing = correct order
+  });
+
+  it("Creative brief (planned) leads the Design group, above the registered rows", async () => {
+    const design: ArtifactRow[] = [
+      { key: "brand-colors", group: "design", label: "Brand Colors", status: "up-to-date", meta: "", path: "/x/ds.json" },
+    ];
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(makeMeridianSnapshot({ artifacts: design })),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    const section = await screen.findByRole("region", { name: "DESIGN" });
+
+    const text = section.textContent ?? "";
+    expect(text.indexOf("Creative brief")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Creative brief")).toBeLessThan(text.indexOf("Brand Colors"));
+  });
+});
+
 // ─── AC-7: Keyboard — rows focusable; sections are landmarks ─────────────────
 
 describe("AC-7: keyboard accessibility — rows focusable, sections are landmarks", () => {

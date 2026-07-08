@@ -72,6 +72,21 @@ const GROUPS: Array<{ group: string; label: string }> = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Canonical display order = ARTIFACT_REGISTRY declaration order. Registered rows
+ * (snapshot keys) resolve through REGISTRY_ID_BY_KEY; planned rows already carry
+ * the registry id as their key. Registered rows arrive in bridge-snapshot order
+ * and planned rows in a separate list — sorting both by this index merges them
+ * into one intentional order per group (so e.g. a planned Creative brief can
+ * lead the Design group). Unknown keys sort last.
+ */
+const REGISTRY_ORDER: ReadonlyMap<string, number> = new Map(
+  Object.keys(ARTIFACT_REGISTRY).map((id, i) => [id, i]),
+);
+function orderIndex(key: string): number {
+  return REGISTRY_ORDER.get(REGISTRY_ID_BY_KEY[key] ?? key) ?? Number.MAX_SAFE_INTEGER;
+}
+
 function statusToDot(
   status: ArtifactRow["status"],
 ): "green" | "amber" | "hollow" {
@@ -467,12 +482,35 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
           const planned = plannedRows.filter((r) => r.group === group);
           if (rows.length === 0 && planned.length === 0) return null;
 
+          // Merge registered + planned into one list ordered by the registry, so
+          // ordering has a single source (a low-index planned row leads its group).
+          const merged = [
+            ...rows.map((row) => ({ kind: "registered" as const, row })),
+            ...planned.map((row) => ({ kind: "planned" as const, row })),
+          ].sort((a, b) => orderIndex(a.row.key) - orderIndex(b.row.key));
+
           return (
             <section key={group} role="region" aria-label={label}>
               <Card>
                 <SectionHeader>{label}</SectionHeader>
 
-                {rows.map((row) => {
+                {merged.map((item) => {
+                  if (item.kind === "planned") {
+                    // Planned registry artifact — inventory-visible, not yet creatable.
+                    return (
+                      <Row
+                        key={item.row.key}
+                        dot="hollow"
+                        name={item.row.label}
+                        action={
+                          <span className="text-xs text-gray-400 italic select-none">
+                            Coming soon
+                          </span>
+                        }
+                      />
+                    );
+                  }
+                  const row = item.row;
                   const isPending = pendingKeys.has(row.key);
                   const openError = openErrors[row.key];
                   const genError = genErrors[row.key];
@@ -604,20 +642,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                     </div>
                   );
                 })}
-
-                {/* Planned registry artifacts — inventory-visible, not yet creatable */}
-                {planned.map((row) => (
-                  <Row
-                    key={row.key}
-                    dot="hollow"
-                    name={row.label}
-                    action={
-                      <span className="text-xs text-gray-400 italic select-none">
-                        Coming soon
-                      </span>
-                    }
-                  />
-                ))}
               </Card>
             </section>
           );
