@@ -1,0 +1,481 @@
+/**
+ * JsonFormEditor.tsx — structured-data (JSON) artifact editor.
+ *
+ * Driven by a declarative field spec (artifact-forms.ts): React Hook Form owns
+ * the state (dirty tracking, `useFieldArray` for repeatable groups, nested field
+ * paths) while the panel's own Tailwind inputs render each field `kind`. A
+ * well-formed form yields a validator-clean artifact (segments[] + primarySegment
+ * for audience). Save serializes the values back to pretty JSON and PUTs them.
+ *
+ * Field-value types are dynamic (per spec), so the form is typed loosely as a
+ * record; the spec is the real contract for what each path holds.
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import React, { useMemo } from "react";
+import {
+  useForm,
+  useFieldArray,
+  useWatch,
+  Controller,
+  type Control,
+} from "react-hook-form";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import type { ArtifactStatus, Bridge } from "../lib/bridge.js";
+import type { ArtifactFormSpec, FieldSpec } from "../lib/artifact-forms.js";
+import { ArtifactEditorHeader, Field } from "../components/index.js";
+import { useAppStore } from "../stores/app.js";
+import { putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
+
+// ─── Shared input styling (matches CategorySelect / the panel's form controls) ──
+
+const INPUT_CLS =
+  "w-full text-sm border border-gray-300 rounded-[var(--radius-card)] px-3 py-2 bg-white text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600";
+
+// ─── Path helpers ───────────────────────────────────────────────────────────
+
+/** Full RHF path for a child key under a parent path (`""` at the top level). */
+const childPath = (parent: string, key: string): string =>
+  parent === "" ? key : `${parent}.${key}`;
+/** The parent path of a full path (`"segments.0.name"` → `"segments.0"`). */
+const parentOf = (path: string): string => path.split(".").slice(0, -1).join(".");
+
+// ─── Leaf inputs ────────────────────────────────────────────────────────────
+
+/** A 0..1 ratio edited as a whole/decimal percent. Stored value stays 0..1. */
+function PercentInput({
+  control,
+  path,
+  id,
+  ariaLabel,
+}: {
+  control: Control<any>;
+  path: string;
+  /** When Field-labelled via htmlFor. */
+  id?: string;
+  /** When rendered inline without a Field (e.g. deviceMix). */
+  ariaLabel?: string;
+}): React.JSX.Element {
+  return (
+    <Controller
+      control={control}
+      name={path}
+      render={({ field }) => {
+        const ratio = typeof field.value === "number" ? field.value : 0;
+        // Round the display to strip float noise (0.35*100 → 35, not 35.0000001).
+        const shown = String(Math.round(ratio * 10000) / 100);
+        return (
+          <div className="inline-flex items-center gap-1.5">
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={100}
+              step={1}
+              id={id}
+              aria-label={ariaLabel}
+              className={`${INPUT_CLS} w-20`}
+              value={shown}
+              onChange={(e) => {
+                const pct = e.target.value === "" ? 0 : Number(e.target.value);
+                field.onChange(Number.isFinite(pct) ? pct / 100 : 0);
+              }}
+              onBlur={field.onBlur}
+            />
+            <span className="text-sm text-gray-400">%</span>
+          </div>
+        );
+      }}
+    />
+  );
+}
+
+/** A free string[] edited as removable pills + an add-on-Enter input. */
+function ChipsInput({
+  control,
+  path,
+  label,
+}: {
+  control: Control<any>;
+  path: string;
+  label: string;
+}): React.JSX.Element {
+  const [draft, setDraft] = React.useState("");
+  return (
+    <Controller
+      control={control}
+      name={path}
+      render={({ field }) => {
+        const items: string[] = Array.isArray(field.value) ? field.value : [];
+        const add = (): void => {
+          const v = draft.trim();
+          if (v !== "" && !items.includes(v)) field.onChange([...items, v]);
+          setDraft("");
+        };
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {items.map((item, i) => (
+              <span
+                key={`${item}-${i}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700 border border-gray-200"
+              >
+                {item}
+                <button
+                  type="button"
+                  aria-label={`Remove ${item}`}
+                  onClick={() => field.onChange(items.filter((_, j) => j !== i))}
+                  className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              aria-label={`Add ${label}`}
+              className={`${INPUT_CLS} w-28`}
+              value={draft}
+              placeholder="add…"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  add();
+                }
+              }}
+              onBlur={add}
+            />
+          </div>
+        );
+      }}
+    />
+  );
+}
+
+/** A single-select whose options are the `nameKey` values of a sibling array. */
+function EnumInput({
+  control,
+  path,
+  id,
+  field,
+}: {
+  control: Control<any>;
+  path: string;
+  id?: string;
+  field: Extract<FieldSpec, { kind: "enum" }>;
+}): React.JSX.Element {
+  const siblingArrayPath = childPath(parentOf(path), field.optionsFrom.array);
+  const arr = useWatch({ control, name: siblingArrayPath }) as any[] | undefined;
+  const options = Array.isArray(arr)
+    ? arr
+        .map((item) => (item != null ? (item as any)[field.optionsFrom.nameKey] : undefined))
+        .filter((v): v is string => typeof v === "string" && v !== "")
+    : [];
+  return (
+    <Controller
+      control={control}
+      name={path}
+      render={({ field: f }) => (
+        <select
+          id={id}
+          aria-label={field.label}
+          className={INPUT_CLS}
+          value={typeof f.value === "string" ? f.value : ""}
+          onChange={(e) => f.onChange(e.target.value)}
+          onBlur={f.onBlur}
+        >
+          {/* Keep the current value selectable even if it no longer matches a name. */}
+          {typeof f.value === "string" && !options.includes(f.value) && (
+            <option value={f.value}>{f.value}</option>
+          )}
+          {options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      )}
+    />
+  );
+}
+
+// ─── Field dispatch ─────────────────────────────────────────────────────────
+
+/** Render one spec field at `path`. Groups/objects recurse. */
+function FieldEditor({
+  spec,
+  path,
+  control,
+  register,
+}: {
+  spec: FieldSpec;
+  path: string;
+  control: Control<any>;
+  register: any;
+}): React.JSX.Element {
+  switch (spec.kind) {
+    case "text":
+      return (
+        <Field label={spec.label} id={path}>
+          <input
+            type="text"
+            id={path}
+            placeholder={spec.placeholder}
+            className={INPUT_CLS}
+            {...register(path, spec.nullable ? { setValueAs: (v: string) => (v === "" ? null : v) } : {})}
+          />
+        </Field>
+      );
+    case "textarea":
+      return (
+        <Field label={spec.label} id={path} align="start">
+          <textarea
+            id={path}
+            rows={2}
+            className={`${INPUT_CLS} resize-y`}
+            {...register(path, spec.nullable ? { setValueAs: (v: string) => (v === "" || v == null ? null : v) } : {})}
+          />
+        </Field>
+      );
+    case "percent":
+      return (
+        <Field label={spec.label} id={path}>
+          <PercentInput control={control} path={path} id={path} />
+        </Field>
+      );
+    case "chips":
+      return (
+        <Field label={spec.label} align="start">
+          <ChipsInput control={control} path={path} label={spec.label} />
+        </Field>
+      );
+    case "enum":
+      return (
+        <Field label={spec.label} id={path}>
+          <EnumInput control={control} path={path} id={path} field={spec} />
+        </Field>
+      );
+    case "object":
+      return (
+        <Field label={spec.label} align="start">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {spec.fields.map((sub) => (
+              <div key={sub.key} className="flex items-center gap-1.5">
+                <span className="text-xs text-gray-500">{sub.label}</span>
+                {sub.kind === "percent" ? (
+                  <PercentInput control={control} path={childPath(path, sub.key)} ariaLabel={`${spec.label} ${sub.label}`} />
+                ) : (
+                  <FieldEditor spec={sub} path={childPath(path, sub.key)} control={control} register={register} />
+                )}
+              </div>
+            ))}
+          </div>
+        </Field>
+      );
+    case "group":
+      return <GroupEditor spec={spec} path={path} control={control} register={register} />;
+  }
+}
+
+/** A repeatable array-of-objects rendered as add/remove cards. */
+function GroupEditor({
+  spec,
+  path,
+  control,
+  register,
+}: {
+  spec: Extract<FieldSpec, { kind: "group" }>;
+  path: string;
+  control: Control<any>;
+  register: any;
+}): React.JSX.Element {
+  const { fields, append, remove } = useFieldArray({ control, name: path });
+  const watched = useWatch({ control, name: path }) as any[] | undefined;
+
+  const blankItem = useMemo(() => makeBlank(spec.fields), [spec.fields]);
+
+  return (
+    <div className="space-y-3" role="group" aria-label={spec.label}>
+      {fields.map((f, i) => {
+        const titleVal = spec.itemTitleKey
+          ? (watched?.[i]?.[spec.itemTitleKey] as string | undefined)
+          : undefined;
+        const title = titleVal && titleVal !== "" ? titleVal : `${spec.itemLabel} ${i + 1}`;
+        return (
+          <div key={f.id} className="bg-white border border-gray-200 rounded-[var(--radius-card)] overflow-hidden">
+            <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide truncate">{title}</h4>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                aria-label={`Remove ${spec.itemLabel} ${i + 1}`}
+                className="text-gray-400 hover:text-fail-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded shrink-0"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-4 py-3 space-y-2.5">
+              {spec.fields.map((sub) => (
+                <FieldEditor
+                  key={sub.key}
+                  spec={sub}
+                  path={`${path}.${i}.${sub.key}`}
+                  control={control}
+                  register={register}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => append(blankItem)}
+        className="text-xs px-3 py-1.5 rounded border border-dashed border-gray-300 text-gray-600 hover:border-primary-600 hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+      >
+        + Add {spec.itemLabel}
+      </button>
+    </div>
+  );
+}
+
+/** A blank item for `append` — sensible empty per field kind. */
+function makeBlank(fields: FieldSpec[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    switch (f.kind) {
+      case "percent":
+        out[f.key] = 0;
+        break;
+      case "chips":
+        out[f.key] = [];
+        break;
+      case "object":
+        out[f.key] = makeBlank(f.fields);
+        break;
+      case "textarea":
+      case "text":
+        out[f.key] = f.nullable ? null : "";
+        break;
+      default:
+        out[f.key] = "";
+    }
+  }
+  return out;
+}
+
+// ─── Sum-check advisory ─────────────────────────────────────────────────────
+
+function SumChecks({
+  spec,
+  control,
+}: {
+  spec: ArtifactFormSpec;
+  control: Control<any>;
+}): React.JSX.Element | null {
+  const values = useWatch({ control }) as Record<string, any>;
+  const checks = spec.sumChecks ?? [];
+  if (checks.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {checks.map((c) => {
+        const arr = Array.isArray(values?.[c.array]) ? (values[c.array] as any[]) : [];
+        const sum = arr.reduce((a, item) => a + (typeof item?.[c.field] === "number" ? item[c.field] : 0), 0);
+        const ok = Math.abs(sum - c.target) <= 0.005;
+        const pct = Math.round(sum * 100);
+        return (
+          <p
+            key={`${c.array}.${c.field}`}
+            role="status"
+            data-testid={`sumcheck-${c.array}-${c.field}`}
+            className={`text-xs ${ok ? "text-success-600" : "text-warn-600"}`}
+          >
+            {ok ? "✓" : "⚠"} {c.label} sum to {pct}%
+            {ok ? "" : ` (should be ${Math.round(c.target * 100)}%)`}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Editor ─────────────────────────────────────────────────────────────────
+
+export interface JsonFormEditorProps {
+  artifactKey: string;
+  label: string;
+  status: ArtifactStatus;
+  spec: ArtifactFormSpec;
+  /** Parsed JSON content — the form's initial values. */
+  value: Record<string, unknown>;
+  bridge: Bridge;
+  onBack: () => void;
+  onRegenerate: () => void;
+}
+
+export function JsonFormEditor({
+  artifactKey,
+  label,
+  status,
+  spec,
+  value,
+  bridge,
+  onBack,
+  onRegenerate,
+}: JsonFormEditorProps): React.JSX.Element {
+  const toast = useAppStore((s) => s.toast);
+  const queryClient = useQueryClient();
+
+  const { control, register, handleSubmit, reset, formState } = useForm<Record<string, any>>({
+    defaultValues: value,
+  });
+  const { isDirty } = formState;
+
+  const save = useMutation({
+    ...putArtifactMutation(bridge),
+    onSuccess: (_data, variables) => {
+      reset(JSON.parse(variables.content) as Record<string, any>); // re-baseline → clean
+      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifact(activeRoot(bridge), artifactKey) });
+      toast("Saved");
+    },
+    onError: () => toast("Save failed — is the bridge running?"),
+  });
+  const saving = save.isPending;
+
+  const onSubmit = handleSubmit((values) => {
+    const content = `${JSON.stringify(values, null, 2)}\n`;
+    save.mutate({ key: artifactKey, content });
+  });
+
+  function handleBack(): void {
+    if (isDirty && !window.confirm("You have unsaved changes. Leave without saving?")) return;
+    onBack();
+  }
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <ArtifactEditorHeader
+        label={label}
+        status={status}
+        onBack={handleBack}
+        onRegenerate={onRegenerate}
+        onSave={() => void onSubmit()}
+        saveDisabled={!isDirty || saving}
+      />
+
+      <form
+        onSubmit={(e) => void onSubmit(e)}
+        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
+        data-testid="json-form-editor"
+      >
+        {spec.fields.map((f) => (
+          <FieldEditor key={f.key} spec={f} path={f.key} control={control} register={register} />
+        ))}
+        <SumChecks spec={spec} control={control} />
+      </form>
+    </div>
+  );
+}

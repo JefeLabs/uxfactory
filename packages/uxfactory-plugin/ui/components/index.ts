@@ -42,3 +42,6 @@ export type { IndustrySelectProps } from "./IndustrySelect.js";
 
 export { InfoTooltip } from "./InfoTooltip.js";
 export type { InfoTooltipProps } from "./InfoTooltip.js";
+
+export { ArtifactEditorHeader } from "./ArtifactEditorHeader.js";
+export type { ArtifactEditorHeaderProps } from "./ArtifactEditorHeader.js";

@@ -650,6 +650,29 @@ describe("JSON artifact — read-only pretty view", () => {
     });
   });
 
+  it("delegates a spec-backed JSON artifact (audience) to the structured form, not the read-only pre", async () => {
+    const AUDIENCE_ARTIFACT: ArtifactContent = {
+      key: "audience",
+      path: "/home/user/meridian/.uxfactory/artifacts/audience.json",
+      format: "json",
+      content: JSON.stringify({
+        segments: [{ name: "design leads", share: 1, deviceMix: { desktop: 1, mobile: 0 } }],
+        primarySegment: "design leads",
+      }),
+    };
+    const bridge = makeBridge({ getArtifact: vi.fn().mockResolvedValue(AUDIENCE_ARTIFACT) });
+
+    await renderWithProviders(
+      <ArtifactEditor {...makeProps({ artifactKey: "audience", label: "Audience", bridge })} />,
+      { initialEntries: ["/tabs/artifacts"] },
+    );
+
+    await waitFor(() => expect(screen.getByTestId("json-form-editor")).toBeInTheDocument());
+    // The structured form replaces the read-only fallback entirely.
+    expect(screen.queryByTestId("json-preview")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Primary segment")).toBeInTheDocument();
+  });
+
   it("does NOT render MDXEditor textareas for JSON artifacts", async () => {
     const bridge = makeBridge({
       getArtifact: vi.fn().mockResolvedValue(JSON_ARTIFACT),
