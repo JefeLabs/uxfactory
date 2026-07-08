@@ -175,13 +175,21 @@ function EnumInput({
       : childPath(parentOf(path), from.array)
     : path;
   const watched = useWatch({ control, name: arrayPath }) as any;
+  // For excludeSelf: the current row's own value of the referenced key (e.g. this
+  // node's nodeId), so a node can't list itself as its parent.
+  const selfIdPath = from?.excludeSelf === true ? childPath(parentOf(path), from.nameKey) : path;
+  const selfId = useWatch({ control, name: selfIdPath }) as any;
   const dynamic =
     from !== undefined && Array.isArray(watched)
       ? watched
           .map((item) => (item != null ? (item as any)[from.nameKey] : undefined))
           .filter((v): v is string => typeof v === "string" && v !== "")
       : [];
-  const options = field.options ?? dynamic;
+  const filtered =
+    from?.excludeSelf === true && typeof selfId === "string"
+      ? dynamic.filter((v) => v !== selfId)
+      : dynamic;
+  const options = field.options ?? filtered;
   return (
     <Controller
       control={control}

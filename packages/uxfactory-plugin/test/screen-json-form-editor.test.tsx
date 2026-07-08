@@ -226,12 +226,26 @@ describe("JsonFormEditor — sitemap form", () => {
     const roleOpts = within(role).getAllByRole("option").map((o) => o.textContent);
     expect(roleOpts).toEqual(["home", "primary", "secondary", "tertiary", "utility"]);
 
-    // Parent: options are every node's id (root-scoped) plus a "(none)" root choice.
+    // Parent: options are the OTHER nodes' ids (root-scoped, self excluded) plus
+    // a "(none)" root choice.
     const parent = screen.getAllByLabelText("Parent")[0] as HTMLSelectElement;
     const parentOpts = within(parent).getAllByRole("option").map((o) => o.textContent);
-    expect(parentOpts).toEqual(expect.arrayContaining(["(none)", "N-landing", "N-pricing"]));
+    expect(parentOpts).toContain("(none)");
+    expect(parentOpts).toContain("N-pricing");
+    expect(parentOpts).not.toContain("N-landing"); // a page can't parent itself
     // N-landing is a root → its parent select sits on "(none)".
     expect(parent.value).toBe("");
+  });
+
+  it("excludes each page's own id from its Parent dropdown", async () => {
+    await renderSitemap(makeBridge());
+    const parents = screen.getAllByLabelText("Parent") as HTMLSelectElement[];
+    const opts = (sel: HTMLSelectElement) => within(sel).getAllByRole("option").map((o) => o.textContent);
+
+    expect(opts(parents[0]!)).not.toContain("N-landing");
+    expect(opts(parents[0]!)).toContain("N-pricing");
+    expect(opts(parents[1]!)).not.toContain("N-pricing");
+    expect(opts(parents[1]!)).toContain("N-landing");
   });
 
   it("a root page's null parent survives a save; changing a child to root writes null", async () => {

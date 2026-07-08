@@ -44,7 +44,13 @@ export interface ChipsField extends FieldBase {
 export interface EnumField extends FieldBase {
   kind: "enum";
   options?: string[];
-  optionsFrom?: { array: string; nameKey: string; scope?: "sibling" | "root" };
+  optionsFrom?: {
+    array: string;
+    nameKey: string;
+    scope?: "sibling" | "root";
+    /** Drop the current row's own `nameKey` value — a node can't reference itself. */
+    excludeSelf?: boolean;
+  };
   nullable?: boolean;
 }
 /** A nested object rendered inline (e.g. deviceMix → desktop/mobile). */
@@ -170,7 +176,7 @@ export const ARTIFACT_FORMS: Record<string, ArtifactFormSpec> = {
             label: "Parent",
             guidance: "The page this one lives under. None = a top-level (root) page.",
             nullable: true,
-            optionsFrom: { array: "nodes", nameKey: "nodeId", scope: "root" },
+            optionsFrom: { array: "nodes", nameKey: "nodeId", scope: "root", excludeSelf: true },
           },
           { kind: "chips", key: "featureRefs", label: "Features" },
           {
