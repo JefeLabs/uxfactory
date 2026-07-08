@@ -35,10 +35,17 @@ export interface PercentField extends FieldBase {
 export interface ChipsField extends FieldBase {
   kind: "chips";
 }
-/** A single-select whose options are the `nameKey` values of a sibling array. */
+/**
+ * A single-select. Options come from a static list, or from the `nameKey` values
+ * of another array — a sibling by default, or a root-level array when
+ * `scope: "root"` (e.g. a node's `parent` pointing at any other node). `nullable`
+ * adds a "(none)" choice that serializes to `null`.
+ */
 export interface EnumField extends FieldBase {
   kind: "enum";
-  optionsFrom: { array: string; nameKey: string };
+  options?: string[];
+  optionsFrom?: { array: string; nameKey: string; scope?: "sibling" | "root" };
+  nullable?: boolean;
 }
 /** A nested object rendered inline (e.g. deviceMix → desktop/mobile). */
 export interface ObjectField extends FieldBase {
@@ -118,6 +125,44 @@ export const ARTIFACT_FORMS: Record<string, ArtifactFormSpec> = {
       },
     ],
     sumChecks: [{ array: "segments", field: "share", target: 1, label: "Segment shares" }],
+  },
+
+  sitemap: {
+    fields: [
+      {
+        kind: "group",
+        key: "nodes",
+        label: "Pages",
+        itemLabel: "Page",
+        itemTitleKey: "title",
+        fields: [
+          { kind: "text", key: "nodeId", label: "ID", placeholder: "e.g. N-landing" },
+          { kind: "text", key: "title", label: "Title" },
+          {
+            kind: "enum",
+            key: "role",
+            label: "Role",
+            guidance: "Where the page sits in the navigation hierarchy.",
+            options: ["home", "primary", "secondary", "tertiary", "utility"],
+          },
+          {
+            kind: "enum",
+            key: "parent",
+            label: "Parent",
+            guidance: "The page this one lives under. None = a top-level (root) page.",
+            nullable: true,
+            optionsFrom: { array: "nodes", nameKey: "nodeId", scope: "root" },
+          },
+          { kind: "chips", key: "featureRefs", label: "Features" },
+          {
+            kind: "enum",
+            key: "status",
+            label: "Status",
+            options: ["planned", "in-progress", "live"],
+          },
+        ],
+      },
+    ],
   },
 };
 

@@ -166,37 +166,50 @@ function EnumInput({
   id?: string;
   field: Extract<FieldSpec, { kind: "enum" }>;
 }): React.JSX.Element {
-  const siblingArrayPath = childPath(parentOf(path), field.optionsFrom.array);
-  const arr = useWatch({ control, name: siblingArrayPath }) as any[] | undefined;
-  const options = Array.isArray(arr)
-    ? arr
-        .map((item) => (item != null ? (item as any)[field.optionsFrom.nameKey] : undefined))
-        .filter((v): v is string => typeof v === "string" && v !== "")
-    : [];
+  const from = field.optionsFrom;
+  // Where to read dynamic options: a root-level array, or a sibling. For static
+  // `options`, watch self (cheap) — the watched value is ignored.
+  const arrayPath = from
+    ? from.scope === "root"
+      ? from.array
+      : childPath(parentOf(path), from.array)
+    : path;
+  const watched = useWatch({ control, name: arrayPath }) as any;
+  const dynamic =
+    from !== undefined && Array.isArray(watched)
+      ? watched
+          .map((item) => (item != null ? (item as any)[from.nameKey] : undefined))
+          .filter((v): v is string => typeof v === "string" && v !== "")
+      : [];
+  const options = field.options ?? dynamic;
   return (
     <Controller
       control={control}
       name={path}
-      render={({ field: f }) => (
-        <select
-          id={id}
-          aria-label={field.label}
-          className={INPUT_CLS}
-          value={typeof f.value === "string" ? f.value : ""}
-          onChange={(e) => f.onChange(e.target.value)}
-          onBlur={f.onBlur}
-        >
-          {/* Keep the current value selectable even if it no longer matches a name. */}
-          {typeof f.value === "string" && !options.includes(f.value) && (
-            <option value={f.value}>{f.value}</option>
-          )}
-          {options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      )}
+      render={({ field: f }) => {
+        const current = typeof f.value === "string" ? f.value : "";
+        return (
+          <select
+            id={id}
+            aria-label={field.label}
+            className={INPUT_CLS}
+            value={current}
+            onChange={(e) =>
+              f.onChange(field.nullable === true && e.target.value === "" ? null : e.target.value)
+            }
+            onBlur={f.onBlur}
+          >
+            {field.nullable === true && <option value="">(none)</option>}
+            {/* Keep the current value selectable even if it no longer matches an option. */}
+            {current !== "" && !options.includes(current) && <option value={current}>{current}</option>}
+            {options.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        );
+      }}
     />
   );
 }

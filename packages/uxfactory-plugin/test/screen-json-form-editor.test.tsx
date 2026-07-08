@@ -82,11 +82,11 @@ function renderEditor(bridge: Bridge, value: Record<string, unknown> = JSON.pars
   );
 }
 
-/** Parse the JSON content of the most recent putArtifact call. */
-function savedJson(bridge: Bridge): any {
+/** Parse the JSON content of the most recent putArtifact call (asserting its key). */
+function savedJson(bridge: Bridge, expectedKey = "audience"): any {
   const calls = (bridge.putArtifact as ReturnType<typeof vi.fn>).mock.calls;
   const [key, content] = calls[calls.length - 1]!;
-  expect(key).toBe("audience");
+  expect(key).toBe(expectedKey);
   return JSON.parse(content as string);
 }
 
@@ -187,5 +187,73 @@ describe("JsonFormEditor — audience form", () => {
     fireEvent.change(screen.getAllByLabelText("Share")[0]!, { target: { value: "20" } });
     await waitFor(() => expect(screen.getByTestId("sumcheck-segments-share").textContent).toMatch(/70%/));
     expect(screen.getByTestId("sumcheck-segments-share").textContent).toMatch(/should be 100%/);
+  });
+});
+
+// ─── sitemap (static enum + root-scoped nullable self-reference) ───────────────
+
+const SITEMAP = {
+  nodes: [
+    { nodeId: "N-landing", title: "landing", role: "home", parent: null, featureRefs: ["F-01"], status: "planned" },
+    { nodeId: "N-pricing", title: "pricing", role: "secondary", parent: "N-landing", featureRefs: ["F-02"], status: "planned" },
+  ],
+};
+
+function renderSitemap(bridge: Bridge, value: Record<string, unknown> = JSON.parse(JSON.stringify(SITEMAP))) {
+  return renderWithProviders(
+    <JsonFormEditor
+      artifactKey="sitemap"
+      label="Sitemap"
+      status="up-to-date"
+      spec={formSpecFor("sitemap")!}
+      value={value}
+      bridge={bridge}
+      onBack={vi.fn()}
+      onRegenerate={vi.fn()}
+    />,
+    { initialEntries: ["/tabs/artifacts"] },
+  );
+}
+
+describe("JsonFormEditor — sitemap form", () => {
+  it("renders page cards with a static Role enum and a root-scoped Parent enum", async () => {
+    await renderSitemap(makeBridge());
+
+    expect(screen.getAllByLabelText("Title")).toHaveLength(2);
+
+    // Role: static option list.
+    const role = screen.getAllByLabelText("Role")[0] as HTMLSelectElement;
+    const roleOpts = within(role).getAllByRole("option").map((o) => o.textContent);
+    expect(roleOpts).toEqual(["home", "primary", "secondary", "tertiary", "utility"]);
+
+    // Parent: options are every node's id (root-scoped) plus a "(none)" root choice.
+    const parent = screen.getAllByLabelText("Parent")[0] as HTMLSelectElement;
+    const parentOpts = within(parent).getAllByRole("option").map((o) => o.textContent);
+    expect(parentOpts).toEqual(expect.arrayContaining(["(none)", "N-landing", "N-pricing"]));
+    // N-landing is a root → its parent select sits on "(none)".
+    expect(parent.value).toBe("");
+  });
+
+  it("a root page's null parent survives a save; changing a child to root writes null", async () => {
+    const bridge = makeBridge();
+    await renderSitemap(bridge);
+
+    // Reparent N-pricing (child of N-landing) to root via the "(none)" option.
+    const parents = screen.getAllByLabelText("Parent") as HTMLSelectElement[];
+    expect(parents[1]!.value).toBe("N-landing");
+    fireEvent.change(parents[1]!, { target: { value: "" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save artifact" }));
+    await waitFor(() => expect(bridge.putArtifact).toHaveBeenCalled());
+
+    const saved = savedJson(bridge, "sitemap");
+    expect(saved.nodes[0].parent).toBeNull(); // untouched root stays null
+    expect(saved.nodes[1].parent).toBeNull(); // reparented to root
+  });
+
+  it("Features render as chips per page", async () => {
+    await renderSitemap(makeBridge());
+    expect(screen.getByText("F-01")).toBeInTheDocument();
+    expect(screen.getByText("F-02")).toBeInTheDocument();
   });
 });
