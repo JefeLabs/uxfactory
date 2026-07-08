@@ -1196,7 +1196,8 @@ function planGenerative(
             ' at this time, write a single "TBD — needs user input" line for it.' +
             ' Author any enumeration (scope items, outcomes, risks, constraints) as a MARKDOWN' +
             ' LIST — one "- item" per line — never a comma- or semicolon-run in a sentence, so' +
-            ' each item renders as its own bullet.'
+            ' each item renders as its own bullet. Write each prose paragraph as a SINGLE line' +
+            ' (no hard line breaks mid-paragraph) so the viewer flows it, not ragged breaks.'
           : '';
       const guidanceNote =
         guidance !== undefined && guidance.trim() !== ''
@@ -1231,7 +1232,9 @@ function planGenerative(
           : `Write the ${entry.label} artifact to ${scratchRel}.`;
       const listRule = isMd
         ? ' Author any enumeration as a MARKDOWN LIST (one "- item" per line), never a' +
-          ' comma-run in a sentence, so each item renders as its own bullet.'
+          ' comma-run in a sentence, so each item renders as its own bullet. Write each' +
+          ' prose paragraph as a SINGLE line (no hard line breaks mid-paragraph) so the' +
+          ' viewer flows it instead of showing ragged breaks.'
         : '';
       const user =
         `${writeTarget} Ground the content in uxfactory.classification.json and` +
