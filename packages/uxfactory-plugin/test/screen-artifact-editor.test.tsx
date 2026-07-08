@@ -217,6 +217,25 @@ describe("parseSections / assembleSections — round-trip", () => {
     expect(sections[0]?.title).toBeNull();
     expect(sections[0]?.currentBody).toBe("Just plain text.");
   });
+
+  it("sections a bold-label brief (no ## headings) — the common seeded shape", () => {
+    const brief =
+      "# UXFactory Cloud — product brief\n" +
+      "**Problem.** AI tools generate untrusted screens.\n" +
+      "**Audience.** Design leads and PMs.\n" +
+      "**Success outcomes.**\n1. First verified run in 30 min.";
+    const sections = parseSections(brief);
+    // H1 preamble + three bold-label sections.
+    expect(sections.map((s) => s.title)).toEqual([null, "Problem", "Audience", "Success outcomes"]);
+    expect(sections[1]?.currentBody).toBe("AI tools generate untrusted screens.");
+    expect(sections[3]?.currentBody).toBe("1. First verified run in 30 min.");
+  });
+
+  it("plain text with no headings and no bold labels stays a single preamble", () => {
+    const sections = parseSections("Just plain prose, no structure.");
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.title).toBeNull();
+  });
 });
 
 // ─── Loading state ─────────────────────────────────────────────────────────
@@ -247,15 +266,17 @@ describe("Loads and renders brief sections with schema guidance", () => {
     }
   });
 
-  it("each section card shows the schema guidance text", async () => {
+  it("each section header carries an info tooltip with its schema guidance", async () => {
     await renderWithProviders(<ArtifactEditor {...makeProps()} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
       expect(screen.getByTestId("section-card-Overview")).toBeInTheDocument();
     });
 
-    for (const { guidance } of ARTIFACT_SECTIONS["brief"]!) {
-      expect(screen.getByText(guidance)).toBeInTheDocument();
+    // Guidance moved from always-visible text into a per-section info tooltip;
+    // the trigger's aria-label carries "<title>: <guidance>" for reachability.
+    for (const { title, guidance } of ARTIFACT_SECTIONS["brief"]!) {
+      expect(screen.getByLabelText(`${title}: ${guidance}`)).toBeInTheDocument();
     }
   });
 
@@ -287,7 +308,9 @@ describe("Loads and renders brief sections with schema guidance", () => {
     await renderWithProviders(<ArtifactEditor {...makeProps({ bridge })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
-      expect(screen.getByText(GENERIC_SECTION_GUIDANCE)).toBeInTheDocument();
+      expect(
+        screen.getByLabelText(`Unknown Section: ${GENERIC_SECTION_GUIDANCE}`),
+      ).toBeInTheDocument();
     });
   });
 });

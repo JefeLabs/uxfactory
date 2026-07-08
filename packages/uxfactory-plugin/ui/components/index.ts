@@ -39,3 +39,6 @@ export type { CategorySelectProps } from "./CategorySelect.js";
 
 export { IndustrySelect } from "./IndustrySelect.js";
 export type { IndustrySelectProps } from "./IndustrySelect.js";
+
+export { InfoTooltip } from "./InfoTooltip.js";
+export type { InfoTooltipProps } from "./InfoTooltip.js";

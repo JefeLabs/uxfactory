@@ -12,8 +12,7 @@ import { categoryLabel, industryLabel } from "@uxfactory/spec";
  */
 
 import React, { useEffect, useId, useState } from "react";
-import * as Tooltip from "@radix-ui/react-tooltip";
-import { Info } from "lucide-react";
+import { InfoTooltip } from "../components/index.js";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { putProfileMutation } from "../queries.js";
@@ -69,38 +68,6 @@ const COVERAGE_TOOLTIP =
 
 
 
-// ─── InfoTooltip ─────────────────────────────────────────────────────────────
-
-/** Small info icon button that opens a Radix tooltip on hover/focus. */
-function InfoTooltip({ label, content }: { label: string; content: string }) {
-  return (
-    <Tooltip.Provider delayDuration={300}>
-      <Tooltip.Root>
-        <Tooltip.Trigger asChild>
-          {/* aria-label carries the full tooltip text so assertions can find
-              the binding consequence without needing to open the tooltip. */}
-          <button
-            type="button"
-            aria-label={label}
-            className="inline-flex items-center justify-center w-4 h-4 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
-          >
-            <Info size={12} aria-hidden="true" />
-          </button>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            side="top"
-            sideOffset={4}
-            className="max-w-xs rounded-[var(--radius-card)] bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg"
-          >
-            {content}
-            <Tooltip.Arrow className="fill-gray-900" />
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
-  );
-}
 
 // ─── SetupDefaults ────────────────────────────────────────────────────────────
 

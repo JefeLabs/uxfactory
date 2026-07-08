@@ -48,6 +48,7 @@ import "@mdxeditor/editor/style.css";
 import type { Bridge, ArtifactStatus, ArtifactContent } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import { sectionGuidanceFor } from "../lib/artifact-schemas.js";
+import { InfoTooltip } from "../components/index.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { artifactQuery, putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
@@ -128,6 +129,39 @@ export function parseSections(content: string): Section[] {
     }
   }
 
+  // Fallback: a document with NO `## ` headings but bold-label paragraphs
+  // (`**Problem.** …`) — a common brief shape — still deserves section cards.
+  // Re-split the single preamble on bold labels at line start.
+  if (sections.length === 1 && sections[0]!.title === null) {
+    const boldSections = parseBoldLabelSections(sections[0]!.originalBody);
+    if (boldSections.length > 1) return boldSections;
+  }
+
+  return sections;
+}
+
+/** A bold `**Label.**` at the very start of a line marks a section. */
+const BOLD_LABEL_RE = /^\*\*([^*\n]{1,48}?)\*\*/;
+
+/**
+ * Split content on leading bold-label paragraphs. Any content before the first
+ * label (e.g. a `# Title` line) becomes an untitled preamble; each `**Label.**`
+ * starts a titled section (trailing `.`/`:` stripped from the title). Returns
+ * the single preamble unchanged when no bold labels are present.
+ */
+export function parseBoldLabelSections(content: string): Section[] {
+  const parts = content.split(/\n(?=\*\*[^*\n]{1,48}?\*\*)/);
+  const sections: Section[] = [];
+  for (const part of parts) {
+    const m = BOLD_LABEL_RE.exec(part);
+    if (m !== null) {
+      const title = m[1]!.replace(/[.:]\s*$/, "").trim();
+      const body = part.slice(m[0].length).replace(/^\s+/, "");
+      sections.push({ title, originalBody: body, currentBody: body });
+    } else if (part.trim().length > 0) {
+      sections.push({ title: null, originalBody: part, currentBody: part });
+    }
+  }
   return sections;
 }
 
@@ -412,13 +446,16 @@ export function ArtifactEditor({
             data-testid={`section-card-${section.title ?? "preamble"}`}
           >
             {section.title !== null && (
-              <div className="px-4 pt-3 pb-1 border-b border-gray-100">
+              <div className="flex items-center gap-1.5 px-4 pt-3 pb-2 border-b border-gray-100">
                 <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   {section.title}
                 </h3>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {sectionGuidanceFor(artifactKey, section.title)}
-                </p>
+                {(() => {
+                  const guidance = sectionGuidanceFor(artifactKey, section.title);
+                  return guidance !== "" ? (
+                    <InfoTooltip label={`${section.title}: ${guidance}`} content={guidance} />
+                  ) : null;
+                })()}
               </div>
             )}
 
