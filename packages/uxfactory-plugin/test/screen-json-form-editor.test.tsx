@@ -199,7 +199,17 @@ const SITEMAP = {
   ],
 };
 
-function renderSitemap(bridge: Bridge, value: Record<string, unknown> = JSON.parse(JSON.stringify(SITEMAP))) {
+const FEATURE_OPTS = [
+  { value: "F-01", label: "F-01 · Verification-first pitch" },
+  { value: "F-02", label: "F-02 · Pricing tiers" },
+  { value: "F-03", label: "F-03 · Projects" },
+];
+
+function renderSitemap(
+  bridge: Bridge,
+  value: Record<string, unknown> = JSON.parse(JSON.stringify(SITEMAP)),
+  externalOptions: Record<string, { value: string; label: string }[]> = { featureIds: FEATURE_OPTS },
+) {
   return renderWithProviders(
     <JsonFormEditor
       artifactKey="sitemap"
@@ -207,6 +217,7 @@ function renderSitemap(bridge: Bridge, value: Record<string, unknown> = JSON.par
       status="up-to-date"
       spec={formSpecFor("sitemap")!}
       value={value}
+      externalOptions={externalOptions}
       bridge={bridge}
       onBack={vi.fn()}
       onRegenerate={vi.fn()}
@@ -265,10 +276,33 @@ describe("JsonFormEditor — sitemap form", () => {
     expect(saved.nodes[1].parent).toBeNull(); // reparented to root
   });
 
-  it("Features render as chips per page", async () => {
+  it("Features render as pills with resolved labels; the add-dropdown offers unselected known features", async () => {
     await renderSitemap(makeBridge());
-    expect(screen.getByText("F-01")).toBeInTheDocument();
-    expect(screen.getByText("F-02")).toBeInTheDocument();
+    // F-01 is selected on N-landing → a removable pill showing its human label.
+    expect(screen.getByRole("button", { name: "Remove F-01" })).toBeInTheDocument();
+    expect(screen.getAllByText(FEATURE_OPTS[0]!.label).length).toBeGreaterThan(0);
+    // N-landing already has F-01, so its add-dropdown offers only F-02 and F-03.
+    const add = screen.getAllByLabelText("Add Features")[0] as HTMLSelectElement;
+    const addOpts = within(add).getAllByRole("option").map((o) => o.textContent);
+    expect(addOpts).not.toContain(FEATURE_OPTS[0]!.label);
+    expect(addOpts).toEqual(expect.arrayContaining([FEATURE_OPTS[1]!.label, FEATURE_OPTS[2]!.label]));
+  });
+
+  it("adds a feature from the picker and removes one via its pill; both persist on save", async () => {
+    const bridge = makeBridge();
+    await renderSitemap(bridge);
+
+    // Remove F-02 from N-pricing (second page) via its pill — while it's the only one.
+    fireEvent.click(screen.getByRole("button", { name: "Remove F-02" }));
+    // Add F-02 to N-landing (first page).
+    fireEvent.change(screen.getAllByLabelText("Add Features")[0]!, { target: { value: "F-02" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save artifact" }));
+    await waitFor(() => expect(bridge.putArtifact).toHaveBeenCalled());
+
+    const saved = savedJson(bridge, "sitemap");
+    expect(saved.nodes[0].featureRefs).toEqual(["F-01", "F-02"]);
+    expect(saved.nodes[1].featureRefs).toEqual([]);
   });
 
   it("renders a read-only hierarchy preview (root before its child) with role badges", async () => {

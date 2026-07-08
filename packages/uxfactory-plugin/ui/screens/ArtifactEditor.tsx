@@ -29,7 +29,7 @@
  *   It is intentionally omitted here to avoid side-effect imports in tests.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MDXEditor,
   headingsPlugin,
@@ -48,12 +48,13 @@ import "@mdxeditor/editor/style.css";
 import type { Bridge, ArtifactStatus, ArtifactContent } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import { sectionGuidanceFor } from "../lib/artifact-schemas.js";
-import { formSpecFor } from "../lib/artifact-forms.js";
+import { formSpecFor, externalSourcesFor } from "../lib/artifact-forms.js";
+import type { ExternalOption } from "../lib/artifact-forms.js";
 import { InfoTooltip, ArtifactEditorHeader } from "../components/index.js";
 import { JsonFormEditor } from "./JsonFormEditor.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { artifactQuery, putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
+import { artifactQuery, putArtifactMutation, queryKeys, activeRoot, traceQuery } from "../queries.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,20 @@ export function ArtifactEditor({
   const toast = useAppStore((s) => s.toast);
   const queryClient = useQueryClient();
   const artifactResult = useQuery(artifactQuery(bridge, artifactKey));
+
+  // Resolve external option sets a JSON form needs (e.g. featureIds → the trace's
+  // registered features). Fetched at the top level; enabled only when the spec asks.
+  const formSpec = formSpecFor(artifactKey);
+  const needsFeatures =
+    formSpec !== undefined && externalSourcesFor(formSpec).includes("featureIds");
+  const traceResult = useQuery({ ...traceQuery(bridge), enabled: needsFeatures && typeof bridge.trace === "function" });
+  const externalOptions = useMemo<Record<string, ExternalOption[]>>(() => {
+    if (!needsFeatures) return {};
+    const features = traceResult.data?.features ?? [];
+    return {
+      featureIds: features.map((f) => ({ value: f.featureId, label: `${f.featureId} · ${f.name}` })),
+    };
+  }, [needsFeatures, traceResult.data]);
 
   const loadState: LoadState = !bridge.getArtifact
     ? { phase: "error", message: "Artifact editing requires a newer bridge version." }
@@ -407,6 +422,7 @@ export function ArtifactEditor({
           status={status}
           spec={spec}
           value={parsed}
+          externalOptions={externalOptions}
           bridge={bridge}
           onBack={onBack}
           onRegenerate={onRegenerate}

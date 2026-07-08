@@ -24,7 +24,7 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { ArtifactStatus, Bridge } from "../lib/bridge.js";
-import type { ArtifactFormSpec, FieldSpec } from "../lib/artifact-forms.js";
+import type { ArtifactFormSpec, FieldSpec, ExternalOption } from "../lib/artifact-forms.js";
 import { ArtifactEditorHeader, Field } from "../components/index.js";
 import { useAppStore } from "../stores/app.js";
 import { putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
@@ -33,6 +33,12 @@ import { putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
 
 const INPUT_CLS =
   "w-full text-sm border border-gray-300 rounded-[var(--radius-card)] px-3 py-2 bg-white text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600";
+
+/**
+ * Host-supplied option sets for `multiselect` fields keyed by external source
+ * (e.g. "featureIds"). Contexted so recursive field renderers don't thread it.
+ */
+const ExternalOptionsContext = React.createContext<Record<string, ExternalOption[]>>({});
 
 // ─── Path helpers ───────────────────────────────────────────────────────────
 
@@ -147,6 +153,74 @@ function ChipsInput({
               }}
               onBlur={add}
             />
+          </div>
+        );
+      }}
+    />
+  );
+}
+
+/** A `string[]` picked from a known option set: removable pills + an "add…" dropdown. */
+function MultiSelectInput({
+  control,
+  path,
+  field,
+}: {
+  control: Control<any>;
+  path: string;
+  field: Extract<FieldSpec, { kind: "multiselect" }>;
+}): React.JSX.Element {
+  const externals = React.useContext(ExternalOptionsContext);
+  const options: ExternalOption[] =
+    field.options !== undefined
+      ? field.options.map((v) => ({ value: v, label: v }))
+      : field.optionsFrom !== undefined
+        ? externals[field.optionsFrom.external] ?? []
+        : [];
+  const labelOf = (v: string): string => options.find((o) => o.value === v)?.label ?? v;
+
+  return (
+    <Controller
+      control={control}
+      name={path}
+      render={({ field: f }) => {
+        const selected: string[] = Array.isArray(f.value) ? f.value : [];
+        const available = options.filter((o) => !selected.includes(o.value));
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {selected.map((v) => (
+              <span
+                key={v}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary-50 text-primary-700 border border-primary-100"
+              >
+                {labelOf(v)}
+                <button
+                  type="button"
+                  aria-label={`Remove ${v}`}
+                  onClick={() => f.onChange(selected.filter((x) => x !== v))}
+                  className="text-primary-300 hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {available.length > 0 && (
+              <select
+                aria-label={`Add ${field.label}`}
+                className={`${INPUT_CLS} w-auto`}
+                value=""
+                onChange={(e) => {
+                  if (e.target.value !== "") f.onChange([...selected, e.target.value]);
+                }}
+              >
+                <option value="">add…</option>
+                {available.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         );
       }}
@@ -272,6 +346,12 @@ function FieldEditor({
           <ChipsInput control={control} path={path} label={spec.label} />
         </Field>
       );
+    case "multiselect":
+      return (
+        <Field label={spec.label} align="start">
+          <MultiSelectInput control={control} path={path} field={spec} />
+        </Field>
+      );
     case "enum":
       return (
         <Field label={spec.label} id={path}>
@@ -371,6 +451,7 @@ function makeBlank(fields: FieldSpec[]): Record<string, unknown> {
         out[f.key] = 0;
         break;
       case "chips":
+      case "multiselect":
         out[f.key] = [];
         break;
       case "object":
@@ -493,6 +574,8 @@ export interface JsonFormEditorProps {
   spec: ArtifactFormSpec;
   /** Parsed JSON content — the form's initial values. */
   value: Record<string, unknown>;
+  /** Resolved option sets for `multiselect` fields, keyed by external source. */
+  externalOptions?: Record<string, ExternalOption[]>;
   bridge: Bridge;
   onBack: () => void;
   onRegenerate: () => void;
@@ -504,6 +587,7 @@ export function JsonFormEditor({
   status,
   spec,
   value,
+  externalOptions,
   bridge,
   onBack,
   onRegenerate,
@@ -539,27 +623,29 @@ export function JsonFormEditor({
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <ArtifactEditorHeader
-        label={label}
-        status={status}
-        onBack={handleBack}
-        onRegenerate={onRegenerate}
-        onSave={() => void onSubmit()}
-        saveDisabled={!isDirty || saving}
-      />
+    <ExternalOptionsContext.Provider value={externalOptions ?? {}}>
+      <div className="flex flex-col flex-1 min-h-0">
+        <ArtifactEditorHeader
+          label={label}
+          status={status}
+          onBack={handleBack}
+          onRegenerate={onRegenerate}
+          onSave={() => void onSubmit()}
+          saveDisabled={!isDirty || saving}
+        />
 
-      <form
-        onSubmit={(e) => void onSubmit(e)}
-        className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
-        data-testid="json-form-editor"
-      >
-        {spec.treePreview !== undefined && <TreePreview control={control} spec={spec.treePreview} />}
-        {spec.fields.map((f) => (
-          <FieldEditor key={f.key} spec={f} path={f.key} control={control} register={register} />
-        ))}
-        <SumChecks spec={spec} control={control} />
-      </form>
-    </div>
+        <form
+          onSubmit={(e) => void onSubmit(e)}
+          className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
+          data-testid="json-form-editor"
+        >
+          {spec.treePreview !== undefined && <TreePreview control={control} spec={spec.treePreview} />}
+          {spec.fields.map((f) => (
+            <FieldEditor key={f.key} spec={f} path={f.key} control={control} register={register} />
+          ))}
+          <SumChecks spec={spec} control={control} />
+        </form>
+      </div>
+    </ExternalOptionsContext.Provider>
   );
 }

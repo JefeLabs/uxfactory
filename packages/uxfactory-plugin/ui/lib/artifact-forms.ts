@@ -36,6 +36,17 @@ export interface ChipsField extends FieldBase {
   kind: "chips";
 }
 /**
+ * A `string[]` chosen from a KNOWN option set (unlike free `chips`). Options are
+ * static, or resolved from an external source the editor host supplies (e.g.
+ * "featureIds" → the registered features). Selected values render as removable
+ * pills; an "add…" dropdown offers the not-yet-selected options.
+ */
+export interface MultiSelectField extends FieldBase {
+  kind: "multiselect";
+  options?: string[];
+  optionsFrom?: { external: string };
+}
+/**
  * A single-select. Options come from a static list, or from the `nameKey` values
  * of another array — a sibling by default, or a root-level array when
  * `scope: "root"` (e.g. a node's `parent` pointing at any other node). `nullable`
@@ -73,6 +84,7 @@ export type FieldSpec =
   | TextareaField
   | PercentField
   | ChipsField
+  | MultiSelectField
   | EnumField
   | ObjectField
   | GroupField;
@@ -178,7 +190,7 @@ export const ARTIFACT_FORMS: Record<string, ArtifactFormSpec> = {
             nullable: true,
             optionsFrom: { array: "nodes", nameKey: "nodeId", scope: "root", excludeSelf: true },
           },
-          { kind: "chips", key: "featureRefs", label: "Features" },
+          { kind: "multiselect", key: "featureRefs", label: "Features", optionsFrom: { external: "featureIds" } },
           {
             kind: "enum",
             key: "status",
@@ -195,4 +207,27 @@ export const ARTIFACT_FORMS: Record<string, ArtifactFormSpec> = {
 /** The form spec for an artifact key, or undefined (→ read-only JSON fallback). */
 export function formSpecFor(key: string): ArtifactFormSpec | undefined {
   return ARTIFACT_FORMS[key];
+}
+
+/** A resolved external option — the stored value plus a human label. */
+export interface ExternalOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * The external option-source keys a spec references (e.g. ["featureIds"]) —
+ * recursing into groups/objects. The editor host resolves these to `ExternalOption[]`
+ * (e.g. from the trace) and passes them to the form.
+ */
+export function externalSourcesFor(spec: ArtifactFormSpec): string[] {
+  const out = new Set<string>();
+  const walk = (fields: FieldSpec[]): void => {
+    for (const f of fields) {
+      if (f.kind === "multiselect" && f.optionsFrom !== undefined) out.add(f.optionsFrom.external);
+      if (f.kind === "group" || f.kind === "object") walk(f.fields);
+    }
+  };
+  walk(spec.fields);
+  return [...out];
 }
