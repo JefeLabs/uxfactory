@@ -379,7 +379,7 @@ async function buildArtifacts(
     rows.push({
       key: "brief",
       group: "product",
-      label: "Brief",
+      label: "Product Brief",
       status: foundPath !== null ? "up-to-date" : "missing",
       meta: "",
       path: foundPath,

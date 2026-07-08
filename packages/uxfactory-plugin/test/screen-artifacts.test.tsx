@@ -110,7 +110,7 @@ const MERIDIAN_ARTIFACTS: ArtifactRow[] = [
   {
     key: "brief",
     group: "product",
-    label: "Brief",
+    label: "Product Brief",
     status: "up-to-date",
     meta: "brief.md",
     path: "/home/user/meridian/brief.md",
@@ -426,7 +426,7 @@ describe("AC-1: inventory groups / rollup for Meridian fixture (10 of 12)", () =
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     await waitFor(() => {
       const productSection = screen.getByRole("region", { name: "PRODUCT" });
-      expect(within(productSection).getByText("Brief")).toBeInTheDocument();
+      expect(within(productSection).getByText("Product Brief")).toBeInTheDocument();
       expect(within(productSection).getByText("Stories")).toBeInTheDocument();
     });
   });
@@ -489,7 +489,7 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     const bridge = makeBridge();
     await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(await screen.findByRole("button", { name: /Open Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /Open Product Brief/i }));
 
     // ArtifactEditor header has a "Back to artifacts" button
     await waitFor(() => {
@@ -505,7 +505,7 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     const user = userEvent.setup();
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(await screen.findByRole("button", { name: /Open Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /Open Product Brief/i }));
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: /Back to artifacts/i }),
@@ -517,7 +517,7 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
       expect(
-        screen.getByRole("textbox", { name: /Guidance for Brief/i }),
+        screen.getByRole("textbox", { name: /Guidance for Product Brief/i }),
       ).toBeInTheDocument();
     });
   });
@@ -526,7 +526,7 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     const user = userEvent.setup();
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
 
-    await user.click(await screen.findByRole("button", { name: /Open Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /Open Product Brief/i }));
 
     await waitFor(() => {
       expect(
@@ -909,7 +909,7 @@ describe("AC-6: focus search param → row highlighted + search cleared", () => 
       initialEntries: ["/tabs/artifacts?focus=brief"],
     });
 
-    await waitFor(() => screen.getByText("Brief"));
+    await waitFor(() => screen.getByText("Product Brief"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
@@ -1095,10 +1095,10 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
   it("up-to-date rows have no Regenerate button", async () => {
     await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     // Wait for inventory to load, then verify no Regenerate for up-to-date rows
-    await waitFor(() => screen.getByText("Brief"));
+    await waitFor(() => screen.getByText("Product Brief"));
     // Brief and Flows are up-to-date — neither should show Regenerate
     expect(
-      screen.queryByRole("button", { name: /Regenerate Brief/i }),
+      screen.queryByRole("button", { name: /Regenerate Product Brief/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Regenerate Flows/i }),
@@ -1114,8 +1114,8 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 
     // Tab order includes ↗ after each Open, and missing rows show Seed before
     // Create. Stories is a SET artifact (no in-panel Open — only ↗):
-    //   Open Brief → ↗ Brief → ↗ Stories → Seed Personas → Create Personas → Regenerate Sitemap
-    await user.tab(); // Open Brief
+    //   Open Product Brief → ↗ Brief → ↗ Stories → Seed Personas → Create Personas → Regenerate Sitemap
+    await user.tab(); // Open Product Brief
     await user.tab(); // ↗ (Brief)
     await user.tab(); // ↗ (Stories — set row, no Open)
     await user.tab(); // Seed Personas (missing row — Seed precedes Create)

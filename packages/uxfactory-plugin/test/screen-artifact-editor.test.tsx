@@ -152,7 +152,7 @@ function makeProps(
 ): Parameters<typeof ArtifactEditor>[0] {
   return {
     artifactKey: "brief",
-    label: "Brief",
+    label: "Product Brief",
     status: "up-to-date",
     bridge: makeBridge(),
     onBack: vi.fn(),
@@ -723,10 +723,10 @@ describe("404 (missing artifact) — Create affordance", () => {
     await renderWithProviders(<ArtifactEditor {...makeProps({ bridge, onRegenerate })} />, { initialEntries: ["/tabs/artifacts"] });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Create Brief/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Create Product Brief/i })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /Create Brief/i }));
+    await user.click(screen.getByRole("button", { name: /Create Product Brief/i }));
     expect(onRegenerate).toHaveBeenCalled();
   });
 });

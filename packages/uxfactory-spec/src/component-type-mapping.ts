@@ -38,7 +38,7 @@ export interface ArtifactRegistryEntry {
 
 /** §1 — canonical artifact IDs. IDs are stable; paths may move. */
 export const ARTIFACT_REGISTRY: Record<string, ArtifactRegistryEntry> = {
-  "product-brief": { label: "Brief", category: "product", status: "registered" },
+  "product-brief": { label: "Product Brief", category: "product", status: "registered" },
   "creative-brief": { label: "Creative brief", category: "product", status: "planned" },
   "stories": { label: "Stories", category: "product", status: "registered" },
   "features": { label: "Features", category: "product", status: "registered" },
