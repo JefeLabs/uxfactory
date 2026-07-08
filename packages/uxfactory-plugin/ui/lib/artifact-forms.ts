@@ -79,9 +79,28 @@ export interface SumCheck {
   label: string;
 }
 
+/**
+ * A read-only hierarchy preview built from a flat adjacency array (each item
+ * points at its parent by id). Rendered above the form so the tree structure is
+ * legible while editing the cards below.
+ */
+export interface TreePreviewSpec {
+  /** The flat array of nodes (e.g. "nodes"). */
+  array: string;
+  /** Node id key (e.g. "nodeId"). */
+  idKey: string;
+  /** Parent-id key; a missing/unknown value makes the node a root (e.g. "parent"). */
+  parentKey: string;
+  /** Label key (e.g. "title"). */
+  titleKey: string;
+  /** Optional trailing badge key (e.g. "role"). */
+  badgeKey?: string;
+}
+
 export interface ArtifactFormSpec {
   fields: FieldSpec[];
   sumChecks?: SumCheck[];
+  treePreview?: TreePreviewSpec;
 }
 
 /**
@@ -163,6 +182,7 @@ export const ARTIFACT_FORMS: Record<string, ArtifactFormSpec> = {
         ],
       },
     ],
+    treePreview: { array: "nodes", idKey: "nodeId", parentKey: "parent", titleKey: "title", badgeKey: "role" },
   },
 };
 

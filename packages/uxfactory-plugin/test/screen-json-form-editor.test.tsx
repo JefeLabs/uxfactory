@@ -256,4 +256,23 @@ describe("JsonFormEditor — sitemap form", () => {
     expect(screen.getByText("F-01")).toBeInTheDocument();
     expect(screen.getByText("F-02")).toBeInTheDocument();
   });
+
+  it("renders a read-only hierarchy preview (root before its child) with role badges", async () => {
+    await renderSitemap(makeBridge());
+    const tree = screen.getByTestId("tree-preview");
+    const text = tree.textContent ?? "";
+    expect(text).toContain("landing");
+    expect(text).toContain("pricing");
+    // Root (landing) is listed before its child (pricing).
+    expect(text.indexOf("landing")).toBeLessThan(text.indexOf("pricing"));
+    // Role badges appear in the preview.
+    expect(text).toContain("home");
+    expect(text).toContain("secondary");
+  });
+
+  it("the hierarchy preview updates live as the form changes", async () => {
+    await renderSitemap(makeBridge());
+    fireEvent.change(screen.getAllByLabelText("Title")[0]!, { target: { value: "Home Page" } });
+    await waitFor(() => expect(screen.getByTestId("tree-preview").textContent).toContain("Home Page"));
+  });
 });

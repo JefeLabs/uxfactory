@@ -379,6 +379,68 @@ function makeBlank(fields: FieldSpec[]): Record<string, unknown> {
   return out;
 }
 
+// ─── Tree preview ───────────────────────────────────────────────────────────
+
+/** Read-only hierarchy derived live from a flat parent-referencing array. */
+function TreePreview({
+  control,
+  spec,
+}: {
+  control: Control<any>;
+  spec: NonNullable<ArtifactFormSpec["treePreview"]>;
+}): React.JSX.Element | null {
+  const items = (useWatch({ control, name: spec.array }) as any[] | undefined) ?? [];
+  if (items.length === 0) return null;
+
+  const ids = new Set(items.map((it) => it?.[spec.idKey]).filter((v) => typeof v === "string"));
+  const childrenOf = new Map<string | null, any[]>();
+  for (const it of items) {
+    const p = it?.[spec.parentKey];
+    // A missing or dangling parent makes the node a root.
+    const bucket = typeof p === "string" && ids.has(p) ? p : null;
+    (childrenOf.get(bucket) ?? childrenOf.set(bucket, []).get(bucket)!).push(it);
+  }
+
+  const rows: React.JSX.Element[] = [];
+  const walk = (parentId: string | null, depth: number, seen: Set<string>): void => {
+    for (const it of childrenOf.get(parentId) ?? []) {
+      const id = it?.[spec.idKey];
+      if (typeof id === "string" && seen.has(id)) continue; // cycle guard
+      const title = (it?.[spec.titleKey] as string) || (id as string) || "(untitled)";
+      const badge = spec.badgeKey ? (it?.[spec.badgeKey] as string | undefined) : undefined;
+      rows.push(
+        <div
+          key={id ?? `${parentId}-${rows.length}`}
+          className="flex items-center gap-1.5 text-sm text-gray-700 py-0.5"
+          style={{ paddingLeft: depth * 16 }}
+        >
+          <span aria-hidden="true" className="text-gray-300">
+            {depth === 0 ? "•" : "└"}
+          </span>
+          <span className="truncate">{title}</span>
+          {badge !== undefined && badge !== "" && (
+            <span className="text-[11px] text-gray-400">{badge}</span>
+          )}
+        </div>,
+      );
+      if (typeof id === "string") walk(id, depth + 1, new Set([...seen, id]));
+    }
+  };
+  walk(null, 0, new Set());
+
+  return (
+    <div
+      className="bg-gray-50 border border-gray-200 rounded-[var(--radius-card)] px-3 py-2.5"
+      role="tree"
+      aria-label="Hierarchy"
+      data-testid="tree-preview"
+    >
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Hierarchy</p>
+      {rows}
+    </div>
+  );
+}
+
 // ─── Sum-check advisory ─────────────────────────────────────────────────────
 
 function SumChecks({
@@ -484,6 +546,7 @@ export function JsonFormEditor({
         className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
         data-testid="json-form-editor"
       >
+        {spec.treePreview !== undefined && <TreePreview control={control} spec={spec.treePreview} />}
         {spec.fields.map((f) => (
           <FieldEditor key={f.key} spec={f} path={f.key} control={control} register={register} />
         ))}
