@@ -107,6 +107,21 @@ interface Section {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
+ * Strip the empty lines that pad a section grouping into extra vertical space:
+ * blank lines at the top or bottom of the body, and runs of 2+ blank lines
+ * between blocks collapsed to a single paragraph break. A single trailing
+ * newline (the terminator) is preserved, so an already-tidy body — the shape
+ * the fixtures use — round-trips unchanged. Single blank-line paragraph breaks
+ * are kept, so distinct paragraphs and label groups stay separate.
+ */
+function normalizeSectionBody(body: string): string {
+  return body
+    .replace(/\n{3,}/g, "\n\n") // 2+ blank lines between blocks → one break
+    .replace(/^\n+/, "") // leading blank lines
+    .replace(/\n{2,}$/, "\n"); // trailing blank lines → single terminator
+}
+
+/**
  * Split markdown content into sections on `## ` headings.
  *
  * Content before the first heading is kept as a preamble section (title=null).
@@ -121,11 +136,12 @@ export function parseSections(content: string): Section[] {
       const nlIdx = part.indexOf("\n");
       const title =
         nlIdx === -1 ? part.slice(3).trim() : part.slice(3, nlIdx).trim();
-      const body = nlIdx === -1 ? "" : part.slice(nlIdx + 1);
+      const body = normalizeSectionBody(nlIdx === -1 ? "" : part.slice(nlIdx + 1));
       sections.push({ title, originalBody: body, currentBody: body });
     } else if (part.trim().length > 0) {
       // preamble — content before the first ##
-      sections.push({ title: null, originalBody: part, currentBody: part });
+      const body = normalizeSectionBody(part);
+      sections.push({ title: null, originalBody: body, currentBody: body });
     }
   }
 
@@ -156,10 +172,11 @@ export function parseBoldLabelSections(content: string): Section[] {
     const m = BOLD_LABEL_RE.exec(part);
     if (m !== null) {
       const title = m[1]!.replace(/[.:]\s*$/, "").trim();
-      const body = part.slice(m[0].length).replace(/^\s+/, "");
+      const body = normalizeSectionBody(part.slice(m[0].length).replace(/^\s+/, ""));
       sections.push({ title, originalBody: body, currentBody: body });
     } else if (part.trim().length > 0) {
-      sections.push({ title: null, originalBody: part, currentBody: part });
+      const body = normalizeSectionBody(part);
+      sections.push({ title: null, originalBody: body, currentBody: body });
     }
   }
   return sections;

@@ -44,3 +44,14 @@
   font-size: 0.8125rem;
   line-height: 1.55;
 }
+
+/* Collapse the empty vertical space at the top and bottom of a section card:
+   the first block's top margin, and the last block's bottom margin — including
+   the empty trailing paragraph Lexical keeps after a list/table, which no
+   source edit can remove. Interior paragraph spacing is untouched. */
+.mdxeditor .mdxeditor-root-contenteditable > :first-child {
+  margin-top: 0;
+}
+.mdxeditor .mdxeditor-root-contenteditable > :last-child {
+  margin-bottom: 0;
+}

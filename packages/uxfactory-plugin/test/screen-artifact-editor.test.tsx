@@ -203,6 +203,34 @@ describe("parseSections / assembleSections — round-trip", () => {
     expect(assembleSections(sections)).toBe(BRIEF_CONTENT);
   });
 
+  it("strips the empty lines that pad a section body (leading, trailing, doubled-internal)", () => {
+    // A real seeded brief blank-lines after each heading and between sub-groups;
+    // those render as extra space. parseSections should return a body with no
+    // leading/trailing blank line and single blank-line paragraph breaks.
+    const content = [
+      "## Overview",
+      "", // blank line after the heading
+      "First paragraph.",
+      "",
+      "", // a doubled blank line between paragraphs
+      "Second paragraph.",
+      "",
+      "", // trailing blank lines
+    ].join("\n");
+    const sections = parseSections(content);
+    expect(sections[0]?.currentBody).toBe("First paragraph.\n\nSecond paragraph.\n");
+    // A single blank-line paragraph break is preserved (not merged).
+    expect(sections[0]?.currentBody).toContain("First paragraph.\n\nSecond paragraph.");
+  });
+
+  it("normalizes the same padding in a bold-label section body", () => {
+    const brief =
+      "**Scope.**\n\n- one\n- two\n\n\n\n**Risks.** none";
+    const sections = parseSections(brief);
+    expect(sections.map((s) => s.title)).toEqual(["Scope", "Risks"]);
+    expect(sections[0]?.currentBody).toBe("- one\n- two\n");
+  });
+
   it("preamble content (before first ##) becomes a null-title section", () => {
     const content = "Preamble text.\n\n## Section One\nBody.";
     const sections = parseSections(content);
