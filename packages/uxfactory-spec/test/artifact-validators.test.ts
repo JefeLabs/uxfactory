@@ -106,6 +106,34 @@ describe("validateArtifact: stories (set — actor integrity)", () => {
   });
 });
 
+describe("validateArtifact: brief (markdown — list-shape)", () => {
+  it("warns when an enumerable line is comma-prose instead of a markdown list", () => {
+    const r = validateArtifact(
+      "brief",
+      "**Out of scope.** On-prem, SSO/SCIM, non-Figma canvases, fine-tuned models",
+    );
+    expect(r.findings.some((f) => f.severity === "warn" && /list/i.test(f.message))).toBe(true);
+    // Advisory only — a comma-run never fails the artifact.
+    expect(r.ok).toBe(true);
+  });
+
+  it("does not flag a proper markdown list or ordinary prose", () => {
+    const list = validateArtifact("brief", "**Outcomes.**\n- first\n- second\n- third\n- fourth");
+    expect(list.findings.filter((f) => /list/i.test(f.message))).toEqual([]);
+    const prose = validateArtifact(
+      "brief",
+      "The gate is deterministic and LLM-free, and it leaves evidence for every verdict.",
+    );
+    expect(prose.findings.filter((f) => /list/i.test(f.message))).toEqual([]);
+    // A parenthetical enumeration inside a sentence is prose, not a list.
+    const paren = validateArtifact(
+      "brief",
+      "Teams REGISTER intent (stories, acceptance criteria, brand, copy) and gate every design.",
+    );
+    expect(paren.findings.filter((f) => /list/i.test(f.message))).toEqual([]);
+  });
+});
+
 describe("validateArtifact: sitemap + copy-deck + unknown", () => {
   it("sitemap: a featureRef resolving to no feature is an error", () => {
     const r = validateArtifact("sitemap", { nodes: [{ nodeId: "N", title: "Home", featureRefs: ["F-99"] }] }, { featureIds: new Set(["F-01"]) });

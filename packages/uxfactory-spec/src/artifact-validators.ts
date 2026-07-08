@@ -220,6 +220,31 @@ const RULES: Record<string, Rule> = {
     return out;
   },
 
+  brief: (body) => {
+    // Markdown body. Warn when an enumerable line is authored as a comma/semicolon
+    // run of short items rather than a markdown list — it won't render as bullets.
+    const out: ValidationFinding[] = [];
+    const text = typeof body === "string" ? body : "";
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (line === "" || /^([-*+]|\d+\.)\s/.test(line)) continue; // blank or already a list item
+      const after = line.replace(/^\*\*[^*\n]+\*\*\s*/, ""); // drop a leading **Label.**
+      if (/[.!?]$/.test(after)) continue; // a full sentence, not a list run
+      const items = after.split(/[,;]/).map((s) => s.trim()).filter((s) => s !== "");
+      // A genuine list: 3+ SHORT items (≤3 words, ≤25 chars, no parentheses) —
+      // this excludes parenthetical enumerations and comma clauses inside prose.
+      const short = (i: string): boolean =>
+        i.length <= 25 && i.split(/\s+/).length <= 3 && !/[()]/.test(i);
+      if (items.length >= 3 && items.every(short)) {
+        out.push({
+          severity: "warn",
+          message: `this ${items.length}-item run reads as a list — author it as a markdown list (- item per line) so it renders as bullets`,
+        });
+      }
+    }
+    return out;
+  },
+
   "copy-deck": (body) => {
     const out: ValidationFinding[] = [];
     const entries = isObj(body) && Array.isArray(body["entries"]) ? body["entries"] : [];

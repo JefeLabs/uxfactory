@@ -24,7 +24,8 @@ export interface ValidateArtifactFlags {
 const ARTIFACTS = ".uxfactory/artifacts";
 
 /** Canonical path (file or set directory) for each validatable artifact key. */
-const ARTIFACT_PATH: Record<string, { rel: string; set?: boolean }> = {
+const ARTIFACT_PATH: Record<string, { rel: string; set?: boolean; markdown?: boolean }> = {
+  brief: { rel: `${ARTIFACTS}/brief.md`, markdown: true },
   "brand-colors": { rel: `${ARTIFACTS}/design-system.json` },
   features: { rel: `${ARTIFACTS}/features.json` },
   audience: { rel: `${ARTIFACTS}/audience.json` },
@@ -106,7 +107,11 @@ export async function validateArtifactCmd(
     return EXIT.TRANSPORT;
   }
   const abs = path.join(cwd, entry.rel);
-  const body = entry.set === true ? await readSet(abs) : sectionOf(key, await readJson(abs));
+  let body: unknown;
+  if (entry.set === true) body = await readSet(abs);
+  else if (entry.markdown === true) {
+    body = await readFile(abs, "utf8").catch(() => null);
+  } else body = sectionOf(key, await readJson(abs));
   if ((entry.set === true && (body as unknown[]).length === 0) || (entry.set !== true && body === null)) {
     io.err(`validate-artifact: ${key} not found or unreadable at ${entry.rel}`);
     return EXIT.TRANSPORT;

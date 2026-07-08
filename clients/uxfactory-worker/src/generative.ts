@@ -1193,7 +1193,10 @@ function planGenerative(
             ' scope dials — these are pinned config, not brief content); reference them only' +
             ' where an implication matters (e.g. "given the mobile-first audience").' +
             ' Every section must carry net-new substance; if a section is genuinely unknown' +
-            ' at this time, write a single "TBD — needs user input" line for it.'
+            ' at this time, write a single "TBD — needs user input" line for it.' +
+            ' Author any enumeration (scope items, outcomes, risks, constraints) as a MARKDOWN' +
+            ' LIST — one "- item" per line — never a comma- or semicolon-run in a sentence, so' +
+            ' each item renders as its own bullet.'
           : '';
       const guidanceNote =
         guidance !== undefined && guidance.trim() !== ''
@@ -1226,10 +1229,14 @@ function planGenerative(
           ? `Write ONLY the content of the '${entry.sectionKey}' section — the JSON object that` +
             ` belongs under that key — to ${scratchRel}. Do not wrap it or add other sections.`
           : `Write the ${entry.label} artifact to ${scratchRel}.`;
+      const listRule = isMd
+        ? ' Author any enumeration as a MARKDOWN LIST (one "- item" per line), never a' +
+          ' comma-run in a sentence, so each item renders as its own bullet.'
+        : '';
       const user =
         `${writeTarget} Ground the content in uxfactory.classification.json and` +
         ` uxfactory.profile.json, and read the project's other registered artifacts under` +
-        ` .uxfactory/artifacts to stay on-project (read them first).${briefNote}${entry.note ?? ''}` +
+        ` .uxfactory/artifacts to stay on-project (read them first).${briefNote}${listRule}${entry.note ?? ''}` +
         ` Output strictly the artifact content: valid JSON for a .json target, Markdown for a` +
         ` .md target. Write ONLY to ${scratchRel} — nowhere else. Report the path once done.${guidanceNote}`;
       return {
