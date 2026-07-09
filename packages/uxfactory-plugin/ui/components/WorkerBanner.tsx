@@ -6,9 +6,13 @@
  */
 import React from "react";
 import { useAppStore } from "../stores/app.js";
-import { coverageFor } from "../lib/worker-coverage.js";
+import { coverageFor, ENQUEUEABLE_KINDS } from "../lib/worker-coverage.js";
 
-export function WorkerBanner({ kind }: { kind: string }): React.JSX.Element | null {
+export interface WorkerBannerProps {
+  kind: (typeof ENQUEUEABLE_KINDS)[number];
+}
+
+export function WorkerBanner({ kind }: WorkerBannerProps): React.JSX.Element | null {
   const workers = useAppStore((s) => s.workers);
   const dismissed = useAppStore((s) => s.workerBannerDismissed);
   const dismissWorkerBanner = useAppStore((s) => s.dismissWorkerBanner);

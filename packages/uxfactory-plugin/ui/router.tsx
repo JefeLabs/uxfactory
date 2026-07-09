@@ -184,16 +184,19 @@ export function WorkerDot(): React.JSX.Element {
   const state =
     workers === null ? "unknown" : anyUncovered(workers) ? "uncovered" : "covered";
   const { cls, label } = {
-    unknown: { cls: "bg-neutral-500", label: "Worker status: unknown" },
-    uncovered: { cls: "bg-amber-500", label: "Worker status: no worker for this project" },
-    covered: { cls: "bg-emerald-500", label: "Worker status: live" },
+    unknown: { cls: "bg-gray-300", label: "Worker status: unknown" },
+    uncovered: { cls: "bg-warn-600", label: "Worker status: no worker for this project" },
+    covered: { cls: "bg-success-600", label: "Worker status: live" },
   }[state];
   return (
     <span
+      role="status"
       aria-label={label}
       title={label}
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${cls}`}
-    />
+      className="inline-flex items-center justify-center w-5 h-5 shrink-0"
+    >
+      <span aria-hidden="true" className={`w-2.5 h-2.5 rounded-full ${cls}`} />
+    </span>
   );
 }
 

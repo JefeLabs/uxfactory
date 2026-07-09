@@ -47,3 +47,4 @@ export { ArtifactEditorHeader } from "./ArtifactEditorHeader.js";
 export type { ArtifactEditorHeaderProps } from "./ArtifactEditorHeader.js";
 
 export { WorkerBanner } from "./WorkerBanner.js";
+export type { WorkerBannerProps } from "./WorkerBanner.js";

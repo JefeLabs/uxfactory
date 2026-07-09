@@ -574,6 +574,8 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
           } else {
             presence.addPending(raw, path.resolve(announcedRoot), Date.now(), kinds);
           }
+        }).catch(() => {
+          // Presence tagging is best-effort — a broker must never die on a presence blip.
         });
       }
 
