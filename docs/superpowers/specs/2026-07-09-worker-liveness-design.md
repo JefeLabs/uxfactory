@@ -108,6 +108,16 @@ Dismiss behavior: the ✕ hides the banner until the panel reloads **or** covera
 
 `@uxfactory/bridge` is published — the presence + snapshot-field change needs a `.changeset/*.md` entry. Plugin and worker are private (no changeset).
 
+## Shipped 2026-07-09 (commits d135cd5..386a892) — follow-ups from review
+
+Implemented and signed off (whole-branch review). Non-blocking follow-ups carried out of the review:
+
+- Assert the promotion **broadcast** frame in the connect-rescan test (today it asserts the connect response only).
+- Hook test for a snapshot **without** the `workers` field (the `?? null` legacy-bridge branch).
+- Render the banner in the Artifacts screen's in-panel ArtifactEditor subview too (its Regenerate button is an enqueue entry point).
+- Two-writer race: a late snapshot refetch can briefly clobber a newer `worker-status` frame (self-heals on next update; consider a provenance guard on the seed effect).
+- Old-worker + new-bridge skew makes the banner copy actively false ("jobs will queue" while an untagged worker is serving them) — soften the copy or detect legacy claims when step 2 ships.
+
 ## Out of scope (later rungs)
 
 - `uxfactory worker` / `uxfactory up` CLI verbs and crash-restart supervision (step 2) — includes upgrading the banner with the copyable start command.

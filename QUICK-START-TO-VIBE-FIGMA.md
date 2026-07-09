@@ -136,6 +136,22 @@ uxfactory verify hello.uxfactory.json             # PASS → exit 0, FAIL → ex
 
 > One-shot render + gate: `uxfactory publish hello.uxfactory.json --verify`.
 
+### The worker — serves Seed / Generate jobs (one per project)
+
+The panel's **Seed**, **Create**, and design-generation buttons enqueue jobs on the bridge — but the bridge is only a relay. A **worker** process claims and runs them, and it claims **only jobs for the project it was started in** (its working directory). No worker for your project = jobs wait in the queue and the panel shows a "No worker is serving this project" banner (plus an amber dot in the ContextBar).
+
+```bash
+cd <your-project-root>          # the repo your panel is connected to
+<engine>/clients/uxfactory-worker/node_modules/.bin/tsx \
+  <engine>/clients/uxfactory-worker/src/main.ts     # keep this running
+```
+
+Where `<engine>` is your uxfactory checkout. Useful env vars: `UXFACTORY_CLI_BIN=<path>` pins the `uxfactory` binary the agent shells out to; `UXFACTORY_WORKER_MODEL` picks the model (default `sonnet`); `UXFACTORY_WORKER_KINDS` restricts which job kinds this worker claims. The worker needs agent credentials at `~/.agentx/auth.json`.
+
+Start order doesn't matter: a worker started before its project is connected is held pending and counted the moment the panel connects. The ContextBar dot goes **green** when a live worker covers your project, **amber** when none does, **grey** when unknown.
+
+> A dedicated `uxfactory worker` CLI verb (and a one-command `uxfactory up`) is planned; until then the `tsx` invocation above is the way.
+
 ---
 
 ## 3. Vibe with Claude Code (agent-driven)
@@ -205,6 +221,7 @@ uxfactory drift             # exit 1 if the design drifted from code/spec, 2 if 
 | ------------------------------------------------ | ------------------------------------------- |
 | `uxfactory lint <spec>`                          | Validate a spec                             |
 | `uxfactory bridge`                               | Start the localhost relay (`:3779`)         |
+| worker (`tsx …/uxfactory-worker/src/main.ts`)    | Serve Seed/Generate jobs — run from YOUR project root |
 | `uxfactory publish <spec> [--wait] [--verify]`   | Render into Figma (optionally block + gate) |
 | `uxfactory verify <spec>`                        | Gate the latest render PASS/FAIL            |
 | `uxfactory render <spec> --out <file.png\|.svg>` | Offline preview, no Figma                   |
