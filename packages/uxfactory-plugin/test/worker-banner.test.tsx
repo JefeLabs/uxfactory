@@ -10,7 +10,11 @@ afterEach(cleanup);
 
 describe("WorkerBanner", () => {
   beforeEach(() => {
-    useAppStore.setState({ workers: null, workerBannerDismissed: false });
+    useAppStore.setState({
+      workers: null,
+      workerBannerDismissed: false,
+      connection: { status: "none", endpoint: "http://localhost:3779", repoPath: "", mode: "local" },
+    });
   });
 
   it("renders nothing while liveness is unknown (workers: null)", () => {
@@ -47,5 +51,27 @@ describe("WorkerBanner", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss worker warning" }));
     expect(useAppStore.getState().workerBannerDismissed).toBe(true);
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows the copyable worker command built from the connected repoPath", () => {
+    useAppStore.setState({
+      workers: [],
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "/repo/demo", mode: "local" },
+    });
+    render(<WorkerBanner kind="generate-artifact" />);
+    expect(screen.getByText("cd /repo/demo && uxfactory worker")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy worker command" })).toBeInTheDocument();
+  });
+
+  it("falls back to the doc-pointer line when repoPath is empty", () => {
+    useAppStore.setState({
+      workers: [],
+      connection: { status: "connected", endpoint: "http://localhost:3779", repoPath: "", mode: "local" },
+    });
+    render(<WorkerBanner kind="generate-artifact" />);
+    expect(
+      screen.getByText("Start a worker from this project's root (see the quick-start's worker section)."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy worker command" })).toBeNull();
   });
 });

@@ -7,6 +7,7 @@
 import React from "react";
 import { useAppStore } from "../stores/app.js";
 import { coverageFor, ENQUEUEABLE_KINDS } from "../lib/worker-coverage.js";
+import { copyText } from "../lib/copy.js";
 
 export interface WorkerBannerProps {
   kind: (typeof ENQUEUEABLE_KINDS)[number];
@@ -16,6 +17,7 @@ export function WorkerBanner({ kind }: WorkerBannerProps): React.JSX.Element | n
   const workers = useAppStore((s) => s.workers);
   const dismissed = useAppStore((s) => s.workerBannerDismissed);
   const dismissWorkerBanner = useAppStore((s) => s.dismissWorkerBanner);
+  const repoPath = useAppStore((s) => s.connection.repoPath);
 
   if (dismissed || coverageFor(workers, kind) !== "uncovered") return null;
 
@@ -27,9 +29,28 @@ export function WorkerBanner({ kind }: WorkerBannerProps): React.JSX.Element | n
       <span aria-hidden="true">⚠</span>
       <div className="flex-1">
         <p>No worker is serving this project — jobs will queue until one connects.</p>
-        <p className="opacity-75">
-          Start a worker from this project's root (see the quick-start's worker section).
-        </p>
+        {repoPath !== "" ? (
+          <p className="mt-1 flex items-center gap-2">
+            <code
+              id="worker-banner-cmd"
+              className="font-mono bg-warn-50 border border-warn-400 px-1.5 py-0.5 rounded select-all"
+            >
+              {`cd ${repoPath} && uxfactory worker`}
+            </code>
+            <button
+              type="button"
+              aria-label="Copy worker command"
+              onClick={() => copyText(`cd ${repoPath} && uxfactory worker`, "worker-banner-cmd")}
+              className="text-warn-600 hover:text-warn-700 hover:underline shrink-0"
+            >
+              Copy
+            </button>
+          </p>
+        ) : (
+          <p className="opacity-75">
+            Start a worker from this project's root (see the quick-start's worker section).
+          </p>
+        )}
       </div>
       <button
         type="button"

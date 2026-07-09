@@ -18,6 +18,7 @@ import type { PluginBus } from "../lib/plugin-bus.js";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { healthQuery, connectProjectMutation, queryKeys, activeRoot } from "../queries.js";
+import { copyText, selectText } from "../lib/copy.js";
 import { useAppStore } from "../stores/app.js";
 import { Card, Field, Segmented, StatusPill } from "../components/index.js";
 import type { SegmentedOption, StatusPillStatus } from "../components/index.js";
@@ -43,18 +44,6 @@ const INSTALL_CMD = "npm install -g @uxfactory/cli";
 const LAUNCH_CMD = "uxfactory bridge";
 const COMBINED_SETUP_CMD = `${INSTALL_CMD} && ${LAUNCH_CMD}`;
 
-// ─── Helper: text-selection fallback for clipboard ───────────────────────────
-
-function selectText(elementId: string): void {
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const sel = window.getSelection();
-  sel?.removeAllRanges();
-  sel?.addRange(range);
-}
-
 // ─── Copyable command row (bridge-down setup hint) ────────────────────────────
 
 function CopyableCommand({
@@ -68,13 +57,7 @@ function CopyableCommand({
   command: string;
   copyLabel: string;
 }): React.JSX.Element {
-  const handleCopy = (): void => {
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(command).catch(() => selectText(id));
-    } else {
-      selectText(id);
-    }
-  };
+  const handleCopy = (): void => copyText(command, id);
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-gray-400 w-3 shrink-0" aria-hidden="true">
