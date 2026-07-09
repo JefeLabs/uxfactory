@@ -139,7 +139,18 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   };
 
   // --- project / panel routes (Task 3) ---
-  await app.register(projectPlugin, { servedRoot, dataDir, version: bridgeVersion, shared, logRing, registry });
+  await app.register(projectPlugin, {
+    servedRoot,
+    dataDir,
+    version: bridgeVersion,
+    shared,
+    logRing,
+    registry,
+    workersFor: (root) => presence.listFor(root),
+    onRootServed: (root) => {
+      if (presence.promoteFor(root)) broadcastWorkerStatus(root);
+    },
+  });
 
   const waiters = new Map<string, EditWaiter>();
 

@@ -34,6 +34,7 @@ import path from "node:path";
 import { platform } from "node:process";
 import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
+import type { WorkerPresenceEntry } from "./worker-presence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -72,6 +73,8 @@ export interface ProjectSnapshot {
   profile: Record<string, unknown> | null;
   artifacts: ArtifactRow[];
   requirements: Requirement[];
+  /** Live workers serving this root (spec 2026-07-09-worker-liveness). */
+  workers?: WorkerPresenceEntry[];
 }
 
 export interface Link {
@@ -100,6 +103,10 @@ export interface ProjectPluginOptions {
   logRing: string[];
   /** Multi-root registry (served set + per-request root resolution). */
   registry: RootRegistry;
+  /** Live-worker list for a root; provided by server.ts (absent in bare tests). */
+  workersFor?: (root: string) => WorkerPresenceEntry[];
+  /** Called after a root becomes served (connect) — promotes pending workers. */
+  onRootServed?: (root: string) => void;
 }
 
 // ─── Fixed v1 artifact concern registry paths (conventional fallbacks) ───────
@@ -902,15 +909,17 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
     // 3. Register + serve this root (deduped in the user-level registry),
     //    then return ITS snapshot. Any valid project root is servable now.
     await registry.register(resolved);
+    opts.onRootServed?.(resolved);
     const snapshot = await buildSnapshot(resolved, registry.dataDirFor(resolved));
-    return { ok: true, snapshot };
+    return { ok: true, snapshot: { ...snapshot, workers: opts.workersFor?.(resolved) ?? [] } };
   });
 
   // ── GET /project/snapshot ────────────────────────────────────────────────
   app.get<{ Querystring: { root?: string } }>("/project/snapshot", async (req, reply) => {
     const ctx = await resolveRoot(req.query.root, reply);
     if (ctx === null) return reply;
-    return buildSnapshot(ctx.root, ctx.dataDir);
+    const snapshot = await buildSnapshot(ctx.root, ctx.dataDir);
+    return { ...snapshot, workers: opts.workersFor?.(ctx.root) ?? [] };
   });
 
   // ── PUT /project/classification ──────────────────────────────────────────
