@@ -33,11 +33,14 @@ UXFactory isn't on npm yet — build it from this repo and put `uxfactory` on yo
 ```bash
 pnpm install
 pnpm -r build
-cd packages/uxfactory-cli && pnpm link --global && cd -   # gives you the `uxfactory` command
+# Put `uxfactory` on your PATH (pnpm ≥10 removed `pnpm link --global`): write a
+# tiny shim into any PATH dir — e.g. ~/Library/pnpm/bin (macOS pnpm home) or ~/.local/bin
+printf '#!/bin/sh\nexec node "%s/packages/uxfactory-cli/dist/src/cli.js" "$@"\n' "$PWD" \
+  > ~/Library/pnpm/bin/uxfactory && chmod +x ~/Library/pnpm/bin/uxfactory
 uxfactory --help
 ```
 
-> Prefer not to link globally? Use `node packages/uxfactory-cli/dist/src/cli.js …` anywhere this guide says `uxfactory …`.
+> Prefer no shim? Use `node packages/uxfactory-cli/dist/src/cli.js …` anywhere this guide says `uxfactory …`.
 
 ---
 
