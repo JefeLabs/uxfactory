@@ -16,6 +16,7 @@ import { applyArtifactWrite } from "./artifact-writer.js";
 import type { ArtifactWrite } from "./artifact-writer.js";
 import type { ReviewReportPayload, CanvasRequest, PipelineEvent } from "./store.js";
 import { projectPlugin } from "./project.js";
+import { WorkerPresenceRegistry } from "./worker-presence.js";
 
 /** Options for building a bridge. */
 export interface BridgeOptions {
@@ -101,17 +102,6 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     if (logRing.length > LOG_RING_CAP) logRing.splice(0, logRing.length - LOG_RING_CAP);
   });
 
-  // --- project / panel routes (Task 3) ---
-  await app.register(projectPlugin, { servedRoot, dataDir, version: bridgeVersion, shared, logRing, registry });
-
-  const waiters = new Map<string, EditWaiter>();
-
-  let verifyCounter = 0;
-  const nextVerifyId = (): string => {
-    verifyCounter += 1;
-    return `v_${Date.now()}_${verifyCounter}`;
-  };
-
   // --- pipeline relay state (Phase 11B) ---
   // Every enqueued request id, kept so GET /pipeline/result/:id can tell a
   // known-but-pending id (202) from an entirely unknown one (404).
@@ -133,6 +123,30 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   /** Fan one event frame out to every connected SSE client. */
   const broadcastPipelineFrame = (frame: PipelineEvent): void => {
     for (const client of sseClients.keys()) writePipelineFrame(client, frame);
+  };
+
+  // --- worker presence (spec 2026-07-09-worker-liveness) ---
+  const presence = new WorkerPresenceRegistry();
+
+  /** Broadcast the full current worker list for a root (ring + fan-out). */
+  const broadcastWorkerStatus = (root: string): void => {
+    const frame = store.appendPipelineEvent("worker-status", {
+      type: "worker-status",
+      root,
+      workers: presence.listFor(root),
+    });
+    broadcastPipelineFrame(frame);
+  };
+
+  // --- project / panel routes (Task 3) ---
+  await app.register(projectPlugin, { servedRoot, dataDir, version: bridgeVersion, shared, logRing, registry });
+
+  const waiters = new Map<string, EditWaiter>();
+
+  let verifyCounter = 0;
+  const nextVerifyId = (): string => {
+    verifyCounter += 1;
+    return `v_${Date.now()}_${verifyCounter}`;
   };
 
   // --- health & queue ---
@@ -500,40 +514,66 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   });
 
   // Panel subscribes to the live event stream (SSE). Raw socket via reply.hijack().
-  app.get("/pipeline/events", (req, reply) => {
-    const raw = reply.raw;
-    reply.hijack();
-    raw.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-    // Push headers out now — without a body write a client (e.g. fetch) would otherwise
-    // block waiting for the response to begin.
-    raw.flushHeaders();
+  app.get<{ Querystring: { client?: string; root?: string; kinds?: string } }>(
+    "/pipeline/events",
+    (req, reply) => {
+      const raw = reply.raw;
+      reply.hijack();
+      raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      // Push headers out now — without a body write a client (e.g. fetch) would otherwise
+      // block waiting for the response to begin.
+      raw.flushHeaders();
 
-    // Replay anything the client missed since its Last-Event-ID.
-    const header = req.headers["last-event-id"];
-    const lastSeqRaw = Number(Array.isArray(header) ? header[0] : (header ?? 0));
-    const afterSeq = Number.isFinite(lastSeqRaw) ? lastSeqRaw : 0;
-    for (const event of store.recentPipelineEvents(afterSeq)) writePipelineFrame(raw, event);
+      // Replay anything the client missed since its Last-Event-ID.
+      const header = req.headers["last-event-id"];
+      const lastSeqRaw = Number(Array.isArray(header) ? header[0] : (header ?? 0));
+      const afterSeq = Number.isFinite(lastSeqRaw) ? lastSeqRaw : 0;
+      for (const event of store.recentPipelineEvents(afterSeq)) writePipelineFrame(raw, event);
 
-    // Keep-alive comments so idle connections survive; unref so tests/process can exit.
-    const keepAlive = setInterval(() => {
-      try {
-        raw.write(": keep-alive\n\n");
-      } catch {
-        /* socket gone; the close handler will clean up */
+      // Keep-alive comments so idle connections survive; unref so tests/process can exit.
+      const keepAlive = setInterval(() => {
+        try {
+          raw.write(": keep-alive\n\n");
+        } catch {
+          /* socket gone; the close handler will clean up */
+        }
+      }, SSE_KEEPALIVE_MS);
+      keepAlive.unref?.();
+
+      sseClients.set(raw, keepAlive);
+
+      // Worker presence: a worker tags its subscription with ?client=worker&root=…
+      // A served root registers as ACTIVE (+broadcast); an unserved one is held
+      // PENDING and promoted when POST /project/connect serves it (Task 3).
+      if (req.query.client === "worker" && typeof req.query.root === "string" && req.query.root !== "") {
+        const announcedRoot = req.query.root;
+        const kinds =
+          typeof req.query.kinds === "string" && req.query.kinds.trim() !== ""
+            ? req.query.kinds.split(",").map((k) => k.trim()).filter((k) => k !== "")
+            : undefined;
+        void registry.resolveRequestRoot(announcedRoot).then((resolution) => {
+          if (!sseClients.has(raw)) return; // closed before resolution finished
+          if (resolution.ok) {
+            presence.add(raw, resolution.root, Date.now(), kinds);
+            broadcastWorkerStatus(resolution.root);
+          } else {
+            presence.addPending(raw, path.resolve(announcedRoot), Date.now(), kinds);
+          }
+        });
       }
-    }, SSE_KEEPALIVE_MS);
-    keepAlive.unref?.();
 
-    sseClients.set(raw, keepAlive);
-    raw.on("close", () => {
-      clearInterval(keepAlive);
-      sseClients.delete(raw);
-    });
-  });
+      raw.on("close", () => {
+        clearInterval(keepAlive);
+        sseClients.delete(raw);
+        const servedRootOfWorker = presence.remove(raw);
+        if (servedRootOfWorker !== null) broadcastWorkerStatus(servedRootOfWorker);
+      });
+    },
+  );
 
   // On shutdown, end every open SSE socket so Fastify.close() doesn't hang.
   app.addHook("onClose", async () => {
