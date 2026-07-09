@@ -41,6 +41,8 @@ import type { ChipField, StatusPillStatus } from "./components/index.js";
 import { designStyleLabel, suggestDesignStyle } from "./lib/design-styles.js";
 import { PROJECT_QUADRANTS, categoryLabel, complianceNudges, industryLabel, normalizeQuadrant } from "@uxfactory/spec";
 import { engineToLabel } from "./lib/dials.js";
+import { anyUncovered } from "./lib/worker-coverage.js";
+import { useWorkerStatus } from "./lib/use-worker-status.js";
 import type { Bridge } from "./lib/bridge.js";
 import type { PluginBus } from "./lib/plugin-bus.js";
 
@@ -173,6 +175,25 @@ function ConnectionDot({ status }: { status: StatusPillStatus }): React.JSX.Elem
     >
       <span aria-hidden="true" className={`w-2.5 h-2.5 rounded-full ${dot.className}`} />
     </span>
+  );
+}
+
+/** ContextBar worker-liveness dot: green covered / amber uncovered / grey unknown. */
+export function WorkerDot(): React.JSX.Element {
+  const workers = useAppStore((s) => s.workers);
+  const state =
+    workers === null ? "unknown" : anyUncovered(workers) ? "uncovered" : "covered";
+  const { cls, label } = {
+    unknown: { cls: "bg-neutral-500", label: "Worker status: unknown" },
+    uncovered: { cls: "bg-amber-500", label: "Worker status: no worker for this project" },
+    covered: { cls: "bg-emerald-500", label: "Worker status: live" },
+  }[state];
+  return (
+    <span
+      aria-label={label}
+      title={label}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${cls}`}
+    />
   );
 }
 
@@ -419,6 +440,7 @@ function ContextBar(): React.JSX.Element {
           )}
         </div>
         <ConnectionDot status={pillStatus} />
+        <WorkerDot />
         <button
           type="button"
           aria-label={queueCount > 0 ? `Render queue (${queueCount})` : "Render queue"}
@@ -722,6 +744,8 @@ function RenderRelay(): null {
 }
 
 function TabsLayout(): React.JSX.Element {
+  const { bridge } = tabsRoute.useRouteContext();
+  useWorkerStatus(bridge);
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <RenderRelay />
