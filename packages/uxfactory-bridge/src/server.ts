@@ -30,6 +30,12 @@ export interface BridgeOptions {
    * Injected in tests so no test writes the developer's real registry.
    */
   reposRegistryPath?: string;
+  /**
+   * Fired with the RESOLVED root after every successful POST /project/connect
+   * (spec 2026-07-09-worker-cli-supervision). `uxfactory up` uses this to
+   * ensure a worker per connected root. Composed AFTER presence promotion.
+   */
+  onRootServed?: (root: string) => void;
 }
 
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
@@ -149,6 +155,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     workersFor: (root) => presence.listFor(root),
     onRootServed: (root) => {
       if (presence.promoteFor(root)) broadcastWorkerStatus(root);
+      options.onRootServed?.(root);
     },
   });
 
