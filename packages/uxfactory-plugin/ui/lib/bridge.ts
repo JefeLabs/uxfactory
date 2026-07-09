@@ -30,6 +30,13 @@ export interface Requirement {
   title: string;
 }
 
+/** One live worker serving the connected root (bridge worker-presence wire). */
+export interface WorkerPresenceEntry {
+  /** Kinds this worker claims; absent = all kinds. */
+  kinds?: string[];
+  connectedAt: number;
+}
+
 export interface ProjectSnapshot {
   name: string;
   root: string;
@@ -39,6 +46,8 @@ export interface ProjectSnapshot {
   profile: Record<string, unknown> | null;
   artifacts: ArtifactRow[];
   requirements: Requirement[];
+  /** Live workers for this root; absent on older bridges (treat as unknown). */
+  workers?: WorkerPresenceEntry[];
 }
 
 export interface Link {

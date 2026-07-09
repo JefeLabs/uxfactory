@@ -12,7 +12,8 @@
  */
 
 import { create } from "zustand";
-import type { ProjectSnapshot } from "../lib/bridge.js";
+import type { ProjectSnapshot, WorkerPresenceEntry } from "../lib/bridge.js";
+import { anyUncovered } from "../lib/worker-coverage.js";
 
 // ─── State types ──────────────────────────────────────────────────────────────
 
@@ -50,6 +51,10 @@ export interface AppState {
   fileInfo: { name: string; fileKey: string } | null;
   snapshot: ProjectSnapshot | null;
   toasts: ToastItem[];
+  /** Live workers for the connected root; null = unknown (never warn on null). */
+  workers: WorkerPresenceEntry[] | null;
+  /** Session dismiss for the WorkerBanner; re-armed by a fresh covered→uncovered transition. */
+  workerBannerDismissed: boolean;
 }
 
 // ─── Action types ─────────────────────────────────────────────────────────────
@@ -78,6 +83,8 @@ export interface AppActions {
    * router reflects the state change.
    */
   cancelReconnect(): void;
+  workersChanged(workers: WorkerPresenceEntry[] | null): void;
+  dismissWorkerBanner(): void;
 }
 
 export type AppStore = AppState & AppActions;
@@ -101,6 +108,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   fileInfo: null,
   snapshot: null,
   toasts: [],
+  workers: null,
+  workerBannerDismissed: false,
 
   // Actions
   setFileInfo(fi) {
@@ -119,6 +128,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((s) => ({
       snapshot,
       connection: { ...s.connection, status: "connected", repoPath },
+      workers: snapshot.workers ?? null,
+      workerBannerDismissed: false,
     }));
 
     if (persist) {
@@ -150,5 +161,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((s) => ({
       connection: { ...s.connection, status: "none" },
     }));
+  },
+
+  workersChanged(workers) {
+    set((s) => {
+      const freshOutage = anyUncovered(workers) && !anyUncovered(s.workers);
+      return {
+        workers,
+        workerBannerDismissed: freshOutage ? false : s.workerBannerDismissed,
+      };
+    });
+  },
+
+  dismissWorkerBanner() {
+    set({ workerBannerDismissed: true });
   },
 }));
