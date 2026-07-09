@@ -103,6 +103,44 @@ export function buildProgram(): Command {
     );
 
   program
+    .command("up")
+    .description("Supervised stack: bridge + one worker per connected project root")
+    .option("--port <port>", "port to listen on (default 3779 or UXFACTORY_PORT)")
+    .option("--data-dir <path>", "data directory (default <cwd>/.uxfactory)")
+    .option("--model <model>", "model passed to spawned workers")
+    .option("--kinds <csv>", "job kinds spawned workers claim (default: all)")
+    .option("--pool <n>", "concurrent drain lanes per worker")
+    .option("--debug", "retain per-job scratch files")
+    .action(
+      async (opts: {
+        port?: string;
+        dataDir?: string;
+        model?: string;
+        kinds?: string;
+        pool?: string;
+        debug?: boolean;
+      }) => {
+        const { upCmd } = await import("./commands/up.js");
+        const { code } = await upCmd(
+          {
+            ...(opts.port !== undefined ? { port: Number(opts.port) } : {}),
+            dataDir: resolveDataDir(opts.dataDir),
+            ...(opts.model !== undefined ? { model: opts.model } : {}),
+            ...(opts.kinds !== undefined ? { kinds: opts.kinds } : {}),
+            ...(opts.pool !== undefined ? { pool: opts.pool } : {}),
+            ...(opts.debug === true ? { debug: true } : {}),
+          },
+          consoleIO,
+        );
+        if (code !== EXIT.OK) {
+          lastCode = code;
+        } else {
+          foreground = true; // keep the relay + supervisor alive
+        }
+      },
+    );
+
+  program
     .command("lint <spec>")
     .description("Validate a spec against the schema; renders nothing")
     .option("--json", "machine-readable output")

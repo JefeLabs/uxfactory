@@ -1,0 +1,136 @@
+/**
+ * `uxfactory up` — the supervised stack (spec 2026-07-09-worker-cli-supervision
+ * §3): bridge in-process + one worker child per connected root. The launch
+ * root is served at startup (registry.init seeds it without firing the
+ * callback), so it is ensured explicitly; every subsequent successful
+ * POST /project/connect fires BridgeOptions.onRootServed → supervisor.ensure.
+ */
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { spawn as nodeSpawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { EXIT } from "../exit.js";
+import type { IO } from "../io.js";
+import { resolveWorkerEntry, workerEnv, WORKER_ENTRY_HELP } from "../worker-entry.js";
+import { WorkerSupervisor } from "../worker-supervisor.js";
+import type { SupervisedChild } from "../worker-supervisor.js";
+
+export interface UpCmdFlags {
+  port?: number;
+  dataDir: string;
+  model?: string;
+  kinds?: string;
+  pool?: string;
+  debug?: boolean;
+}
+
+interface BridgeHandle {
+  url: string;
+  close: () => Promise<void>;
+}
+
+export interface UpCmdDeps {
+  startBridge?: (opts: {
+    port?: number;
+    dataDir: string;
+    onRootServed: (root: string) => void;
+  }) => Promise<BridgeHandle>;
+  spawn?: typeof nodeSpawn;
+  cliModuleUrl?: string;
+  cliBinPath?: string;
+  env?: NodeJS.ProcessEnv;
+  fileExists?: (p: string) => boolean;
+  /** Signal registration seam (default process.on) so tests never trap signals. */
+  onSignal?: (sig: "SIGINT" | "SIGTERM", cb: () => void) => void;
+}
+
+/** Re-emit a child stream line-by-line with the worker's root prefix. */
+function prefixStream(
+  stream: NodeJS.ReadableStream | null | undefined,
+  prefix: string,
+  log: (line: string) => void,
+): void {
+  if (stream === null || stream === undefined) return;
+  let buf = "";
+  stream.on("data", (chunk: Buffer) => {
+    buf += chunk.toString();
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) !== -1) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if (line.trim() !== "") log(`${prefix} ${line}`);
+    }
+  });
+}
+
+export async function upCmd(
+  flags: UpCmdFlags,
+  io: IO,
+  deps: UpCmdDeps = {},
+): Promise<{ code: number; close?: () => Promise<void> }> {
+  const env = deps.env ?? process.env;
+  const fileExists = deps.fileExists ?? existsSync;
+
+  // Fail fast: no worker entry means up cannot deliver its promise at all.
+  const entry = resolveWorkerEntry(deps.cliModuleUrl ?? import.meta.url, env, fileExists);
+  if (entry === null) {
+    io.err(WORKER_ENTRY_HELP);
+    return { code: EXIT.TRANSPORT };
+  }
+
+  const spawn = deps.spawn ?? nodeSpawn;
+  const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1] ?? "uxfactory");
+  const launchRoot = path.dirname(path.resolve(flags.dataDir));
+
+  const supervisor = new WorkerSupervisor({
+    spawnWorker: (root): SupervisedChild => {
+      const child = spawn(entry.tsxBin, [entry.mainTs], {
+        cwd: root,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: workerEnv(flags, env, cliBin),
+      }) as ChildProcess;
+      const prefix = `[worker ${path.basename(root)}]`;
+      prefixStream(child.stdout, prefix, io.err);
+      prefixStream(child.stderr, prefix, io.err);
+      return child as unknown as SupervisedChild;
+    },
+    log: io.err,
+  });
+
+  const startBridge =
+    deps.startBridge ??
+    (async (opts: { port?: number; dataDir: string; onRootServed: (root: string) => void }) => {
+      const bridge = await import("@uxfactory/bridge");
+      return bridge.startBridge(opts);
+    });
+
+  let handle: BridgeHandle;
+  try {
+    handle = await startBridge({
+      ...(flags.port !== undefined ? { port: flags.port } : {}),
+      dataDir: flags.dataDir,
+      onRootServed: (root) => supervisor.ensure(root),
+    });
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "EADDRINUSE") {
+      const port = flags.port ?? Number(env["UXFACTORY_PORT"] ?? 3779);
+      io.err(`bridge already running on :${port} — add a worker to it with 'uxfactory worker'`);
+      return { code: EXIT.TRANSPORT };
+    }
+    throw err;
+  }
+
+  io.out(`uxfactory up: bridge ${handle.url}`);
+  supervisor.ensure(launchRoot);
+
+  const shutdown = async (): Promise<void> => {
+    supervisor.stop();
+    await handle.close();
+  };
+  const onSignal = deps.onSignal ?? ((sig, cb) => process.on(sig, cb));
+  onSignal("SIGINT", () => void shutdown().then(() => process.exit(EXIT.OK)));
+  onSignal("SIGTERM", () => void shutdown().then(() => process.exit(EXIT.OK)));
+
+  return { code: EXIT.OK, close: shutdown };
+}
