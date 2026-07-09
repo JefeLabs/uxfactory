@@ -43,7 +43,7 @@ import { ARTIFACT_REGISTRY, resolveCreationChain } from "@uxfactory/spec";
 import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY, SET_ARTIFACT_KEYS } from "../lib/artifact-mapping.js";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
-import { Card, Row, SectionHeader } from "../components/index.js";
+import { Card, Row, SectionHeader, WorkerBanner } from "../components/index.js";
 import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { ArtifactEditor } from "./ArtifactEditor.js";
 import { useAppStore } from "../stores/app.js";
@@ -460,6 +460,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4">
+
+        <WorkerBanner kind="generate-artifact" />
 
         {/* Heading row */}
         <div className="flex items-center justify-between gap-2">

@@ -45,3 +45,5 @@ export type { InfoTooltipProps } from "./InfoTooltip.js";
 
 export { ArtifactEditorHeader } from "./ArtifactEditorHeader.js";
 export type { ArtifactEditorHeaderProps } from "./ArtifactEditorHeader.js";
+
+export { WorkerBanner } from "./WorkerBanner.js";

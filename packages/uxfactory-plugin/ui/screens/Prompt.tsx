@@ -39,7 +39,7 @@ import {
 } from "../lib/design-styles.js";
 import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
-import { Card, SectionHeader } from "../components/index.js";
+import { Card, SectionHeader, WorkerBanner } from "../components/index.js";
 import { traceQuery, enqueueMutation } from "../queries.js";
 import {
   ARTIFACT_PREREQS,
@@ -988,6 +988,8 @@ export function Prompt({
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4">
+
+        <WorkerBanner kind="generate-design" />
 
         {/* ── Composer row: card (indigo outline) + config droplists OUTSIDE.
               items-stretch: the card matches the open config column's height,
