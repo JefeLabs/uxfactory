@@ -13,6 +13,7 @@
 
 export interface SupervisedChild {
   on(event: "close", cb: (code: number | null) => void): unknown;
+  on(event: "error", cb: (err: Error) => void): unknown;
   kill(signal?: string): unknown;
 }
 
@@ -72,7 +73,20 @@ export class WorkerSupervisor {
     this.entries.set(root, entry);
     const child = this.deps.spawnWorker(root);
     entry.child = child;
-    child.on("close", (code) => this.onExit(root, code));
+    // A spawn/runtime failure can emit BOTH "error" and "close" for the same
+    // underlying failure (common: post-spawn ENOENT/EMFILE). `settled` ensures
+    // whichever fires first drives exactly one restart decision.
+    let settled = false;
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      this.onExit(root, code);
+    });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      this.onError(root, err);
+    });
   }
 
   private onExit(root: string, code: number | null): void {
@@ -90,11 +104,36 @@ export class WorkerSupervisor {
       return;
     }
 
+    this.scheduleRestart(
+      root,
+      entry,
+      (delay) => `worker for ${root} exited (code ${String(code)}) — restarting in ${delay}ms`,
+    );
+  }
+
+  /** A spawn-time or runtime "error" event (deleted root, EMFILE, missing tsx, …). */
+  private onError(root: string, err: Error): void {
+    if (this.stopped) return;
+    const entry = this.entries.get(root);
+    if (entry === undefined) return;
+    entry.child = null;
+
+    // Treated the same as a non-2 exit: not a deterministic setup failure,
+    // so it's worth retrying with backoff rather than giving up.
+    this.scheduleRestart(
+      root,
+      entry,
+      (delay) => `worker for ${root} spawn/runtime error: ${err.message} — restarting in ${delay}ms`,
+    );
+  }
+
+  /** Shared backoff bookkeeping + restart scheduling for onExit/onError. */
+  private scheduleRestart(root: string, entry: Entry, message: (delay: number) => string): void {
     // Stable run resets the backoff counter before computing the next delay.
     if (this.now() - entry.lastStartAt >= STABLE_RESET_MS) entry.restarts = 0;
     const delay = Math.min(BACKOFF_BASE_MS * 2 ** entry.restarts, BACKOFF_CAP_MS);
     entry.restarts += 1;
-    this.deps.log(`worker for ${root} exited (code ${String(code)}) — restarting in ${delay}ms`);
+    this.deps.log(message(delay));
     entry.pendingRestart = this.schedule(() => {
       entry.pendingRestart = null;
       if (!this.stopped) this.start(root);

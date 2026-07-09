@@ -52,6 +52,16 @@ function prefixStream(
 ): void {
   if (stream === null || stream === undefined) return;
   let buf = "";
+  let flushed = false;
+  // A crashing child's last line often has no trailing newline — flush the
+  // residual buffer once the stream ends, guarding against double-flush from
+  // "end" and "close" both firing for the same stream.
+  const flush = (): void => {
+    if (flushed) return;
+    flushed = true;
+    if (buf.trim() !== "") log(`${prefix} ${buf}`);
+    buf = "";
+  };
   stream.on("data", (chunk: Buffer) => {
     buf += chunk.toString();
     let nl: number;
@@ -61,6 +71,8 @@ function prefixStream(
       if (line.trim() !== "") log(`${prefix} ${line}`);
     }
   });
+  stream.on("end", flush);
+  stream.on("close", flush);
 }
 
 export async function upCmd(
@@ -82,12 +94,21 @@ export async function upCmd(
   const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1] ?? "uxfactory");
   const launchRoot = path.dirname(path.resolve(flags.dataDir));
 
+  // Set once startBridge resolves below; captured by reference so spawnWorker
+  // (called later, per connected root) always sees the actual bridge URL
+  // instead of workerEnv's :3779 default (up may be running on --port 4000).
+  let bridgeUrl: string | null = null;
+
   const supervisor = new WorkerSupervisor({
     spawnWorker: (root): SupervisedChild => {
       const child = spawn(entry.tsxBin, [entry.mainTs], {
         cwd: root,
         stdio: ["ignore", "pipe", "pipe"],
-        env: workerEnv(flags, env, cliBin),
+        env: workerEnv(
+          { ...flags, ...(bridgeUrl !== null ? { bridge: bridgeUrl } : {}) },
+          env,
+          cliBin,
+        ),
       }) as ChildProcess;
       const prefix = `[worker ${path.basename(root)}]`;
       prefixStream(child.stdout, prefix, io.err);
@@ -121,6 +142,7 @@ export async function upCmd(
     throw err;
   }
 
+  bridgeUrl = handle.url;
   io.out(`uxfactory up: bridge ${handle.url}`);
   supervisor.ensure(launchRoot);
 

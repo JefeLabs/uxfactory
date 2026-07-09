@@ -6,24 +6,26 @@ import type { SupervisedChild, SupervisorDeps } from "../src/worker-supervisor.j
 function harness(): {
   deps: SupervisorDeps;
   spawns: string[];
-  children: Array<{ close(code: number | null): void; killed: string[] }>;
+  children: Array<{ close(code: number | null): void; error(err: Error): void; killed: string[] }>;
   timers: Array<{ fn: () => void; ms: number; cancelled: boolean }>;
   logs: string[];
   tick(ms: number): void;
 } {
   let clock = 0;
   const spawns: string[] = [];
-  const children: Array<{ close(code: number | null): void; killed: string[] }> = [];
+  const children: Array<{ close(code: number | null): void; error(err: Error): void; killed: string[] }> = [];
   const timers: Array<{ fn: () => void; ms: number; cancelled: boolean }> = [];
   const logs: string[] = [];
   const deps: SupervisorDeps = {
     spawnWorker(root) {
       spawns.push(root);
       let onClose: ((code: number | null) => void) | null = null;
+      let onError: ((err: Error) => void) | null = null;
       const killed: string[] = [];
       const child: SupervisedChild = {
-        on(_event, cb) {
-          onClose = cb;
+        on(event, cb) {
+          if (event === "close") onClose = cb as (code: number | null) => void;
+          else onError = cb as (err: Error) => void;
           return child;
         },
         kill(signal) {
@@ -31,7 +33,11 @@ function harness(): {
           return true;
         },
       };
-      children.push({ close: (code) => onClose?.(code), killed });
+      children.push({
+        close: (code) => onClose?.(code),
+        error: (err) => onError?.(err),
+        killed,
+      });
       return child;
     },
     log: (line) => logs.push(line),
@@ -99,6 +105,25 @@ describe("WorkerSupervisor", () => {
     expect(h.logs.join("\n")).toContain("setup");
     sup.ensure("/a"); // fresh connect → one retry
     expect(h.spawns).toEqual(["/a", "/a"]);
+  });
+
+  it("spawn/runtime error with no close event → schedules a backoff restart", () => {
+    const h = harness();
+    const sup = new WorkerSupervisor(h.deps);
+    sup.ensure("/a");
+    h.children[0]!.error(new Error("EMFILE"));
+    expect(h.timers).toHaveLength(1);
+    expect(h.timers[0]!.ms).toBe(1000);
+    expect(h.logs.join("\n")).toContain("worker for /a spawn/runtime error: EMFILE");
+  });
+
+  it("error immediately followed by close on the same child → exactly one restart", () => {
+    const h = harness();
+    const sup = new WorkerSupervisor(h.deps);
+    sup.ensure("/a");
+    h.children[0]!.error(new Error("boom"));
+    h.children[0]!.close(1); // same underlying spawn failure often fires both
+    expect(h.timers).toHaveLength(1);
   });
 
   it("stop kills children, cancels pending restarts, and blocks further spawns", () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { upCmd } from "../src/commands/up.js";
@@ -32,6 +33,21 @@ function fakeChild(): EventEmitter & { kill: () => boolean; stdout: null; stderr
   };
   child.kill = () => true;
   child.stdout = null;
+  child.stderr = null;
+  return child;
+}
+
+/** Fake child whose stdout is a real stream, so prefixStream's flush-on-end can be exercised. */
+function fakeChildWithStdout(
+  stdout: NodeJS.ReadableStream,
+): EventEmitter & { kill: () => boolean; stdout: NodeJS.ReadableStream; stderr: null } {
+  const child = new EventEmitter() as EventEmitter & {
+    kill: () => boolean;
+    stdout: NodeJS.ReadableStream;
+    stderr: null;
+  };
+  child.kill = () => true;
+  child.stdout = stdout;
   child.stderr = null;
   return child;
 }
@@ -88,6 +104,51 @@ describe("upCmd", () => {
     expect(io.errs.join("\n")).toContain(
       "bridge already running on :3779 — add a worker to it with 'uxfactory worker'",
     );
+  });
+
+  it("spawned workers receive the actual bridge URL, not the :3779 default", async () => {
+    const io = captureIO();
+    let capturedEnv: NodeJS.ProcessEnv | undefined;
+    const { code } = await upCmd(
+      { dataDir: "/launch/.uxfactory" },
+      io,
+      {
+        startBridge: async () => ({ url: "http://127.0.0.1:4000", close: async () => {} }),
+        spawn: ((_bin: string, _args: string[], opts: { env?: NodeJS.ProcessEnv }) => {
+          capturedEnv = opts.env;
+          return fakeChild();
+        }) as never,
+        cliModuleUrl: CLI_URL,
+        env: {},
+        fileExists,
+        onSignal: () => {},
+      },
+    );
+    expect(code).toBe(0);
+    expect(capturedEnv?.["UXFACTORY_BRIDGE"]).toBe("http://127.0.0.1:4000");
+  });
+
+  it("prefixStream flushes a final unterminated line when the child stream ends", async () => {
+    const io = captureIO();
+    const stdout = new PassThrough();
+    const { code } = await upCmd(
+      { dataDir: "/launch/.uxfactory" },
+      io,
+      {
+        startBridge: async () => ({ url: "http://127.0.0.1:3779", close: async () => {} }),
+        spawn: (() => fakeChildWithStdout(stdout)) as never,
+        cliModuleUrl: CLI_URL,
+        env: {},
+        fileExists,
+        onSignal: () => {},
+      },
+    );
+    expect(code).toBe(0);
+    const ended = new Promise<void>((resolve) => stdout.once("end", () => resolve()));
+    stdout.write("partial line");
+    stdout.end();
+    await ended;
+    expect(io.errs.some((l) => l.endsWith("partial line"))).toBe(true);
   });
 
   it("worker entry missing → exit 2 before the bridge starts", async () => {

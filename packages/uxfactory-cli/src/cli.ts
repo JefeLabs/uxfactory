@@ -21,10 +21,11 @@ import { classifyCmd } from "./commands/classify.js";
 import { migrateStoriesCmd } from "./commands/migrate-stories.js";
 import { validateArtifactCmd } from "./commands/validate-artifact.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
-// renderCmd, bridgeCmd, and workerCmd are lazy-loaded inside their actions
+// renderCmd, bridgeCmd, workerCmd, and upCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call;
-//  workerCmd avoids the node:child_process spawn surface on every call)
+//  workerCmd avoids the node:child_process spawn surface on every call;
+//  upCmd avoids that same spawn surface plus bridgeCmd's fastify import on every call)
 
 /** Module-scoped state reset by every run() call. */
 let lastCode: number = EXIT.OK;
