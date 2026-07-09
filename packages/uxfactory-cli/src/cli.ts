@@ -21,9 +21,10 @@ import { classifyCmd } from "./commands/classify.js";
 import { migrateStoriesCmd } from "./commands/migrate-stories.js";
 import { validateArtifactCmd } from "./commands/validate-artifact.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
-// renderCmd and bridgeCmd are lazy-loaded inside their actions
+// renderCmd, bridgeCmd, and workerCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
-//  bridgeCmd avoids pulling in fastify on every call)
+//  bridgeCmd avoids pulling in fastify on every call;
+//  workerCmd avoids the node:child_process spawn surface on every call)
 
 /** Module-scoped state reset by every run() call. */
 let lastCode: number = EXIT.OK;
@@ -77,6 +78,29 @@ export function buildProgram(): Command {
         foreground = true;
       }
     });
+
+  program
+    .command("worker")
+    .description("Run a generation worker for a project root (claims only that root's jobs)")
+    .option("--root <path>", "project root to serve (default: cwd)")
+    .option("--model <model>", "model passed to the agent runtime")
+    .option("--kinds <csv>", "job kinds this worker claims (default: all)")
+    .option("--pool <n>", "concurrent drain lanes (default 1)")
+    .option("--bridge <url>", "bridge base URL")
+    .option("--debug", "retain per-job scratch files")
+    .action(
+      async (opts: {
+        root?: string;
+        model?: string;
+        kinds?: string;
+        pool?: string;
+        bridge?: string;
+        debug?: boolean;
+      }) => {
+        const { workerCmd } = await import("./commands/worker.js");
+        lastCode = await workerCmd(opts, consoleIO);
+      },
+    );
 
   program
     .command("lint <spec>")
