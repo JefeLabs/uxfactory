@@ -100,7 +100,13 @@ export class WorkerBridgeClient implements BridgeLike {
     const run = async (): Promise<void> => {
       while (!stopped) {
         try {
-          const res = await fetch(`${this.base}/pipeline/events`, {
+          // Tag the subscription so the bridge can track worker presence
+          // (spec 2026-07-09-worker-liveness): client=worker always; root/kinds
+          // only when configured, so a bare client stays legacy-shaped.
+          const params = new URLSearchParams({ client: 'worker' });
+          if (this.projectRoot !== null) params.set('root', this.projectRoot);
+          if (this.kinds !== null) params.set('kinds', this.kinds.join(','));
+          const res = await fetch(`${this.base}/pipeline/events?${params.toString()}`, {
             headers: { accept: 'text/event-stream' },
             signal: controller.signal,
           });

@@ -200,7 +200,7 @@ async function startFakeBridge(): Promise<FakeServer> {
       });
       return;
     }
-    if (req.method === 'GET' && url === '/pipeline/events') {
+    if (req.method === 'GET' && url.startsWith('/pipeline/events')) {
       res.writeHead(200, {
         'content-type': 'text/event-stream',
         'cache-control': 'no-cache',
@@ -2192,6 +2192,58 @@ describe('WorkerBridgeClient (http)', () => {
       // Neither claimed the other's remaining work.
       expect(await alpha.pullRequest()).toBeNull();
       expect(await beta.pullRequest()).toBeNull();
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('subscribeEvents tags the URL with client=worker, root, and kinds', async () => {
+    const seenUrls: string[] = [];
+    const server = http.createServer((req, res) => {
+      seenUrls.push(req.url ?? '');
+      if (req.url?.startsWith('/pipeline/events')) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        return; // keep the stream open
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const client = new WorkerBridgeClient(
+        `http://127.0.0.1:${port}`,
+        '/repo/alpha',
+        ['generate-artifact', 'validate'],
+      );
+      const unsub = client.subscribeEvents(() => {});
+      await waitFor(() => seenUrls.some((u) => u.startsWith('/pipeline/events')));
+      unsub();
+      const url = new URL(seenUrls.find((u) => u.startsWith('/pipeline/events'))!, 'http://x');
+      expect(url.searchParams.get('client')).toBe('worker');
+      expect(url.searchParams.get('root')).toBe('/repo/alpha');
+      expect(url.searchParams.get('kinds')).toBe('generate-artifact,validate');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('subscribeEvents omits root and kinds when unset (legacy compat)', async () => {
+    const seenUrls: string[] = [];
+    const server = http.createServer((req, res) => {
+      seenUrls.push(req.url ?? '');
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const client = new WorkerBridgeClient(`http://127.0.0.1:${port}`);
+      const unsub = client.subscribeEvents(() => {});
+      await waitFor(() => seenUrls.length >= 1);
+      unsub();
+      const url = new URL(seenUrls[0]!, 'http://x');
+      expect(url.searchParams.get('client')).toBe('worker');
+      expect(url.searchParams.has('root')).toBe(false);
+      expect(url.searchParams.has('kinds')).toBe(false);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
