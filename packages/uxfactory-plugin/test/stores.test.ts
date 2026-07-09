@@ -131,6 +131,27 @@ describe("app store — connectSucceeded", () => {
     expect(state.connection.status).toBe("error");
     expect(state.toasts.some((t) => t.message === "Bridge not reachable")).toBe(true);
   });
+
+  it("seeds workers from snapshot.workers and resets a dismissed banner", () => {
+    useAppStore.setState({ workerBannerDismissed: true });
+    const snapshot = makeSnapshot({ workers: [{ connectedAt: 1 }] });
+    useAppStore.getState().connectSucceeded(snapshot, "/repo");
+    expect(useAppStore.getState().workers).toEqual([{ connectedAt: 1 }]);
+    expect(useAppStore.getState().workerBannerDismissed).toBe(false);
+  });
+
+  it("sets workers to null when the snapshot has no workers field (unknown, not uncovered)", () => {
+    useAppStore.setState({ workers: [{ connectedAt: 1 }] });
+    const snapshot = makeSnapshot({ hasClassification: false });
+    useAppStore.getState().connectSucceeded(snapshot, "/repo");
+    expect(useAppStore.getState().workers).toBeNull();
+  });
+
+  it("resets workers to null on connectFailed (stale presence must not survive a lost connection)", () => {
+    useAppStore.setState({ workers: [{ connectedAt: 1 }] });
+    useAppStore.getState().connectFailed("Bridge not reachable");
+    expect(useAppStore.getState().workers).toBeNull();
+  });
 });
 
 describe("app store — misc actions", () => {
@@ -183,6 +204,12 @@ describe("app store — cancelReconnect", () => {
     expect(connection.endpoint).toBe("http://localhost:3779");
     expect(connection.repoPath).toBe("/home/user/demo-shop");
     expect(connection.mode).toBe("local");
+  });
+
+  it("resets workers to null (stale presence must not survive a lost connection)", () => {
+    useAppStore.setState({ workers: [{ connectedAt: 1 }] });
+    useAppStore.getState().cancelReconnect();
+    expect(useAppStore.getState().workers).toBeNull();
   });
 
   it("after cancelReconnect, a late connectSucceeded is blocked by the race guard", () => {

@@ -144,6 +144,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   connectFailed(message) {
     set((s) => ({
       connection: { ...s.connection, status: "error" },
+      // Stale presence must not survive a lost connection: without a live
+      // bridge we have no signal, so treat coverage as unknown, not uncovered.
+      workers: null,
     }));
     get().toast(message);
   },
@@ -160,6 +163,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   cancelReconnect() {
     set((s) => ({
       connection: { ...s.connection, status: "none" },
+      // Stale presence must not survive a lost connection: without a live
+      // bridge we have no signal, so treat coverage as unknown, not uncovered.
+      workers: null,
     }));
   },
 
