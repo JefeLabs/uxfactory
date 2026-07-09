@@ -11,17 +11,22 @@ function collectFrames(res: Response, sink: unknown[]): void {
   const decoder = new TextDecoder();
   let buf = "";
   void (async () => {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      buf += decoder.decode(value, { stream: true });
-      let sep: number;
-      while ((sep = buf.indexOf("\n\n")) !== -1) {
-        const frame = buf.slice(0, sep);
-        buf = buf.slice(sep + 2);
-        const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
-        if (dataLine !== undefined) sink.push(JSON.parse(dataLine.slice(6)));
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        buf += decoder.decode(value, { stream: true });
+        let sep: number;
+        while ((sep = buf.indexOf("\n\n")) !== -1) {
+          const frame = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
+          if (dataLine !== undefined) sink.push(JSON.parse(dataLine.slice(6)));
+        }
       }
+    } catch {
+      // AbortController.abort() rejects the pending read() — expected teardown,
+      // not a test failure. Swallow so vitest sees no unhandled rejection.
     }
   })();
 }
