@@ -3,7 +3,7 @@ import { WorkerSupervisor, BACKOFF_CAP_MS } from "../src/worker-supervisor.js";
 import type { SupervisedChild, SupervisorDeps } from "../src/worker-supervisor.js";
 
 /** Deterministic harness: manual clock, captured timers, scripted children. */
-function harness(): {
+function harness(extra: Partial<SupervisorDeps> = {}): {
   deps: SupervisorDeps;
   spawns: string[];
   children: Array<{ close(code: number | null): void; error(err: Error): void; killed: string[] }>;
@@ -50,6 +50,7 @@ function harness(): {
     cancel: (handle) => {
       (handle as { cancelled: boolean }).cancelled = true;
     },
+    ...extra,
   };
   return {
     deps, spawns, children, timers, logs,
@@ -137,5 +138,127 @@ describe("WorkerSupervisor", () => {
     expect(h.children[1]!.killed).toEqual(["SIGTERM"]);
     sup.ensure("/c");
     expect(h.spawns).toEqual(["/a", "/b"]); // no /c
+  });
+});
+
+describe("on-demand mode", () => {
+  it("jobEnqueued spawns; jobSettled to zero starts the idle clock; timer reaps without restart", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    expect(h.spawns).toEqual(["/a"]);
+    sup.jobSettled("/a");
+    expect(h.timers).toHaveLength(1);
+    expect(h.timers[0]!.ms).toBe(5000);
+    h.tick(0); // idle timer fires
+    expect(h.children[0]!.killed).toEqual(["SIGTERM"]);
+    h.children[0]!.close(143); // SIGTERM exit
+    expect(h.timers).toHaveLength(0); // NO backoff restart scheduled
+    expect(h.logs.join("\n")).toContain("reaped");
+  });
+
+  it("an enqueue cancels a pending reap timer", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a");
+    expect(h.timers).toHaveLength(1);
+    sup.jobEnqueued("/a");
+    expect(h.timers[0]!.cancelled).toBe(true);
+    expect(h.spawns).toEqual(["/a"]); // still the one running child, no double spawn
+  });
+
+  it("outstanding counter: reap only fires at zero (two jobs, one settle → no timer)", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a");
+    expect(h.timers).toHaveLength(0);
+    sup.jobSettled("/a");
+    expect(h.timers).toHaveLength(1);
+  });
+
+  it("settle clamps at zero (a pre-up job's result never goes negative)", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobSettled("/a"); // no enqueue ever seen — no crash, no timer (no child)
+    expect(h.timers).toHaveLength(0);
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a"); // 1 - 1 = 0, NOT (-1 + 1 - 1)
+    expect(h.timers).toHaveLength(1);
+  });
+
+  it("a job arriving mid-reap respawns exactly once after the dying child exits", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a");
+    h.tick(0); // reap: SIGTERM sent, child still dying
+    sup.jobEnqueued("/a"); // job lands mid-reap
+    expect(h.spawns).toEqual(["/a"]); // no second spawn yet (entry still occupied)
+    h.children[0]!.close(143); // dying child exits
+    expect(h.spawns).toEqual(["/a", "/a"]); // exactly one respawn
+    expect(h.timers).toHaveLength(0); // and no backoff timer
+  });
+
+  it("idleMs 0 (or absent) never reaps", () => {
+    const h = harness(); // no idleMs
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a");
+    expect(h.timers).toHaveLength(0);
+  });
+
+  it("a reaped exit resets the backoff counter", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    h.children[0]!.close(1); // crash → backoff 1000
+    expect(h.timers[h.timers.length - 1]!.ms).toBe(1000);
+    h.tick(0); // restart (restarts now 1)
+    sup.jobSettled("/a"); // outstanding 1→0 (the crashed job never settles in reality; one settle reaches zero here)
+    h.tick(0); // reap fires
+    h.children[h.children.length - 1]!.close(143); // reaped exit → restarts reset
+    sup.jobEnqueued("/a"); // respawn
+    h.children[h.children.length - 1]!.close(1); // crash again
+    expect(h.timers[h.timers.length - 1]!.ms).toBe(1000); // backoff starts fresh, not 2000
+  });
+
+  it("exit-2 root retries on the next jobEnqueued", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    h.children[0]!.close(2); // setup failure
+    expect(h.timers).toHaveLength(0);
+    sup.jobEnqueued("/a"); // fresh job = retry signal
+    expect(h.spawns).toEqual(["/a", "/a"]);
+  });
+
+  it("trackManaged/managedRoots: served + job-seen roots, spawn kinds attached, persists across reaps", () => {
+    const h = harness({ idleMs: 5000, spawnKinds: ["generate-artifact"] });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.trackManaged("/served-only");
+    sup.jobEnqueued("/a");
+    expect(sup.managedRoots()).toEqual(
+      expect.arrayContaining([
+        { root: "/served-only", kinds: ["generate-artifact"] },
+        { root: "/a", kinds: ["generate-artifact"] },
+      ]),
+    );
+    sup.jobSettled("/a");
+    h.tick(0);
+    h.children[0]!.close(143); // reaped
+    expect(sup.managedRoots().map((m) => m.root)).toContain("/a"); // persists
+  });
+
+  it("stop cancels idle timers too", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a");
+    sup.stop();
+    expect(h.timers[0]!.cancelled).toBe(true);
+    expect(h.children[0]!.killed).toEqual(["SIGTERM"]);
   });
 });
