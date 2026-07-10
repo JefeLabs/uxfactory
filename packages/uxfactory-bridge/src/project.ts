@@ -34,7 +34,7 @@ import path from "node:path";
 import { platform } from "node:process";
 import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
-import type { WorkerPresenceEntry } from "./worker-presence.js";
+import type { WorkerPresenceEntry, ManagedInfo } from "./worker-presence.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -75,6 +75,8 @@ export interface ProjectSnapshot {
   requirements: Requirement[];
   /** Live workers serving this root (spec 2026-07-09-worker-liveness). */
   workers?: WorkerPresenceEntry[];
+  /** Present when an in-process supervisor manages this root (spec 2026-07-09-worker-cli-supervision). */
+  managed?: ManagedInfo;
 }
 
 export interface Link {
@@ -105,6 +107,8 @@ export interface ProjectPluginOptions {
   registry: RootRegistry;
   /** Live-worker list for a root; provided by server.ts (absent in bare tests). */
   workersFor?: (root: string) => WorkerPresenceEntry[];
+  /** ManagedInfo for a root per BridgeOptions.managedRoots; provided by server.ts (absent in bare tests). */
+  managedFor?: (root: string) => ManagedInfo | undefined;
   /** Called after a root becomes served (connect) — promotes pending workers. */
   onRootServed?: (root: string) => void;
 }
@@ -911,7 +915,15 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
     await registry.register(resolved);
     opts.onRootServed?.(resolved);
     const snapshot = await buildSnapshot(resolved, registry.dataDirFor(resolved));
-    return { ok: true, snapshot: { ...snapshot, workers: opts.workersFor?.(resolved) ?? [] } };
+    const managed = opts.managedFor?.(resolved);
+    return {
+      ok: true,
+      snapshot: {
+        ...snapshot,
+        workers: opts.workersFor?.(resolved) ?? [],
+        ...(managed !== undefined ? { managed } : {}),
+      },
+    };
   });
 
   // ── GET /project/snapshot ────────────────────────────────────────────────
@@ -919,7 +931,12 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
     const ctx = await resolveRoot(req.query.root, reply);
     if (ctx === null) return reply;
     const snapshot = await buildSnapshot(ctx.root, ctx.dataDir);
-    return { ...snapshot, workers: opts.workersFor?.(ctx.root) ?? [] };
+    const managed = opts.managedFor?.(ctx.root);
+    return {
+      ...snapshot,
+      workers: opts.workersFor?.(ctx.root) ?? [],
+      ...(managed !== undefined ? { managed } : {}),
+    };
   });
 
   // ── PUT /project/classification ──────────────────────────────────────────

@@ -15,6 +15,12 @@ export interface WorkerPresenceEntry {
   connectedAt: number;
 }
 
+/** A root an in-process supervisor manages: jobs for it will spawn a worker. */
+export interface ManagedInfo {
+  /** Kinds the supervisor's spawned workers claim; absent = all kinds. */
+  kinds?: string[];
+}
+
 interface Tracked {
   root: string;
   kinds?: string[];

@@ -17,6 +17,7 @@ import type { ArtifactWrite } from "./artifact-writer.js";
 import type { ReviewReportPayload, CanvasRequest, PipelineEvent } from "./store.js";
 import { projectPlugin } from "./project.js";
 import { WorkerPresenceRegistry } from "./worker-presence.js";
+import type { ManagedInfo } from "./worker-presence.js";
 
 /** Options for building a bridge. */
 export interface BridgeOptions {
@@ -40,6 +41,8 @@ export interface BridgeOptions {
   onRequestEnqueued?: (root: string, kind: string) => void;
   /** Fired after every POST /pipeline/result save, with the settled request's root. */
   onRequestSettled?: (root: string) => void;
+  /** Roots an in-process supervisor manages (with the kinds its workers claim). */
+  managedRoots?: () => { root: string; kinds?: string[] }[];
 }
 
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
@@ -138,12 +141,21 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
   // --- worker presence (spec 2026-07-09-worker-liveness) ---
   const presence = new WorkerPresenceRegistry();
 
+  /** ManagedInfo for a root per options.managedRoots, or undefined. */
+  const managedInfoFor = (root: string): ManagedInfo | undefined => {
+    const entry = options.managedRoots?.().find((m) => m.root === root);
+    if (entry === undefined) return undefined;
+    return { ...(entry.kinds !== undefined ? { kinds: entry.kinds } : {}) };
+  };
+
   /** Broadcast the full current worker list for a root (ring + fan-out). */
   const broadcastWorkerStatus = (root: string): void => {
+    const managed = managedInfoFor(root);
     const frame = store.appendPipelineEvent("worker-status", {
       type: "worker-status",
       root,
       workers: presence.listFor(root),
+      ...(managed !== undefined ? { managed } : {}),
     });
     broadcastPipelineFrame(frame);
   };
@@ -157,6 +169,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     logRing,
     registry,
     workersFor: (root) => presence.listFor(root),
+    managedFor: managedInfoFor,
     onRootServed: (root) => {
       if (presence.promoteFor(root)) broadcastWorkerStatus(root);
       options.onRootServed?.(root);
