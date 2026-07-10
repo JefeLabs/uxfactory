@@ -262,3 +262,80 @@ describe("on-demand mode", () => {
     expect(h.children[0]!.killed).toEqual(["SIGTERM"]);
   });
 });
+
+describe("counter reconciliation (claim signal)", () => {
+  it("three-event lifecycle: enqueue → claim → settle → idle timer → reap", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobClaimed("/a");
+    expect(h.timers).toHaveLength(0); // in flight — no idle clock
+    sup.jobSettled("/a");
+    expect(h.timers).toHaveLength(1);
+    h.tick(0);
+    expect(h.children[0]!.killed).toEqual(["SIGTERM"]);
+  });
+
+  it("HEADLINE: crash mid-job → inflight reconciled → restart arms a fresh idle window → reap", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobClaimed("/a"); // queued 0, inflight 1
+    h.children[0]!.close(1); // crash mid-job: no settle will ever come
+    expect(h.timers).toHaveLength(1); // the backoff restart timer only
+    expect(h.timers[0]!.ms).toBe(1000);
+    h.tick(0); // backoff fires → restart → total is 0 → idle timer armed
+    expect(h.spawns).toEqual(["/a", "/a"]);
+    expect(h.timers).toHaveLength(1);
+    expect(h.timers[0]!.ms).toBe(5000); // fresh full idle window
+    h.tick(0); // idle fires → reap
+    expect(h.children[1]!.killed).toEqual(["SIGTERM"]);
+    h.children[1]!.close(143);
+    expect(h.logs.join("\n")).toContain("reaped");
+  });
+
+  it("crash with queued work: queued survives, restart does NOT arm idle, normal lifecycle resumes", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobEnqueued("/a");
+    sup.jobClaimed("/a"); // queued 1, inflight 1
+    h.children[0]!.close(1); // crash: inflight → 0, queued stays 1
+    h.tick(0); // restart
+    expect(h.spawns).toEqual(["/a", "/a"]);
+    expect(h.timers).toHaveLength(0); // total is 1 — no idle timer at restart
+    sup.jobClaimed("/a"); // respawned worker claims the queued job
+    sup.jobSettled("/a"); // and finishes it → total 0
+    expect(h.timers).toHaveLength(1);
+  });
+
+  it("settle fallback: a settle with no claim seen decrements queued (old two-event flow)", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobSettled("/a"); // no claim event — fallback path
+    expect(h.timers).toHaveLength(1); // reached zero → idle clock
+  });
+
+  it("manual-worker interleaving: claim+settle with no enqueue seen — floors hold, nothing spawns", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobClaimed("/m"); // queued floors at 0, inflight 1
+    sup.jobSettled("/m"); // inflight 0
+    expect(h.spawns).toEqual([]); // claim never spawns
+    expect(h.timers).toHaveLength(0); // no child → no idle timer
+  });
+
+  it("stale idle timer is cancelled at crash; the restart arms a fresh one", () => {
+    const h = harness({ idleMs: 5000 });
+    const sup = new WorkerSupervisor(h.deps);
+    sup.jobEnqueued("/a");
+    sup.jobClaimed("/a");
+    sup.jobSettled("/a"); // idle timer pending
+    const staleIdle = h.timers[0]!;
+    h.children[0]!.close(1); // crash while idle timer pending
+    expect(staleIdle.cancelled).toBe(true); // F3: stale timer never reaps the fresh child
+    h.tick(0); // backoff restart → fresh idle window
+    expect(h.timers[h.timers.length - 1]!.ms).toBe(5000);
+  });
+});

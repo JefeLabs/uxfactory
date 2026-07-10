@@ -49,7 +49,10 @@ export class WorkerSupervisor {
   private readonly now: () => number;
   private readonly schedule: (fn: () => void, ms: number) => unknown;
   private readonly cancel: (handle: unknown) => void;
-  private readonly outstanding = new Map<string, number>();
+  /** Jobs enqueued but not yet claimed (bridge queue mirror). Floored at 0. */
+  private readonly queued = new Map<string, number>();
+  /** Jobs claimed but not yet settled. Zeroed at a crash boundary (zombies). Floored at 0. */
+  private readonly inflight = new Map<string, number>();
   private readonly idleTimers = new Map<string, unknown>();
   private readonly managed = new Set<string>();
 
@@ -57,6 +60,41 @@ export class WorkerSupervisor {
     this.now = deps.now ?? Date.now;
     this.schedule = deps.schedule ?? ((fn, ms) => setTimeout(fn, ms));
     this.cancel = deps.cancel ?? ((h) => clearTimeout(h as NodeJS.Timeout));
+  }
+
+  /** queued + inflight for a root — the reap gate. */
+  private totalOutstanding(root: string): number {
+    return (this.queued.get(root) ?? 0) + (this.inflight.get(root) ?? 0);
+  }
+
+  /** Cancel + forget the root's idle timer, if any. */
+  private cancelIdleTimer(root: string): void {
+    const idle = this.idleTimers.get(root);
+    if (idle !== undefined) {
+      this.cancel(idle);
+      this.idleTimers.delete(root);
+    }
+  }
+
+  /**
+   * Arm the idle clock iff a worker is running with zero outstanding work.
+   * Called after settles AND at the end of start() — a worker that comes up
+   * with nothing to do (post-crash reconciliation) gets one full idle window;
+   * without this, a reconciled root would idle forever (no settle is coming).
+   */
+  private armIdleIfIdle(root: string): void {
+    const idleMs = this.deps.idleMs ?? 0;
+    if (idleMs <= 0 || this.totalOutstanding(root) !== 0) return;
+    const entry = this.entries.get(root);
+    if (entry?.child === null || entry?.child === undefined) return;
+    this.cancelIdleTimer(root);
+    this.idleTimers.set(
+      root,
+      this.schedule(() => {
+        this.idleTimers.delete(root);
+        if (this.totalOutstanding(root) === 0) this.reap(root);
+      }, idleMs),
+    );
   }
 
   /** Idempotent: running root → no-op; failed root → one retry; else spawn. */
@@ -96,6 +134,7 @@ export class WorkerSupervisor {
       settled = true;
       this.onError(root, err);
     });
+    this.armIdleIfIdle(root);
   }
 
   private onExit(root: string, code: number | null): void {
@@ -109,7 +148,7 @@ export class WorkerSupervisor {
       entry.restarts = 0; // a reap is a clean lifecycle end, not a crash
       this.deps.log(`worker for ${root} reaped after idle`);
       // A job that arrived mid-reap (SIGTERM → exit window) respawns exactly once.
-      if ((this.outstanding.get(root) ?? 0) > 0) this.start(root);
+      if (this.totalOutstanding(root) > 0) this.start(root);
       return;
     }
 
@@ -121,6 +160,11 @@ export class WorkerSupervisor {
       );
       return;
     }
+
+    // Reconcile: the dead worker's claimed jobs can never settle (zombies).
+    // Queued jobs survive — the respawned worker will claim them.
+    this.inflight.set(root, 0);
+    this.cancelIdleTimer(root); // F3: a stale timer must not reap the fresh child early
 
     this.scheduleRestart(
       root,
@@ -141,9 +185,14 @@ export class WorkerSupervisor {
       entry.restarts = 0; // a reap is a clean lifecycle end, not a crash
       this.deps.log(`worker for ${root} reaped after idle`);
       // A job that arrived mid-reap (SIGTERM → exit window) respawns exactly once.
-      if ((this.outstanding.get(root) ?? 0) > 0) this.start(root);
+      if (this.totalOutstanding(root) > 0) this.start(root);
       return;
     }
+
+    // Reconcile: the dead worker's claimed jobs can never settle (zombies).
+    // Queued jobs survive — the respawned worker will claim them.
+    this.inflight.set(root, 0);
+    this.cancelIdleTimer(root); // F3: a stale timer must not reap the fresh child early
 
     // Treated the same as a non-2 exit: not a deterministic setup failure,
     // so it's worth retrying with backoff rather than giving up.
@@ -197,33 +246,30 @@ export class WorkerSupervisor {
   jobEnqueued(root: string): void {
     if (this.stopped) return;
     this.trackManaged(root);
-    const idle = this.idleTimers.get(root);
-    if (idle !== undefined) {
-      this.cancel(idle);
-      this.idleTimers.delete(root);
-    }
-    this.outstanding.set(root, (this.outstanding.get(root) ?? 0) + 1);
+    this.cancelIdleTimer(root);
+    this.queued.set(root, (this.queued.get(root) ?? 0) + 1);
     this.ensure(root);
+  }
+
+  /** A worker dequeued a job for `root`: it moves from queued to in flight. */
+  jobClaimed(root: string): void {
+    if (this.stopped) return;
+    this.queued.set(root, Math.max(0, (this.queued.get(root) ?? 0) - 1));
+    this.inflight.set(root, (this.inflight.get(root) ?? 0) + 1);
   }
 
   /** A job for `root` settled: at zero outstanding, start the idle clock. */
   jobSettled(root: string): void {
     if (this.stopped) return;
-    const next = Math.max(0, (this.outstanding.get(root) ?? 0) - 1);
-    this.outstanding.set(root, next);
-    const idleMs = this.deps.idleMs ?? 0;
-    if (next !== 0 || idleMs <= 0) return;
-    const entry = this.entries.get(root);
-    if (entry?.child === null || entry?.child === undefined) return;
-    const existing = this.idleTimers.get(root);
-    if (existing !== undefined) this.cancel(existing);
-    this.idleTimers.set(
-      root,
-      this.schedule(() => {
-        this.idleTimers.delete(root);
-        if ((this.outstanding.get(root) ?? 0) === 0) this.reap(root);
-      }, idleMs),
-    );
+    const inflight = this.inflight.get(root) ?? 0;
+    if (inflight > 0) {
+      this.inflight.set(root, inflight - 1);
+    } else {
+      // Fallback: the claim predates this supervisor (or was never signalled) —
+      // the settle proves the job left the queue.
+      this.queued.set(root, Math.max(0, (this.queued.get(root) ?? 0) - 1));
+    }
+    this.armIdleIfIdle(root);
   }
 
   /** SIGTERM an idle worker; its exit is handled as a clean reap, not a crash. */
