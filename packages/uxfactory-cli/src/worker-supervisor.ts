@@ -92,6 +92,9 @@ export class WorkerSupervisor {
       root,
       this.schedule(() => {
         this.idleTimers.delete(root);
+        // LOAD-BEARING recheck: jobClaimed does not cancel a pending idle
+        // timer (a pre-session queue drain can arm one while work remains),
+        // so this guard is what makes a stale timer harmless. Do not remove.
         if (this.totalOutstanding(root) === 0) this.reap(root);
       }, idleMs),
     );
