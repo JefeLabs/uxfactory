@@ -266,6 +266,19 @@ export function qualifiesAsBaseline(report: BatchReport): boolean {
   return report.unit !== "story" && !COMPONENT_UNITS.has(report.unit);
 }
 
+/**
+ * True for a render-coverage page-path ref (render failure, or a dead/
+ * invisible selector) — never a story×state coverage ref. Page-path refs are
+ * built as `${page} › ${view}` (optionally `› ${selector}`); story×state refs
+ * are always `${storyId}/${state}[@${vp}]` and never contain " › ". Telling
+ * the two apart keeps a page whose leading path segment happens to equal a
+ * registered story id (e.g. a page filed under "S2/index.html") from being
+ * misread as a coverage miss for story S2.
+ */
+function isPagePathRef(ref: string): boolean {
+  return ref.includes(" › ");
+}
+
 /** Non-ref stories covered at baseline must still be covered (spec 2026-07-10-story-unit §1). */
 export function storyRegression(
   snapshots: RenderSnapshot[],
@@ -277,13 +290,16 @@ export function storyRegression(
   if (stories === null) {
     return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
   }
+  const knownIds = new Set(stories.stories.map((s) => s.id));
   const refs = new Set(storyRefs ?? []);
   const usable = baseline != null && qualifiesAsBaseline(baseline);
   const baselineUncovered = new Set<string>();
   if (usable) {
     const cov = baseline!.checks.find((c) => c.id === "render-coverage");
     for (const f of cov?.findings ?? []) {
-      if (f.ref !== undefined) baselineUncovered.add(storyIdOfRef(f.ref));
+      if (f.ref === undefined || isPagePathRef(f.ref)) continue;
+      const sid = storyIdOfRef(f.ref);
+      if (knownIds.has(sid)) baselineUncovered.add(sid); // mirrors featureCoverage's guard
     }
   }
   const coveredNow = (idStr: string): boolean =>
@@ -752,15 +768,19 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   const { scope, unit, designStyle } = input;
 
   // Story-scoped contract: gate against EXACTLY the declared stories; a ref
-  // naming no registered story becomes a must finding on render-coverage.
-  // Story units keep the FULL denominator: storyRefs names the story under
-  // revision; scoping the universe to it would un-enforce its neighbors.
+  // naming no registered story becomes a must finding on render-coverage —
+  // for EVERY unit, story included (spec §1: "an unknown ref remains a must
+  // finding"). Story units keep the FULL denominator: storyRefs names the
+  // story under revision; scoping the universe to it would un-enforce its
+  // neighbors, so only the unknown-ref findings apply, never the `scoped` swap.
   let effective = input;
   let unknownRefFindings: BatchFinding[] = [];
-  if (input.unit !== "story" && input.storyRefs !== undefined && input.stories !== null) {
+  if (input.storyRefs !== undefined && input.stories !== null) {
     const scoped = scopeStories(input.stories, input.storyRefs);
-    effective = { ...input, stories: scoped.scoped };
     unknownRefFindings = scoped.unknownRefFindings;
+    if (input.unit !== "story") {
+      effective = { ...input, stories: scoped.scoped };
+    }
   }
 
   const storyUnitRefsMissing =
@@ -790,6 +810,9 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
             ref: "storyRefs",
           });
           result.status = "fail";
+          // Overwrite any stale reason (e.g. "no stories registered" from a
+          // skip result) — a forced fail needs its own truthful reason.
+          result.reason = "story unit requires storyRefs";
         }
       }
       checks.push(result);

@@ -75,6 +75,38 @@ describe("story unit — denominator + story-regression", () => {
     const coverage = report.checks.find((c) => c.id === "render-coverage")!;
     expect(coverage.status).toBe("fail");
     expect(coverage.findings.some((f) => f.ref === "storyRefs")).toBe(true);
+    expect(coverage.reason).toBe("story unit requires storyRefs");
+  });
+
+  it("story unit without storyRefs, and no stories registered: forced fail gets a truthful reason (not the stale skip reason)", () => {
+    // stories: null makes render-coverage return a "skip" result (reason: "no
+    // stories registered") BEFORE the storyRefs-missing check forces it to
+    // "fail" — the stale skip reason must not survive onto the failed check.
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", [])],
+      stories: null, tokens: null, unit: "story", scope: LOW,
+    });
+    const coverage = report.checks.find((c) => c.id === "render-coverage")!;
+    expect(coverage.status).toBe("fail");
+    expect(coverage.findings.some((f) => f.ref === "storyRefs")).toBe(true);
+    expect(coverage.reason).toBe("story unit requires storyRefs");
+    expect(coverage.reason).not.toContain("no stories registered");
+  });
+
+  it("story unit: an unknown storyRef fails render-coverage while known refs stay enforced (full denominator)", () => {
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", [])], // nothing covered
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1", "NOPE"], scope: LOW,
+    });
+    const coverage = report.checks.find((c) => c.id === "render-coverage")!;
+    expect(coverage.status).toBe("fail");
+    expect(
+      coverage.findings.some((f) => f.ref === "NOPE" && f.detail.includes("is not a registered story")),
+    ).toBe(true);
+    // Full denominator kept for the story unit — S1 (itself a declared ref)
+    // and S2 are both still enforced, never scoped away like legacy units.
+    expect(coverage.findings.some((f) => f.ref === "S1/success")).toBe(true);
+    expect(coverage.findings.some((f) => f.ref === "S2/success")).toBe(true);
   });
 
   it("story-regression binds only for the story unit", () => {
@@ -108,6 +140,36 @@ describe("story unit — denominator + story-regression", () => {
       stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
     });
     expect(kept.checks.find((c) => c.id === "story-regression")!.status).toBe("pass");
+  });
+
+  it("a page-path finding whose folder segment collides with a registered story id must not poison the baseline-uncovered set", () => {
+    // A render failure on page "S2/index.html" produces ref "S2/index.html ›
+    // main" — its pre-slash segment happens to equal the REAL story id "S2",
+    // but the finding says nothing about story S2's own coverage. Genuine
+    // coverage of S2 at baseline is otherwise complete. An unguarded
+    // extraction misreads this as "S2 was already uncovered at baseline",
+    // silently exempting S2 from the regression check below.
+    const renderFailure: RenderSnapshot = {
+      page: "S2/index.html", view: "main", viewport: { width: 390, height: 844 },
+      screenshot: "S2-index.png", ok: false, error: "boom",
+      coverChecks: [], paintedColors: [], axe: [],
+    };
+    const baseline: BatchReport = runHtmlBatch({
+      snapshots: [snap("screens/all.html", ["S1", "S2"]), renderFailure],
+      stories: TWO_STORIES, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+    const baselineCoverage = baseline.checks.find((c) => c.id === "render-coverage")!;
+    expect(baselineCoverage.status).toBe("fail"); // the render failure, not a story-coverage miss
+    expect(baselineCoverage.findings.some((f) => f.ref === "S2/index.html › main")).toBe(true);
+
+    const current = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", ["S1"])], // S2 genuinely lost coverage now
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    const check = current.checks.find((c) => c.id === "story-regression")!;
+    expect(check.status).toBe("fail");
+    expect(check.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
   });
 
   it("pre-existing gap carried without findings", () => {
