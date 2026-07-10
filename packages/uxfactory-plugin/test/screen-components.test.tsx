@@ -527,82 +527,31 @@ describe("AC-9: Unit-type change persists on linked row", () => {
   });
 });
 
-// ─── Trace tree — features → stories → ACs/links/pages ────────────────────────
+// ─── Trace hint — trace tree moved to the Requirements tab ────────────────────
 
-describe("trace tree on the Components tab", () => {
-  const TRACE = {
-    features: [
-      {
-        featureId: "F-01",
-        name: "Self-serve answers",
-        conformed: true,
-        plannedPages: ["FAQ"],
-        stories: [
-          {
-            storyId: "browse-faq",
-            actor: "visitor",
-            want: "read answers",
-            status: "registered",
-            coveredBy: [{ page: "screens/faq.html", view: "default" }],
-            acceptanceCriteria: [
-              {
-                acId: "AC-001",
-                statement: "answers visible",
-                checkable: "auto",
-                coveredBy: [{ page: "screens/faq.html", view: "default" }],
-                linkedNodes: [{ nodeId: "1:23", unitName: "FAQ list", unitType: "organism" }],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-    unassigned: [
-      {
-        storyId: "orphan-story",
-        actor: "visitor",
-        want: "wander",
-        status: "draft",
-        coveredBy: [],
-        acceptanceCriteria: [],
-      },
-    ],
-  };
-
-  it("renders feature → story → covering page and linked component", async () => {
+describe("Trace hint (moved to Requirements)", () => {
+  it("renders a subdued hint linking to the Requirements tab, and no trace tree", async () => {
     resetStores();
-    const bridge = makeBridge({ trace: vi.fn().mockResolvedValue(TRACE) });
-    await renderWithProviders(<Components bridge={bridge} bus={makeBus()} />, {
+    const bridge = makeBridge();
+    const bus = makeBus();
+
+    const { router } = await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
       initialEntries: ["/tabs/components"],
     });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
 
-    expect(await screen.findByText("Self-serve answers")).toBeInTheDocument();
-    // feature conformance dot from the Coverage metric
-    expect(screen.getByRole("img", { name: "conformed" })).toBeInTheDocument();
-    // story line with actor · want
-    expect(screen.getByText("browse-faq")).toBeInTheDocument();
-    expect(screen.getByText(/visitor · read answers/)).toBeInTheDocument();
-    // covering page chip from trace.json
-    expect(screen.getByText("screens/faq.html › default")).toBeInTheDocument();
-    // linked canvas component from the links registry
-    expect(screen.getByText("FAQ list")).toBeInTheDocument();
-    // AC-level trace binding: the page element realizing this AC (faq.html chip)
-    expect(screen.getAllByText("faq.html").length).toBeGreaterThan(0);
-    // sitemap-planned IA homes render as a feature-level chip
-    expect(screen.getByText("planned: FAQ")).toBeInTheDocument();
-    // stories without a feature land in the unassigned bucket
-    expect(screen.getByText("Unassigned stories")).toBeInTheDocument();
-    expect(screen.getByText("orphan-story")).toBeInTheDocument();
-  });
-
-  it("renders nothing when the project has no stories at all", async () => {
-    resetStores();
-    const bridge = makeBridge({
-      trace: vi.fn().mockResolvedValue({ features: [], unassigned: [] }),
-    });
-    await renderWithProviders(<Components bridge={bridge} bus={makeBus()} />, {
-      initialEntries: ["/tabs/components"],
-    });
+    // The old trace-tree heading ("Trace") must be gone.
     expect(screen.queryByText("Trace")).not.toBeInTheDocument();
+
+    // The hint renders and links to the Requirements tab.
+    const hintLink = screen.getByRole("button", {
+      name: /Trace moved.*Requirements tab/i,
+    });
+    expect(hintLink).toBeInTheDocument();
+
+    await userEvent.setup().click(hintLink);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/tabs/requirements");
+    });
   });
 });

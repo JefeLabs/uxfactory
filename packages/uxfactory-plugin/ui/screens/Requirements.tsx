@@ -4,10 +4,10 @@
  *
  * Spec: docs/superpowers/specs/2026-07-10-requirements-tab-design.md
  *
- * Same data as the old read-only `TraceView` (parked in the Components tab),
- * rebuilt as an enriched, action-bearing tree: a rollup header (counts +
- * attention chips that double as filter toggles), a search box, and
- * Feature → Story → AC rows (dot/chip JSX ported from TraceView verbatim).
+ * Same data as the old read-only trace tree (formerly parked in the
+ * Components tab), rebuilt as an enriched, action-bearing tree: a rollup
+ * header (counts + attention chips that double as filter toggles), a search
+ * box, and Feature → Story → AC rows (dot/chip JSX ported verbatim).
  *
  * Coverage definitions (verbatim from the design doc's Global Constraints):
  *   - uncovered story: story.coveredBy.length === 0
@@ -71,7 +71,7 @@ function storyMatchesQuery(story: TraceStory, featureName: string | null, needle
   );
 }
 
-// ─── ConformanceDot — ported verbatim from TraceView.tsx ──────────────────────
+// ─── ConformanceDot — ported verbatim from the old Components-tab trace tree ──
 
 function ConformanceDot({ conformed }: { conformed: boolean | null }): React.JSX.Element {
   const cls =
