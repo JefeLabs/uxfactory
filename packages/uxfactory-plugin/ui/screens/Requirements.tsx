@@ -34,7 +34,7 @@ import type { Bridge, TraceAC, TraceFeature, TraceStory } from "../lib/bridge.js
 import { BridgeError } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { traceQuery } from "../queries.js";
-import { Card } from "../components/index.js";
+import { ActionTooltip, Card } from "../components/index.js";
 import { useAppStore } from "../stores/app.js";
 
 type Filter = "all" | "uncovered" | "unverified";
@@ -101,16 +101,16 @@ function AcRow({ ac, bus }: { ac: TraceAC; bus: PluginBus }): React.JSX.Element 
         </span>
       ))}
       {ac.linkedNodes.map((n) => (
-        <button
-          key={n.nodeId}
-          type="button"
-          onClick={() => bus.selectNodes([n.nodeId])}
-          title={`Node: ${n.nodeId}`}
-          aria-label={`Jump to ${n.unitName} on canvas`}
-          className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-100 hover:bg-green-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-        >
-          {n.unitName}
-        </button>
+        <ActionTooltip key={n.nodeId} label={`Jump to ${n.unitName} on canvas`}>
+          <button
+            type="button"
+            onClick={() => bus.selectNodes([n.nodeId])}
+            aria-label={`Jump to ${n.unitName} on canvas`}
+            className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-100 hover:bg-green-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+          >
+            {n.unitName}
+          </button>
+        </ActionTooltip>
       ))}
     </li>
   );
@@ -160,24 +160,26 @@ function StoryRow({
           </span>
         </div>
         <div data-story-actions={story.storyId} className="flex items-center gap-0.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => void handleOpen()}
-            aria-label="Open story in editor"
-            title="Open story in editor"
-            className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-          >
-            <ExternalLink className="w-3 h-3" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={handleGenerate}
-            aria-label="Generate design for story"
-            title="Generate design for story"
-            className="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-          >
-            <Wand2 className="w-3 h-3" aria-hidden="true" />
-          </button>
+          <ActionTooltip label="Open story in editor">
+            <button
+              type="button"
+              onClick={() => void handleOpen()}
+              aria-label="Open story in editor"
+              className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+            >
+              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </ActionTooltip>
+          <ActionTooltip label="Generate design for story">
+            <button
+              type="button"
+              onClick={handleGenerate}
+              aria-label="Generate design for story"
+              className="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+            >
+              <Wand2 className="w-3 h-3" aria-hidden="true" />
+            </button>
+          </ActionTooltip>
         </div>
       </div>
       {openError !== null && (
