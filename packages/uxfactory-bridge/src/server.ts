@@ -36,6 +36,10 @@ export interface BridgeOptions {
    * ensure a worker per connected root. Composed AFTER presence promotion.
    */
   onRootServed?: (root: string) => void;
+  /** Fired after every successful POST /pipeline/request enqueue (resolved root + kind). */
+  onRequestEnqueued?: (root: string, kind: string) => void;
+  /** Fired after every POST /pipeline/result save, with the settled request's root. */
+  onRequestSettled?: (root: string) => void;
 }
 
 const DEFAULT_EDIT_TIMEOUT_MS = 4000;
@@ -455,6 +459,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
       id: request.id,
     });
     broadcastPipelineFrame(wake);
+    options.onRequestEnqueued?.(resolution.root, request.kind);
     return { id: request.id };
   });
 
@@ -485,22 +490,22 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     if (typeof body.status !== "number") {
       return reply.code(400).send({ error: "status must be a number" });
     }
+    // Read the root BEFORE savePipelineResult forgets the id→root mapping —
+    // both the artifact writes and the settled signal need it.
+    const requestRoot = store.rootForRequest(body.id);
     // Single-writer: apply any artifact write-intents the producer returned,
     // BEFORE saving (which forgets the id→root mapping). Each apply is
     // serialized per target path by applyArtifactWrite. A malformed write or an
     // unknown root is skipped, never fatal — the result still records.
     const result = body.result as { writes?: unknown } | null | undefined;
     const writes = Array.isArray(result?.writes) ? (result!.writes as ArtifactWrite[]) : [];
-    if (writes.length > 0) {
-      const root = store.rootForRequest(body.id);
-      if (root !== null) {
-        for (const w of writes) {
-          if (w !== null && typeof w === "object" && typeof w.path === "string") {
-            try {
-              await applyArtifactWrite(root, w);
-            } catch (err) {
-              app.log.warn(`artifact write skipped for ${body.id}: ${(err as Error).message}`);
-            }
+    if (writes.length > 0 && requestRoot !== null) {
+      for (const w of writes) {
+        if (w !== null && typeof w === "object" && typeof w.path === "string") {
+          try {
+            await applyArtifactWrite(requestRoot, w);
+          } catch (err) {
+            app.log.warn(`artifact write skipped for ${body.id}: ${(err as Error).message}`);
           }
         }
       }
@@ -508,6 +513,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
     await store.savePipelineResult(body.id, body.status, body.result);
     // Increment the relayed-run counter surfaced via GET /stats.
     shared.runsRelayed += 1;
+    if (requestRoot !== null) options.onRequestSettled?.(requestRoot);
     return { ok: true };
   });
 
