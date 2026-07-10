@@ -524,9 +524,32 @@ describe("AC-4: grounding chips reflect artifact freshness; clicking chip → ar
   });
 
   it("unit-type ids stay in sync with the spec mapping", () => {
-    expect(UNIT_OPTIONS.map((o) => o.value).sort()).toEqual(
-      Object.keys(COMPONENT_TYPE_MAPPING).sort(),
-    );
+    // "story" is a panel-only pseudo-unit (revise-coverage handoff target) —
+    // it deliberately has no entry in the spec's component-type mapping, so
+    // no grounding chips resolve for it (groundingChipsFor/resolveRequirements
+    // fall back to an empty set for unknown types).
+    const panelOnlyIds = ["story"];
+    expect(
+      UNIT_OPTIONS.map((o) => o.value)
+        .filter((v) => !panelOnlyIds.includes(v))
+        .sort(),
+    ).toEqual(Object.keys(COMPONENT_TYPE_MAPPING).sort());
+  });
+
+  it("the story unit resolves no grounding requirements (unmapped type — the resolver's documented unknown-type fallback)", async () => {
+    const user = userEvent.setup();
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+    await openConfig();
+
+    await user.selectOptions(screen.getByLabelText("Unit type"), "story");
+
+    expect(screen.queryByLabelText(/Stories —/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Brand colors —/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/required artifacts? missing/i)).not.toBeInTheDocument();
   });
 });
 
@@ -1290,6 +1313,7 @@ describe("Footer hint line", () => {
       "Secondary Page",
       "Tertiary Page",
       "Page",
+      "Story (revise coverage)",
       "Template",
       "Organism",
       "Molecule",
@@ -1569,14 +1593,68 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     expect(screen.queryByRole("button", { name: "Enforcement scope" })).not.toBeInTheDocument();
   });
 
-  it("consumes pendingStoryRefs on mount into the coverage scope", async () => {
-    useAppStore.getState().setPendingStoryRefs(["browse-faq"]);
+  it("consumes a pendingGenerate handoff on mount: refs land in the coverage scope", async () => {
+    useAppStore.getState().setPendingGenerate({ storyRefs: ["browse-faq"] });
 
     await renderWithTrace();
 
-    expect(useAppStore.getState().pendingStoryRefs).toBeNull();
+    expect(useAppStore.getState().pendingGenerate).toBeNull();
     const summary = await screen.findByRole("button", { name: "Enforcement scope" });
     expect(summary).toHaveTextContent("1 of 3 stories");
+  });
+
+  it("consumes pendingGenerate's unitType via the same setter the droplist's onChange uses", async () => {
+    useAppStore.getState().setPendingGenerate({ storyRefs: ["browse-faq"], unitType: "story" });
+
+    await renderWithTrace();
+
+    expect(useRunsStore.getState().composerUnitType).toBe("story");
+    await openConfig();
+    expect(screen.getByLabelText("Unit type")).toHaveValue("story");
+  });
+
+  it("scope UI is visible for the story unit (storyScopeVisible's explicit OR — story has no COMPONENT_TYPE_MAPPING entry)", async () => {
+    const user = userEvent.setup();
+    await renderWithTrace();
+    await openConfig();
+
+    await user.selectOptions(screen.getByLabelText("Unit type"), "story");
+
+    expect(screen.getByRole("button", { name: "Enforcement scope" })).toBeInTheDocument();
+  });
+
+  it("consumes pendingGenerate's prompt into the textarea when it starts empty", async () => {
+    useAppStore.getState().setPendingGenerate({
+      storyRefs: ["browse-faq"],
+      unitType: "story",
+      prompt: 'Revise coverage for "browse-faq" — Visitor: read answers',
+    });
+
+    await renderWithTrace();
+
+    expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue(
+      'Revise coverage for "browse-faq" — Visitor: read answers',
+    );
+  });
+
+  it("never clobbers a prompt draft already in progress", async () => {
+    const user = userEvent.setup();
+    // No pendingGenerate at mount — nothing to consume, textarea starts empty
+    // and the user starts typing their own prompt.
+    await renderWithTrace();
+    const textbox = await screen.findByRole("textbox", { name: "Prompt" });
+    await user.type(textbox, "my own in-progress draft");
+
+    // A handoff arriving afterward must not retroactively overwrite it:
+    // consumption is once-on-mount only, so a pendingGenerate set post-mount
+    // is simply never picked up by this already-mounted instance.
+    useAppStore.getState().setPendingGenerate({
+      storyRefs: ["browse-faq"],
+      unitType: "story",
+      prompt: "should not appear",
+    });
+
+    expect(textbox).toHaveValue("my own in-progress draft");
   });
 });
 

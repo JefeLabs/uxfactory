@@ -21,9 +21,12 @@
  *   - Linked-node chips (AcRow) become buttons: `bus.selectNodes([n.nodeId])`.
  *   - "Open story in editor" (StoryRow): `bridge.openPath(story.filePath)`,
  *     with the Artifacts-tab row-level error note on failure (no modal).
- *   - "Generate design for story" (StoryRow): stashes `[story.storyId]` in
- *     the app store's `pendingStoryRefs` and navigates to `/tabs/prompt`,
- *     which consumes it on mount into its coverage-scope selection.
+ *   - "Generate design for story" (StoryRow): stashes a combined intent
+ *     (`storyRefs: [story.storyId]`, `unitType: "story"`, and a verbatim
+ *     prompt prefill built from the story's actor/want) in the app store's
+ *     `pendingGenerate` and navigates to `/tabs/prompt`, which consumes it
+ *     on mount into its coverage-scope selection, unit-type droplist, and
+ *     prompt textarea (only when the textarea is still empty).
  */
 
 import React, { useMemo, useState } from "react";
@@ -69,6 +72,17 @@ function storyMatchesQuery(story: TraceStory, featureName: string | null, needle
   return story.acceptanceCriteria.some(
     (ac) => ac.acId.toLowerCase().includes(needle) || ac.statement.toLowerCase().includes(needle),
   );
+}
+
+/**
+ * Verbatim prompt template for the story unit's revise-coverage handoff
+ * (spec 2026-07-10-story-unit-design.md §3): `Revise coverage for
+ * "<storyId>" — <actor>: <want>`, omitting the `<actor>: ` segment (colon
+ * and space included) when the story has no actor.
+ */
+function reviseCoveragePrompt(story: TraceStory): string {
+  const actorPrefix = story.actor !== "" ? `${story.actor}: ` : "";
+  return `Revise coverage for "${story.storyId}" — ${actorPrefix}${story.want}`;
 }
 
 // ─── ConformanceDot — ported verbatim from the old Components-tab trace tree ──
@@ -144,7 +158,11 @@ function StoryRow({
   }
 
   function handleGenerate(): void {
-    useAppStore.getState().setPendingStoryRefs([story.storyId]);
+    useAppStore.getState().setPendingGenerate({
+      storyRefs: [story.storyId],
+      unitType: "story",
+      prompt: reviseCoveragePrompt(story),
+    });
     void navigate({ to: "/tabs/prompt" });
   }
 

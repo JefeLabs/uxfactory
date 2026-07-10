@@ -59,11 +59,22 @@ export interface AppState {
   /** Session dismiss for the WorkerBanner; re-armed by a fresh covered→uncovered transition. */
   workerBannerDismissed: boolean;
   /**
-   * One-shot handoff from Requirements' per-story Generate action: the story
-   * ids to scope the Prompt tab's coverage contract to. Set right before
-   * navigating to /tabs/prompt; Prompt consumes (reads + clears) it on mount.
+   * One-shot handoff from Requirements' per-story Generate action: the
+   * combined generate intent (story ids to scope the coverage contract to,
+   * an optional unit-type preset, and an optional prompt prefill). Set right
+   * before navigating to /tabs/prompt; Prompt consumes (reads + clears) it
+   * on mount.
    */
-  pendingStoryRefs: string[] | null;
+  pendingGenerate: PendingGenerate | null;
+}
+
+/** Combined one-shot handoff payload — see `AppState.pendingGenerate`. */
+export interface PendingGenerate {
+  storyRefs: string[];
+  /** Preset for the composer's unit-type droplist (e.g. "story"). */
+  unitType?: string;
+  /** Prefill for the prompt textarea — applied only when it's currently empty. */
+  prompt?: string;
 }
 
 // ─── Action types ─────────────────────────────────────────────────────────────
@@ -94,9 +105,9 @@ export interface AppActions {
   cancelReconnect(): void;
   workersChanged(workers: WorkerPresenceEntry[] | null, managed: ManagedInfo | null): void;
   dismissWorkerBanner(): void;
-  setPendingStoryRefs(refs: string[]): void;
-  /** Reads pendingStoryRefs, clears it, and returns what was read (one-shot). */
-  consumePendingStoryRefs(): string[] | null;
+  setPendingGenerate(payload: PendingGenerate): void;
+  /** Reads pendingGenerate, clears it, and returns what was read (one-shot). */
+  consumePendingGenerate(): PendingGenerate | null;
 }
 
 export type AppStore = AppState & AppActions;
@@ -123,7 +134,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   workers: null,
   managedWorker: null,
   workerBannerDismissed: false,
-  pendingStoryRefs: null,
+  pendingGenerate: null,
 
   // Actions
   setFileInfo(fi) {
@@ -201,13 +212,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ workerBannerDismissed: true });
   },
 
-  setPendingStoryRefs(refs) {
-    set({ pendingStoryRefs: refs });
+  setPendingGenerate(payload) {
+    set({ pendingGenerate: payload });
   },
 
-  consumePendingStoryRefs() {
-    const refs = get().pendingStoryRefs;
-    set({ pendingStoryRefs: null });
-    return refs;
+  consumePendingGenerate() {
+    const pending = get().pendingGenerate;
+    set({ pendingGenerate: null });
+    return pending;
   },
 }));

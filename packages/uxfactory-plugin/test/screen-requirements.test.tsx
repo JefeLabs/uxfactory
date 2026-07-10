@@ -244,13 +244,33 @@ describe("Requirements — per-story actions (canvas jump, Open, Generate handof
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not open file");
   });
 
-  it("Generate stores pending refs and navigates to the Generate tab", async () => {
+  it("Generate stores the combined pending intent (refs + unit + prompt) and navigates to the Generate tab", async () => {
     const { router } = await renderRequirements();
     await screen.findByText(/2 features/);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Generate design for story" })[0]!);
 
-    expect(useAppStore.getState().pendingStoryRefs).toEqual(["S-01"]);
+    // First rendered story is S-01 — actor "Visitor", want "get onboarded quickly".
+    expect(useAppStore.getState().pendingGenerate).toEqual({
+      storyRefs: ["S-01"],
+      unitType: "story",
+      prompt: 'Revise coverage for "S-01" — Visitor: get onboarded quickly',
+    });
     await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/prompt"));
+  });
+
+  it("Generate omits the actor prefix when the story has no actor", async () => {
+    await renderRequirements({
+      unassigned: [{ ...DEFAULT_TRACE.unassigned[0]!, actor: "" }],
+    });
+    await screen.findByText(/2 features/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Generate design for story" }).at(-1)!);
+
+    expect(useAppStore.getState().pendingGenerate).toEqual({
+      storyRefs: ["S-09"],
+      unitType: "story",
+      prompt: 'Revise coverage for "S-09" — reconcile invoices',
+    });
   });
 });

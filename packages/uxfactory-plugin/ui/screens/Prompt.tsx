@@ -83,6 +83,12 @@ export const UNIT_OPTIONS: { label: string; value: string }[] = [
   { label: "Secondary Page", value: "secondary-page" },
   { label: "Tertiary Page", value: "tertiary-page" },
   { label: "Page", value: "page" },
+  // Panel-only pseudo-unit: not in the spec's component-type mapping (no
+  // grounding chips resolve for it — resolveRequirements/groundingChipsFor
+  // fall back to an empty requirement set for unknown types), but it rides
+  // with the page tiers so the coverage-scope selector's visibility
+  // predicate (storyScopeVisible) can key off it directly.
+  { label: "Story (revise coverage)", value: "story" },
   { label: "Template", value: "template" },
   { label: "Organism", value: "organism" },
   { label: "Molecule", value: "molecule" },
@@ -805,8 +811,11 @@ export function Prompt({
   // flow units. Component tiers are claims-only; channel units hinge on the
   // creative brief — the selector never appears there.
   const unitGroup = COMPONENT_TYPE_MAPPING[composerUnitType]?.group;
+  // "story" isn't in the spec's mapping (panel-only pseudo-unit — see
+  // UNIT_OPTIONS), so it needs an explicit OR here rather than a group match.
   const storyScopeVisible =
-    storyOptions.length > 0 && (unitGroup === "pages" || unitGroup === "flows");
+    storyOptions.length > 0 &&
+    (unitGroup === "pages" || unitGroup === "flows" || composerUnitType === "story");
   const projectQuadrant = normalizeQuadrant(snapshotClassification?.["quadrant"]);
   const groundingChips = groundingChipsFor(composerUnitType, artifacts, projectQuadrant);
   const missingBlocking = missingBlockingCount(composerUnitType, artifacts, projectQuadrant);
@@ -814,11 +823,18 @@ export function Prompt({
     .filter((c) => !c.planned)
     .every((c) => c.status === "missing");
 
-  // ── Consume a pending story-scope handoff from Requirements' per-story
-  //    Generate action (one-shot: read + clear on mount). ─────────────────────
+  // ── Consume a pending generate handoff from Requirements' per-story
+  //    Generate action (one-shot: read + clear on mount). Applies the story
+  //    scope (as before), the unit-type preset (via the same setter the
+  //    droplist's onChange uses), and a prompt prefill — the prefill only
+  //    when the textarea is still empty, so a draft never gets clobbered. ──
   useEffect(() => {
-    const refs = useAppStore.getState().consumePendingStoryRefs();
-    if (refs !== null && refs.length > 0) setScopedStories(refs);
+    const pending = useAppStore.getState().consumePendingGenerate();
+    if (pending === null) return;
+    if (pending.storyRefs.length > 0) setScopedStories(pending.storyRefs);
+    if (pending.unitType !== undefined) handleUnitTypeChange(pending.unitType);
+    if (pending.prompt !== undefined && promptText === "") setPromptText(pending.prompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── SSE subscription — bridge events → run progress / completion ───────────

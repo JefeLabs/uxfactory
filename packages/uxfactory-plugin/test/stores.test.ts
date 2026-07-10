@@ -177,16 +177,28 @@ describe("app store — misc actions", () => {
   });
 });
 
-describe("app store — pendingStoryRefs (Requirements → Prompt handoff)", () => {
+describe("app store — pendingGenerate (Requirements → Prompt combined handoff)", () => {
   beforeEach(() => {
-    useAppStore.setState({ pendingStoryRefs: null });
+    useAppStore.setState({ pendingGenerate: null });
   });
 
-  it("pendingStoryRefs: set then consume returns once and clears", () => {
-    useAppStore.getState().setPendingStoryRefs(["S-01", "S-02"]);
-    expect(useAppStore.getState().consumePendingStoryRefs()).toEqual(["S-01", "S-02"]);
-    expect(useAppStore.getState().pendingStoryRefs).toBeNull();
-    expect(useAppStore.getState().consumePendingStoryRefs()).toBeNull();
+  it("pendingGenerate: set/consume returns once and clears", () => {
+    useAppStore.getState().setPendingGenerate({ storyRefs: ["S-01"], unitType: "story", prompt: "p" });
+    expect(useAppStore.getState().consumePendingGenerate()).toEqual({
+      storyRefs: ["S-01"],
+      unitType: "story",
+      prompt: "p",
+    });
+    expect(useAppStore.getState().pendingGenerate).toBeNull();
+    expect(useAppStore.getState().consumePendingGenerate()).toBeNull();
+  });
+
+  it("pendingGenerate: storyRefs alone (unitType/prompt both optional)", () => {
+    useAppStore.getState().setPendingGenerate({ storyRefs: ["S-01", "S-02"] });
+    expect(useAppStore.getState().consumePendingGenerate()).toEqual({
+      storyRefs: ["S-01", "S-02"],
+    });
+    expect(useAppStore.getState().consumePendingGenerate()).toBeNull();
   });
 });
 
