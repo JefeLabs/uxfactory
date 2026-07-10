@@ -50,6 +50,7 @@ import { Connect } from "./screens/Connect.js";
 import { SetupClassification } from "./screens/SetupClassification.js";
 import { SetupDefaults } from "./screens/SetupDefaults.js";
 import { Prompt } from "./screens/Prompt.js";
+import { Requirements } from "./screens/Requirements.js";
 import { Artifacts } from "./screens/Artifacts.js";
 import { Components } from "./screens/Components.js";
 import { Assets } from "./screens/Assets.js";
@@ -585,6 +586,7 @@ function ContextBar(): React.JSX.Element {
 // Settings is NOT a tab — it opens via the ContextBar gear button.
 const TAB_DEFS: { value: Tab; label: string }[] = [
   { value: "prompt", label: "Generate" },
+  { value: "requirements", label: "Requirements" },
   { value: "artifacts", label: "Artifacts" },
   { value: "components", label: "Components" },
   { value: "assets", label: "Assets" },
@@ -786,6 +788,16 @@ function PromptRoute(): React.JSX.Element {
   return <Prompt bridge={bridge} bus={bus} />;
 }
 
+const requirementsRoute = createRoute({
+  getParentRoute: () => tabsRoute,
+  path: "requirements",
+  component: RequirementsRoute,
+});
+function RequirementsRoute(): React.JSX.Element {
+  const { bridge, bus } = requirementsRoute.useRouteContext();
+  return <Requirements bridge={bridge} bus={bus} />;
+}
+
 const artifactsRoute = createRoute({
   getParentRoute: () => tabsRoute,
   path: "artifacts",
@@ -855,6 +867,7 @@ const routeTree = rootRoute.addChildren([
   tabsRoute.addChildren([
     tabsIndexRoute,
     promptRoute,
+    requirementsRoute,
     artifactsRoute,
     componentsRoute,
     assetsRoute,

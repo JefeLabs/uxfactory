@@ -73,6 +73,11 @@ function makeHarnessRouter(
     path: "prompt",
     component: renderUi,
   });
+  const requirementsRoute = createRoute({
+    getParentRoute: () => tabsRoute,
+    path: "requirements",
+    component: renderUi,
+  });
   const artifactsRoute = createRoute({
     getParentRoute: () => tabsRoute,
     path: "artifacts",
@@ -112,6 +117,7 @@ function makeHarnessRouter(
     setupDefaultsRoute,
     tabsRoute.addChildren([
       promptRoute,
+      requirementsRoute,
       artifactsRoute,
       componentsRoute,
       assetsRoute,

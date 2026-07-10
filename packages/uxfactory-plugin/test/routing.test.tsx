@@ -180,11 +180,11 @@ describe("boot path — connect screen (no stored connection)", () => {
 describe("boot path — tabs (stored connection + classified project)", () => {
   beforeEach(() => resetToTabs(true));
 
-  it("renders the tab list with 5 tabs (Settings lives in the ContextBar)", async () => {
+  it("renders the tab list with 6 tabs (Settings lives in the ContextBar)", async () => {
     await renderApp();
     const tabList = screen.getByRole("tablist", { name: "Panel tabs" });
     const tabs = within(tabList).getAllByRole("tab");
-    expect(tabs).toHaveLength(5);
+    expect(tabs).toHaveLength(6);
   });
 
   it("renders the Prompt tab label", async () => {
@@ -318,7 +318,7 @@ describe("boot race guard — late bridge reply after cancel", () => {
 describe("tab navigation sets active tab", () => {
   beforeEach(() => resetToTabs(true));
 
-  const tabLabels = ["Generate", "Artifacts", "Components", "Assets", "Checks"] as const;
+  const tabLabels = ["Generate", "Requirements", "Artifacts", "Components", "Assets", "Checks"] as const;
 
   for (const label of tabLabels) {
     it(`clicking '${label}' makes its tab trigger active`, async () => {
@@ -331,6 +331,28 @@ describe("tab navigation sets active tab", () => {
       expect(tabEl).toHaveAttribute("data-state", "active");
     });
   }
+});
+
+// ─── Requirements tab route ───────────────────────────────────────────────────
+
+describe("requirements tab route", () => {
+  beforeEach(() => resetToTabs(true));
+
+  it("navigating to /tabs/requirements renders the Requirements screen", async () => {
+    const queryClient = makeQueryClient();
+    const router = createAppRouter(
+      { bridge: makeBridge(), bus: makeBus(), queryClient },
+      ["/tabs/requirements"],
+    );
+    await renderWithProviders(null, { router, queryClient });
+
+    expect(screen.getByRole("tab", { name: "Requirements" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    // The fake bridge has no `trace`, so the screen renders its empty-trace hint.
+    expect(await screen.findByText(/seed Features and Stories/i)).toBeInTheDocument();
+  });
 });
 
 // ─── Tab state is reflected in the router location ────────────────────────────

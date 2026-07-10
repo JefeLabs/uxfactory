@@ -35,6 +35,7 @@ export interface ConnectionState {
 
 export type Tab =
   | "prompt"
+  | "requirements"
   | "artifacts"
   | "components"
   | "assets"
