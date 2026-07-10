@@ -1259,6 +1259,39 @@ describe("GET /project/trace — the traceability join", () => {
   });
 });
 
+describe("GET /project/trace — story filePath", () => {
+  it("trace stories carry the repo-relative member filePath", async () => {
+    await addGitMarker(root);
+    await writeJson(path.join(root, "uxfactory.batch.json"), {
+      version: 1,
+      inputs: { stories: ".uxfactory/artifacts/stories" },
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/stories/S-01.json"), {
+      storyId: "S-01",
+      actor: "visitor",
+      want: "read answers",
+      soThat: "quick help",
+      featureRef: null,
+      status: "registered",
+      acceptanceCriteria: [
+        { acId: "AC-001", statement: "answers visible", impliedState: "success", checkable: "auto" },
+      ],
+    });
+    await writeJson(path.join(root, ".uxfactory/artifacts/features.json"), {
+      features: [
+        { featureId: "F-01", name: "Self-serve answers", storyRefs: ["S-01"], origin: "net-new", status: "planned" },
+      ],
+    });
+
+    app = await createBridge({ dataDir });
+    const res = await app.inject({ method: "GET", url: "/project/trace" });
+    const body = res.json() as { features: Array<{ stories: Array<{ storyId: string; filePath: string }> }>; unassigned: Array<{ storyId: string; filePath: string }> };
+    const all = [...body.features.flatMap((f) => f.stories), ...body.unassigned];
+    const s1 = all.find((s) => s.storyId === "S-01");
+    expect(s1?.filePath).toBe(".uxfactory/artifacts/stories/S-01.json");
+  });
+});
+
 describe("registry-path resolution — unparseable registry falls back to conventional paths", () => {
   it("snapshot works (no throw) and reads conventional paths when registry is unparseable", async () => {
     await addGitMarker(root);

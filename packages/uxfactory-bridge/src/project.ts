@@ -649,6 +649,8 @@ interface TraceStory {
   actor: string;
   want: string;
   status: string;
+  /** Repo-relative path of the story's source file (set member or legacy file). */
+  filePath: string;
   coveredBy: Array<{ page: string; view: string }>;
   acceptanceCriteria: TraceAC[];
 }
@@ -665,26 +667,35 @@ interface TraceFeature {
 
 /** Parse every story reachable at the resolved stories path (set dir or legacy file). */
 async function readTraceStories(storiesPath: string): Promise<
-  Array<{ storyId: string; actor: string; want: string; status: string; acs: Array<{ acId: string; statement: string; checkable: string }> }>
+  Array<{
+    storyId: string;
+    actor: string;
+    want: string;
+    status: string;
+    /** Absolute path of the story's source file (set member or legacy file). */
+    absPath: string;
+    acs: Array<{ acId: string; statement: string; checkable: string }>;
+  }>
 > {
-  const bodies: unknown[] = [];
+  const bodies: Array<{ body: unknown; absPath: string }> = [];
   try {
     if ((await stat(storiesPath)).isDirectory()) {
       const members = (await readdir(storiesPath)).filter((e) => e.endsWith(".json")).sort();
       for (const m of members) {
+        const memberPath = path.join(storiesPath, m);
         try {
-          bodies.push(JSON.parse(await readFile(path.join(storiesPath, m), "utf8")) as unknown);
+          bodies.push({ body: JSON.parse(await readFile(memberPath, "utf8")) as unknown, absPath: memberPath });
         } catch { /* unreadable member — skip */ }
       }
     } else {
       const raw = JSON.parse(await readFile(storiesPath, "utf8")) as { stories?: unknown[] };
-      for (const m of raw.stories ?? []) bodies.push(m);
+      for (const m of raw.stories ?? []) bodies.push({ body: m, absPath: storiesPath });
     }
   } catch {
     return [];
   }
   const out = [];
-  for (const body of bodies) {
+  for (const { body, absPath } of bodies) {
     const parsed = parseStoryFile(body);
     if (!parsed.ok) continue;
     const engine = storyToEngine(parsed.story);
@@ -693,6 +704,7 @@ async function readTraceStories(storiesPath: string): Promise<
       actor: parsed.story.actor,
       want: parsed.story.want,
       status: parsed.story.status,
+      absPath,
       acs: engine.acceptanceCriteria.map((ac, i) => ({
         acId: parsed.story.acceptanceCriteria[i]?.acId ?? `AC-${i + 1}`,
         statement: ac.statement,
@@ -808,6 +820,7 @@ async function buildTrace(root: string, dataDir: string): Promise<{
     actor: s.actor,
     want: s.want,
     status: s.status,
+    filePath: path.relative(root, s.absPath),
     coveredBy: coveredBy.get(s.storyId) ?? [],
     acceptanceCriteria: s.acs.map((ac) => ({
       ...ac,

@@ -234,6 +234,8 @@ export interface TraceStory {
   actor: string;
   want: string;
   status: string;
+  /** Repo-relative path of the story's source file (set member or legacy file). */
+  filePath: string;
   coveredBy: Array<{ page: string; view: string }>;
   acceptanceCriteria: TraceAC[];
 }
