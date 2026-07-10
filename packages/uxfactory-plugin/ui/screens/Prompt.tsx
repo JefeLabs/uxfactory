@@ -819,9 +819,12 @@ export function Prompt({
   const projectQuadrant = normalizeQuadrant(snapshotClassification?.["quadrant"]);
   const groundingChips = groundingChipsFor(composerUnitType, artifacts, projectQuadrant);
   const missingBlocking = missingBlockingCount(composerUnitType, artifacts, projectQuadrant);
-  const allMissing = groundingChips
-    .filter((c) => !c.planned)
-    .every((c) => c.status === "missing");
+  // Unmapped unit types (e.g. "story" — no COMPONENT_TYPE_MAPPING entry)
+  // resolve zero grounding chips; `[].every(...)` is vacuously true, so
+  // require at least one real chip before treating the set as "all missing".
+  const allMissing =
+    groundingChips.length > 0 &&
+    groundingChips.filter((c) => !c.planned).every((c) => c.status === "missing");
 
   // ── Consume a pending generate handoff from Requirements' per-story
   //    Generate action (one-shot: read + clear on mount). Applies the story

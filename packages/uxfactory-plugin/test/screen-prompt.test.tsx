@@ -77,6 +77,11 @@ function resetStores(snapshotOverride?: Partial<ProjectSnapshot>) {
     snapshot: snapshotOverride !== undefined
       ? makeSnapshot(snapshotOverride)
       : makeSnapshot(),
+    // pendingGenerate is a one-shot handoff (Requirements → Prompt); some
+    // tests set it directly on the store without ever mounting a consumer,
+    // so it must be reset between tests or it leaks into whichever test
+    // runs next.
+    pendingGenerate: null,
   });
   useRunsStore.setState({
     runs: [],
@@ -689,6 +694,30 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
       initialEntries: ["/tabs/prompt"],
     });
 
+    expect(
+      screen.queryByText(/No artifacts yet/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("callout is absent for the story unit — an unmapped type resolves zero grounding chips, which must not read as \"all missing\"", async () => {
+    // "story" has no COMPONENT_TYPE_MAPPING entry (panel-only pseudo-unit),
+    // so groundingChipsFor("story", ...) always returns []. A naive
+    // `[].every(...)` is vacuously true, which would make this callout
+    // render unconditionally for the story unit regardless of the project's
+    // real artifact state — assert it stays absent on an otherwise healthy
+    // snapshot.
+    useAppStore.getState().setPendingGenerate({
+      storyRefs: ["browse-faq"],
+      unitType: "story",
+    });
+
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    expect(useRunsStore.getState().composerUnitType).toBe("story");
     expect(
       screen.queryByText(/No artifacts yet/),
     ).not.toBeInTheDocument();
@@ -1655,6 +1684,12 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     });
 
     expect(textbox).toHaveValue("my own in-progress draft");
+
+    // This instance never consumes the post-mount handoff (asserted above),
+    // so clean it up explicitly rather than relying solely on the next
+    // test's beforeEach — leaving a stale pendingGenerate on the store here
+    // would otherwise leak into whatever runs next.
+    useAppStore.getState().consumePendingGenerate();
   });
 });
 
