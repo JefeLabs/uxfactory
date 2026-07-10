@@ -164,6 +164,17 @@ export async function batchHtmlMode(
     path.join(projectRoot, ".uxfactory", "artifacts", "accessibility.json"),
   );
 
+  // Baseline for story-unit regression: the PREVIOUS report, read before this
+  // run overwrites it. Unparseable/absent → null (the gate strict-modes).
+  let baseline: BatchReport | null = null;
+  try {
+    baseline = JSON.parse(
+      await readFile(path.join(flags.dataDir, "batch", "report.json"), "utf8"),
+    ) as BatchReport;
+  } catch {
+    baseline = null;
+  }
+
   // Pure gate over the snapshots.
   const report: BatchReport = runHtmlBatch({
     snapshots,
@@ -179,6 +190,7 @@ export async function batchHtmlMode(
     ...(typography !== null ? { typography } : {}),
     ...(a11ySpec ? { a11ySpec } : {}),
     ...(registryUngoverned === true ? { ungoverned: true } : {}),
+    baseline,
   });
 
   const reportDoc = {

@@ -178,6 +178,83 @@ describe("batchHtmlMode", () => {
     expect(sc.status).toBe("fail");
     expect(sc.severity).toBe("advisory");
   });
+
+  it("loads the previous report.json as the story-regression baseline: a newly-lost story fails must", async () => {
+    const twoStories = {
+      stories: [
+        { id: "checkout", role: "user", goal: "pay", benefit: "done", acceptanceCriteria: [{ statement: "ok", impliedState: "success" }] },
+        { id: "profile", role: "user", goal: "view profile", benefit: "info", acceptanceCriteria: [{ statement: "ok", impliedState: "success" }] },
+      ],
+    };
+    await writeFile(path.join(root, "design/acceptance-criteria.json"), JSON.stringify(twoStories));
+
+    // Seed a qualifying baseline (no unit, no storyRefs): "profile" is already
+    // uncovered there, so its continued absence is NOT a regression.
+    const baseline = {
+      scope: "visual",
+      rubric: ["render-coverage"],
+      mustPassFailed: true,
+      clean: false,
+      checks: [
+        {
+          id: "render-coverage",
+          status: "fail",
+          severity: "must",
+          findings: [{ detail: "story profile success state is not covered by any visible rendering", ref: "profile/success" }],
+        },
+      ],
+    };
+    await mkdir(path.join(root, ".uxfactory/batch"), { recursive: true });
+    await writeFile(path.join(root, ".uxfactory/batch/report.json"), JSON.stringify(baseline));
+
+    const io = makeIO();
+    // This run revises "profile" (storyRefs); "checkout" — covered at baseline,
+    // not a ref — loses coverage entirely: a genuine regression.
+    const regressedSnap: RenderSnapshot = { ...goodSnap, coverChecks: [] };
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, "story", undefined, undefined,
+      { renderViews: async () => [regressedSnap] }, undefined, ["profile"],
+    );
+    expect(code).toBe(EXIT.GATE_FAIL);
+    const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
+    const sr = report.checks.find((c: { id: string }) => c.id === "story-regression");
+    expect(sr.status).toBe("fail");
+    expect(sr.reason).toBe("baseline: last full-denominator report");
+    expect(sr.findings.some((f: { detail: string }) => f.detail.includes("checkout"))).toBe(true);
+    expect(sr.findings.some((f: { detail: string }) => f.detail.includes("profile"))).toBe(false);
+  });
+
+  it("no pre-existing report.json → story-regression runs strict", async () => {
+    const twoStories = {
+      stories: [
+        { id: "checkout", role: "user", goal: "pay", benefit: "done", acceptanceCriteria: [{ statement: "ok", impliedState: "success" }] },
+        { id: "profile", role: "user", goal: "view profile", benefit: "info", acceptanceCriteria: [{ statement: "ok", impliedState: "success" }] },
+      ],
+    };
+    await writeFile(path.join(root, "design/acceptance-criteria.json"), JSON.stringify(twoStories));
+
+    const io = makeIO();
+    // This run revises "checkout" (storyRefs); "profile" — a co-located,
+    // non-ref story — is covered here too, so strict mode (no baseline) still passes.
+    const bothCoveredSnap: RenderSnapshot = {
+      ...goodSnap,
+      coverChecks: [
+        ...goodSnap.coverChecks,
+        { story: "profile", impliedState: "success", selector: "#ok", found: true, visible: true },
+      ],
+    };
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, "story", undefined, undefined,
+      { renderViews: async () => [bothCoveredSnap] }, undefined, ["checkout"],
+    );
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
+    const sr = report.checks.find((c: { id: string }) => c.id === "story-regression");
+    expect(sr.status).toBe("pass");
+    expect(sr.reason).toMatch(/strict/);
+  });
 });
 
 // Guards CORRECTION 1: batchCmd must reach the HTML branch (right after readRegistry,
