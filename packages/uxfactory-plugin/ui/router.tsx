@@ -31,6 +31,7 @@ import { ChevronDown, ChevronUp, Inbox, Settings as SettingsIcon, Unplug } from 
 import { useAppStore } from "./stores/app.js";
 import type { Tab } from "./stores/app.js";
 import {
+  ActionTooltip,
   Chip,
   ContextChipEditor,
   CHIP_FIELD_LABEL,
@@ -120,14 +121,16 @@ function ToastOverlay(): React.JSX.Element | null {
           className="flex items-center gap-2 bg-gray-900 text-white text-sm rounded-lg px-3 py-2 shadow-lg"
         >
           <span className="flex-1">{t.message}</span>
-          <button
-            type="button"
-            aria-label={`Dismiss: ${t.message}`}
-            onClick={() => dismissToast(t.id)}
-            className="text-gray-400 hover:text-white"
-          >
-            ×
-          </button>
+          <ActionTooltip label={`Dismiss: ${t.message}`}>
+            <button
+              type="button"
+              aria-label={`Dismiss: ${t.message}`}
+              onClick={() => dismissToast(t.id)}
+              className="text-gray-400 hover:text-white"
+            >
+              ×
+            </button>
+          </ActionTooltip>
         </div>
       ))}
     </div>
@@ -455,41 +458,44 @@ function ContextBar(): React.JSX.Element {
         </div>
         <ConnectionDot status={pillStatus} />
         <WorkerDot />
-        <button
-          type="button"
-          aria-label={queueCount > 0 ? `Render queue (${queueCount})` : "Render queue"}
-          title="Render queue"
-          onClick={() => void navigate({ to: "/tabs/queue" })}
-          className="relative p-1 text-gray-400 hover:text-gray-600 shrink-0"
-        >
-          <Inbox size={14} />
-          {queueCount > 0 && (
-            <span
-              aria-hidden="true"
-              className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-primary-600 text-white text-[9px] font-semibold flex items-center justify-center"
-            >
-              {queueCount}
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => void navigate({ to: "/tabs/settings" })}
-          className="p-1 text-gray-400 hover:text-gray-600 shrink-0"
-        >
-          <SettingsIcon size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Disconnect"
-          title="Disconnect"
-          onClick={handleDisconnect}
-          className="p-1 text-gray-400 hover:text-red-600 shrink-0"
-        >
-          <Unplug size={14} />
-        </button>
+        <ActionTooltip label={queueCount > 0 ? `Render queue (${queueCount})` : "Render queue"}>
+          <button
+            type="button"
+            aria-label={queueCount > 0 ? `Render queue (${queueCount})` : "Render queue"}
+            onClick={() => void navigate({ to: "/tabs/queue" })}
+            className="relative p-1 text-gray-400 hover:text-gray-600 shrink-0"
+          >
+            <Inbox size={14} />
+            {queueCount > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 px-0.5 rounded-full bg-primary-600 text-white text-[9px] font-semibold flex items-center justify-center"
+              >
+                {queueCount}
+              </span>
+            )}
+          </button>
+        </ActionTooltip>
+        <ActionTooltip label="Settings">
+          <button
+            type="button"
+            aria-label="Settings"
+            onClick={() => void navigate({ to: "/tabs/settings" })}
+            className="p-1 text-gray-400 hover:text-gray-600 shrink-0"
+          >
+            <SettingsIcon size={14} />
+          </button>
+        </ActionTooltip>
+        <ActionTooltip label="Disconnect">
+          <button
+            type="button"
+            aria-label="Disconnect"
+            onClick={handleDisconnect}
+            className="p-1 text-gray-400 hover:text-red-600 shrink-0"
+          >
+            <Unplug size={14} />
+          </button>
+        </ActionTooltip>
       </div>
 
       {/* Chips bar — collapsed to a label + total count; expanded chips edit inline */}
@@ -522,16 +528,18 @@ function ContextBar(): React.JSX.Element {
               />
             )}
           </div>
-          <button
-            type="button"
-            aria-label={
-              expanded ? "Collapse project details" : "Expand project details"
-            }
-            onClick={() => setExpanded((v) => !v)}
-            className="p-0.5 text-gray-400 hover:text-gray-600 shrink-0"
-          >
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </button>
+          <ActionTooltip label={expanded ? "Collapse project details" : "Expand project details"}>
+            <button
+              type="button"
+              aria-label={
+                expanded ? "Collapse project details" : "Expand project details"
+              }
+              onClick={() => setExpanded((v) => !v)}
+              className="p-0.5 text-gray-400 hover:text-gray-600 shrink-0"
+            >
+              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+          </ActionTooltip>
         </div>
       )}
 

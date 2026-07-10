@@ -39,7 +39,7 @@ import {
 } from "../lib/design-styles.js";
 import type { DeviceConfig, DeviceSize } from "../stores/runs.js";
 import type { RunEntry, RunStatus } from "../stores/runs.js";
-import { Card, SectionHeader, WorkerBanner } from "../components/index.js";
+import { ActionTooltip, Card, SectionHeader, WorkerBanner } from "../components/index.js";
 import { traceQuery, enqueueMutation } from "../queries.js";
 import {
   ARTIFACT_PREREQS,
@@ -1016,40 +1016,43 @@ export function Prompt({
               {/* Config toggle INSIDE the input area — the droplists deploy
                   outside the card so the textarea never resizes. Sized
                   identically to the submit button (w-8 h-8, 14px icon). */}
-              <button
-                type="button"
-                aria-label="Generate config"
-                aria-expanded={configOpen}
-                title="Generate config"
-                onClick={() => setConfigOpen((v) => !v)}
-                className={[
-                  "flex items-center justify-center w-8 h-8 rounded-full border cursor-pointer transition-colors select-none shrink-0 self-start",
-                  configOpen
-                    ? "bg-primary-50 border-primary-600 text-primary-600"
-                    : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
-                ].join(" ")}
-              >
-                <SlidersHorizontal size={14} aria-hidden="true" />
-              </button>
+              <ActionTooltip label="Generate config">
+                <button
+                  type="button"
+                  aria-label="Generate config"
+                  aria-expanded={configOpen}
+                  onClick={() => setConfigOpen((v) => !v)}
+                  className={[
+                    "flex items-center justify-center w-8 h-8 rounded-full border cursor-pointer transition-colors select-none shrink-0 self-start",
+                    configOpen
+                      ? "bg-primary-50 border-primary-600 text-primary-600"
+                      : "bg-white border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700",
+                  ].join(" ")}
+                >
+                  <SlidersHorizontal size={14} aria-hidden="true" />
+                </button>
+              </ActionTooltip>
             </div>
 
             <div className="flex items-center justify-end">
               {/* Circular submit button (↑) */}
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={!promptText.trim() || isSubmitting}
-                aria-label="Generate design"
-                aria-busy={isSubmitting}
-                className={[
-                  "flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-colors",
-                  promptText.trim() && !isSubmitting
-                    ? "bg-primary-600 text-white hover:bg-primary-700"
-                    : "bg-primary-300 text-white cursor-not-allowed",
-                ].join(" ")}
-              >
-                <ArrowUp size={14} strokeWidth={2.5} aria-hidden="true" />
-              </button>
+              <ActionTooltip label="Generate design">
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={!promptText.trim() || isSubmitting}
+                  aria-label="Generate design"
+                  aria-busy={isSubmitting}
+                  className={[
+                    "flex items-center justify-center w-8 h-8 rounded-full shrink-0 transition-colors",
+                    promptText.trim() && !isSubmitting
+                      ? "bg-primary-600 text-white hover:bg-primary-700"
+                      : "bg-primary-300 text-white cursor-not-allowed",
+                  ].join(" ")}
+                >
+                  <ArrowUp size={14} strokeWidth={2.5} aria-hidden="true" />
+                </button>
+              </ActionTooltip>
             </div>
           </div>
 

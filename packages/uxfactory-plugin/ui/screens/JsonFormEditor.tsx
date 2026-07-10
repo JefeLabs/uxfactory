@@ -25,7 +25,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { ArtifactStatus, Bridge } from "../lib/bridge.js";
 import type { ArtifactFormSpec, FieldSpec, ExternalOption } from "../lib/artifact-forms.js";
-import { ArtifactEditorHeader, Field } from "../components/index.js";
+import { ActionTooltip, ArtifactEditorHeader, Field } from "../components/index.js";
 import { useAppStore } from "../stores/app.js";
 import { putArtifactMutation, queryKeys, activeRoot } from "../queries.js";
 
@@ -128,14 +128,16 @@ function ChipsInput({
                 className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700 border border-gray-200"
               >
                 {item}
-                <button
-                  type="button"
-                  aria-label={`Remove ${item}`}
-                  onClick={() => field.onChange(items.filter((_, j) => j !== i))}
-                  className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
-                >
-                  ×
-                </button>
+                <ActionTooltip label={`Remove ${item}`}>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item}`}
+                    onClick={() => field.onChange(items.filter((_, j) => j !== i))}
+                    className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
+                  >
+                    ×
+                  </button>
+                </ActionTooltip>
               </span>
             ))}
             <input
@@ -194,14 +196,16 @@ function MultiSelectInput({
                 className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-primary-50 text-primary-700 border border-primary-100"
               >
                 {labelOf(v)}
-                <button
-                  type="button"
-                  aria-label={`Remove ${v}`}
-                  onClick={() => f.onChange(selected.filter((x) => x !== v))}
-                  className="text-primary-300 hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
-                >
-                  ×
-                </button>
+                <ActionTooltip label={`Remove ${v}`}>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${v}`}
+                    onClick={() => f.onChange(selected.filter((x) => x !== v))}
+                    className="text-primary-300 hover:text-primary-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded"
+                  >
+                    ×
+                  </button>
+                </ActionTooltip>
               </span>
             ))}
             {available.length > 0 && (
@@ -408,14 +412,16 @@ function GroupEditor({
           <div key={f.id} className="bg-white border border-gray-200 rounded-[var(--radius-card)] overflow-hidden">
             <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-100">
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide truncate">{title}</h4>
-              <button
-                type="button"
-                onClick={() => remove(i)}
-                aria-label={`Remove ${spec.itemLabel} ${i + 1}`}
-                className="text-gray-400 hover:text-fail-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded shrink-0"
-              >
-                ×
-              </button>
+              <ActionTooltip label={`Remove ${spec.itemLabel} ${i + 1}`}>
+                <button
+                  type="button"
+                  onClick={() => remove(i)}
+                  aria-label={`Remove ${spec.itemLabel} ${i + 1}`}
+                  className="text-gray-400 hover:text-fail-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded shrink-0"
+                >
+                  ×
+                </button>
+              </ActionTooltip>
             </div>
             <div className="px-4 py-3 space-y-2.5">
               {spec.fields.map((sub) => (

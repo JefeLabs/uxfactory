@@ -28,7 +28,7 @@ import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { useRunsStore } from "../stores/runs.js";
 import type { DeviceSize } from "../stores/runs.js";
-import { Card, SectionHeader } from "../components/index.js";
+import { ActionTooltip, Card, SectionHeader } from "../components/index.js";
 import { statsQuery, skillsQuery, logsQuery } from "../queries.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -167,15 +167,17 @@ function LogsDrawer({ bridge, open, onClose }: LogsDrawerProps): React.JSX.Eleme
               >
                 Refresh
               </button>
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  aria-label="Close logs"
-                  className="text-gray-400 hover:text-gray-600 text-sm px-1"
-                >
-                  ✕
-                </button>
-              </Dialog.Close>
+              <ActionTooltip label="Close logs">
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    aria-label="Close logs"
+                    className="text-gray-400 hover:text-gray-600 text-sm px-1"
+                  >
+                    ✕
+                  </button>
+                </Dialog.Close>
+              </ActionTooltip>
             </div>
           </div>
 

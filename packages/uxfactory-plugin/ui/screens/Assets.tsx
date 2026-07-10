@@ -83,7 +83,7 @@ import type { LucideIcon } from "lucide-react";
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
-import { Card, ChipGroup } from "../components/index.js";
+import { ActionTooltip, Card, ChipGroup } from "../components/index.js";
 import {
   FIXTURE_PHOTOS,
   DEFAULT_ICON_NAMES,
@@ -384,27 +384,27 @@ export function Assets({
                     const Icon = ICON_MAP[name];
                     if (!Icon) return null;
                     return (
-                      <button
-                        key={name}
-                        type="button"
-                        aria-label={name}
-                        title={name}
-                        onClick={() => void handleIconClick(name)}
-                        className={[
-                          "aspect-square border border-gray-200 rounded-lg",
-                          "flex items-center justify-center bg-white",
-                          "hover:bg-gray-50 hover:border-primary-300 transition-colors",
-                          "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
-                          "cursor-pointer",
-                        ].join(" ")}
-                      >
-                        <Icon
-                          size={20}
-                          strokeWidth={1.5}
-                          className="text-gray-600"
-                          aria-hidden="true"
-                        />
-                      </button>
+                      <ActionTooltip key={name} label={name}>
+                        <button
+                          type="button"
+                          aria-label={name}
+                          onClick={() => void handleIconClick(name)}
+                          className={[
+                            "aspect-square border border-gray-200 rounded-lg",
+                            "flex items-center justify-center bg-white",
+                            "hover:bg-gray-50 hover:border-primary-300 transition-colors",
+                            "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
+                            "cursor-pointer",
+                          ].join(" ")}
+                        >
+                          <Icon
+                            size={20}
+                            strokeWidth={1.5}
+                            className="text-gray-600"
+                            aria-hidden="true"
+                          />
+                        </button>
+                      </ActionTooltip>
                     );
                   })}
                 </div>

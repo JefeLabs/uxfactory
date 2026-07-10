@@ -43,7 +43,7 @@ import { ARTIFACT_REGISTRY, resolveCreationChain } from "@uxfactory/spec";
 import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY, SET_ARTIFACT_KEYS } from "../lib/artifact-mapping.js";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
-import { Card, Row, SectionHeader, WorkerBanner } from "../components/index.js";
+import { ActionTooltip, Card, Row, SectionHeader, WorkerBanner } from "../components/index.js";
 import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { ArtifactEditor } from "./ArtifactEditor.js";
 import { useAppStore } from "../stores/app.js";
@@ -583,15 +583,16 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                             Open
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => void handleExternalOpen(row)}
-                          className="text-xs text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                          aria-label="Open in external editor"
-                          title="Open in external editor"
-                        >
-                          ↗
-                        </button>
+                        <ActionTooltip label="Open in external editor">
+                          <button
+                            type="button"
+                            onClick={() => void handleExternalOpen(row)}
+                            className="text-xs text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+                            aria-label="Open in external editor"
+                          >
+                            ↗
+                          </button>
+                        </ActionTooltip>
                       </div>
                     );
                   }

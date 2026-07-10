@@ -8,6 +8,7 @@ import React from "react";
 import { useAppStore } from "../stores/app.js";
 import { coverageFor, ENQUEUEABLE_KINDS } from "../lib/worker-coverage.js";
 import { copyText } from "../lib/copy.js";
+import { ActionTooltip } from "./ActionTooltip.js";
 
 export interface WorkerBannerProps {
   kind: (typeof ENQUEUEABLE_KINDS)[number];
@@ -53,14 +54,16 @@ export function WorkerBanner({ kind }: WorkerBannerProps): React.JSX.Element | n
           </p>
         )}
       </div>
-      <button
-        type="button"
-        aria-label="Dismiss worker warning"
-        onClick={dismissWorkerBanner}
-        className="text-warn-600 hover:text-warn-700 leading-none shrink-0 mt-px"
-      >
-        ✕
-      </button>
+      <ActionTooltip label="Dismiss worker warning">
+        <button
+          type="button"
+          aria-label="Dismiss worker warning"
+          onClick={dismissWorkerBanner}
+          className="text-warn-600 hover:text-warn-700 leading-none shrink-0 mt-px"
+        >
+          ✕
+        </button>
+      </ActionTooltip>
     </div>
   );
 }
