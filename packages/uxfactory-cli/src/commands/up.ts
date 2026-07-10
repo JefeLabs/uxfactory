@@ -1,9 +1,11 @@
 /**
- * `uxfactory up` — the supervised stack (spec 2026-07-09-worker-cli-supervision
- * §3): bridge in-process + one worker child per connected root. The launch
- * root is served at startup (registry.init seeds it without firing the
- * callback), so it is ensured explicitly; every subsequent successful
- * POST /project/connect fires BridgeOptions.onRootServed → supervisor.ensure.
+ * `uxfactory up` — the on-demand supervised stack (spec
+ * 2026-07-09-worker-cli-supervision §3): bridge in-process, workers spawned
+ * only when a job is enqueued for their root, reaped after an idle timeout.
+ * Connecting a root (launch root at startup, or a panel's
+ * POST /project/connect) only marks it *managed* — it does not spawn a
+ * worker — so panels see it advertised via managedRoots() without a
+ * worker actually running until a job shows up.
  */
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -22,6 +24,7 @@ export interface UpCmdFlags {
   kinds?: string;
   pool?: string;
   debug?: boolean;
+  idleMinutes?: number;
 }
 
 interface BridgeHandle {
@@ -34,6 +37,9 @@ export interface UpCmdDeps {
     port?: number;
     dataDir: string;
     onRootServed: (root: string) => void;
+    onRequestEnqueued: (root: string, kind: string) => void;
+    onRequestSettled: (root: string) => void;
+    managedRoots: () => { root: string; kinds?: string[] }[];
   }) => Promise<BridgeHandle>;
   spawn?: typeof nodeSpawn;
   cliModuleUrl?: string;
@@ -94,6 +100,12 @@ export async function upCmd(
   const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1] ?? "uxfactory");
   const launchRoot = path.dirname(path.resolve(flags.dataDir));
 
+  const idleMinutes = flags.idleMinutes ?? 10;
+  const spawnKinds =
+    flags.kinds !== undefined
+      ? flags.kinds.split(",").map((k) => k.trim()).filter((k) => k !== "")
+      : undefined;
+
   // Set once startBridge resolves below; captured by reference so spawnWorker
   // (called later, per connected root) always sees the actual bridge URL
   // instead of workerEnv's :3779 default (up may be running on --port 4000).
@@ -116,11 +128,20 @@ export async function upCmd(
       return child as unknown as SupervisedChild;
     },
     log: io.err,
+    idleMs: idleMinutes * 60_000,
+    ...(spawnKinds !== undefined ? { spawnKinds } : {}),
   });
 
   const startBridge =
     deps.startBridge ??
-    (async (opts: { port?: number; dataDir: string; onRootServed: (root: string) => void }) => {
+    (async (opts: {
+      port?: number;
+      dataDir: string;
+      onRootServed: (root: string) => void;
+      onRequestEnqueued: (root: string, kind: string) => void;
+      onRequestSettled: (root: string) => void;
+      managedRoots: () => { root: string; kinds?: string[] }[];
+    }) => {
       const bridge = await import("@uxfactory/bridge");
       return bridge.startBridge(opts);
     });
@@ -130,7 +151,10 @@ export async function upCmd(
     handle = await startBridge({
       ...(flags.port !== undefined ? { port: flags.port } : {}),
       dataDir: flags.dataDir,
-      onRootServed: (root) => supervisor.ensure(root),
+      onRootServed: (root) => supervisor.trackManaged(root),
+      onRequestEnqueued: (root) => supervisor.jobEnqueued(root),
+      onRequestSettled: (root) => supervisor.jobSettled(root),
+      managedRoots: () => supervisor.managedRoots(),
     });
   } catch (err) {
     const code = (err as { code?: string }).code;
@@ -144,7 +168,7 @@ export async function upCmd(
 
   bridgeUrl = handle.url;
   io.out(`uxfactory up: bridge ${handle.url}`);
-  supervisor.ensure(launchRoot);
+  supervisor.trackManaged(launchRoot);
 
   const shutdown = async (): Promise<void> => {
     supervisor.stop();

@@ -112,6 +112,7 @@ export function buildProgram(): Command {
     .option("--kinds <csv>", "job kinds spawned workers claim (default: all)")
     .option("--pool <n>", "concurrent drain lanes per worker")
     .option("--debug", "retain per-job scratch files")
+    .option("--idle <minutes>", "reap idle workers after this many minutes (0 disables; default 10)")
     .action(
       async (opts: {
         port?: string;
@@ -120,6 +121,7 @@ export function buildProgram(): Command {
         kinds?: string;
         pool?: string;
         debug?: boolean;
+        idle?: string;
       }) => {
         const { upCmd } = await import("./commands/up.js");
         const { code } = await upCmd(
@@ -130,6 +132,7 @@ export function buildProgram(): Command {
             ...(opts.kinds !== undefined ? { kinds: opts.kinds } : {}),
             ...(opts.pool !== undefined ? { pool: opts.pool } : {}),
             ...(opts.debug === true ? { debug: true } : {}),
+            ...(opts.idle !== undefined ? { idleMinutes: Number(opts.idle) } : {}),
           },
           consoleIO,
         );
