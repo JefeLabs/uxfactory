@@ -151,7 +151,7 @@ uxfactory worker                # keep this running (assumes the global link fro
 Or run the whole stack under one supervisor — bridge plus a worker for every project a panel connects:
 
 ```bash
-uxfactory up                    # bridge on :3779 + auto worker per connected root
+uxfactory up                    # bridge on :3779 + on-demand worker per project (spawned by jobs)
 ```
 
 `up` spawns workers on demand — the first job for a project starts one — and reaps them after 10 idle minutes (`--idle <minutes>`, `0` keeps them forever). Crashed workers restart with backoff; a worker that fails setup (exit 2, e.g. missing `~/.agentx/auth.json`) is not retried until the next job. The panel shows on-demand roots as covered: a green dot with an "on-demand (idle)" tooltip, no warning banner. Flags on both verbs: `--model`, `--kinds`, `--pool`, `--debug` (worker also takes `--root`, `--bridge`; up also takes `--idle`).

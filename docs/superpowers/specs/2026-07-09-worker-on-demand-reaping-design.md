@@ -80,7 +80,7 @@ New methods:
 
 - **Reap vs in-flight job**: impossible by construction — the timer only fires at `outstanding === 0`, and any enqueue cancels it first.
 - **Counter drift**: results for pre-`up` jobs clamp at 0; a settle with no prior enqueue never goes negative.
-- **Job for a root whose worker died mid-job** (crash, not reap): step-2 backoff restart still applies — the respawned worker re-claims nothing (the job died with its runner and the result never posts). The panel's 5-minute pending timeout still owns that failure surface; unchanged from today.
+- **Job for a root whose worker died mid-job** (crash, not reap): step-2 backoff restart still applies — the respawned worker re-claims nothing (the job died with its runner and the result never posts). The panel's 5-minute pending timeout still owns that failure surface; unchanged from today. **Known limitation (final review):** because that job never settles, the root's `outstanding` counter stays ≥ 1 for the rest of the `up` session, so its worker is no longer reaped — a silent degrade to step-2 behavior for that root. Reconciling the counter on a non-reap crash is a ledgered follow-up (a naive reset would under-count still-queued jobs and reap a worker with pending work, so it needs care).
 - **`--idle 0`**: reaping disabled; spawn remains job-driven; managed flag still advertised.
 - **Kinds-filtered `up`**: `managed.kinds` mirrors `--kinds`; the panel treats non-matching kinds as uncovered (banner shows for those, correctly).
 - **Manual `uxfactory worker` alongside `up`**: presence shows the live worker; the supervisor's counters are unaffected (it may also spawn on jobs — two workers claiming one root is already pool-safe by the atomic claim design).
