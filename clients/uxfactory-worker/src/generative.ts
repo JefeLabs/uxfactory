@@ -164,6 +164,13 @@ const UNIT_GUIDANCE: Record<string, string> = {
     'Scope: a MULTI-SCREEN user flow — author one HTML page per flow step with explicit ' +
     'connective navigation (the control that advances each step), and cover every step ' +
     'and transition state in trace.json.',
+  story:
+    'Scope: REVISE the named story\'s coverage IN PLACE. Read design/trace.json first to ' +
+    'locate the views currently covering (or meant to cover) the story; edit and extend ' +
+    'THOSE screens rather than creating parallel pages. Add new views only where the ' +
+    "story's acceptance criteria genuinely demand them, and connect any new view navigably " +
+    "to the existing structure. Preserve every other story's covers — the gate enforces " +
+    'no-regression against the previous report. Iterate the batch gate to green.',
   'home-page':
     'Scope: the HOME page (primary landing) — it owns the app shell: full primary ' +
     'navigation, a hero/overview section, and entry points into every major story area.',

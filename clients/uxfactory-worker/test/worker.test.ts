@@ -1408,6 +1408,7 @@ describe('runGenerative', () => {
   it('generate-design: each unit type carries its own distinct scope guidance', async () => {
     const UNIT_MARKERS: Record<string, string> = {
       'user-flow': 'MULTI-SCREEN',
+      story: 'IN PLACE',
       'home-page': 'HOME page',
       'secondary-page': 'SECONDARY page',
       'tertiary-page': 'TERTIARY page',
