@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 /**
- * screen-requirements.test.tsx — RTL tests for the Requirements tab (v1:
- * read/navigate core — rollup, search, coverage filters). Per-story actions
- * (canvas jump, open-in-editor, Generate handoff) land in a follow-up
- * change; this file only covers what Requirements.tsx renders today.
+ * screen-requirements.test.tsx — RTL tests for the Requirements tab: the
+ * read/navigate core (rollup, search, coverage filters) AND the per-story
+ * actions (canvas jump, open-in-editor, Generate handoff).
  *
  * Fixture (DEFAULT_TRACE) — 2 features · 3 stories · 3 ACs:
  *   F-1 "Onboard": S-01 (covered; AC-1 verified via linkedNodes, AC-2 unverified)
