@@ -10,7 +10,7 @@ afterEach(cleanup);
 
 describe("WorkerDot", () => {
   beforeEach(() => {
-    useAppStore.setState({ workers: null, workerBannerDismissed: false });
+    useAppStore.setState({ workers: null, managedWorker: null, workerBannerDismissed: false });
   });
 
   it("grey when unknown", () => {
@@ -26,5 +26,11 @@ describe("WorkerDot", () => {
     useAppStore.setState({ workers: [{ connectedAt: 1 }] });
     render(<WorkerDot />);
     expect(screen.getByLabelText("Worker status: live")).toBeInTheDocument();
+  });
+  it("managed-idle: green with an on-demand tooltip", () => {
+    useAppStore.setState({ workers: [], managedWorker: {} });
+    render(<WorkerDot />);
+    const dot = screen.getByLabelText("Worker status: live");
+    expect(dot).toHaveAttribute("title", "Worker status: live — on-demand (idle)");
   });
 });

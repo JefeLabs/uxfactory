@@ -12,7 +12,7 @@
  */
 
 import { create } from "zustand";
-import type { ProjectSnapshot, WorkerPresenceEntry } from "../lib/bridge.js";
+import type { ManagedInfo, ProjectSnapshot, WorkerPresenceEntry } from "../lib/bridge.js";
 import { anyUncovered } from "../lib/worker-coverage.js";
 
 // ─── State types ──────────────────────────────────────────────────────────────
@@ -53,6 +53,8 @@ export interface AppState {
   toasts: ToastItem[];
   /** Live workers for the connected root; null = unknown (never warn on null). */
   workers: WorkerPresenceEntry[] | null;
+  /** Set when a supervisor manages this root on-demand; null = not managed. */
+  managedWorker: ManagedInfo | null;
   /** Session dismiss for the WorkerBanner; re-armed by a fresh covered→uncovered transition. */
   workerBannerDismissed: boolean;
 }
@@ -83,7 +85,7 @@ export interface AppActions {
    * router reflects the state change.
    */
   cancelReconnect(): void;
-  workersChanged(workers: WorkerPresenceEntry[] | null): void;
+  workersChanged(workers: WorkerPresenceEntry[] | null, managed: ManagedInfo | null): void;
   dismissWorkerBanner(): void;
 }
 
@@ -109,6 +111,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   snapshot: null,
   toasts: [],
   workers: null,
+  managedWorker: null,
   workerBannerDismissed: false,
 
   // Actions
@@ -129,6 +132,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       snapshot,
       connection: { ...s.connection, status: "connected", repoPath },
       workers: snapshot.workers ?? null,
+      managedWorker: snapshot.managed ?? null,
       workerBannerDismissed: false,
     }));
 
@@ -147,6 +151,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // Stale presence must not survive a lost connection: without a live
       // bridge we have no signal, so treat coverage as unknown, not uncovered.
       workers: null,
+      managedWorker: null,
     }));
     get().toast(message);
   },
@@ -166,14 +171,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // Stale presence must not survive a lost connection: without a live
       // bridge we have no signal, so treat coverage as unknown, not uncovered.
       workers: null,
+      managedWorker: null,
     }));
   },
 
-  workersChanged(workers) {
+  workersChanged(workers, managed) {
     set((s) => {
-      const freshOutage = anyUncovered(workers) && !anyUncovered(s.workers);
+      const freshOutage = anyUncovered(workers, managed) && !anyUncovered(s.workers, s.managedWorker);
       return {
         workers,
+        managedWorker: managed,
         workerBannerDismissed: freshOutage ? false : s.workerBannerDismissed,
       };
     });

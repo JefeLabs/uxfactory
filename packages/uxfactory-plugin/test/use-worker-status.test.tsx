@@ -57,7 +57,7 @@ function Harness({ bridge }: { bridge: Bridge }): React.JSX.Element {
 
 describe("useWorkerStatus", () => {
   beforeEach(() => {
-    useAppStore.setState({ workers: null, workerBannerDismissed: false });
+    useAppStore.setState({ workers: null, managedWorker: null, workerBannerDismissed: false });
   });
 
   it("seeds the store from the snapshot's workers field", async () => {
@@ -68,6 +68,32 @@ describe("useWorkerStatus", () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(useAppStore.getState().workers).toEqual([]));
+  });
+
+  it("seeds managedWorker from the snapshot's managed field", async () => {
+    const bridge = makeBridge({
+      snapshot: async () => ({
+        name: "demo",
+        root: ROOT,
+        hasClassification: false,
+        hasProfile: false,
+        classification: null,
+        profile: null,
+        artifacts: [],
+        requirements: [],
+        workers: [],
+        managed: { kinds: ["generate-artifact"] },
+      }),
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <Harness bridge={bridge} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(useAppStore.getState().managedWorker).toEqual({ kinds: ["generate-artifact"] }),
+    );
   });
 
   it("applies worker-status frames for the active root and ignores other roots", async () => {
@@ -85,6 +111,10 @@ describe("useWorkerStatus", () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(emit).not.toBeNull());
+    // Let the initial snapshot fetch settle (workers: [], managed: undefined)
+    // before dispatching frames — otherwise its effect can resolve AFTER the
+    // frame and clobber the just-applied SSE state with the stale fetch.
+    await waitFor(() => expect(useAppStore.getState().workers).toEqual([]));
 
     emit!({
       requestId: "worker-status",
@@ -96,10 +126,11 @@ describe("useWorkerStatus", () => {
     emit!({
       requestId: "worker-status",
       seq: 2,
-      event: { type: "worker-status", root: ROOT, workers: [{ connectedAt: 9 }] },
+      event: { type: "worker-status", root: ROOT, workers: [{ connectedAt: 9 }], managed: {} },
     });
     await waitFor(() =>
       expect(useAppStore.getState().workers).toEqual([{ connectedAt: 9 }]),
     );
+    expect(useAppStore.getState().managedWorker).toEqual({});
   });
 });

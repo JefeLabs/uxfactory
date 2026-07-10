@@ -37,6 +37,11 @@ export interface WorkerPresenceEntry {
   connectedAt: number;
 }
 
+/** A root managed by an up supervisor: jobs for it spawn a worker on demand. */
+export interface ManagedInfo {
+  kinds?: string[];
+}
+
 export interface ProjectSnapshot {
   name: string;
   root: string;
@@ -48,6 +53,8 @@ export interface ProjectSnapshot {
   requirements: Requirement[];
   /** Live workers for this root; absent on older bridges (treat as unknown). */
   workers?: WorkerPresenceEntry[];
+  /** Set when a supervisor manages this root on-demand; absent = not managed. */
+  managed?: ManagedInfo;
 }
 
 export interface Link {

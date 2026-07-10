@@ -181,18 +181,28 @@ function ConnectionDot({ status }: { status: StatusPillStatus }): React.JSX.Elem
 /** ContextBar worker-liveness dot: green covered / amber uncovered / grey unknown. */
 export function WorkerDot(): React.JSX.Element {
   const workers = useAppStore((s) => s.workers);
+  const managedWorker = useAppStore((s) => s.managedWorker);
   const state =
-    workers === null ? "unknown" : anyUncovered(workers) ? "uncovered" : "covered";
+    workers === null && managedWorker === null
+      ? "unknown"
+      : anyUncovered(workers, managedWorker)
+        ? "uncovered"
+        : "covered";
   const { cls, label } = {
     unknown: { cls: "bg-gray-300", label: "Worker status: unknown" },
     uncovered: { cls: "bg-warn-600", label: "Worker status: no worker for this project" },
     covered: { cls: "bg-success-600", label: "Worker status: live" },
   }[state];
+  // No live worker, but an on-demand supervisor covers this root: still
+  // green (covered), but the tooltip should say so rather than imply a
+  // worker is already running.
+  const onDemandIdle =
+    state === "covered" && (workers === null || workers.length === 0) && managedWorker !== null;
   return (
     <span
       role="status"
       aria-label={label}
-      title={label}
+      title={onDemandIdle ? `${label} — on-demand (idle)` : label}
       className="inline-flex items-center justify-center w-5 h-5 shrink-0"
     >
       <span aria-hidden="true" className={`w-2.5 h-2.5 rounded-full ${cls}`} />

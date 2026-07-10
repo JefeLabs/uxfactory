@@ -15,11 +15,12 @@ export interface WorkerBannerProps {
 
 export function WorkerBanner({ kind }: WorkerBannerProps): React.JSX.Element | null {
   const workers = useAppStore((s) => s.workers);
+  const managedWorker = useAppStore((s) => s.managedWorker);
   const dismissed = useAppStore((s) => s.workerBannerDismissed);
   const dismissWorkerBanner = useAppStore((s) => s.dismissWorkerBanner);
   const repoPath = useAppStore((s) => s.connection.repoPath);
 
-  if (dismissed || coverageFor(workers, kind) !== "uncovered") return null;
+  if (dismissed || coverageFor(workers, kind, managedWorker) !== "uncovered") return null;
 
   return (
     <div
