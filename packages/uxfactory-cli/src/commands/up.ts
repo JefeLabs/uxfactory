@@ -38,6 +38,7 @@ export interface UpCmdDeps {
     dataDir: string;
     onRootServed: (root: string) => void;
     onRequestEnqueued: (root: string, kind: string) => void;
+    onRequestClaimed: (root: string, kind: string) => void;
     onRequestSettled: (root: string) => void;
     managedRoots: () => { root: string; kinds?: string[] }[];
   }) => Promise<BridgeHandle>;
@@ -89,6 +90,16 @@ export async function upCmd(
   const env = deps.env ?? process.env;
   const fileExists = deps.fileExists ?? existsSync;
 
+  // --idle abc parses to NaN, and setTimeout(fn, NaN) fires immediately — an
+  // invalid value must fail loudly, not reap every worker instantly.
+  if (
+    flags.idleMinutes !== undefined &&
+    (!Number.isFinite(flags.idleMinutes) || flags.idleMinutes < 0)
+  ) {
+    io.err("invalid --idle value: must be a non-negative number of minutes");
+    return { code: EXIT.TRANSPORT };
+  }
+
   // Fail fast: no worker entry means up cannot deliver its promise at all.
   const entry = resolveWorkerEntry(deps.cliModuleUrl ?? import.meta.url, env, fileExists);
   if (entry === null) {
@@ -139,6 +150,7 @@ export async function upCmd(
       dataDir: string;
       onRootServed: (root: string) => void;
       onRequestEnqueued: (root: string, kind: string) => void;
+      onRequestClaimed: (root: string, kind: string) => void;
       onRequestSettled: (root: string) => void;
       managedRoots: () => { root: string; kinds?: string[] }[];
     }) => {
@@ -153,6 +165,7 @@ export async function upCmd(
       dataDir: flags.dataDir,
       onRootServed: (root) => supervisor.trackManaged(root),
       onRequestEnqueued: (root) => supervisor.jobEnqueued(root),
+      onRequestClaimed: (root) => supervisor.jobClaimed(root),
       onRequestSettled: (root) => supervisor.jobSettled(root),
       managedRoots: () => supervisor.managedRoots(),
     });

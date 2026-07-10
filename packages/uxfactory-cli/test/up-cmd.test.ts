@@ -200,6 +200,50 @@ describe("upCmd", () => {
     expect(io.errs.some((l) => l.endsWith("partial line"))).toBe(true);
   });
 
+  it("wires onRequestClaimed to the supervisor (claim then settle reaches the idle path without throwing)", async () => {
+    const io = captureIO();
+    let hooks: {
+      onRequestEnqueued?: (root: string, kind: string) => void;
+      onRequestClaimed?: (root: string, kind: string) => void;
+      onRequestSettled?: (root: string) => void;
+    } = {};
+    await upCmd(
+      { dataDir: "/launch/.uxfactory", idleMinutes: 10 },
+      io,
+      {
+        startBridge: async (opts) => {
+          hooks = opts as never;
+          return { url: "x", close: async () => {} };
+        },
+        spawn: (() => fakeChild()) as never,
+        cliModuleUrl: CLI_URL,
+        env: {},
+        fileExists,
+        onSignal: () => {},
+      },
+    );
+    expect(typeof hooks.onRequestClaimed).toBe("function");
+    hooks.onRequestEnqueued?.("/other", "generate-artifact");
+    hooks.onRequestClaimed?.("/other", "generate-artifact");
+    hooks.onRequestSettled?.("/other"); // full lifecycle drives the supervisor without throwing
+  });
+
+  it("--idle validation: non-finite or negative → exit 2 with the canonical message; 0 stays valid", async () => {
+    const io = captureIO();
+    const deps = {
+      startBridge: async () => ({ url: "x", close: async () => {} }),
+      spawn: (() => fakeChild()) as never,
+      cliModuleUrl: CLI_URL,
+      env: {},
+      fileExists,
+      onSignal: () => {},
+    };
+    expect((await upCmd({ dataDir: "/l/.uxfactory", idleMinutes: Number.NaN }, io, deps)).code).toBe(2);
+    expect((await upCmd({ dataDir: "/l/.uxfactory", idleMinutes: -5 }, io, deps)).code).toBe(2);
+    expect(io.errs.join("\n")).toContain("invalid --idle value: must be a non-negative number of minutes");
+    expect((await upCmd({ dataDir: "/l/.uxfactory", idleMinutes: 0 }, io, deps)).code).toBe(0);
+  });
+
   it("worker entry missing → exit 2 before the bridge starts", async () => {
     const io = captureIO();
     let bridgeStarted = false;
