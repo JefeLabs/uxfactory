@@ -32,7 +32,7 @@ The features→stories→ACs graph is the panel's most product-shaped content �
 ### 2. Tab + routing
 
 - `Tab` union (`ui/stores/app.ts`) gains `"requirements"`.
-- New route `/tabs/requirements` in `ui/router.tsx`, following the existing tab-route pattern; TabNav entry with the lucide `ListChecks` icon, ordered second.
+- New route `/tabs/requirements` in `ui/router.tsx`, following the existing tab-route pattern; TabNav entry (label-only — TAB_DEFS carries no icons), ordered second.
 - Existing tab tests updated for the new order (Generate, Requirements, Artifacts, Components, Assets, Checks).
 
 ### 3. `screens/Requirements.tsx`
