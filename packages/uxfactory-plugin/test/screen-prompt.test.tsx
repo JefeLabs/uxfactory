@@ -1568,6 +1568,16 @@ describe("story scope selector (feature-grouped, below GROUNDED IN)", () => {
     });
     expect(screen.queryByRole("button", { name: "Enforcement scope" })).not.toBeInTheDocument();
   });
+
+  it("consumes pendingStoryRefs on mount into the coverage scope", async () => {
+    useAppStore.getState().setPendingStoryRefs(["browse-faq"]);
+
+    await renderWithTrace();
+
+    expect(useAppStore.getState().pendingStoryRefs).toBeNull();
+    const summary = await screen.findByRole("button", { name: "Enforcement scope" });
+    expect(summary).toHaveTextContent("1 of 3 stories");
+  });
 });
 
 // ─── RunBadge — loop visibility (iteration count + failing findings) ──────────

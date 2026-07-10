@@ -814,6 +814,13 @@ export function Prompt({
     .filter((c) => !c.planned)
     .every((c) => c.status === "missing");
 
+  // ── Consume a pending story-scope handoff from Requirements' per-story
+  //    Generate action (one-shot: read + clear on mount). ─────────────────────
+  useEffect(() => {
+    const refs = useAppStore.getState().consumePendingStoryRefs();
+    if (refs !== null && refs.length > 0) setScopedStories(refs);
+  }, []);
+
   // ── SSE subscription — bridge events → run progress / completion ───────────
   useEffect(() => {
     const teardown = bridge.events((ev: BridgeEvent) => {

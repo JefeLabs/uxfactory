@@ -16,21 +16,26 @@
  * Filter and search compose with AND; a feature-name match keeps every one
  * of its stories, an AC match keeps its whole story (not just that AC).
  *
- * v1 seam: `bus` and per-story actions (canvas jump on linked nodes, open in
- * editor, per-story Generate handoff) land in a follow-up change. This
- * screen already accepts `bridge`/`bus` from the route and renders a
- * `data-story-id` + an empty `data-story-actions` slot per story so that
- * change is purely additive (no restructuring).
+ * Per-story actions (canvas jump on linked nodes, open in editor, per-story
+ * Generate handoff):
+ *   - Linked-node chips (AcRow) become buttons: `bus.selectNodes([n.nodeId])`.
+ *   - "Open story in editor" (StoryRow): `bridge.openPath(story.filePath)`,
+ *     with the Artifacts-tab row-level error note on failure (no modal).
+ *   - "Generate design for story" (StoryRow): stashes `[story.storyId]` in
+ *     the app store's `pendingStoryRefs` and navigates to `/tabs/prompt`,
+ *     which consumes it on mount into its coverage-scope selection.
  */
 
 import React, { useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronDown, ChevronRight, ExternalLink, Wand2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { Bridge, TraceAC, TraceFeature, TraceStory } from "../lib/bridge.js";
+import { BridgeError } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { traceQuery } from "../queries.js";
 import { Card } from "../components/index.js";
+import { useAppStore } from "../stores/app.js";
 
 type Filter = "all" | "uncovered" | "unverified";
 
@@ -78,7 +83,7 @@ function ConformanceDot({ conformed }: { conformed: boolean | null }): React.JSX
 
 // ─── AC row ────────────────────────────────────────────────────────────────────
 
-function AcRow({ ac }: { ac: TraceAC }): React.JSX.Element {
+function AcRow({ ac, bus }: { ac: TraceAC; bus: PluginBus }): React.JSX.Element {
   return (
     <li className="text-[11px] text-gray-600 flex flex-wrap items-center gap-1">
       <span className="text-gray-400">{ac.acId}</span>
@@ -95,15 +100,17 @@ function AcRow({ ac }: { ac: TraceAC }): React.JSX.Element {
           {c.page.replace(/^.*\//, "")}
         </span>
       ))}
-      {/* Task 3 turns these into buttons (bus.selectNodes([n.nodeId])) — plain spans until then. */}
       {ac.linkedNodes.map((n) => (
-        <span
+        <button
           key={n.nodeId}
+          type="button"
+          onClick={() => bus.selectNodes([n.nodeId])}
           title={`Node: ${n.nodeId}`}
-          className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-100"
+          aria-label={`Jump to ${n.unitName} on canvas`}
+          className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-100 hover:bg-green-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
         >
           {n.unitName}
-        </span>
+        </button>
       ))}
     </li>
   );
@@ -111,7 +118,36 @@ function AcRow({ ac }: { ac: TraceAC }): React.JSX.Element {
 
 // ─── Story row ─────────────────────────────────────────────────────────────────
 
-function StoryRow({ story }: { story: TraceStory }): React.JSX.Element {
+function StoryRow({
+  story,
+  bridge,
+  bus,
+}: {
+  story: TraceStory;
+  bridge: Bridge;
+  bus: PluginBus;
+}): React.JSX.Element {
+  const navigate = useNavigate();
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  async function handleOpen(): Promise<void> {
+    setOpenError(null);
+    try {
+      await bridge.openPath(story.filePath);
+    } catch (err) {
+      const msg =
+        err instanceof BridgeError
+          ? `Could not open file (error ${err.status})`
+          : "Could not open file";
+      setOpenError(msg);
+    }
+  }
+
+  function handleGenerate(): void {
+    useAppStore.getState().setPendingStoryRefs([story.storyId]);
+    void navigate({ to: "/tabs/prompt" });
+  }
+
   return (
     <div data-story-id={story.storyId} className="pl-4 py-1.5 border-l border-gray-100 ml-1">
       <div className="flex items-start justify-between gap-2">
@@ -123,9 +159,32 @@ function StoryRow({ story }: { story: TraceStory }): React.JSX.Element {
             {story.want}
           </span>
         </div>
-        {/* Task 3 fills this with Open-in-editor / Generate icon buttons. */}
-        <div data-story-actions={story.storyId} />
+        <div data-story-actions={story.storyId} className="flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => void handleOpen()}
+            aria-label="Open story in editor"
+            title="Open story in editor"
+            className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+          >
+            <ExternalLink className="w-3 h-3" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            aria-label="Generate design for story"
+            title="Generate design for story"
+            className="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+          >
+            <Wand2 className="w-3 h-3" aria-hidden="true" />
+          </button>
+        </div>
       </div>
+      {openError !== null && (
+        <p className="text-[11px] text-warn-600 mt-1" role="alert">
+          {openError}
+        </p>
+      )}
       {story.coveredBy.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1">
           {story.coveredBy.map((c) => (
@@ -140,7 +199,7 @@ function StoryRow({ story }: { story: TraceStory }): React.JSX.Element {
       )}
       <ul className="mt-1 space-y-0.5">
         {story.acceptanceCriteria.map((ac) => (
-          <AcRow key={ac.acId} ac={ac} />
+          <AcRow key={ac.acId} ac={ac} bus={bus} />
         ))}
       </ul>
     </div>
@@ -154,11 +213,15 @@ function FeatureRow({
   stories,
   isOpen,
   onToggle,
+  bridge,
+  bus,
 }: {
   feature: TraceFeature;
   stories: TraceStory[];
   isOpen: boolean;
   onToggle: () => void;
+  bridge: Bridge;
+  bus: PluginBus;
 }): React.JSX.Element {
   return (
     <div>
@@ -187,7 +250,8 @@ function FeatureRow({
           </span>
         )}
       </button>
-      {isOpen && stories.map((s) => <StoryRow key={s.storyId} story={s} />)}
+      {isOpen &&
+        stories.map((s) => <StoryRow key={s.storyId} story={s} bridge={bridge} bus={bus} />)}
     </div>
   );
 }
@@ -201,10 +265,6 @@ export function Requirements({
   bridge: Bridge;
   bus: PluginBus;
 }): React.JSX.Element {
-  // `bus` is unused in this v1 read/navigate core — wired here so the
-  // follow-up actions change (canvas jump, open-in-editor, Generate handoff)
-  // is purely additive.
-  void bus;
   const traceResult = useQuery(traceQuery(bridge));
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
@@ -320,6 +380,8 @@ export function Requirements({
                   stories={survivors}
                   isOpen={isOpen(f.featureId)}
                   onToggle={() => toggle(f.featureId)}
+                  bridge={bridge}
+                  bus={bus}
                 />
               );
             })}
@@ -340,7 +402,9 @@ export function Requirements({
                   <span className="text-gray-400">{unassignedSurvivors.length}</span>
                 </button>
                 {isOpen("__unassigned") &&
-                  unassignedSurvivors.map((s) => <StoryRow key={s.storyId} story={s} />)}
+                  unassignedSurvivors.map((s) => (
+                    <StoryRow key={s.storyId} story={s} bridge={bridge} bus={bus} />
+                  ))}
               </div>
             )}
           </div>

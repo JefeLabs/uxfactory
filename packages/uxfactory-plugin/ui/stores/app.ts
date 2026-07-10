@@ -58,6 +58,12 @@ export interface AppState {
   managedWorker: ManagedInfo | null;
   /** Session dismiss for the WorkerBanner; re-armed by a fresh covered→uncovered transition. */
   workerBannerDismissed: boolean;
+  /**
+   * One-shot handoff from Requirements' per-story Generate action: the story
+   * ids to scope the Prompt tab's coverage contract to. Set right before
+   * navigating to /tabs/prompt; Prompt consumes (reads + clears) it on mount.
+   */
+  pendingStoryRefs: string[] | null;
 }
 
 // ─── Action types ─────────────────────────────────────────────────────────────
@@ -88,6 +94,9 @@ export interface AppActions {
   cancelReconnect(): void;
   workersChanged(workers: WorkerPresenceEntry[] | null, managed: ManagedInfo | null): void;
   dismissWorkerBanner(): void;
+  setPendingStoryRefs(refs: string[]): void;
+  /** Reads pendingStoryRefs, clears it, and returns what was read (one-shot). */
+  consumePendingStoryRefs(): string[] | null;
 }
 
 export type AppStore = AppState & AppActions;
@@ -114,6 +123,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   workers: null,
   managedWorker: null,
   workerBannerDismissed: false,
+  pendingStoryRefs: null,
 
   // Actions
   setFileInfo(fi) {
@@ -189,5 +199,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   dismissWorkerBanner() {
     set({ workerBannerDismissed: true });
+  },
+
+  setPendingStoryRefs(refs) {
+    set({ pendingStoryRefs: refs });
+  },
+
+  consumePendingStoryRefs() {
+    const refs = get().pendingStoryRefs;
+    set({ pendingStoryRefs: null });
+    return refs;
   },
 }));

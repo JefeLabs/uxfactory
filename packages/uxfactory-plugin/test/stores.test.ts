@@ -177,6 +177,19 @@ describe("app store — misc actions", () => {
   });
 });
 
+describe("app store — pendingStoryRefs (Requirements → Prompt handoff)", () => {
+  beforeEach(() => {
+    useAppStore.setState({ pendingStoryRefs: null });
+  });
+
+  it("pendingStoryRefs: set then consume returns once and clears", () => {
+    useAppStore.getState().setPendingStoryRefs(["S-01", "S-02"]);
+    expect(useAppStore.getState().consumePendingStoryRefs()).toEqual(["S-01", "S-02"]);
+    expect(useAppStore.getState().pendingStoryRefs).toBeNull();
+    expect(useAppStore.getState().consumePendingStoryRefs()).toBeNull();
+  });
+});
+
 
 describe("app store — cancelReconnect", () => {
   beforeEach(() => {

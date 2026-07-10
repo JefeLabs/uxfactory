@@ -16,11 +16,12 @@
 import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 
 import type { Bridge, ProjectSnapshot, TraceResponse } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { Requirements } from "../ui/screens/Requirements.js";
+import { useAppStore } from "../ui/stores/app.js";
 import { renderWithProviders } from "./test-utils.js";
 
 afterEach(cleanup);
@@ -153,11 +154,17 @@ function makeBus(overrides: Partial<PluginBus> = {}): PluginBus {
   };
 }
 
-async function renderRequirements(traceOverride?: Partial<TraceResponse>) {
+interface RenderSeams {
+  bridge?: Partial<Bridge>;
+  bus?: Partial<PluginBus>;
+}
+
+async function renderRequirements(traceOverride?: Partial<TraceResponse>, seams?: RenderSeams) {
   const bridge = makeBridge({
     trace: vi.fn().mockResolvedValue({ ...DEFAULT_TRACE, ...traceOverride }),
+    ...seams?.bridge,
   });
-  return renderWithProviders(<Requirements bridge={bridge} bus={makeBus()} />, {
+  return renderWithProviders(<Requirements bridge={bridge} bus={makeBus(seams?.bus)} />, {
     initialEntries: ["/tabs/requirements"],
   });
 }
@@ -204,5 +211,47 @@ describe("Requirements — rollup, search, coverage filters", () => {
       "href",
       "/tabs/artifacts",
     );
+  });
+});
+
+describe("Requirements — per-story actions (canvas jump, Open, Generate handoff)", () => {
+  it("linked-node chip jumps the canvas selection", async () => {
+    const selectNodes = vi.fn();
+    await renderRequirements(undefined, { bus: { selectNodes } });
+    await screen.findByText(/2 features/);
+
+    fireEvent.click(screen.getByRole("button", { name: /Hero/ }));
+
+    expect(selectNodes).toHaveBeenCalledWith(["1:2"]);
+  });
+
+  it("Open calls bridge.openPath with the story's filePath", async () => {
+    const openPath = vi.fn().mockResolvedValue({ ok: true });
+    await renderRequirements(undefined, { bridge: { openPath } });
+    await screen.findByText(/2 features/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Open story in editor" })[0]!);
+
+    expect(openPath).toHaveBeenCalledWith(".uxfactory/artifacts/stories/S-01.json");
+  });
+
+  it("Open shows a row-level error note when bridge.openPath rejects", async () => {
+    const openPath = vi.fn().mockRejectedValue(new Error("nope"));
+    await renderRequirements(undefined, { bridge: { openPath } });
+    await screen.findByText(/2 features/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Open story in editor" })[0]!);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not open file");
+  });
+
+  it("Generate stores pending refs and navigates to the Generate tab", async () => {
+    const { router } = await renderRequirements();
+    await screen.findByText(/2 features/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Generate design for story" })[0]!);
+
+    expect(useAppStore.getState().pendingStoryRefs).toEqual(["S-01"]);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tabs/prompt"));
   });
 });
