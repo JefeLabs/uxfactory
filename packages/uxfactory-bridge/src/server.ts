@@ -41,6 +41,8 @@ export interface BridgeOptions {
   onRequestEnqueued?: (root: string, kind: string) => void;
   /** Fired after every POST /pipeline/result save, with the settled request's root. */
   onRequestSettled?: (root: string) => void;
+  /** Fired after every successful GET /pipeline/request/next dequeue (resolved root + claimed kind). */
+  onRequestClaimed?: (root: string, kind: string) => void;
   /** Roots an in-process supervisor manages (with the kinds its workers claim). */
   managedRoots?: () => { root: string; kinds?: string[] }[];
 }
@@ -490,6 +492,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<Fastify
           : undefined;
       const request = await store.dequeuePipelineRequest(resolution.root, kinds);
       if (request === null) return reply.code(204).send();
+      options.onRequestClaimed?.(resolution.root, request.kind);
       return request;
     },
   );

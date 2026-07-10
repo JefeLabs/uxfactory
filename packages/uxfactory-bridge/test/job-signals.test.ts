@@ -10,10 +10,12 @@ describe("BridgeOptions job-signal callbacks", () => {
   let launchRoot: string;
   const enqueued: Array<{ root: string; kind: string }> = [];
   const settled: string[] = [];
+  const claimed: Array<{ root: string; kind: string }> = [];
 
   beforeEach(async () => {
     enqueued.length = 0;
     settled.length = 0;
+    claimed.length = 0;
     launchRoot = await mkdtemp(path.join(os.tmpdir(), "uxf-job-signals-"));
     await mkdir(path.join(launchRoot, ".git"), { recursive: true });
     app = await createBridge({
@@ -21,6 +23,7 @@ describe("BridgeOptions job-signal callbacks", () => {
       reposRegistryPath: path.join(launchRoot, "repos-registry.json"),
       onRequestEnqueued: (root, kind) => enqueued.push({ root, kind }),
       onRequestSettled: (root) => settled.push(root),
+      onRequestClaimed: (root, kind) => claimed.push({ root, kind }),
     });
   });
 
@@ -66,6 +69,23 @@ describe("BridgeOptions job-signal callbacks", () => {
       payload: { id: "pr_never_enqueued", status: 0, result: null },
     });
     expect(settled).toHaveLength(0);
+  });
+
+  it("fires onRequestClaimed on a successful dequeue with root and kind; silent on 204", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/pipeline/request",
+      payload: { kind: "generate-artifact", payload: {} },
+    });
+    expect(claimed).toHaveLength(0); // enqueue alone is not a claim
+
+    const res = await app.inject({ method: "GET", url: "/pipeline/request/next" });
+    expect(res.statusCode).toBe(200);
+    expect(claimed).toEqual([{ root: launchRoot, kind: "generate-artifact" }]);
+
+    const empty = await app.inject({ method: "GET", url: "/pipeline/request/next" });
+    expect(empty.statusCode).toBe(204);
+    expect(claimed).toHaveLength(1); // no claim signal for an empty queue
   });
 });
 
