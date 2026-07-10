@@ -26,6 +26,8 @@ export interface BatchInputs {
  * Design-unit vocabulary (panel composer + worker generate-design). Page-tier
  * units keep full story coverage; component-tier units (organism/molecule/atom)
  * are gated claims-only; user-flow additionally owes the flow-steps check.
+ * Story units keep FULL story coverage for everyone and owe story-regression;
+ * storyRefs names the story under revision, not the accountability universe.
  */
 export const UNIT_TYPES = [
   "user-flow",
@@ -38,6 +40,7 @@ export const UNIT_TYPES = [
   "organism",
   "molecule",
   "atom",
+  "story",
   "email",
   "instagram-post",
   "instagram-story",

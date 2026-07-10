@@ -92,6 +92,16 @@ export interface FeatureCoverage {
 }
 
 /**
+ * Story-id prefix of a coverage-finding ref. requirement-coverage refs are
+ * plain story ids; render-coverage refs are `storyId/state[@vp]` — both key
+ * on the segment before the first "/". Shared by featureCoverage and the
+ * story-regression check.
+ */
+export function storyIdOfRef(ref: string): string {
+  return ref.split("/")[0]!;
+}
+
+/**
  * Derive the Coverage metric from a coverage check's findings. A feature is
  * conformed when every storyRef names an existing story that contributes no
  * coverage finding. Mode-agnostic by construction: requirement-coverage refs
@@ -106,7 +116,7 @@ export function featureCoverage(
 ): FeatureCoverage {
   const uncovered = new Set<string>();
   for (const f of coverageFindings) {
-    const id = (f.ref ?? "").split("/")[0]!;
+    const id = storyIdOfRef(f.ref ?? "");
     if (storyIds.has(id)) uncovered.add(id);
   }
   const rows = features.features.map((feature) => {

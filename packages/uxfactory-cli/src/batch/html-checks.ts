@@ -1,4 +1,4 @@
-import { featureCoverage, scopeStories } from "./checks.js";
+import { featureCoverage, scopeStories, storyIdOfRef } from "./checks.js";
 import type { BatchFinding, CheckResult, Flow, ImpliedState, Severity, StorySet, TokenSet , FeatureSet, FeatureCoverage} from "./checks.js";
 import type { CapturedNode } from "../render/dom-capture.js";
 import { binds } from "./scope.js";
@@ -256,6 +256,52 @@ export function renderCoverage(
     ...(storyCoverage
       ? {}
       : { reason: "component unit — story coverage not required; claims still validated" }),
+  };
+}
+
+/** True when a persisted report can vouch for every story's coverage. */
+export function qualifiesAsBaseline(report: BatchReport): boolean {
+  if (report.storyRefs !== undefined) return false;
+  if (report.unit === undefined) return true;
+  return report.unit !== "story" && !COMPONENT_UNITS.has(report.unit);
+}
+
+/** Non-ref stories covered at baseline must still be covered (spec 2026-07-10-story-unit §1). */
+export function storyRegression(
+  snapshots: RenderSnapshot[],
+  stories: StorySet | null,
+  storyRefs: string[] | undefined,
+  baseline: BatchReport | null | undefined,
+): CheckResult {
+  const id = "story-regression";
+  if (stories === null) {
+    return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
+  }
+  const refs = new Set(storyRefs ?? []);
+  const usable = baseline != null && qualifiesAsBaseline(baseline);
+  const baselineUncovered = new Set<string>();
+  if (usable) {
+    const cov = baseline!.checks.find((c) => c.id === "render-coverage");
+    for (const f of cov?.findings ?? []) {
+      if (f.ref !== undefined) baselineUncovered.add(storyIdOfRef(f.ref));
+    }
+  }
+  const coveredNow = (idStr: string): boolean =>
+    snapshots.some((s) => s.coverChecks.some((c) => c.story === idStr && c.found && c.visible));
+  const findings: BatchFinding[] = [];
+  for (const s of stories.stories) {
+    if (refs.has(s.id)) continue; // the refs are render-coverage's job
+    const coveredAtBaseline = usable ? !baselineUncovered.has(s.id) : true; // strict mode
+    if (coveredAtBaseline && !coveredNow(s.id)) {
+      findings.push({ detail: `story ${s.id} lost coverage (covered at baseline, uncovered now)`, ref: s.id });
+    }
+  }
+  return {
+    id,
+    status: findings.length > 0 ? "fail" : "pass",
+    severity: "must",
+    findings,
+    reason: usable ? "baseline: last full-denominator report" : "no qualifying baseline — strict mode",
   };
 }
 
@@ -582,6 +628,7 @@ export function typographyConformance(
 /** Per-gate binding thresholds for the HTML tier (kept separate from spec-mode GATE_THRESHOLDS). */
 export const HTML_GATE_THRESHOLDS: Record<string, GateThresholds> = {
   "render-coverage": { min_visual: "none", min_editorial: "none", min_coverage: "low", min_flow: "none" },
+  "story-regression": { min_visual: "none", min_editorial: "none", min_coverage: "low", min_flow: "none" },
   a11y: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   contrast: { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
   "token-conformance": { min_visual: "medium", min_editorial: "none", min_coverage: "none", min_flow: "none" },
@@ -617,6 +664,12 @@ export interface RunHtmlBatchInput {
   flow?: Flow | null;
   /** The registered copy deck (registry `inputs.copyDeck`) — enables copy-conformance. */
   copyDeck?: CopyDeck | null;
+  /**
+   * The last full-denominator report for this design (loaded by the batch
+   * command — Task 2). Feeds story-regression's baseline comparison; absent
+   * or non-qualifying → strict mode.
+   */
+  baseline?: BatchReport | null;
 }
 
 interface HtmlGateEntry {
@@ -637,6 +690,13 @@ const HTML_GATE_ENTRIES: HtmlGateEntry[] = [
       renderCoverage(i.snapshots, i.stories, {
         storyCoverage: i.unit === undefined || !COMPONENT_UNITS.has(i.unit),
       }),
+  },
+  {
+    id: "story-regression",
+    severity: "must",
+    run: (i) => storyRegression(i.snapshots, i.stories, i.storyRefs, i.baseline),
+    bindsWhen: (i) => i.unit === "story",
+    notOwedReason: "binds only for the story unit",
   },
   { id: "a11y", severity: "must", run: (i) => a11y(i.snapshots) },
   { id: "contrast", severity: "must", run: (i) => contrast(i.snapshots) },
@@ -693,13 +753,18 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
 
   // Story-scoped contract: gate against EXACTLY the declared stories; a ref
   // naming no registered story becomes a must finding on render-coverage.
+  // Story units keep the FULL denominator: storyRefs names the story under
+  // revision; scoping the universe to it would un-enforce its neighbors.
   let effective = input;
   let unknownRefFindings: BatchFinding[] = [];
-  if (input.storyRefs !== undefined && input.stories !== null) {
+  if (input.unit !== "story" && input.storyRefs !== undefined && input.stories !== null) {
     const scoped = scopeStories(input.stories, input.storyRefs);
     effective = { ...input, stories: scoped.scoped };
     unknownRefFindings = scoped.unknownRefFindings;
   }
+
+  const storyUnitRefsMissing =
+    input.unit === "story" && (input.storyRefs === undefined || input.storyRefs.length === 0);
 
   const checks: CheckResult[] = [];
   const rubric: string[] = [];
@@ -714,9 +779,18 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
     if (doesBind) {
       rubric.push(entry.id);
       const result = entry.run(effective);
-      if (entry.id === "render-coverage" && unknownRefFindings.length > 0) {
-        result.findings.push(...unknownRefFindings);
-        result.status = "fail";
+      if (entry.id === "render-coverage") {
+        if (unknownRefFindings.length > 0) {
+          result.findings.push(...unknownRefFindings);
+          result.status = "fail";
+        }
+        if (storyUnitRefsMissing) {
+          result.findings.push({
+            detail: "story unit requires storyRefs — nothing to revise",
+            ref: "storyRefs",
+          });
+          result.status = "fail";
+        }
       }
       checks.push(result);
     } else {
