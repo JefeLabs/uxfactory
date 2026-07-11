@@ -166,6 +166,13 @@ describe("snapshot workers field + connect-rescan", () => {
     const otherRoot = await mkdtemp(path.join(os.tmpdir(), "uxf-rescan-root-"));
     await mkdir(path.join(otherRoot, ".git"), { recursive: true });
 
+    // E9: an SSE observer proves the promotion actually broadcasts a
+    // worker-status frame — the test's title has claimed this since step 1.
+    const observed: Array<{ requestId: string; event: { root?: string; workers?: unknown[] } }> = [];
+    const observerCtl = new AbortController();
+    const observerRes = await fetch(`${base}/pipeline/events`, { signal: observerCtl.signal });
+    collectFrames(observerRes, observed);
+
     // 1. Worker subscribes for a root nobody serves yet → pending.
     const workerCtl = new AbortController();
     await fetch(
@@ -173,6 +180,8 @@ describe("snapshot workers field + connect-rescan", () => {
       { signal: workerCtl.signal },
     );
     await new Promise((r) => setTimeout(r, 200)); // let the (non-)registration settle
+    // Still pending (root unserved) — no worker-status frame yet.
+    expect(observed.filter((f) => f.requestId === "worker-status")).toHaveLength(0);
 
     // 2. Panel connects the root → pending worker promoted; snapshot shows it.
     const connect = await fetch(`${base}/project/connect`, {
@@ -186,7 +195,15 @@ describe("snapshot workers field + connect-rescan", () => {
       { kinds: ["generate-artifact"], connectedAt: expect.any(Number) },
     ]);
 
+    // The promotion itself broadcasts a worker-status frame for the root.
+    await waitFor(() =>
+      observed.some(
+        (f) => f.requestId === "worker-status" && f.event.root === otherRoot && f.event.workers?.length === 1,
+      ),
+    );
+
     workerCtl.abort();
+    observerCtl.abort();
     await rm(otherRoot, { recursive: true, force: true });
   });
 });

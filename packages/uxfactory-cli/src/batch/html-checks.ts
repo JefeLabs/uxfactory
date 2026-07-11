@@ -1,4 +1,4 @@
-import { featureCoverage, scopeStories, storyIdOfRef } from "./checks.js";
+import { featureCoverage, isPagePathRef, scopeStories, storyIdOfRef } from "./checks.js";
 import type { BatchFinding, CheckResult, Flow, ImpliedState, Severity, StorySet, TokenSet , FeatureSet, FeatureCoverage} from "./checks.js";
 import type { CapturedNode } from "../render/dom-capture.js";
 import { binds } from "./scope.js";
@@ -259,24 +259,19 @@ export function renderCoverage(
   };
 }
 
-/** True when a persisted report can vouch for every story's coverage. */
+/**
+ * True when a persisted report can vouch for every story's coverage. A
+ * baseline that carries no `checks` array (e.g. `{}`, or any other
+ * corrupt-but-parseable JSON) cannot actually vouch for anything — reading
+ * that as "qualifies" claimed a baseline was usable when its shape can't
+ * back that up. Reject it up front so the caller reports the truthful
+ * "no qualifying baseline — strict mode" instead.
+ */
 export function qualifiesAsBaseline(report: BatchReport): boolean {
+  if (!Array.isArray((report as { checks?: unknown }).checks)) return false;
   if (report.storyRefs !== undefined) return false;
   if (report.unit === undefined) return true;
   return report.unit !== "story" && !COMPONENT_UNITS.has(report.unit);
-}
-
-/**
- * True for a render-coverage page-path ref (render failure, or a dead/
- * invisible selector) — never a story×state coverage ref. Page-path refs are
- * built as `${page} › ${view}` (optionally `› ${selector}`); story×state refs
- * are always `${storyId}/${state}[@${vp}]` and never contain " › ". Telling
- * the two apart keeps a page whose leading path segment happens to equal a
- * registered story id (e.g. a page filed under "S2/index.html") from being
- * misread as a coverage miss for story S2.
- */
-function isPagePathRef(ref: string): boolean {
-  return ref.includes(" › ");
 }
 
 /** Normalize a render-coverage finding ref to a `story/state` key, or null
@@ -324,10 +319,10 @@ export function storyRegression(
   const usable = baseline != null && qualifiesAsBaseline(baseline);
   const missingAtBaseline = new Set<string>();
   if (usable) {
-    // Baselines are loaded from disk via JSON.parse with no runtime shape
-    // validation (batch-html.ts) — a corrupt-but-parseable report (e.g. `{}`)
-    // still passes qualifiesAsBaseline's shape-free checks, so guard the
-    // `checks` access rather than crash the gate on a missing array.
+    // Baselines are loaded from disk via JSON.parse with no further runtime
+    // shape validation (batch-html.ts) — qualifiesAsBaseline now rejects a
+    // `checks`-less report (e.g. `{}`) outright, but `?? []` stays as a
+    // belt-and-suspenders guard rather than trusting the cast all the way down.
     const cov = (baseline!.checks ?? []).find((c) => c.id === "render-coverage");
     for (const f of cov?.findings ?? []) {
       if (f.ref === undefined) continue;
@@ -875,7 +870,12 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   const mustPassFailed = checks.some((c) => c.severity === "must" && c.status === "fail");
 
   // Coverage METRIC (decision 12) — derived from render-coverage findings
-  // (story-id-prefixed refs); advisory metadata only, never gates.
+  // (story-id-prefixed refs); advisory metadata only, never gates. For the
+  // story unit, ALSO union story-regression's findings: render-coverage
+  // alone only sees the refs-scoped story set, so a feature keyed to a
+  // gate-failed regressed NEIGHBOR (not itself in storyRefs) would otherwise
+  // read as conformed. story-regression's refs are `story/state` keys —
+  // compatible with featureCoverage's storyIdOfRef prefix parsing.
   let metric: FeatureCoverage | undefined;
   if (input.features != null && effective.stories !== null) {
     const scopedIds = new Set(effective.stories.stories.map((s) => s.id));
@@ -885,11 +885,12 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
         ? { features: input.features.features.filter((f) => f.storyRefs.every((r) => scopedIds.has(r))) }
         : input.features;
     const coverage = checks.find((c) => c.id === "render-coverage");
-    metric = featureCoverage(
-      attestable,
-      scopedIds,
-      coverage?.status === "fail" ? coverage.findings : [],
-    );
+    const regression = input.unit === "story" ? checks.find((c) => c.id === "story-regression") : undefined;
+    const coverageFindings = [
+      ...(coverage?.status === "fail" ? coverage.findings : []),
+      ...(regression?.status === "fail" ? regression.findings : []),
+    ];
+    metric = featureCoverage(attestable, scopedIds, coverageFindings);
   }
 
   return {

@@ -63,7 +63,8 @@ export async function workerCmd(
   }
 
   const spawn = deps.spawn ?? (nodeSpawn as unknown as NonNullable<WorkerCmdDeps["spawn"]>);
-  const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1] ?? "uxfactory");
+  // argv[1] is always defined for a real CLI invocation — no fallback needed.
+  const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1]!);
   const child = spawn(entry.tsxBin, [entry.mainTs], {
     cwd: root,
     stdio: "inherit",

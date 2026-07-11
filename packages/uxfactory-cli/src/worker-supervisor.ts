@@ -38,7 +38,6 @@ interface Entry {
   child: SupervisedChild | null;
   restarts: number;
   lastStartAt: number;
-  failed: boolean;
   pendingRestart: unknown | null;
   reaping: boolean;
 }
@@ -106,7 +105,6 @@ export class WorkerSupervisor {
     const entry = this.entries.get(root);
     if (entry?.child !== null && entry?.child !== undefined) return;
     if (entry?.pendingRestart !== null && entry?.pendingRestart !== undefined) return;
-    if (entry !== undefined) entry.failed = false; // a fresh ensure retries a failed root once
     this.start(root);
   }
 
@@ -116,7 +114,6 @@ export class WorkerSupervisor {
       child: null,
       restarts: prev?.restarts ?? 0,
       lastStartAt: this.now(),
-      failed: false,
       pendingRestart: null,
       reaping: false,
     };
@@ -156,7 +153,6 @@ export class WorkerSupervisor {
     }
 
     if (code === 2) {
-      entry.failed = true;
       this.deps.log(
         `worker for ${root} exited with a setup error (code 2) — not restarting; ` +
           `fix the cause (e.g. ~/.agentx/auth.json) and reconnect the project to retry`,
@@ -198,7 +194,11 @@ export class WorkerSupervisor {
     this.cancelIdleTimer(root); // F3: a stale timer must not reap the fresh child early
 
     // Treated the same as a non-2 exit: not a deterministic setup failure,
-    // so it's worth retrying with backoff rather than giving up.
+    // so it's worth retrying with backoff rather than giving up. Deliberate
+    // asymmetry vs. exit code 2: a spawn/runtime error is often JUST as
+    // deterministic (e.g. tsx deleted post-startup — every retry will fail
+    // the same way), but unlike code 2 it retries forever at the backoff
+    // cap instead of waiting for the next job signal to try again once.
     this.scheduleRestart(
       root,
       entry,

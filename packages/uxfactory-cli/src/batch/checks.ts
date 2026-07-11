@@ -92,6 +92,15 @@ export interface FeatureCoverage {
 }
 
 /**
+ * Story-id lexical convention: a story id must never contain "/" or " › " —
+ * both the Coverage metric (featureCoverage, via storyIdOfRef) and
+ * story-regression's ref parsing rely on those characters being absent from
+ * ids so they can split a finding ref into its story-id and page-path/state
+ * segments unambiguously. A story id that violates this fails SAFE (it can
+ * only cause a ref to be over-reported as a page-path or under-attributed to
+ * the wrong story), never unsafe, but the convention is load-bearing — do
+ * not relax it without re-auditing both call sites below.
+ *
  * Story-id prefix of a coverage-finding ref. requirement-coverage refs are
  * plain story ids; render-coverage refs are `storyId/state[@vp]` — both key
  * on the segment before the first "/". Shared by featureCoverage and the
@@ -102,12 +111,32 @@ export function storyIdOfRef(ref: string): string {
 }
 
 /**
+ * True for a render-coverage page-path ref (render failure, or a dead/
+ * invisible selector) — never a story×state coverage ref. Page-path refs are
+ * built as `${page} › ${view}` (optionally `› ${selector}`); story×state refs
+ * are always `${storyId}/${state}[@${vp}]` and never contain " › ". Telling
+ * the two apart keeps a page whose leading path segment happens to equal a
+ * registered story id (e.g. a page filed under "S2/index.html") from being
+ * misread as a coverage miss for story S2. Lives beside storyIdOfRef (both
+ * html-checks.ts's story-regression and this file's featureCoverage guard
+ * against page-path refs with it) — checks.ts must not import from
+ * html-checks.ts, so the definition lives here and html-checks.ts imports it
+ * back.
+ */
+export function isPagePathRef(ref: string): boolean {
+  return ref.includes(" › ");
+}
+
+/**
  * Derive the Coverage metric from a coverage check's findings. A feature is
  * conformed when every storyRef names an existing story that contributes no
  * coverage finding. Mode-agnostic by construction: requirement-coverage refs
  * are plain story ids and render-coverage refs are `storyId/state[@vp]` —
  * both key on the segment before the first "/"; refs that match no known
- * story id (render failures, dead selectors) are ignored.
+ * story id (render failures, dead selectors) are ignored. Page-path refs
+ * (render failures / dead selectors, `"${page} › ${view}"`) are skipped
+ * outright — their leading path segment can coincidentally equal a
+ * registered story id and must never be misread as that story's finding.
  */
 export function featureCoverage(
   features: FeatureSet,
@@ -116,7 +145,8 @@ export function featureCoverage(
 ): FeatureCoverage {
   const uncovered = new Set<string>();
   for (const f of coverageFindings) {
-    const id = storyIdOfRef(f.ref ?? "");
+    if (f.ref === undefined || isPagePathRef(f.ref)) continue;
+    const id = storyIdOfRef(f.ref);
     if (storyIds.has(id)) uncovered.add(id);
   }
   const rows = features.features.map((feature) => {

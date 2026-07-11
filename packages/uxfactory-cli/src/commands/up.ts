@@ -108,7 +108,8 @@ export async function upCmd(
   }
 
   const spawn = deps.spawn ?? nodeSpawn;
-  const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1] ?? "uxfactory");
+  // argv[1] is always defined for a real CLI invocation — no fallback needed.
+  const cliBin = deps.cliBinPath ?? path.resolve(process.argv[1]!);
   const launchRoot = path.dirname(path.resolve(flags.dataDir));
 
   const idleMinutes = flags.idleMinutes ?? 10;

@@ -21,7 +21,7 @@
 import { describe, it, expect } from "vitest";
 import { runHtmlBatch, qualifiesAsBaseline } from "../src/batch/html-checks.js";
 import type { RenderSnapshot } from "../src/batch/html-checks.js";
-import type { StorySet, ImpliedState } from "../src/batch/checks.js";
+import type { StorySet, ImpliedState, FeatureSet } from "../src/batch/checks.js";
 import type { RenderScope } from "../src/batch/scope.js";
 import type { BatchReport } from "../src/batch/run.js";
 
@@ -89,6 +89,28 @@ describe("story unit — denominator + story-regression", () => {
     const regression = report.checks.find((c) => c.id === "story-regression")!;
     expect(regression.status).toBe("fail");
     expect(regression.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
+  });
+
+  it("E1: featureCoverage metric unions story-regression findings for the story unit — a gate-failed regressed neighbor is not conformed", () => {
+    // S1 (the declared ref) is fully covered — render-coverage passes and by
+    // itself would feed the metric NO findings. S2 (a neighbor) regresses —
+    // story-regression fails. Without unioning story-regression's findings
+    // into the metric's input, F-neighbor would misreport conformed: true.
+    const features: FeatureSet = {
+      features: [
+        { featureId: "F-ref", name: "Ref feature", storyRefs: ["S1"] },
+        { featureId: "F-neighbor", name: "Neighbor feature", storyRefs: ["S2"] },
+      ],
+    };
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", ["S1"])],
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], features, scope: LOW,
+    });
+    expect(report.checks.find((c) => c.id === "render-coverage")!.status).toBe("pass");
+    expect(report.checks.find((c) => c.id === "story-regression")!.status).toBe("fail");
+    const fc = report.featureCoverage!;
+    expect(fc.features.find((f) => f.featureId === "F-neighbor")!.conformed).toBe(false);
+    expect(fc.features.find((f) => f.featureId === "F-ref")!.conformed).toBe(true);
   });
 
   it("legacy unit with storyRefs still swaps (byte-preserved behavior)", () => {
@@ -315,10 +337,12 @@ describe("story unit — denominator + story-regression", () => {
 
   it("corrupt-but-parseable baseline ({}) never crashes the gate", () => {
     // batch-html.ts loads the baseline via JSON.parse with no runtime shape
-    // validation — `{}` is valid JSON, qualifiesAsBaseline({}) is true (no
-    // storyRefs, no unit), but it carries no `checks` array.
+    // validation — `{}` is valid JSON but carries no `checks` array, so it
+    // cannot actually vouch for any story's coverage: qualifiesAsBaseline({})
+    // is FALSE (E3), and the gate truthfully reports strict mode rather than
+    // claiming a baseline while behaving strict-like.
     const corrupt = {} as BatchReport;
-    expect(qualifiesAsBaseline(corrupt)).toBe(true);
+    expect(qualifiesAsBaseline(corrupt)).toBe(false);
     expect(() =>
       runHtmlBatch({
         snapshots: [snap("screens/s1.html", ["S1"])],
@@ -331,11 +355,12 @@ describe("story unit — denominator + story-regression", () => {
       stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline: corrupt, scope: LOW,
     });
     const check = report.checks.find((c) => c.id === "story-regression")!;
-    // A missing `checks` array is guarded as "nothing recorded uncovered" —
-    // S2 (a non-ref, uncovered now) is not treated as a pre-existing gap, so
-    // it fails, same as strict mode would.
+    // A missing `checks` array now disqualifies the baseline outright — S2
+    // (a non-ref, uncovered now) fails under strict mode, same result as
+    // before E3 but for the truthful reason this time.
     expect(check.status).toBe("fail");
     expect(check.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
+    expect(check.reason).toContain("strict");
   });
 });
 

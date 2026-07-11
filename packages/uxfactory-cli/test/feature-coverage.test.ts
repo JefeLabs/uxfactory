@@ -60,6 +60,20 @@ describe("featureCoverage", () => {
     ]);
   });
 
+  it("E2: a render-failure page-path ref never marks a feature's story uncovered (page-path guard)", () => {
+    // "x/index.html › main" is a render-coverage page-path ref (render
+    // failure) whose leading segment ("x") happens to equal a registered
+    // story id. Without the isPagePathRef guard, storyIdOfRef would read it
+    // as a finding against story "x" and wrongly uncover F-x.
+    const features: FeatureSet = { features: [{ featureId: "F-x", name: "X", storyRefs: ["x"] }] };
+    const storyIds = new Set(["x"]);
+    const findings: BatchFinding[] = [
+      { detail: "x/index.html › main failed to render: boom", ref: "x/index.html › main" },
+    ];
+    const r = featureCoverage(features, storyIds, findings);
+    expect(r.features.find((f) => f.featureId === "F-x")!.conformed).toBe(true);
+  });
+
   it("empty feature set → zero of zero (renders as no metric)", () => {
     const r = featureCoverage({ features: [] }, STORY_IDS, []);
     expect(r).toMatchObject({ conformed: 0, total: 0, features: [] });

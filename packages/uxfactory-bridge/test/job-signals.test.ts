@@ -173,6 +173,21 @@ describe("managed flag on snapshot and worker-status frames", () => {
     await rm(other, { recursive: true, force: true });
   });
 
+  it("E8: POST /project/connect response has NO managed key for a root NOT in managedRoots", async () => {
+    const other = await mkdtemp(path.join(os.tmpdir(), "uxf-unmanaged-conn-"));
+    await mkdir(path.join(other, ".git"), { recursive: true });
+    // Deliberately NOT pushed to `managed` — this root is unmanaged.
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/connect",
+      payload: { repoPath: other },
+    });
+    const body = res.json() as { ok: boolean; snapshot: { managed?: unknown } };
+    expect(body.ok).toBe(true);
+    expect("managed" in body.snapshot).toBe(false);
+    await rm(other, { recursive: true, force: true });
+  });
+
   it("worker-status frames carry managed (SSE, real socket)", async () => {
     managed.push({ root: launchRoot });
     const base = await app.listen({ port: 0, host: "127.0.0.1" });

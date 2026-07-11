@@ -255,6 +255,23 @@ describe("batchHtmlMode", () => {
     expect(sr.status).toBe("pass");
     expect(sr.reason).toMatch(/strict/);
   });
+
+  it("E4: unparseable report.json (garbage, not JSON) → no throw; story-regression runs strict", async () => {
+    await mkdir(path.join(root, ".uxfactory/batch"), { recursive: true });
+    await writeFile(path.join(root, ".uxfactory/batch/report.json"), "not json{{");
+
+    const io = makeIO();
+    const code = await batchHtmlMode(
+      "design", { json: true, dataDir: path.join(root, ".uxfactory"), cwd: root, scope: "visual" },
+      io, inputsFor(), undefined, undefined, "story", undefined, undefined,
+      { renderViews: async () => [goodSnap] }, undefined, ["checkout"],
+    );
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(await readFile(path.join(root, ".uxfactory/batch/report.json"), "utf8"));
+    const sr = report.checks.find((c: { id: string }) => c.id === "story-regression");
+    expect(sr.status).toBe("pass");
+    expect(sr.reason).toMatch(/strict/);
+  });
 });
 
 // Guards CORRECTION 1: batchCmd must reach the HTML branch (right after readRegistry,
