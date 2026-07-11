@@ -442,6 +442,10 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   if (editingRow !== null) {
     return (
       <div className="flex flex-col flex-1 min-h-0">
+        {/* The editor's Regenerate enqueues too — same warning as the inventory. */}
+        <div className="px-4 pt-3">
+          <WorkerBanner kind="generate-artifact" />
+        </div>
         <ArtifactEditor
           artifactKey={editingRow.key}
           label={editingRow.label}

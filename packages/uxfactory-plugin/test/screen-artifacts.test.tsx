@@ -310,6 +310,12 @@ function resetStores(snapshot?: ProjectSnapshot): void {
     fileInfo: { name: "Meridian Health", fileKey: "file-meridian" },
     snapshot: snapshot ?? makeMeridianSnapshot(),
     toasts: [],
+    // Worker-liveness slice: null = unknown → the WorkerBanner never renders
+    // unless a test opts into an uncovered state explicitly (and that choice
+    // must not leak into later tests — it shifts tab order and role queries).
+    workers: null,
+    managedWorker: null,
+    workerBannerDismissed: false,
   });
   useWizardStore.setState({
     classification: {
@@ -497,6 +503,21 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
         screen.getByRole("button", { name: /Back to artifacts/i }),
       ).toBeInTheDocument();
     });
+  });
+
+  it("the no-worker banner renders inside the editor subview (its Regenerate enqueues too)", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ workers: [], managedWorker: null }); // uncovered
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Open Product Brief/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Back to artifacts/i })).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText("No worker is serving this project — jobs will queue until one connects."),
+    ).toBeInTheDocument();
   });
 
   it("Regenerate inside the editor opens the guided dialog", async () => {
