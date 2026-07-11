@@ -1571,7 +1571,11 @@ describe("Root gate — brief-first banner, gated seed/create/regenerate", () =>
     expect(within(dialog).queryByText("Create Illustrations")).not.toBeInTheDocument();
   });
 
-  it("brief missing + editor open on a non-brief artifact disables Regenerate with the gating tooltip", async () => {
+  it("brief missing + editor open on a non-brief MARKDOWN artifact disables Regenerate with the gating tooltip", async () => {
+    // makeBridge()'s default getArtifact returns the same markdown BRIEF_ARTIFACT
+    // for every key, so opening Sitemap here exercises ArtifactEditor's own
+    // markdown-section render path (ArtifactEditorHeader), not JsonFormEditor —
+    // see the JSON-form-branch test below for that path's coverage.
     const user = userEvent.setup();
     const bridge = makeBridge({
       snapshot: vi.fn().mockResolvedValue(
@@ -1583,6 +1587,43 @@ describe("Root gate — brief-first banner, gated seed/create/regenerate", () =>
     await user.click(await screen.findByRole("button", { name: /Open Sitemap/i }));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Back to artifacts/i })).toBeInTheDocument();
+    });
+
+    const regenerate = screen.getByRole("button", { name: /^Regenerate$/i });
+    expect(regenerate).toBeDisabled();
+
+    await user.hover(regenerate);
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip")).toHaveTextContent(GATED_TOOLTIP_COPY);
+    });
+  });
+
+  it("brief missing + editor open on a non-brief JSON-FORM artifact (sitemap) disables Regenerate with the gating tooltip", async () => {
+    // Real json-format content (parseable by the sitemap form spec) so
+    // ArtifactEditor actually mounts JsonFormEditor, not the markdown path —
+    // this is the branch the earlier gate implementation missed entirely.
+    const user = userEvent.setup();
+    const sitemapJson: ArtifactContent = {
+      key: "sitemap",
+      path: "/home/user/meridian/design/sitemap.json",
+      format: "json",
+      content: JSON.stringify({
+        nodes: [
+          { nodeId: "N-1", title: "Home", role: "home", parent: null, featureRefs: [], status: "planned" },
+        ],
+      }),
+    };
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+      getArtifact: vi.fn().mockResolvedValue(sitemapJson),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Open Sitemap/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId("json-form-editor")).toBeInTheDocument();
     });
 
     const regenerate = screen.getByRole("button", { name: /^Regenerate$/i });

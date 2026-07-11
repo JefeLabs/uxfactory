@@ -50,7 +50,7 @@ import { BridgeError } from "../lib/bridge.js";
 import { sectionGuidanceFor } from "../lib/artifact-schemas.js";
 import { formSpecFor, externalSourcesFor } from "../lib/artifact-forms.js";
 import type { ExternalOption } from "../lib/artifact-forms.js";
-import { ActionTooltip, InfoTooltip, ArtifactEditorHeader } from "../components/index.js";
+import { InfoTooltip, ArtifactEditorHeader } from "../components/index.js";
 import { JsonFormEditor } from "./JsonFormEditor.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -91,15 +91,6 @@ const EDITOR_PLUGINS = [
   codeBlockPlugin({ codeBlockEditorDescriptors: [plainTextCodeEditor] }),
   markdownShortcutPlugin(),
 ];
-
-/** Freshness dot classes — mirrors ArtifactEditorHeader's own mapping (kept
- * local: the disabled-Regenerate header below renders its own chrome rather
- * than the shared component, which has no disabled-button affordance). */
-const EDITOR_DOT_CLASS: Record<ArtifactStatus, string> = {
-  "up-to-date": "bg-success-600",
-  draft: "bg-warn-600",
-  missing: "border-2 border-gray-300",
-};
 
 // ─── Section types ─────────────────────────────────────────────────────────────
 
@@ -339,50 +330,6 @@ export function ArtifactEditor({
   }: {
     showSave?: boolean;
   }): React.JSX.Element {
-    if (regenerateDisabled) {
-      // ArtifactEditorHeader (the shared component) has no disabled-Regenerate
-      // affordance, so render the same chrome locally: the button needs a real
-      // `disabled` attribute + tooltip, not just a no-op onClick.
-      return (
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 bg-white shrink-0">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-            aria-label="Back to artifacts"
-          >
-            ← Back
-          </button>
-          <span
-            aria-hidden="true"
-            className={`w-2 h-2 shrink-0 rounded-full ${EDITOR_DOT_CLASS[status]}`}
-          />
-          <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{label}</span>
-          <ActionTooltip label={regenerateDisabledReason ?? "Regenerate is unavailable"}>
-            <span tabIndex={0}>
-              <button
-                type="button"
-                disabled
-                className="text-xs text-gray-400 cursor-not-allowed shrink-0"
-              >
-                Regenerate
-              </button>
-            </span>
-          </ActionTooltip>
-          {showSave && (
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={!isDirty || saving}
-              className="text-xs px-3 py-1.5 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-              aria-label="Save artifact"
-            >
-              Save
-            </button>
-          )}
-        </div>
-      );
-    }
     return (
       <ArtifactEditorHeader
         label={label}
@@ -391,6 +338,8 @@ export function ArtifactEditor({
         onRegenerate={onRegenerate}
         onSave={showSave ? () => void handleSave() : undefined}
         saveDisabled={!isDirty || saving}
+        regenerateDisabled={regenerateDisabled}
+        regenerateDisabledReason={regenerateDisabledReason}
       />
     );
   }
@@ -485,6 +434,8 @@ export function ArtifactEditor({
           bridge={bridge}
           onBack={onBack}
           onRegenerate={onRegenerate}
+          regenerateDisabled={regenerateDisabled}
+          regenerateDisabledReason={regenerateDisabledReason}
         />
       );
     }

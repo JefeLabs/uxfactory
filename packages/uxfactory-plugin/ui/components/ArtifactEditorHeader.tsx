@@ -6,6 +6,7 @@
 
 import React from "react";
 import type { ArtifactStatus } from "../lib/bridge.js";
+import { ActionTooltip } from "./ActionTooltip.js";
 
 const DOT_CLASS: Record<ArtifactStatus, string> = {
   "up-to-date": "bg-success-600",
@@ -22,6 +23,10 @@ export interface ArtifactEditorHeaderProps {
   onSave?: () => void;
   /** Disables the Save button (nothing to save, or a save in flight). */
   saveDisabled?: boolean;
+  /** Root gate: true disables Regenerate (e.g. the product brief is missing). */
+  regenerateDisabled?: boolean;
+  /** Tooltip shown on the disabled Regenerate button. */
+  regenerateDisabledReason?: string;
 }
 
 export function ArtifactEditorHeader({
@@ -31,7 +36,20 @@ export function ArtifactEditorHeader({
   onRegenerate,
   onSave,
   saveDisabled = false,
+  regenerateDisabled = false,
+  regenerateDisabledReason,
 }: ArtifactEditorHeaderProps): React.JSX.Element {
+  const regenerateButton = (
+    <button
+      type="button"
+      onClick={onRegenerate}
+      disabled={regenerateDisabled}
+      className="text-xs text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 shrink-0 disabled:text-gray-300 disabled:cursor-not-allowed"
+    >
+      Regenerate
+    </button>
+  );
+
   return (
     <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 bg-white shrink-0">
       <button
@@ -50,13 +68,13 @@ export function ArtifactEditorHeader({
 
       <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{label}</span>
 
-      <button
-        type="button"
-        onClick={onRegenerate}
-        className="text-xs text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 shrink-0"
-      >
-        Regenerate
-      </button>
+      {regenerateDisabled ? (
+        <ActionTooltip label={regenerateDisabledReason ?? "Regenerate is unavailable"}>
+          <span tabIndex={0}>{regenerateButton}</span>
+        </ActionTooltip>
+      ) : (
+        regenerateButton
+      )}
 
       {onSave !== undefined && (
         <button

@@ -585,6 +585,10 @@ export interface JsonFormEditorProps {
   bridge: Bridge;
   onBack: () => void;
   onRegenerate: () => void;
+  /** Root gate: true disables Regenerate (e.g. the product brief is missing). */
+  regenerateDisabled?: boolean;
+  /** Tooltip shown on the disabled Regenerate button. */
+  regenerateDisabledReason?: string;
 }
 
 export function JsonFormEditor({
@@ -597,6 +601,8 @@ export function JsonFormEditor({
   bridge,
   onBack,
   onRegenerate,
+  regenerateDisabled,
+  regenerateDisabledReason,
 }: JsonFormEditorProps): React.JSX.Element {
   const toast = useAppStore((s) => s.toast);
   const queryClient = useQueryClient();
@@ -638,6 +644,8 @@ export function JsonFormEditor({
           onRegenerate={onRegenerate}
           onSave={() => void onSubmit()}
           saveDisabled={!isDirty || saving}
+          regenerateDisabled={regenerateDisabled}
+          regenerateDisabledReason={regenerateDisabledReason}
         />
 
         <form
