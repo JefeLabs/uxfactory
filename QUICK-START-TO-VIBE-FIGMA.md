@@ -158,7 +158,7 @@ uxfactory up                    # bridge on :3779 + on-demand worker per project
 
 Start order doesn't matter: a worker started before its project is connected is held pending and counted the moment the panel connects. The ContextBar dot goes **green** when a live worker covers your project — also green for a managed (reaped, on-demand) root, with an "on-demand (idle)" tooltip — **amber** when none does, **grey** when unknown.
 
-A story- or unit-scoped Generate (a per-story handoff, or a scoped composer request) stamps `unit`/`storyRefs` into `uxfactory.batch.json`, and a later plain `uxfactory batch` run (no flags for this) inherits that same scope until a different Generate run restamps it — delete those fields from `uxfactory.batch.json` (or issue a full-set Generate to clear them) to gate the whole project again.
+A story- or unit-scoped Generate (a per-story handoff, or a scoped composer request) stamps `unit`/`storyRefs` into `uxfactory.batch.json`, and a later plain `uxfactory batch` run (no flags for this) inherits that same scope until a different Generate run restamps it. To gate the whole project again, delete those fields from `uxfactory.batch.json` — a later Generate only ever replaces the stamp with its own scope, it never clears it.
 
 > Without the global link, the raw form still works:
 > `<engine>/clients/uxfactory-worker/node_modules/.bin/tsx <engine>/clients/uxfactory-worker/src/main.ts`
