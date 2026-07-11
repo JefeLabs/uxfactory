@@ -1,10 +1,12 @@
 node_modules/
 dist/
 coverage/
-# Bridge runtime state stays local; .uxfactory/artifacts is the project's
-# versioned spec inventory and IS tracked.
-.uxfactory/*
-!.uxfactory/artifacts/
+# In USER projects, .uxfactory/artifacts/ is the versioned spec inventory and
+# should be committed (their .gitignore, their call). In THIS repo the whole
+# dir is only ever bridge runtime state + live-smoke debris — never tracked
+# (nothing under it has ever been committed; a carve-out only invites
+# accidental sweep-ins).
+.uxfactory/
 *.log
 .DS_Store
 .idea/
@@ -15,4 +17,3 @@ playground/
 .claude/
 .claude.json
 .playwright-mcp/
-.uxfactory/
