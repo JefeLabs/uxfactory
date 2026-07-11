@@ -39,7 +39,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ARTIFACT_REGISTRY, resolveCreationChain } from "@uxfactory/spec";
+import { ARTIFACT_REGISTRY, resolveCreationChain, ROOT_ARTIFACT, requiresRootArtifact } from "@uxfactory/spec";
 import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY, SET_ARTIFACT_KEYS } from "../lib/artifact-mapping.js";
 import type { Bridge, ArtifactRow } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
@@ -86,6 +86,18 @@ const REGISTRY_ORDER: ReadonlyMap<string, number> = new Map(
 function orderIndex(key: string): number {
   return REGISTRY_ORDER.get(REGISTRY_ID_BY_KEY[key] ?? key) ?? Number.MAX_SAFE_INTEGER;
 }
+
+/** Panel key for the root artifact (the brief) — every other artifact gates on it. */
+const BRIEF_KEY = ARTIFACT_KEY_BY_ID[ROOT_ARTIFACT] ?? "brief";
+
+/** True when `key`'s artifact must not be created/regenerated before the brief exists. */
+function requiresBrief(key: string): boolean {
+  return requiresRootArtifact(REGISTRY_ID_BY_KEY[key] ?? key);
+}
+
+/** Copy for gated Seed/Create/Regenerate actions while the brief is missing. */
+const GATED_TOOLTIP_COPY =
+  "Supply your product brief first — every artifact derives from it.";
 
 function statusToDot(
   status: ArtifactRow["status"],
@@ -186,7 +198,13 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
 
     const row = snapshot.artifacts.find((r) => r.key === focusArtifactKey);
     if (row !== undefined && row.status === "missing") {
-      openDialog(row); // chains missing prerequisites first
+      // Root gate: a missing brief redirects ALL focus-intent onto the brief's
+      // own interview first — computed from this effect's own `snapshot`
+      // dependency, not the outer render's (possibly stale) closure.
+      const briefRowNow = snapshot.artifacts.find((r) => r.key === BRIEF_KEY);
+      const briefMissingNow = (briefRowNow?.status ?? "missing") === "missing";
+      const gated = briefMissingNow && requiresBrief(row.key);
+      openDialog(gated ? (briefRowNow ?? row) : row); // chains missing prerequisites first
     }
 
     void navigate({ to: "/tabs/artifacts", search: {} });
@@ -399,6 +417,11 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   // visible inventory (coming soon) but never inflate the denominator.
 
   const artifacts = snapshot?.artifacts ?? [];
+
+  // Root gate: the brief is user-authored intent — nothing else seeds without it.
+  const briefRow = artifacts.find((r) => r.key === BRIEF_KEY);
+  const briefMissing = (briefRow?.status ?? "missing") === "missing";
+
   const upToDateCount = artifacts.filter((r) => r.status === "up-to-date").length;
   const totalCount = artifacts.length;
 
@@ -463,6 +486,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
           bridge={bridge}
           onBack={() => setEditingKey(null)}
           onRegenerate={() => openDialog(editingRow)}
+          regenerateDisabled={briefMissing && requiresBrief(editingRow.key)}
+          regenerateDisabledReason={GATED_TOOLTIP_COPY}
         />
         {createDialog}
       </div>
@@ -491,6 +516,29 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
         <p className="text-sm text-gray-500 -mt-2">
           The specifications your designs are verified against.
         </p>
+
+        {/* Root gate: nothing else derives from thin air — start with the brief */}
+        {briefMissing && (
+          <div
+            role="note"
+            className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-primary-100 bg-primary-50 px-3 py-3 text-xs text-primary-700"
+          >
+            <p className="font-medium">Start with your product brief</p>
+            <p>
+              Every other artifact derives from it. Answer four questions or paste what
+              you have — the AI structures your words, it never invents.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (briefRow) openDialog(briefRow);
+              }}
+              className="self-start text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+            >
+              Write the brief
+            </button>
+          </div>
+        )}
 
         {/* Grouped inventory */}
         {GROUPS.map(({ group, label }) => {
@@ -550,42 +598,74 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                       </span>
                     );
                   } else if (row.status === "missing") {
+                    const gated = briefMissing && requiresBrief(row.key);
+                    const seedButton = (
+                      <button
+                        type="button"
+                        onClick={() => handleSeed(row)}
+                        disabled={gated}
+                        className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label={`Seed ${row.label}`}
+                        title={gated ? undefined : "Draft from your existing artifacts — no questions"}
+                      >
+                        Seed
+                      </button>
+                    );
+                    const createButton = (
+                      <button
+                        type="button"
+                        onClick={() => openDialog(row)}
+                        disabled={gated}
+                        className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label={`Create ${row.label}`}
+                      >
+                        Create
+                      </button>
+                    );
                     action = (
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleSeed(row)}
-                          className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                          aria-label={`Seed ${row.label}`}
-                          title="Draft from your existing artifacts — no questions"
-                        >
-                          Seed
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openDialog(row)}
-                          className="text-xs px-2 py-1 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                          aria-label={`Create ${row.label}`}
-                        >
-                          Create
-                        </button>
+                        {row.key !== BRIEF_KEY &&
+                          (gated ? (
+                            <ActionTooltip label={GATED_TOOLTIP_COPY}>
+                              <span tabIndex={0}>{seedButton}</span>
+                            </ActionTooltip>
+                          ) : (
+                            seedButton
+                          ))}
+                        {gated ? (
+                          <ActionTooltip label={GATED_TOOLTIP_COPY}>
+                            <span tabIndex={0}>{createButton}</span>
+                          </ActionTooltip>
+                        ) : (
+                          createButton
+                        )}
                       </div>
                     );
                   } else if (row.path !== null) {
                     // up-to-date or draft — show Open (in-panel) + ↗ (external);
                     // draft rows also show Regenerate.
+                    const gated = briefMissing && requiresBrief(row.key);
+                    const regenerateButton = (
+                      <button
+                        type="button"
+                        onClick={() => openDialog(row)}
+                        disabled={gated}
+                        className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        aria-label={`Regenerate ${row.label}`}
+                      >
+                        Regenerate
+                      </button>
+                    );
                     action = (
                       <div className="flex items-center gap-2">
-                        {row.status === "draft" && (
-                          <button
-                            type="button"
-                            onClick={() => openDialog(row)}
-                            className="text-xs text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                            aria-label={`Regenerate ${row.label}`}
-                          >
-                            Regenerate
-                          </button>
-                        )}
+                        {row.status === "draft" &&
+                          (gated ? (
+                            <ActionTooltip label={GATED_TOOLTIP_COPY}>
+                              <span tabIndex={0}>{regenerateButton}</span>
+                            </ActionTooltip>
+                          ) : (
+                            regenerateButton
+                          ))}
                         {/* Set artifacts are directories — no single-file editor */}
                         {!SET_ARTIFACT_KEYS.has(row.key) && (
                           <button

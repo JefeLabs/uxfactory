@@ -1414,7 +1414,7 @@ describe("Dialog answers passthrough (product-brief root gate)", () => {
         makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
       ),
     });
-    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    const first = await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
 
     await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
     const briefDialog = await screen.findByRole("dialog");
@@ -1425,7 +1425,12 @@ describe("Dialog answers passthrough (product-brief root gate)", () => {
       ),
     ).toBeInTheDocument();
     await user.click(within(briefDialog).getByRole("button", { name: /^Cancel$/i }));
+    first.unmount();
 
+    // Root gate: Create is disabled for every other artifact while the brief is
+    // missing (see the "Root gate" describe block) — so a non-brief dialog can
+    // only be reached once the brief exists.
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
     await user.click(await screen.findByRole("button", { name: /Create Illustrations/i }));
     const otherDialog = await screen.findByRole("dialog");
     expect(
@@ -1444,6 +1449,155 @@ describe("Dialog answers passthrough (product-brief root gate)", () => {
       payload: Record<string, unknown>;
     };
     expect(call.payload).not.toHaveProperty("answers");
+  });
+});
+
+// ─── Root gate: brief-first banner, gated seed/create, no brief Seed ─────────
+
+describe("Root gate — brief-first banner, gated seed/create/regenerate", () => {
+  const GATED_TOOLTIP_COPY =
+    "Supply your product brief first — every artifact derives from it.";
+
+  const briefMissingArtifacts: ArtifactRow[] = MERIDIAN_ARTIFACTS.map((a) =>
+    a.key === "brief"
+      ? ({ ...a, status: "missing" as const, meta: "", path: null } satisfies ArtifactRow)
+      : a,
+  );
+
+  it("brief missing shows the root-gate banner; Write the brief opens the brief interview", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    const banner = await screen.findByRole("note");
+    expect(within(banner).getByText("Start with your product brief")).toBeInTheDocument();
+    expect(
+      within(banner).getByText(/Every other artifact derives from it/i),
+    ).toBeInTheDocument();
+
+    await user.click(within(banner).getByRole("button", { name: /Write the brief/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /Product Brief/i })).toBeInTheDocument();
+  });
+
+  it("brief missing → a non-brief row's Seed and Create are disabled with the gating tooltip reachable", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    const seed = await screen.findByRole("button", { name: /Seed Personas/i });
+    const create = screen.getByRole("button", { name: /Create Personas/i });
+    expect(seed).toBeDisabled();
+    expect(create).toBeDisabled();
+
+    await user.hover(create);
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip")).toHaveTextContent(GATED_TOOLTIP_COPY);
+    });
+  });
+
+  it.each(["draft", "up-to-date"] as const)(
+    "brief %s → banner absent, non-brief Seed/Create enabled",
+    async (status) => {
+      const artifacts = MERIDIAN_ARTIFACTS.map((a) =>
+        a.key === "brief" ? { ...a, status } : a,
+      );
+      const bridge = makeBridge({
+        snapshot: vi.fn().mockResolvedValue(makeMeridianSnapshot({ artifacts })),
+      });
+      await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+      await waitFor(() => screen.getByText("Illustrations"));
+      expect(screen.queryByRole("note")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Seed Personas/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /Create Personas/i })).toBeEnabled();
+    },
+  );
+
+  it("the brief row never shows a Seed button — missing or present", async () => {
+    const missingBridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    const first = await renderWithProviders(<Artifacts bridge={missingBridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+    await screen.findByRole("button", { name: /Create Product Brief/i });
+    expect(screen.queryByRole("button", { name: /Seed Product Brief/i })).not.toBeInTheDocument();
+    first.unmount();
+
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await screen.findByRole("button", { name: /Open Product Brief/i });
+    expect(screen.queryByRole("button", { name: /Seed Product Brief/i })).not.toBeInTheDocument();
+  });
+
+  it("brief missing + focus on a non-brief missing artifact redirects to the brief interview", async () => {
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts?focus=illustrations"],
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /Product Brief/i })).toBeInTheDocument();
+    expect(within(dialog).queryByText("Create Illustrations")).not.toBeInTheDocument();
+  });
+
+  it("brief missing + editor open on a non-brief artifact disables Regenerate with the gating tooltip", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Open Sitemap/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Back to artifacts/i })).toBeInTheDocument();
+    });
+
+    const regenerate = screen.getByRole("button", { name: /^Regenerate$/i });
+    expect(regenerate).toBeDisabled();
+
+    await user.hover(regenerate);
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip")).toHaveTextContent(GATED_TOOLTIP_COPY);
+    });
+  });
+
+  it("editor open on the brief itself keeps Regenerate enabled (the brief's own row never gates on itself)", async () => {
+    const user = userEvent.setup();
+    // Brief is "draft" here (not missing) so it can actually be opened via the
+    // row's Open action — but another artifact (Typography) is still missing,
+    // proving the gate is per-row (requiresBrief), not a blanket app lock.
+    const artifacts = MERIDIAN_ARTIFACTS.map((a) =>
+      a.key === "brief" ? { ...a, status: "draft" as const } : a,
+    );
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(makeMeridianSnapshot({ artifacts })),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Open Product Brief/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Back to artifacts/i })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /^Regenerate$/i })).toBeEnabled();
   });
 });
 
