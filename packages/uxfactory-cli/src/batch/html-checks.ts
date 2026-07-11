@@ -279,7 +279,25 @@ function isPagePathRef(ref: string): boolean {
   return ref.includes(" › ");
 }
 
-/** Non-ref stories covered at baseline must still be covered (spec 2026-07-10-story-unit §1). */
+/** Normalize a render-coverage finding ref to a `story/state` key, or null
+ * for page-path refs and unregistered story prefixes. Strips any `@viewport`
+ * suffix (from the LAST `@`; viewports are `${w}×${h}`, never containing `@`),
+ * so suffixed (multi-viewport) and unsuffixed (single-viewport) formats
+ * compare equal across baseline and current runs. */
+function storyStateKeyOfRef(ref: string, storyIds: ReadonlySet<string>): string | null {
+  if (isPagePathRef(ref)) return null;
+  const at = ref.lastIndexOf("@");
+  const key = at === -1 ? ref : ref.slice(0, at);
+  return storyIds.has(storyIdOfRef(key)) ? key : null;
+}
+
+/**
+ * Non-ref stories covered at baseline must still be covered, tracked per
+ * story×state (spec 2026-07-10-story-unit §1, upgraded 2026-07-11 to state
+ * granularity): a neighbor that keeps ONE covered state while losing another
+ * (e.g. its error view) must still fail — coverage is no longer "any state
+ * visible = covered".
+ */
 export function storyRegression(
   snapshots: RenderSnapshot[],
   stories: StorySet | null,
@@ -290,10 +308,21 @@ export function storyRegression(
   if (stories === null) {
     return { id, status: "skip", severity: "must", findings: [], reason: "no stories registered" };
   }
-  const knownIds = new Set(stories.stories.map((s) => s.id));
   const refs = new Set(storyRefs ?? []);
+  const storyIds = new Set(stories.stories.map((s) => s.id));
+  const neighbors: StorySet = { stories: stories.stories.filter((s) => !refs.has(s.id)) };
+
+  // Missing NOW: the real render-coverage evaluated over the neighbors —
+  // shared semantics by construction, nothing re-implemented to drift.
+  const now = renderCoverage(snapshots, neighbors, { storyCoverage: true });
+  const missingNow: string[] = [];
+  for (const f of now.findings) {
+    const key = f.ref !== undefined ? storyStateKeyOfRef(f.ref, storyIds) : null;
+    if (key !== null) missingNow.push(key);
+  }
+
   const usable = baseline != null && qualifiesAsBaseline(baseline);
-  const baselineUncovered = new Set<string>();
+  const missingAtBaseline = new Set<string>();
   if (usable) {
     // Baselines are loaded from disk via JSON.parse with no runtime shape
     // validation (batch-html.ts) — a corrupt-but-parseable report (e.g. `{}`)
@@ -301,21 +330,24 @@ export function storyRegression(
     // `checks` access rather than crash the gate on a missing array.
     const cov = (baseline!.checks ?? []).find((c) => c.id === "render-coverage");
     for (const f of cov?.findings ?? []) {
-      if (f.ref === undefined || isPagePathRef(f.ref)) continue;
-      const sid = storyIdOfRef(f.ref);
-      if (knownIds.has(sid)) baselineUncovered.add(sid); // mirrors featureCoverage's guard
+      if (f.ref === undefined) continue;
+      const key = storyStateKeyOfRef(f.ref, storyIds);
+      if (key !== null) missingAtBaseline.add(key);
     }
   }
-  const coveredNow = (idStr: string): boolean =>
-    snapshots.some((s) => s.coverChecks.some((c) => c.story === idStr && c.found && c.visible));
+
   const findings: BatchFinding[] = [];
-  for (const s of stories.stories) {
-    if (refs.has(s.id)) continue; // the refs are render-coverage's job
-    const coveredAtBaseline = usable ? !baselineUncovered.has(s.id) : true; // strict mode
-    if (coveredAtBaseline && !coveredNow(s.id)) {
-      findings.push({ detail: `story ${s.id} lost coverage (covered at baseline, uncovered now)`, ref: s.id });
-    }
+  // Dedupe: a state missing at three viewports is ONE lost state, not three findings.
+  for (const key of new Set(missingNow)) {
+    if (missingAtBaseline.has(key)) continue; // pre-existing gap, carried
+    const storyId = storyIdOfRef(key);
+    const state = key.slice(key.indexOf("/") + 1);
+    findings.push({
+      detail: `story ${storyId} lost coverage for state "${state}" (covered at baseline, missing now)`,
+      ref: key,
+    });
   }
+
   return {
     id,
     status: findings.length > 0 ? "fail" : "pass",

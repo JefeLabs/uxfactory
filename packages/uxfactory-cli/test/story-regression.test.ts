@@ -21,7 +21,7 @@
 import { describe, it, expect } from "vitest";
 import { runHtmlBatch, qualifiesAsBaseline } from "../src/batch/html-checks.js";
 import type { RenderSnapshot } from "../src/batch/html-checks.js";
-import type { StorySet } from "../src/batch/checks.js";
+import type { StorySet, ImpliedState } from "../src/batch/checks.js";
 import type { RenderScope } from "../src/batch/scope.js";
 import type { BatchReport } from "../src/batch/run.js";
 
@@ -44,6 +44,30 @@ function snap(page: string, covered: string[]): RenderSnapshot {
     screenshot: `${page}.png`, ok: true,
     coverChecks: covered.map((s) => ({
       story: s, impliedState: "success", selector: `#${s}`, found: true, visible: true,
+    })),
+    paintedColors: [], axe: [],
+  };
+}
+
+/** A story requiring exactly the given set of implied states (state-granular fixtures). */
+function storyStates(id: string, states: ImpliedState[]): StorySet["stories"][number] {
+  return {
+    id, role: "user", goal: "g", benefit: "b",
+    acceptanceCriteria: states.map((impliedState) => ({ statement: "ok", impliedState })),
+  };
+}
+
+/** A snapshot claiming visible coverage for named story/state pairs, at a given viewport. */
+function snapStates(
+  page: string,
+  covered: Array<{ story: string; state: ImpliedState }>,
+  viewport: { width: number; height: number } = { width: 390, height: 844 },
+): RenderSnapshot {
+  return {
+    page, view: "default", viewport,
+    screenshot: `${page}.png`, ok: true,
+    coverChecks: covered.map((c) => ({
+      story: c.story, impliedState: c.state, selector: `#${c.story}-${c.state}`, found: true, visible: true,
     })),
     paintedColors: [], axe: [],
   };
@@ -312,5 +336,224 @@ describe("story unit — denominator + story-regression", () => {
     // it fails, same as strict mode would.
     expect(check.status).toBe("fail");
     expect(check.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
+  });
+});
+
+/**
+ * story-regression state granularity (2026-07-11): a neighbor's coverage is
+ * now tracked per story×state, not per story. A neighbor that keeps ONE
+ * covered state while losing another (e.g. success stays visible, error does
+ * not) must still flag — the old story-granular check would have called that
+ * neighbor "covered" and stayed silent.
+ */
+describe("story-regression — state granularity (2026-07-11)", () => {
+  it("HEADLINE: neighbor loses one state but keeps another → exactly that state flags", () => {
+    const stories: StorySet = { stories: [story("S1"), storyStates("S2", ["success", "error"])] };
+    const baseline: BatchReport = runHtmlBatch({
+      snapshots: [snapStates("screens/all.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" },
+        { story: "S2", state: "error" },
+      ])],
+      stories, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+    expect(baseline.checks.find((c) => c.id === "render-coverage")!.status).toBe("pass");
+
+    const current = runHtmlBatch({
+      snapshots: [snapStates("screens/s1.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" }, // S2 error NOT covered now
+      ])],
+      stories, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    const regression = current.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("fail");
+    expect(regression.findings).toEqual([
+      { ref: "S2/error", detail: 'story S2 lost coverage for state "error" (covered at baseline, missing now)' },
+    ]);
+  });
+
+  it("state-level pre-existing gap carried: missing at baseline AND now → no finding", () => {
+    const stories: StorySet = {
+      stories: [story("S1"), story("S2"), storyStates("S3", ["success", "edge"])],
+    };
+    const baseline: BatchReport = runHtmlBatch({
+      snapshots: [snapStates("screens/all.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" },
+        { story: "S3", state: "success" }, // S3 edge NOT covered at baseline
+      ])],
+      stories, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+    expect(
+      baseline.checks.find((c) => c.id === "render-coverage")!.findings.some((f) => f.ref === "S3/edge"),
+    ).toBe(true);
+
+    const current = runHtmlBatch({
+      snapshots: [snapStates("screens/s1.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" },
+        { story: "S3", state: "success" }, // S3 edge still uncovered — only S3/edge differs and it's carried
+      ])],
+      stories, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    const regression = current.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("pass");
+    expect(regression.findings).toEqual([]);
+  });
+
+  it("kept coverage passes at state granularity", () => {
+    const stories: StorySet = { stories: [story("S1"), storyStates("S2", ["success", "error"])] };
+    const baseline: BatchReport = runHtmlBatch({
+      snapshots: [snapStates("screens/all.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" },
+        { story: "S2", state: "error" },
+      ])],
+      stories, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+
+    const current = runHtmlBatch({
+      snapshots: [snapStates("screens/s1.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" },
+        { story: "S2", state: "error" }, // neighbor covers ALL required states at the current viewport
+      ])],
+      stories, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    const regression = current.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("pass");
+    expect(regression.findings).toEqual([]);
+  });
+
+  it("strict mode is state-granular full neighbor coverage", () => {
+    const stories: StorySet = { stories: [story("S1"), storyStates("S2", ["success", "error"])] };
+    const current = runHtmlBatch({
+      snapshots: [snapStates("screens/s1.html", [
+        { story: "S1", state: "success" },
+        { story: "S2", state: "success" }, // S2 error missing; no baseline at all → strict mode
+      ])],
+      stories, tokens: null, unit: "story", storyRefs: ["S1"], scope: LOW,
+    });
+    const regression = current.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("fail");
+    expect(regression.findings.some((f) => f.ref === "S2/error")).toBe(true);
+    expect(regression.reason).toContain("strict");
+  });
+
+  it("normalization: suffixed baseline refs match unsuffixed current keys (and vice versa)", () => {
+    const stories: StorySet = {
+      stories: [story("S1"), story("S2"), storyStates("S3", ["success", "edge"])],
+    };
+
+    // Direction A: multi-viewport BASELINE (suffixed ref, e.g. "S3/edge@1440×900")
+    // vs single-viewport CURRENT (unsuffixed key "S3/edge").
+    const baselineMulti: BatchReport = runHtmlBatch({
+      snapshots: [
+        snapStates(
+          "screens/all.html",
+          [
+            { story: "S1", state: "success" }, { story: "S2", state: "success" },
+            { story: "S3", state: "success" }, { story: "S3", state: "edge" },
+          ],
+          { width: 390, height: 844 },
+        ),
+        snapStates(
+          "screens/all.html",
+          [
+            { story: "S1", state: "success" }, { story: "S2", state: "success" },
+            { story: "S3", state: "success" }, // S3 edge missing ONLY at 1440×900
+          ],
+          { width: 1440, height: 900 },
+        ),
+      ],
+      stories, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baselineMulti)).toBe(true);
+    expect(
+      baselineMulti.checks.find((c) => c.id === "render-coverage")!.findings.some(
+        (f) => f.ref === "S3/edge@1440×900",
+      ),
+    ).toBe(true);
+
+    const currentSingle = runHtmlBatch({
+      snapshots: [snapStates("screens/s1.html", [
+        { story: "S1", state: "success" }, { story: "S2", state: "success" },
+        { story: "S3", state: "success" }, // S3 edge still uncovered (single viewport now)
+      ])],
+      stories, tokens: null, unit: "story", storyRefs: ["S1"], baseline: baselineMulti, scope: LOW,
+    });
+    const regressionA = currentSingle.checks.find((c) => c.id === "story-regression")!;
+    expect(regressionA.status).toBe("pass");
+    expect(regressionA.findings).toEqual([]);
+
+    // Direction B: single-viewport BASELINE (unsuffixed ref "S3/edge") vs
+    // multi-viewport CURRENT (suffixed keys) — same normalization, reversed.
+    const baselineSingle: BatchReport = runHtmlBatch({
+      snapshots: [snapStates("screens/all.html", [
+        { story: "S1", state: "success" }, { story: "S2", state: "success" },
+        { story: "S3", state: "success" }, // S3 edge missing everywhere (single viewport)
+      ])],
+      stories, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baselineSingle)).toBe(true);
+    expect(
+      baselineSingle.checks.find((c) => c.id === "render-coverage")!.findings.some((f) => f.ref === "S3/edge"),
+    ).toBe(true);
+
+    const currentMulti = runHtmlBatch({
+      snapshots: [
+        snapStates(
+          "screens/s1.html",
+          [
+            { story: "S1", state: "success" }, { story: "S2", state: "success" },
+            { story: "S3", state: "success" },
+          ],
+          { width: 390, height: 844 },
+        ),
+        snapStates(
+          "screens/s1.html",
+          [
+            { story: "S1", state: "success" }, { story: "S2", state: "success" },
+            { story: "S3", state: "success" }, // S3 edge missing at BOTH viewports now
+          ],
+          { width: 1440, height: 900 },
+        ),
+      ],
+      stories, tokens: null, unit: "story", storyRefs: ["S1"], baseline: baselineSingle, scope: LOW,
+    });
+    const regressionB = currentMulti.checks.find((c) => c.id === "story-regression")!;
+    expect(regressionB.status).toBe("pass");
+    expect(regressionB.findings).toEqual([]);
+  });
+
+  it("page-path and unregistered refs never enter the comparison", () => {
+    // A hand-crafted baseline (as a persisted report would be loaded/parsed)
+    // carrying a render-failure page-path ref and an unknown story ref.
+    // Neither should poison missingAtBaseline: S2 genuinely losing its
+    // covered state must still flag, and GHOST must never surface.
+    const baseline: BatchReport = {
+      scope: LOW, rubric: [], mustPassFailed: true, clean: false,
+      checks: [{
+        id: "render-coverage", status: "fail", severity: "must",
+        findings: [
+          { ref: "S2/index.html › main", detail: "S2/index.html › main failed to render: boom" },
+          { ref: "GHOST/error", detail: "story GHOST error state is not covered by any visible rendering" },
+        ],
+      }],
+    };
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+
+    const current = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", ["S1"])], // S2 genuinely lost coverage now
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    const check = current.checks.find((c) => c.id === "story-regression")!;
+    expect(check.status).toBe("fail");
+    expect(check.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
+    expect(check.findings.some((f) => (f.ref ?? "").includes("GHOST"))).toBe(false);
   });
 });
