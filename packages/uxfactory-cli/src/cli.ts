@@ -291,6 +291,10 @@ export function buildProgram(): Command {
     .option("--editorial <level>", "editorial dial override (low|medium|high)")
     .option("--coverage <level>", "coverage dial override (low|medium|high)")
     .option("--flow <level>", "flow dial override (low|medium|high)")
+    .option(
+      "--full",
+      "ignore and clear the scoped-run stamp (unit, storyRefs) persisted in uxfactory.batch.json",
+    )
     .action(
       async (
         dir: string,
@@ -304,6 +308,7 @@ export function buildProgram(): Command {
           editorial?: string;
           coverage?: string;
           flow?: string;
+          full?: boolean;
         },
       ) => {
         const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
@@ -319,6 +324,7 @@ export function buildProgram(): Command {
             editorial: opts.editorial,
             coverage: opts.coverage,
             flow: opts.flow,
+            full: opts.full,
           },
           consoleIO,
           client,

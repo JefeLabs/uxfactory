@@ -29,6 +29,8 @@ export interface BatchFlags {
   editorial?: string;
   coverage?: string;
   flow?: string;
+  /** Ignore and clear the scoped-run stamp (`unit`, `storyRefs`) persisted in the registry. */
+  full?: boolean;
 }
 
 /** Valid values for a dial flag (not `none` — that is threshold-only). */
@@ -169,10 +171,30 @@ export async function batchCmd(
   }
 
   // 1. registry (absent/invalid → 2)
-  const reg = await readRegistry(path.join(cwd, "uxfactory.batch.json"));
+  const registryPath = path.join(cwd, "uxfactory.batch.json");
+  const reg = await readRegistry(registryPath);
   if (!reg.ok) {
     io.err(reg.message);
     return EXIT.TRANSPORT;
+  }
+
+  // 1a'. `--full` — restoration verb, not a one-shot override: clears the persisted
+  //      scoped-run stamp (unit, storyRefs) from BOTH the on-disk registry (re-parsing
+  //      the raw file text, not the normalized registry object, so unmodeled fields
+  //      survive) and the in-memory registry, so every downstream consumer — HTML mode
+  //      below and the spec-mode input assembly further down — sees them as absent.
+  //      Runs before the gate so the stamp stays cleared even if the gate later fails.
+  if (flags.full === true) {
+    const rawText = await readFile(registryPath, "utf8");
+    const rawObj = JSON.parse(rawText) as Record<string, unknown>;
+    if ("unit" in rawObj || "storyRefs" in rawObj) {
+      delete rawObj["unit"];
+      delete rawObj["storyRefs"];
+      await writeFile(registryPath, JSON.stringify(rawObj, null, 2) + "\n", "utf8");
+      io.err("--full: cleared scoped-run stamp (unit, storyRefs) from uxfactory.batch.json");
+    }
+    delete reg.registry.unit;
+    delete reg.registry.storyRefs;
   }
 
   // 1a. HTML mode — when screens + trace are registered, gate the rendering instead of specs.

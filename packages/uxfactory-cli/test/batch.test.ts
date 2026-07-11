@@ -535,3 +535,112 @@ describe("batchCmd", () => {
     expect(report.scope.visual).toBe("low");
   });
 });
+
+// ---------------------------------------------------------------------------
+// `--full` — ignore and clear the scoped-run stamp (unit, storyRefs)
+// ---------------------------------------------------------------------------
+
+describe("batch --full", () => {
+  const registryPath = (): string => path.join(root, "uxfactory.batch.json");
+
+  it("clears unit/storyRefs from uxfactory.batch.json on disk, preserving sibling fields (incl. unmodeled ones) and a trailing newline", async () => {
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeFile(
+      registryPath(),
+      JSON.stringify({
+        version: 1,
+        inputs: { stories: "design/stories.json" },
+        maxIterations: 6,
+        scope: "wireframe",
+        unit: "story",
+        storyRefs: ["checkout/pay"],
+        extraNote: "a field the CLI's registry parser does not model",
+      }),
+      "utf8",
+    );
+    const io = makeIO();
+    await batchCmd(specsDir, { dataDir, cwd: root, full: true }, io, client);
+
+    const rawAfter = await readFile(registryPath(), "utf8");
+    expect(rawAfter.endsWith("\n")).toBe(true);
+    const obj = JSON.parse(rawAfter) as Record<string, unknown>;
+    expect(obj).not.toHaveProperty("unit");
+    expect(obj).not.toHaveProperty("storyRefs");
+    // Sibling fields — modeled and unmodeled — must survive byte-for-byte.
+    expect(obj["version"]).toBe(1);
+    expect(obj["inputs"]).toEqual({ stories: "design/stories.json" });
+    expect(obj["maxIterations"]).toBe(6);
+    expect(obj["scope"]).toBe("wireframe");
+    expect(obj["extraNote"]).toBe("a field the CLI's registry parser does not model");
+
+    expect(io.errs).toContain(
+      "--full: cleared scoped-run stamp (unit, storyRefs) from uxfactory.batch.json",
+    );
+  });
+
+  it("the run gates un-scoped: the report carries no storyRefs stamp and an unknown ref no longer fails the run", async () => {
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeFile(
+      registryPath(),
+      JSON.stringify({
+        version: 1,
+        inputs: { stories: "design/stories.json" },
+        maxIterations: 6,
+        scope: "wireframe",
+        unit: "story",
+        // "checkout/pay" names no registered story — without --full this would
+        // scope the run and force a must-fail on requirement-coverage.
+        storyRefs: ["checkout/pay"],
+      }),
+      "utf8",
+    );
+    const io = makeIO();
+    const code = await batchCmd(
+      specsDir,
+      { dataDir, json: true, cwd: root, full: true },
+      io,
+      client,
+    );
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as { clean: boolean; storyRefs?: string[] };
+    expect(report.clean).toBe(true);
+    expect(report.storyRefs).toBeUndefined();
+  });
+
+  it("no stamp present → --full is a safe no-op: file byte-identical, no stderr note", async () => {
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    const rawBefore = JSON.stringify({
+      version: 1,
+      inputs: { stories: "design/stories.json" },
+      maxIterations: 6,
+      scope: "wireframe",
+    });
+    await writeFile(registryPath(), rawBefore, "utf8");
+    const io = makeIO();
+    await batchCmd(specsDir, { dataDir, cwd: root, full: true }, io, client);
+
+    const rawAfter = await readFile(registryPath(), "utf8");
+    expect(rawAfter).toBe(rawBefore);
+    expect(io.errText()).not.toMatch(/--full/);
+  });
+
+  it("`full` absent → a stamped storyRefs scope still inherits through batchCmd (existing behavior unchanged)", async () => {
+    await writeFile(path.join(root, "design", "stories.json"), JSON.stringify(stories), "utf8");
+    await writeFile(
+      registryPath(),
+      JSON.stringify({
+        version: 1,
+        inputs: { stories: "design/stories.json" },
+        maxIterations: 6,
+        scope: "wireframe",
+        storyRefs: ["story-1"],
+      }),
+      "utf8",
+    );
+    const io = makeIO();
+    const code = await batchCmd(specsDir, { dataDir, json: true, cwd: root }, io, client);
+    expect(code).toBe(EXIT.OK);
+    const report = JSON.parse(io.outText()) as { storyRefs?: string[] };
+    expect(report.storyRefs).toEqual(["story-1"]);
+  });
+});

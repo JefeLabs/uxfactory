@@ -141,7 +141,7 @@ uxfactory verify hello.uxfactory.json             # PASS → exit 0, FAIL → ex
 
 ### The worker — serves Seed / Generate jobs (one per project)
 
-The panel's **Seed**, **Create**, and design-generation buttons enqueue jobs on the bridge — but the bridge is only a relay. A **worker** process claims and runs them, and it claims **only jobs for the project it was started in** (its working directory). No worker for your project = jobs wait in the queue and the panel shows a "No worker is serving this project" banner (plus an amber dot in the ContextBar).
+The panel's **Seed**, **Create**, and design-generation buttons enqueue jobs on the bridge — but the bridge is only a relay. A **worker** process claims and runs them, and it claims **only jobs for the project it was started in** (its working directory). No worker for your project = jobs wait in the queue and the panel shows a "No worker detected for this project" banner (plus an amber dot in the ContextBar).
 
 ```bash
 cd <your-project-root>          # the repo your panel is connected to
@@ -158,7 +158,7 @@ uxfactory up                    # bridge on :3779 + on-demand worker per project
 
 Start order doesn't matter: a worker started before its project is connected is held pending and counted the moment the panel connects. The ContextBar dot goes **green** when a live worker covers your project — also green for a managed (reaped, on-demand) root, with an "on-demand (idle)" tooltip — **amber** when none does, **grey** when unknown.
 
-A story- or unit-scoped Generate (a per-story handoff, or a scoped composer request) stamps `unit`/`storyRefs` into `uxfactory.batch.json`, and a later plain `uxfactory batch` run (no flags for this) inherits that same scope until a different Generate run restamps it. To gate the whole project again, delete those fields from `uxfactory.batch.json` — a later Generate only ever replaces the stamp with its own scope, it never clears it.
+A story- or unit-scoped Generate (a per-story handoff, or a scoped composer request) stamps `unit`/`storyRefs` into `uxfactory.batch.json`, and a later plain `uxfactory batch` run (no flags for this) inherits that same scope until a different Generate run restamps it. To gate the whole project again, run `uxfactory batch --full` — it ignores the stamp for that run and clears it from `uxfactory.batch.json`.
 
 > Without the global link, the raw form still works:
 > `<engine>/clients/uxfactory-worker/node_modules/.bin/tsx <engine>/clients/uxfactory-worker/src/main.ts`
@@ -209,6 +209,7 @@ uxfactory render hello.uxfactory.json --out preview.png    # raster (resvg)
 uxfactory batch ./specs --scope wireframe          # greybox: only structure/coverage gates bind
 uxfactory batch ./specs --scope visual             # adds token-conformance (needs tokens.ds.json)
 uxfactory batch ./specs --visual high --flow low   # off-preset: pixel-perfect hero, no flow yet
+uxfactory batch ./specs --full            # drop a story-scoped stamp; gate everything
 ```
 
 Exit codes drive the loop: **`0`** the binding gates pass · **`1`** a gate failed (read `report.json`, revise, re-run) · **`2`** setup (e.g. a required artifact is missing — `uxfactory batch … --json` lists exactly what to provide). The **`uxfactory-batch` skill** teaches an agent to run this generate → gate → revise loop on its own and stop when it goes green.
@@ -240,7 +241,7 @@ uxfactory drift             # exit 1 if the design drifted from code/spec, 2 if 
 | `uxfactory publish <spec> [--wait] [--verify]`   | Render into Figma (optionally block + gate) |
 | `uxfactory verify <spec>`                        | Gate the latest render PASS/FAIL            |
 | `uxfactory render <spec> --out <file.png\|.svg>` | Offline preview, no Figma                   |
-| `uxfactory batch <dir> --scope <preset>`         | Scope-gated batch of screens                |
+| `uxfactory batch <dir> --scope <preset> [--full]` | Scope-gated batch of screens                |
 | `uxfactory scan`                                 | Rebuild the asset catalog                   |
 | `uxfactory drift` / `map check`                  | Detect spec-vs-reality drift                |
 | `uxfactory status`                               | Bridge health + plugin connection           |
