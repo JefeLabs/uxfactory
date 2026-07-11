@@ -31,7 +31,7 @@ export type {
 } from "./story-schema.js";
 export { ARTIFACT_ELICITATION } from "./artifact-elicitation.js";
 export type { ElicitationQuestion } from "./artifact-elicitation.js";
-export { ARTIFACT_PREREQS, resolveCreationChain } from "./artifact-elicitation.js";
+export { ARTIFACT_PREREQS, resolveCreationChain, ROOT_ARTIFACT, requiresRootArtifact } from "./artifact-elicitation.js";
 export { AUTHORING_ORDER } from "./artifact-elicitation.js";
 export {
   CATEGORY_GROUPS,

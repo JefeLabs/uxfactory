@@ -146,3 +146,24 @@ describe("authoring order", () => {
     }
   });
 });
+
+// ─── Root artifact gate ───────────────────────────────────────────────────────
+
+import { ROOT_ARTIFACT, requiresRootArtifact } from "../src/artifact-elicitation.js";
+
+describe("root artifact gate (spec 2026-07-11-product-brief-root-gate)", () => {
+  it("product-brief is the root and gates every other artifact", () => {
+    expect(ROOT_ARTIFACT).toBe("product-brief");
+    expect(requiresRootArtifact("product-brief")).toBe(false);
+    expect(requiresRootArtifact("audience")).toBe(true);
+    expect(requiresRootArtifact("stories")).toBe(true);
+    expect(requiresRootArtifact("brand-colors")).toBe(true);
+    expect(requiresRootArtifact("not-a-real-artifact")).toBe(true);
+  });
+
+  it("the brief intake stays four all-essential questions (the base minimum)", () => {
+    const qs = ARTIFACT_ELICITATION["product-brief"] ?? [];
+    expect(qs.map((q) => q.id)).toEqual(["problem", "outcomes", "out-of-scope", "constraints"]);
+    expect(qs.every((q) => q.tag === "E")).toBe(true);
+  });
+});

@@ -144,6 +144,21 @@ export const ARTIFACT_PREREQS: Record<string, string[]> = {
   "features": ["stories"],
 };
 
+// ─── The root artifact ────────────────────────────────────────────────────────
+
+/**
+ * The root of the artifact graph: user-authored intent nothing else can
+ * derive. Deliberately NOT an ARTIFACT_PREREQS edge — prereqs auto-chain AI
+ * interviews before a dependent artifact, which is exactly what the brief
+ * must never be. Prereqs order derivations; the root is the axiom.
+ */
+export const ROOT_ARTIFACT = "product-brief";
+
+/** True when creating `artifactId` requires the root artifact to exist first. */
+export function requiresRootArtifact(artifactId: string): boolean {
+  return artifactId !== ROOT_ARTIFACT;
+}
+
 /**
  * Resolve the creation chain for `target`: missing prerequisites first (in
  * dependency order, deduplicated), the target last. `missing` reports whether
