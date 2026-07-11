@@ -295,7 +295,11 @@ export function storyRegression(
   const usable = baseline != null && qualifiesAsBaseline(baseline);
   const baselineUncovered = new Set<string>();
   if (usable) {
-    const cov = baseline!.checks.find((c) => c.id === "render-coverage");
+    // Baselines are loaded from disk via JSON.parse with no runtime shape
+    // validation (batch-html.ts) — a corrupt-but-parseable report (e.g. `{}`)
+    // still passes qualifiesAsBaseline's shape-free checks, so guard the
+    // `checks` access rather than crash the gate on a missing array.
+    const cov = (baseline!.checks ?? []).find((c) => c.id === "render-coverage");
     for (const f of cov?.findings ?? []) {
       if (f.ref === undefined || isPagePathRef(f.ref)) continue;
       const sid = storyIdOfRef(f.ref);
@@ -770,14 +774,21 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
   // Story-scoped contract: gate against EXACTLY the declared stories; a ref
   // naming no registered story becomes a must finding on render-coverage —
   // for EVERY unit, story included (spec §1: "an unknown ref remains a must
-  // finding"). Story units keep the FULL denominator: storyRefs names the
-  // story under revision; scoping the universe to it would un-enforce its
-  // neighbors, so only the unknown-ref findings apply, never the `scoped` swap.
+  // finding"). Legacy units narrow the WHOLE denominator to the refs
+  // (scopeStories swap, byte-preserved). Story units instead split by
+  // severity owner (decision 2, delivered 2026-07-11): the full denominator
+  // survives everywhere EXCEPT render-coverage's own story set —
+  // story-regression, ac-binding-coverage, and the featureCoverage metric
+  // all still see every registered story, while render-coverage narrows to
+  // the declared refs (full AC coverage of the refs is the run's purpose;
+  // non-ref regressions are story-regression's job, never render-coverage's).
   let effective = input;
+  let renderCoverageStories = input.stories;
   let unknownRefFindings: BatchFinding[] = [];
   if (input.storyRefs !== undefined && input.stories !== null) {
     const scoped = scopeStories(input.stories, input.storyRefs);
     unknownRefFindings = scoped.unknownRefFindings;
+    renderCoverageStories = scoped.scoped;
     if (input.unit !== "story") {
       effective = { ...input, stories: scoped.scoped };
     }
@@ -798,7 +809,11 @@ export function runHtmlBatch(input: RunHtmlBatchInput): BatchReport {
     const doesBind = t !== undefined && (binds(t, scope) || forcedByA11ySpec) && predicateBinds;
     if (doesBind) {
       rubric.push(entry.id);
-      const result = entry.run(effective);
+      // render-coverage alone runs against the refs-scoped set (see above);
+      // every other entry keeps the full-denominator `effective` input.
+      const entryInput =
+        entry.id === "render-coverage" ? { ...effective, stories: renderCoverageStories } : effective;
+      const result = entry.run(entryInput);
       if (entry.id === "render-coverage") {
         if (unknownRefFindings.length > 0) {
           result.findings.push(...unknownRefFindings);

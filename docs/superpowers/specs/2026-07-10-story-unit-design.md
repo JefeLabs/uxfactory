@@ -32,6 +32,8 @@ Stories are realized across shared pages (uxfio-demo: one home page serves nine 
 - All other checks (tokens, copy-conformance, a11y, flow-story-coverage, style) bind exactly as today.
 - Changeset: `@uxfactory/cli` minor.
 
+**Delivered semantics (final review C1, 2026-07-11):** the first shipped implementation of §1 kept the FULL story set loaded for `render-coverage` itself under `unit === "story"` (only suppressing the `scopeStories` swap), which made `render-coverage` strictly dominate `story-regression` at `must` severity — a scoped run's neighbors were re-enforced twice, at full strictness, defeating the "baseline no-regression, not full-strictness" policy in decision 2. The delivered fix makes the severity split explicit: `render-coverage` (must) now runs against a `scopeStories`-narrowed set containing ONLY the declared `storyRefs` — full AC coverage of the refs remains the run's purpose and an unknown ref is still a must finding. Every other non-ref story is owned exclusively by `story-regression` (must, unchanged logic): baseline-lenient when a qualifying baseline exists (pre-existing gaps carried without a finding), strict (full coverage required) when none. Every other check (`ac-binding-coverage`, the `featureCoverage` metric denominator, `a11y`/`contrast`/`token-conformance`/`copy-conformance`/`style-conformance`, flow checks) keeps seeing the FULL story set — only `render-coverage`'s own input narrows.
+
 ### 2. Worker (`clients/uxfactory-worker/src/generative.ts`)
 
 `UNIT_GUIDANCE["story"]` (new entry, joins the existing map):

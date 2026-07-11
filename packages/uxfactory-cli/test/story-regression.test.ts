@@ -1,12 +1,17 @@
 /**
  * story-regression.test.ts — the `story` design unit: revise one story's
  * coverage in place without loosening the gate's grip on its neighbors
- * (spec 2026-07-10-story-unit).
+ * (spec 2026-07-10-story-unit, decision 2 severity split, delivered
+ * 2026-07-11 final review).
  *
- * Two contracts:
- *  1. Denominator: the `story` unit keeps the FULL story set in scope even
- *     when `storyRefs` names the story under revision — the scopeStories
- *     swap that legacy units use to narrow the universe must NOT apply here.
+ * Two contracts, split by severity owner:
+ *  1. render-coverage (must, story unit) enforces full AC coverage for ONLY
+ *     the declared storyRefs — the run's purpose — via a refs-scoped story
+ *     set (reusing `scopeStories`). The full denominator survives
+ *     everywhere ELSE (story-regression, ac-binding-coverage, the
+ *     featureCoverage metric): unlike legacy units, where the scopeStories
+ *     swap narrows the WHOLE denominator, a story-unit run keeps every
+ *     registered story loaded for those checks.
  *  2. story-regression (must, story unit only): every non-ref story that was
  *     covered at the last full-denominator report must still be covered now.
  *     No qualifying baseline (none persisted, or the persisted report is
@@ -45,16 +50,21 @@ function snap(page: string, covered: string[]): RenderSnapshot {
 }
 
 describe("story unit — denominator + story-regression", () => {
-  it("story unit keeps the full denominator (no scopeStories swap)", () => {
-    // S2 is registered but not covered by any snapshot — under a legacy unit
-    // with the same storyRefs, S2 would be scoped OUT and never checked.
+  it("render-coverage enforces refs only — a non-ref gap surfaces via story-regression, not render-coverage", () => {
+    // S2 is registered but not covered by any snapshot. Under decision 2's
+    // severity split, render-coverage's story set is scoped to the declared
+    // refs (S1) — S2's gap is story-regression's job, never render-coverage's.
     const report = runHtmlBatch({
       snapshots: [snap("screens/s1.html", ["S1"])],
       stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], scope: LOW,
     });
     const coverage = report.checks.find((c) => c.id === "render-coverage")!;
-    expect(coverage.status).toBe("fail");
-    expect(coverage.findings.some((f) => f.ref === "S2/success")).toBe(true);
+    expect(coverage.status).toBe("pass");
+    expect(coverage.findings.some((f) => f.ref === "S2/success")).toBe(false);
+
+    const regression = report.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("fail");
+    expect(regression.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
   });
 
   it("legacy unit with storyRefs still swaps (byte-preserved behavior)", () => {
@@ -93,7 +103,7 @@ describe("story unit — denominator + story-regression", () => {
     expect(coverage.reason).not.toContain("no stories registered");
   });
 
-  it("story unit: an unknown storyRef fails render-coverage while known refs stay enforced (full denominator)", () => {
+  it("story unit: an unknown storyRef fails render-coverage; the known ref (S1) is enforced there, the non-ref (S2) is enforced by story-regression", () => {
     const report = runHtmlBatch({
       snapshots: [snap("screens/s1.html", [])], // nothing covered
       stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1", "NOPE"], scope: LOW,
@@ -103,10 +113,15 @@ describe("story unit — denominator + story-regression", () => {
     expect(
       coverage.findings.some((f) => f.ref === "NOPE" && f.detail.includes("is not a registered story")),
     ).toBe(true);
-    // Full denominator kept for the story unit — S1 (itself a declared ref)
-    // and S2 are both still enforced, never scoped away like legacy units.
+    // render-coverage's story set is refs-scoped for the story unit — S1
+    // (the declared ref) is enforced here; S2 (non-ref) is NOT — that gap is
+    // story-regression's job under decision 2's severity split.
     expect(coverage.findings.some((f) => f.ref === "S1/success")).toBe(true);
-    expect(coverage.findings.some((f) => f.ref === "S2/success")).toBe(true);
+    expect(coverage.findings.some((f) => f.ref === "S2/success")).toBe(false);
+
+    const regression = report.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("fail");
+    expect(regression.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
   });
 
   it("story-regression binds only for the story unit", () => {
@@ -140,6 +155,51 @@ describe("story unit — denominator + story-regression", () => {
       stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
     });
     expect(kept.checks.find((c) => c.id === "story-regression")!.status).toBe("pass");
+  });
+
+  it("HEADLINE (decision 2): qualifying baseline + refs fully covered + non-ref pre-existing gap (uncovered at baseline AND now) → clean: true", () => {
+    // S2 is a non-ref story with a pre-existing gap: uncovered at baseline
+    // AND still uncovered now. S1 is the declared ref and is fully covered.
+    // render-coverage (refs-scoped) passes; story-regression carries S2's
+    // pre-existing gap without a finding — the greenable-on-debt experience
+    // the story unit exists for.
+    const baseline: BatchReport = runHtmlBatch({
+      snapshots: [snap("screens/all.html", ["S1"])], // S2 uncovered at baseline
+      stories: TWO_STORIES, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+    expect(baseline.checks.find((c) => c.id === "render-coverage")!.status).toBe("fail");
+
+    const current = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", ["S1"])], // S2 still uncovered
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    expect(current.checks.find((c) => c.id === "render-coverage")!.status).toBe("pass");
+    const regression = current.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("pass");
+    expect(regression.findings).toEqual([]);
+    expect(current.mustPassFailed).toBe(false);
+    expect(current.clean).toBe(true);
+  });
+
+  it("sibling: non-ref story WAS covered at baseline and lost coverage → clean: false via story-regression", () => {
+    const baseline: BatchReport = runHtmlBatch({
+      snapshots: [snap("screens/all.html", ["S1", "S2"])], // both covered
+      stories: TWO_STORIES, tokens: null, scope: LOW,
+    });
+    expect(qualifiesAsBaseline(baseline)).toBe(true);
+    expect(baseline.checks.find((c) => c.id === "render-coverage")!.status).toBe("pass");
+
+    const current = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", ["S1"])], // S2 lost coverage
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline, scope: LOW,
+    });
+    expect(current.checks.find((c) => c.id === "render-coverage")!.status).toBe("pass");
+    const regression = current.checks.find((c) => c.id === "story-regression")!;
+    expect(regression.status).toBe("fail");
+    expect(regression.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
+    expect(current.mustPassFailed).toBe(true);
+    expect(current.clean).toBe(false);
   });
 
   it("a page-path finding whose folder segment collides with a registered story id must not poison the baseline-uncovered set", () => {
@@ -227,5 +287,30 @@ describe("story unit — denominator + story-regression", () => {
     expect(qualifiesAsBaseline({ ...base, storyRefs: ["S1"] })).toBe(false);
     expect(qualifiesAsBaseline({ ...base, unit: "atom" })).toBe(false);
     expect(qualifiesAsBaseline({ ...base, unit: "story" })).toBe(false);
+  });
+
+  it("corrupt-but-parseable baseline ({}) never crashes the gate", () => {
+    // batch-html.ts loads the baseline via JSON.parse with no runtime shape
+    // validation — `{}` is valid JSON, qualifiesAsBaseline({}) is true (no
+    // storyRefs, no unit), but it carries no `checks` array.
+    const corrupt = {} as BatchReport;
+    expect(qualifiesAsBaseline(corrupt)).toBe(true);
+    expect(() =>
+      runHtmlBatch({
+        snapshots: [snap("screens/s1.html", ["S1"])],
+        stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline: corrupt, scope: LOW,
+      }),
+    ).not.toThrow();
+
+    const report = runHtmlBatch({
+      snapshots: [snap("screens/s1.html", ["S1"])],
+      stories: TWO_STORIES, tokens: null, unit: "story", storyRefs: ["S1"], baseline: corrupt, scope: LOW,
+    });
+    const check = report.checks.find((c) => c.id === "story-regression")!;
+    // A missing `checks` array is guarded as "nothing recorded uncovered" —
+    // S2 (a non-ref, uncovered now) is not treated as a pre-existing gap, so
+    // it fails, same as strict mode would.
+    expect(check.status).toBe("fail");
+    expect(check.findings.some((f) => f.detail.includes("story S2 lost coverage"))).toBe(true);
   });
 });
