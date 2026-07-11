@@ -516,7 +516,7 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
     });
 
     expect(
-      screen.getByText("No worker is serving this project — jobs will queue until one connects."),
+      screen.getByText("No worker detected for this project — jobs will queue until one connects."),
     ).toBeInTheDocument();
   });
 

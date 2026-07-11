@@ -1,5 +1,5 @@
 /**
- * WorkerBanner — "no worker is serving this project" warning (spec
+ * WorkerBanner — "no worker detected for this project" warning (spec
  * 2026-07-09-worker-liveness, decision 2: enqueue-anyway, so this only warns —
  * it never disables anything). Renders ONLY when coverage for `kind` is
  * "uncovered"; unknown (null) shows nothing.
@@ -30,7 +30,10 @@ export function WorkerBanner({ kind }: WorkerBannerProps): React.JSX.Element | n
     >
       <span aria-hidden="true">⚠</span>
       <div className="flex-1">
-        <p>No worker is serving this project — jobs will queue until one connects.</p>
+        {/* "Detected" is the honest claim: a legacy pre-liveness worker
+            claims jobs via untagged polls the bridge cannot see, so it may
+            in fact be serving this project even while undetected. */}
+        <p>No worker detected for this project — jobs will queue until one connects.</p>
         {repoPath !== "" ? (
           <p className="mt-1 flex items-center gap-2">
             <code

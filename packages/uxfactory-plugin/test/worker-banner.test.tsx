@@ -26,7 +26,7 @@ describe("WorkerBanner", () => {
     useAppStore.setState({ workers: [] });
     render(<WorkerBanner kind="generate-artifact" />);
     expect(
-      screen.getByText("No worker is serving this project — jobs will queue until one connects."),
+      screen.getByText("No worker detected for this project — jobs will queue until one connects."),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Start a worker from this project's root (see the quick-start's worker section)."),
