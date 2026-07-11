@@ -56,9 +56,23 @@ describe("app store workers slice", () => {
   it("a fresh covered→uncovered transition re-arms a dismissed banner", () => {
     useAppStore.getState().workersChanged([], null);
     useAppStore.getState().dismissWorkerBanner();
+    // Without this intermediate assertion the test is near-tautological: the
+    // final covered→uncovered transition below sets dismissed=false via its
+    // OWN fresh-outage logic regardless of whether dismissWorkerBanner() did
+    // anything at all, so the final assert alone can't prove a dismissed
+    // banner is what got re-armed.
+    expect(useAppStore.getState().workerBannerDismissed).toBe(true);
     useAppStore.getState().workersChanged([{ connectedAt: 1 }], null); // worker arrives → covered
     useAppStore.getState().workersChanged([], null);                    // worker drops → fresh outage
     expect(useAppStore.getState().workerBannerDismissed).toBe(false);
+  });
+
+  it("staying uncovered does NOT re-arm a dismissed banner", () => {
+    useAppStore.getState().workersChanged([], null); // uncovered
+    useAppStore.getState().dismissWorkerBanner();
+    expect(useAppStore.getState().workerBannerDismissed).toBe(true);
+    useAppStore.getState().workersChanged([], null); // still uncovered — no fresh outage
+    expect(useAppStore.getState().workerBannerDismissed).toBe(true);
   });
 
   it("a managed flag arriving does not re-arm, but losing managed while uncovered does arm", () => {

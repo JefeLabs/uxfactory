@@ -156,7 +156,9 @@ uxfactory up                    # bridge on :3779 + on-demand worker per project
 
 `up` spawns workers on demand — the first job for a project starts one — and reaps them after 10 idle minutes (`--idle <minutes>`, `0` keeps them forever). Crashed workers restart with backoff; a worker that fails setup (exit 2, e.g. missing `~/.agentx/auth.json`) is not retried until the next job. The panel shows on-demand roots as covered: a green dot with an "on-demand (idle)" tooltip, no warning banner. Flags on both verbs: `--model`, `--kinds`, `--pool`, `--debug` (worker also takes `--root`, `--bridge`; up also takes `--idle`).
 
-Start order doesn't matter: a worker started before its project is connected is held pending and counted the moment the panel connects. The ContextBar dot goes **green** when a live worker covers your project, **amber** when none does, **grey** when unknown.
+Start order doesn't matter: a worker started before its project is connected is held pending and counted the moment the panel connects. The ContextBar dot goes **green** when a live worker covers your project — also green for a managed (reaped, on-demand) root, with an "on-demand (idle)" tooltip — **amber** when none does, **grey** when unknown.
+
+A story- or unit-scoped Generate (a per-story handoff, or a scoped composer request) stamps `unit`/`storyRefs` into `uxfactory.batch.json`, and a later plain `uxfactory batch` run (no flags for this) inherits that same scope until a different Generate run restamps it — delete those fields from `uxfactory.batch.json` (or issue a full-set Generate to clear them) to gate the whole project again.
 
 > Without the global link, the raw form still works:
 > `<engine>/clients/uxfactory-worker/node_modules/.bin/tsx <engine>/clients/uxfactory-worker/src/main.ts`

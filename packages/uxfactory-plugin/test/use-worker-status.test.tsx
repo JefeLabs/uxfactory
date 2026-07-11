@@ -96,6 +96,40 @@ describe("useWorkerStatus", () => {
     );
   });
 
+  it("legacy bridge: a snapshot omitting `workers`/`managed` entirely leaves both null (unknown)", async () => {
+    // Seed non-null state first — if the effect never fired (or a fallback
+    // were missing), the pre-seeded values would simply survive and this
+    // test would still pass without seeding, which is precisely the
+    // vacuous-assertion trap to avoid: prove the hook actively resets to
+    // null rather than merely inheriting the describe block's beforeEach.
+    useAppStore.setState({ workers: [{ connectedAt: 1 }], managedWorker: {} });
+
+    const bridge = makeBridge({
+      snapshot: async () => ({
+        name: "demo",
+        root: ROOT,
+        hasClassification: false,
+        hasProfile: false,
+        classification: null,
+        profile: null,
+        artifacts: [],
+        requirements: [],
+        // `workers`/`managed` deliberately omitted — a bridge predating the
+        // worker-liveness fields. useWorkerStatus's `data.workers ?? null` /
+        // `data.managed ?? null` fallback must resolve this to unknown, not
+        // covered/uncovered.
+      }),
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <Harness bridge={bridge} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(useAppStore.getState().workers).toBeNull());
+    expect(useAppStore.getState().managedWorker).toBeNull();
+  });
+
   it("applies worker-status frames for the active root and ignores other roots", async () => {
     let emit: ((ev: BridgeEvent) => void) | null = null;
     const bridge = makeBridge({

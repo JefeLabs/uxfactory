@@ -189,6 +189,14 @@ const BRAND_WORDS = new Set(["YouTube", "Instagram", "Facebook", "X"]);
 
 /** "Describe the {componentType} to generate" — follows the active unit type. */
 function composerPlaceholder(unitType: string): string {
+  // The story unit's own label reads "Story (revise coverage)" — plugging it
+  // into the generic template ("Describe the story (revise coverage) to
+  // generate") is awkward and reads like an editing instruction rather than a
+  // prompt. Its own composer text is optional (the scope selector below it
+  // carries the actual contract), which the placeholder says plainly.
+  if (unitType === "story") {
+    return "Describe how to revise this story's coverage (optional — the scope below carries the contract)";
+  }
   const label = UNIT_OPTIONS.find((o) => o.value === unitType)?.label ?? "component(s)";
   const phrase = label
     .split(" ")
@@ -820,11 +828,14 @@ export function Prompt({
   const groundingChips = groundingChipsFor(composerUnitType, artifacts, projectQuadrant);
   const missingBlocking = missingBlockingCount(composerUnitType, artifacts, projectQuadrant);
   // Unmapped unit types (e.g. "story" — no COMPONENT_TYPE_MAPPING entry)
-  // resolve zero grounding chips; `[].every(...)` is vacuously true, so
-  // require at least one real chip before treating the set as "all missing".
+  // resolve zero grounding chips, and a mapped type can resolve chips that
+  // are ALL `planned` (coming-soon, never real). Either way `[].every(...)`
+  // on the post-filter array is vacuously true, so require at least one
+  // non-planned chip before treating the set as "all missing".
+  const nonPlannedChips = groundingChips.filter((c) => !c.planned);
   const allMissing =
-    groundingChips.length > 0 &&
-    groundingChips.filter((c) => !c.planned).every((c) => c.status === "missing");
+    nonPlannedChips.length > 0 &&
+    nonPlannedChips.every((c) => c.status === "missing");
 
   // ── Consume a pending generate handoff from Requirements' per-story
   //    Generate action (one-shot: read + clear on mount). Applies the story

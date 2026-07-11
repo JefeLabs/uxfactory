@@ -14,7 +14,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 
 import type { Bridge, ProjectSnapshot, TraceResponse } from "../ui/lib/bridge.js";
@@ -23,6 +23,14 @@ import { Requirements } from "../ui/screens/Requirements.js";
 import { useAppStore } from "../ui/stores/app.js";
 import { renderWithProviders } from "./test-utils.js";
 
+// pendingGenerate is a one-shot handoff (Requirements → Prompt); the
+// per-story "Generate design for story" tests below set it on the store
+// without ever mounting a consumer, so it must be reset between tests or it
+// leaks into whichever test runs next within this file (mirrors
+// screen-prompt.test.tsx's resetStores pattern).
+beforeEach(() => {
+  useAppStore.setState({ pendingGenerate: null });
+});
 afterEach(cleanup);
 
 // ─── Fixture trace ─────────────────────────────────────────────────────────

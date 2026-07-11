@@ -33,7 +33,38 @@ import { useAppStore } from "../ui/stores/app.js";
 import { useRunsStore, DEFAULT_DEVICE_CONFIG } from "../ui/stores/runs.js";
 import { Prompt, UNIT_OPTIONS } from "../ui/screens/Prompt.js";
 import { COMPONENT_TYPE_MAPPING } from "@uxfactory/spec";
+import type { ProjectQuadrant, ResolvedRequirement } from "@uxfactory/spec";
 import { renderWithProviders } from "./test-utils.js";
+
+// ─── All-planned synthetic type (P1 regression fixture) ──────────────────────
+//
+// No real COMPONENT_TYPE_MAPPING entry resolves ONLY `planned` (coming-soon)
+// requirements — every mapped type has at least one required/recommended
+// REGISTERED design artifact (brand-colors/fonts/typography/…), so it always
+// contributes at least one non-planned chip. Mock resolveRequirements for a
+// synthetic type id so the all-planned case (groundingChips non-empty, but
+// every chip `planned`) can be exercised directly against the real component.
+const { ALL_PLANNED_TYPE } = vi.hoisted(() => ({
+  ALL_PLANNED_TYPE: "__all-planned-test-type__",
+}));
+
+vi.mock("@uxfactory/spec", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@uxfactory/spec")>();
+  const plannedOnly: ResolvedRequirement[] = [
+    {
+      artifactId: "journey-map",
+      label: "Journey map",
+      level: "required",
+      status: "planned",
+      blocking: false,
+    },
+  ];
+  return {
+    ...actual,
+    resolveRequirements: (typeId: string, quadrant?: ProjectQuadrant): ResolvedRequirement[] =>
+      typeId === ALL_PLANNED_TYPE ? plannedOnly : actual.resolveRequirements(typeId, quadrant),
+  };
+});
 
 // ─── Snapshot factory ─────────────────────────────────────────────────────────
 
@@ -722,6 +753,28 @@ describe("AC-5: zero-artifacts callout renders; generation proceeds with default
       screen.queryByText(/No artifacts yet/),
     ).not.toBeInTheDocument();
   });
+
+  it("callout is absent when every resolved chip is `planned` — filtering must check the FILTERED array's length, not the raw chip count", async () => {
+    // Distinct from the story-unit case above: here groundingChips is
+    // non-empty (one real chip resolves), but it's entirely `planned`.
+    // `groundingChips.filter(c => !c.planned)` is [] — `[].every(...)` is
+    // vacuously true — so guarding only `groundingChips.length > 0` would
+    // still let this render the callout.
+    useRunsStore.setState({ composerUnitType: ALL_PLANNED_TYPE });
+
+    const { bridge } = makeBridge();
+    const bus = makeBus();
+    await renderWithProviders(<Prompt bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/prompt"],
+    });
+
+    // Sanity: the mocked resolver really did resolve a chip (not the
+    // zero-chips case) — it just renders as disabled/coming-soon.
+    expect(screen.getByLabelText("Journey map — coming soon")).toBeDisabled();
+    expect(
+      screen.queryByText(/No artifacts yet/),
+    ).not.toBeInTheDocument();
+  });
 });
 
 // ─── AC-6: SSE teardown on unmount ───────────────────────────────────────────
@@ -1320,6 +1373,17 @@ describe("Footer hint line", () => {
     await user.selectOptions(screen.getByLabelText("Unit type"), "user-flow");
     expect(
       screen.getByPlaceholderText("Describe the user flow to generate"),
+    ).toBeInTheDocument();
+
+    // The story unit gets its own copy — the generic template would read
+    // "Describe the story (revise coverage) to generate", which is awkward
+    // and its composer text is optional (the scope selector carries the
+    // contract), unlike every other unit.
+    await user.selectOptions(screen.getByLabelText("Unit type"), "story");
+    expect(
+      screen.getByPlaceholderText(
+        "Describe how to revise this story's coverage (optional — the scope below carries the contract)",
+      ),
     ).toBeInTheDocument();
   });
 
