@@ -143,6 +143,8 @@ uxfactory verify hello.uxfactory.json             # PASS → exit 0, FAIL → ex
 
 The panel's **Seed**, **Create**, and design-generation buttons enqueue jobs on the bridge — but the bridge is only a relay. A **worker** process claims and runs them, and it claims **only jobs for the project it was started in** (its working directory). No worker for your project = jobs wait in the queue and the panel shows a "No worker detected for this project" banner (plus an amber dot in the ContextBar).
 
+> **The first artifact is yours.** Seeding anything requires a product brief first — it's the intent everything else derives from, so no model is allowed to invent it. Answer the four-question interview in the panel (the AI structures your words, it never invents) or drop your own markdown at `.uxfactory/artifacts/brief.md`. Until then, Seed/Create stay disabled and the worker refuses artifact jobs.
+
 ```bash
 cd <your-project-root>          # the repo your panel is connected to
 uxfactory worker                # keep this running (assumes the global link from step 0)
