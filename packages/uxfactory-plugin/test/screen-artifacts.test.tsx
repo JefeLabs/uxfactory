@@ -1143,6 +1143,14 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
       payload: expect.objectContaining({
         artifact: "sitemap",
         guidance: expect.stringContaining("List the pages this product needs"),
+        // Deterministic: pages comes from the fixture's fixed IA seed
+        // (CATEGORY_TAXONOMY["ecommerce-storefront"].iaSeed), feature-links from
+        // the question's static defaultValue — neither varies across runs.
+        answers: {
+          pages: "Home, Category (PLP), Product (PDP), Cart, Checkout, Account",
+          "feature-links":
+            "derive from the stories each page realizes — link nodes to registered features",
+        },
       }),
     });
   });
@@ -1207,6 +1215,13 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
       payload: expect.objectContaining({
         artifact: "sitemap",
         guidance: expect.stringContaining("Home, Pricing"),
+        // pages here is the IA-seed prefill with typed text appended — assert
+        // the answers record carries both question ids rather than pin the
+        // concatenated string (this test's focus is keyboard navigation).
+        answers: expect.objectContaining({
+          pages: expect.any(String),
+          "feature-links": expect.any(String),
+        }),
       }),
     });
   });
@@ -1924,6 +1939,12 @@ describe("prerequisite chaining in the create dialog", () => {
       payload: expect.objectContaining({
         artifact: "features",
         guidance: expect.stringContaining("Browse FAQ, Contact support"),
+        // Deterministic: capabilities is the typed text, status the question's
+        // static defaultValue ("planned") — neither varies across runs.
+        answers: {
+          capabilities: "Browse FAQ, Contact support",
+          status: "planned",
+        },
       }),
     });
   });
