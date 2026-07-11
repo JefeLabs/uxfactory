@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { startBridge } from "@uxfactory/bridge";
 import { BridgeClient } from "../src/client.js";
-import { batchCmd } from "../src/commands/batch.js";
+import { batchCmd, clearScopeStamp } from "../src/commands/batch.js";
 import { EXIT } from "../src/exit.js";
 import { makeIO } from "./helpers.js";
 
@@ -642,5 +642,60 @@ describe("batch --full", () => {
     expect(code).toBe(EXIT.OK);
     const report = JSON.parse(io.outText()) as { storyRefs?: string[] };
     expect(report.storyRefs).toEqual(["story-1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clearScopeStamp — the `--full` on-disk rewrite, fail-closed on any read/parse
+// error. Unit-tested directly: batchCmd has no seam to make uxfactory.batch.json
+// vanish or corrupt between readRegistry's successful read and this one.
+// ---------------------------------------------------------------------------
+
+describe("clearScopeStamp", () => {
+  const registryPath = (): string => path.join(root, "uxfactory.batch.json");
+
+  it("missing file → false, one descriptive stderr line", async () => {
+    const io = makeIO();
+    const ok = await clearScopeStamp(registryPath(), io);
+    expect(ok).toBe(false);
+    expect(io.errs).toEqual(["--full: cannot rewrite uxfactory.batch.json — stamp not cleared"]);
+  });
+
+  it("invalid JSON in the file → false, one descriptive stderr line, file left untouched", async () => {
+    const raw = "{ not valid json ";
+    await writeFile(registryPath(), raw, "utf8");
+    const io = makeIO();
+    const ok = await clearScopeStamp(registryPath(), io);
+    expect(ok).toBe(false);
+    expect(io.errs).toEqual(["--full: cannot rewrite uxfactory.batch.json — stamp not cleared"]);
+    expect(await readFile(registryPath(), "utf8")).toBe(raw);
+  });
+
+  it("stamped file → true, rewrite drops unit/storyRefs, success stderr line, sibling fields preserved", async () => {
+    await writeFile(
+      registryPath(),
+      JSON.stringify({ version: 1, inputs: {}, unit: "story", storyRefs: ["a"], extra: "keep" }),
+      "utf8",
+    );
+    const io = makeIO();
+    const ok = await clearScopeStamp(registryPath(), io);
+    expect(ok).toBe(true);
+    const obj = JSON.parse(await readFile(registryPath(), "utf8")) as Record<string, unknown>;
+    expect(obj).not.toHaveProperty("unit");
+    expect(obj).not.toHaveProperty("storyRefs");
+    expect(obj["extra"]).toBe("keep");
+    expect(io.errs).toEqual([
+      "--full: cleared scoped-run stamp (unit, storyRefs) from uxfactory.batch.json",
+    ]);
+  });
+
+  it("unstamped file → true, byte-identical, silent (no-op)", async () => {
+    const raw = JSON.stringify({ version: 1, inputs: {} });
+    await writeFile(registryPath(), raw, "utf8");
+    const io = makeIO();
+    const ok = await clearScopeStamp(registryPath(), io);
+    expect(ok).toBe(true);
+    expect(await readFile(registryPath(), "utf8")).toBe(raw);
+    expect(io.errs).toEqual([]);
   });
 });

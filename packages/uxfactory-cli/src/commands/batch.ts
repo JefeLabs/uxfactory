@@ -134,6 +134,57 @@ async function readProfile(cwd: string): Promise<ProfileReadResult> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// `--full` — clear the persisted scoped-run stamp from uxfactory.batch.json
+// ---------------------------------------------------------------------------
+
+/**
+ * `--full`: rewrite `uxfactory.batch.json` with `unit`/`storyRefs` removed, re-parsing
+ * the RAW file text (not the normalized registry object) so fields the CLI's parser
+ * doesn't model survive the rewrite untouched.
+ *
+ * Fails closed: `--full` promises the on-disk stamp is gone, so any read/parse/write
+ * failure here — the file vanishing or being replaced with invalid JSON in the window
+ * after `readRegistry` already read it, or an unwritable path — must not pass silently.
+ * Returns `false` with one descriptive `io.err` line on any such failure; the caller
+ * must stop the run rather than gate against a scope it can no longer verify on disk.
+ *
+ * Returns `true` when the stamp is confirmed absent afterward: already absent (no
+ * rewrite, no stderr line — a safe no-op) or just cleared (rewritten, one stderr line).
+ *
+ * Exported for direct unit testing of the failure paths: batchCmd itself has no seam
+ * to make the file vanish or corrupt between readRegistry's read and this one.
+ */
+export async function clearScopeStamp(registryPath: string, io: IO): Promise<boolean> {
+  let rawText: string;
+  try {
+    rawText = await readFile(registryPath, "utf8");
+  } catch {
+    io.err("--full: cannot rewrite uxfactory.batch.json — stamp not cleared");
+    return false;
+  }
+  let rawObj: Record<string, unknown>;
+  try {
+    rawObj = JSON.parse(rawText) as Record<string, unknown>;
+  } catch {
+    io.err("--full: cannot rewrite uxfactory.batch.json — stamp not cleared");
+    return false;
+  }
+  if (!("unit" in rawObj) && !("storyRefs" in rawObj)) {
+    return true;
+  }
+  delete rawObj["unit"];
+  delete rawObj["storyRefs"];
+  try {
+    await writeFile(registryPath, JSON.stringify(rawObj, null, 2) + "\n", "utf8");
+  } catch {
+    io.err("--full: cannot rewrite uxfactory.batch.json — stamp not cleared");
+    return false;
+  }
+  io.err("--full: cleared scoped-run stamp (unit, storyRefs) from uxfactory.batch.json");
+  return true;
+}
+
 /**
  * `uxfactory batch <dir>` — ONE deterministic, self-contained offline pass (§13).
  * Reads the registry, loads + validates the batch specs, loads the registered inputs
@@ -179,19 +230,14 @@ export async function batchCmd(
   }
 
   // 1a'. `--full` — restoration verb, not a one-shot override: clears the persisted
-  //      scoped-run stamp (unit, storyRefs) from BOTH the on-disk registry (re-parsing
-  //      the raw file text, not the normalized registry object, so unmodeled fields
-  //      survive) and the in-memory registry, so every downstream consumer — HTML mode
-  //      below and the spec-mode input assembly further down — sees them as absent.
-  //      Runs before the gate so the stamp stays cleared even if the gate later fails.
+  //      scoped-run stamp (unit, storyRefs) from BOTH the on-disk registry and the
+  //      in-memory registry, so every downstream consumer — HTML mode below and the
+  //      spec-mode input assembly further down — sees them as absent. Runs before the
+  //      gate so the stamp stays cleared even if the gate later fails. Fails closed
+  //      (exit 2) if the on-disk clear can't be verified — see clearScopeStamp.
   if (flags.full === true) {
-    const rawText = await readFile(registryPath, "utf8");
-    const rawObj = JSON.parse(rawText) as Record<string, unknown>;
-    if ("unit" in rawObj || "storyRefs" in rawObj) {
-      delete rawObj["unit"];
-      delete rawObj["storyRefs"];
-      await writeFile(registryPath, JSON.stringify(rawObj, null, 2) + "\n", "utf8");
-      io.err("--full: cleared scoped-run stamp (unit, storyRefs) from uxfactory.batch.json");
+    if (!(await clearScopeStamp(registryPath, io))) {
+      return EXIT.TRANSPORT;
     }
     delete reg.registry.unit;
     delete reg.registry.storyRefs;
