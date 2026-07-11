@@ -766,6 +766,15 @@ describe('runGenerative', () => {
   let projectRoot: string;
   beforeEach(async () => {
     projectRoot = await mkdtemp(path.join(os.tmpdir(), 'uxf-worker-gen-'));
+    // Root gate (spec 2026-07-11-product-brief-root-gate): this describe's cases
+    // exercise prompt composition, not the gate itself, so seed a brief by
+    // default — the dedicated gate describe below uses its own bare tmp roots.
+    await mkdir(path.join(projectRoot, '.uxfactory', 'artifacts'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, '.uxfactory', 'artifacts', 'brief.md'),
+      '# Acme\nBrief.',
+      'utf8',
+    );
   });
   afterEach(async () => {
     await rm(projectRoot, { recursive: true, force: true });
@@ -945,7 +954,11 @@ describe('runGenerative', () => {
       {
         id: 'pr_brief',
         kind: 'generate-artifact',
-        payload: { artifact: 'brief', guidance: 'target enterprise SaaS customers' },
+        payload: {
+          artifact: 'brief',
+          guidance: 'target enterprise SaaS customers',
+          answers: { problem: 'Ops teams drown in spreadsheets' },
+        },
         createdAt: 1,
       },
       adapter,
@@ -970,7 +983,7 @@ describe('runGenerative', () => {
       {
         id: 'pr_brief_ng',
         kind: 'generate-artifact',
-        payload: { artifact: 'brief' },
+        payload: { artifact: 'brief', answers: { problem: 'Ops teams drown in spreadsheets' } },
         createdAt: 1,
       },
       adapter,
@@ -1186,7 +1199,7 @@ describe('runGenerative', () => {
       {
         id: 'pr_brief_sections',
         kind: 'generate-artifact',
-        payload: { artifact: 'brief' },
+        payload: { artifact: 'brief', answers: { problem: 'Ops teams drown in spreadsheets' } },
         createdAt: 1,
       },
       adapter,
@@ -1211,7 +1224,7 @@ describe('runGenerative', () => {
       {
         id: 'pr_brief_no_restate',
         kind: 'generate-artifact',
-        payload: { artifact: 'brief' },
+        payload: { artifact: 'brief', answers: { problem: 'Ops teams drown in spreadsheets' } },
         createdAt: 1,
       },
       adapter,
@@ -2034,6 +2047,188 @@ describe('runGenerative', () => {
     expect(out.result).toMatchObject({ content: '', artifactPath: 'design/stories.json' });
     // graceful: a missing/unreadable file omits `artifacts` entirely (no throw).
     expect(Object.prototype.hasOwnProperty.call(out.result, 'artifacts')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generative root gate (spec 2026-07-11-product-brief-root-gate)
+// ---------------------------------------------------------------------------
+
+describe('generative root gate (spec 2026-07-11-product-brief-root-gate)', () => {
+  let projectRoot: string;
+  beforeEach(async () => {
+    // Bare tmp root — NO default brief (unlike the `runGenerative` describe
+    // above) so every case controls its own brief-presence fixture.
+    projectRoot = await mkdtemp(path.join(os.tmpdir(), 'uxf-worker-gate-'));
+  });
+  afterEach(async () => {
+    await rm(projectRoot, { recursive: true, force: true });
+  });
+
+  const ctx = (): DispatchCtx => ({ projectRoot, cliBin: 'uxfactory' });
+
+  it('generate-artifact for a non-brief artifact refuses when no brief exists anywhere', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_gate_missing',
+        kind: 'generate-artifact',
+        payload: { artifact: 'audience', guidance: 'x' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect((out.result as { error: string }).error).toContain('no product brief found');
+    expect(adapter.lastInput).toBeNull();
+  });
+
+  it('gate passes when the canonical .uxfactory/artifacts/brief.md is non-empty', async () => {
+    await mkdir(path.join(projectRoot, '.uxfactory', 'artifacts'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, '.uxfactory', 'artifacts', 'brief.md'),
+      '# Acme\nBrief.',
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_gate_canonical',
+        kind: 'generate-artifact',
+        payload: { artifact: 'audience', guidance: 'x' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(adapter.lastInput).not.toBeNull();
+    expect(out.status).toBe(0);
+  });
+
+  it('gate passes when the brief exists only at the legacy design/brief.md path', async () => {
+    await mkdir(path.join(projectRoot, 'design'), { recursive: true });
+    await writeFile(path.join(projectRoot, 'design', 'brief.md'), '# Acme\nBrief.', 'utf8');
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_gate_legacy',
+        kind: 'generate-artifact',
+        payload: { artifact: 'audience', guidance: 'x' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(adapter.lastInput).not.toBeNull();
+    expect(out.status).toBe(0);
+  });
+
+  it('a whitespace-only brief.md does not satisfy the gate', async () => {
+    await mkdir(path.join(projectRoot, '.uxfactory', 'artifacts'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, '.uxfactory', 'artifacts', 'brief.md'),
+      '   \n\t  \n',
+      'utf8',
+    );
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_gate_whitespace',
+        kind: 'generate-artifact',
+        payload: { artifact: 'audience', guidance: 'x' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect((out.result as { error: string }).error).toContain('no product brief found');
+    expect(adapter.lastInput).toBeNull();
+  });
+
+  it('generate-artifact artifact:brief without answers is refused (never invents the brief)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_gate_brief_no_answers',
+        kind: 'generate-artifact',
+        payload: { artifact: 'brief', guidance: 'x' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect((out.result as { error: string }).error).toContain('must be user-authored');
+    expect(adapter.lastInput).toBeNull();
+  });
+
+  it('generate-artifact artifact:brief with user answers passes the gate and weaves them into the prompt', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      {
+        id: 'pr_gate_brief_answers',
+        kind: 'generate-artifact',
+        payload: {
+          artifact: 'brief',
+          guidance: 'x',
+          answers: {
+            problem: 'Ops teams drown in spreadsheets',
+            outcomes: '',
+            'out-of-scope': '',
+            constraints: '',
+          },
+        },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(0);
+    expect(adapter.lastInput).not.toBeNull();
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toContain('Ops teams drown in spreadsheets');
+    expect(user).toContain('do not add claims the user did not make');
+  });
+
+  it('generate-design is never gated by the brief root gate (own grounding-chip semantics)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_gate_design', kind: 'generate-design', payload: {}, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(adapter.lastInput).not.toBeNull();
+    expect(out.status).toBe(0);
   });
 });
 

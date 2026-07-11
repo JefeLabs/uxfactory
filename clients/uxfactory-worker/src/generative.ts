@@ -1102,6 +1102,32 @@ const PANEL_ARTIFACT_MAP: Record<PanelArtifactKey, PanelArtifactEntry> = {
   illustrations: { label: 'Illustrations', path: '.uxfactory/artifacts/assets/illustrations.json' },
 };
 
+// ─── Root gate (spec 2026-07-11-product-brief-root-gate) ─────────────────────
+
+/** Brief locations, canonical first — mirrors bridge CONCERN_CANONICAL/LEGACY. */
+const BRIEF_CANDIDATES = ['.uxfactory/artifacts/brief.md', 'brief.md', 'design/brief.md'];
+
+/** True when a non-empty product brief exists at any known location. */
+export async function briefExists(projectRoot: string): Promise<boolean> {
+  for (const rel of BRIEF_CANDIDATES) {
+    try {
+      const text = await readFile(path.join(projectRoot, rel), 'utf8');
+      if (text.trim().length > 0) return true;
+    } catch {
+      // missing/unreadable → try the next candidate
+    }
+  }
+  return false;
+}
+
+/** A record with at least one non-empty string value — the user's own words. */
+function hasUserAnswers(v: unknown): boolean {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  return Object.values(v as Record<string, unknown>).some(
+    (a) => typeof a === 'string' && a.trim() !== '',
+  );
+}
+
 /** Narrow an opaque value to a known `PanelArtifactKey`. */
 function isPanelArtifact(v: unknown): v is PanelArtifactKey {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PANEL_ARTIFACT_MAP, v);
@@ -1243,12 +1269,24 @@ function planGenerative(
           ' prose paragraph as a SINGLE line (no hard line breaks mid-paragraph) so the' +
           ' viewer flows it instead of showing ragged breaks.'
         : '';
-      const user =
+      let user =
         `${writeTarget} Ground the content in uxfactory.classification.json and` +
         ` uxfactory.profile.json, and read the project's other registered artifacts under` +
         ` .uxfactory/artifacts to stay on-project (read them first).${briefNote}${listRule}${entry.note ?? ''}` +
         ` Output strictly the artifact content: valid JSON for a .json target, Markdown for a` +
         ` .md target. Write ONLY to ${scratchRel} — nowhere else. Report the path once done.${guidanceNote}`;
+      // Root gate (spec 2026-07-11-product-brief-root-gate): the brief's entire
+      // factual content is the user's own interview answers — the producer
+      // structures and formats them, it never invents beyond what they said.
+      const answerEntries = Object.entries(asObject(p['answers'])).filter(
+        (e): e is [string, string] => typeof e[1] === 'string' && e[1].trim() !== '',
+      );
+      if (artifact === 'brief' && answerEntries.length > 0) {
+        user +=
+          "\nThe user's answers (their words — the brief's entire factual content):\n" +
+          answerEntries.map(([id, v]) => `- ${id}: ${v.trim()}`).join('\n') +
+          '\nStructure and format these answers into the brief; do not add claims the user did not make.';
+      }
       return {
         systemPrompt: loadArtifactSkill(artifact),
         user,
@@ -1406,6 +1444,37 @@ export async function runGenerative(
   ctx: DispatchCtx,
 ): Promise<DispatchOutcome> {
   try {
+    // Root gate: every artifact derives from the brief; the brief itself is
+    // user-authored (the producer structures answers, never invents).
+    if (req.kind === 'generate-artifact') {
+      const p = asObject(req.payload);
+      const artifactKey = str(p, 'artifact');
+      if (
+        artifactKey !== undefined &&
+        artifactKey !== 'brief' &&
+        !(await briefExists(ctx.projectRoot))
+      ) {
+        return {
+          status: 2,
+          result: {
+            error:
+              'no product brief found — supply one in the panel (Artifacts → Product Brief) ' +
+              'or at .uxfactory/artifacts/brief.md before seeding other artifacts',
+          },
+        };
+      }
+      if (artifactKey === 'brief' && !hasUserAnswers(p['answers'])) {
+        return {
+          status: 2,
+          result: {
+            error:
+              'a product brief must be user-authored — provide interview answers ' +
+              "(the panel's brief dialog) instead of seeding it from nothing",
+          },
+        };
+      }
+    }
+
     // Design style for the generate-design task + rubric: a valid per-request
     // payload override wins; otherwise the classification-pinned default.
     let designStyle: string | undefined;
