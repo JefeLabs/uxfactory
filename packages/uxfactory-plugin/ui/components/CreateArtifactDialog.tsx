@@ -83,8 +83,9 @@ export interface CreateArtifactDialogProps {
   artifactLabel: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Fired on Generate with the composed interview + guidance ("" is allowed). */
-  onGenerate: (guidance: string) => void;
+  /** Fired on Generate with the composed interview + guidance ("" is allowed)
+   *  and the raw per-question answers (for the "brief" artifact's root gate). */
+  onGenerate: (guidance: string, answers: Record<string, string>) => void;
   /** Present while running a prerequisite chain — step position + the target. */
   chainInfo?: { step: number; total: number; targetLabel: string };
 }
@@ -145,6 +146,15 @@ export function CreateArtifactDialog({
             {guidanceCopyFor(artifactKey)}
           </Dialog.Description>
 
+          {/* Root gate (brief only): the brief's entire factual content is
+              the user's own words — set that expectation up front. */}
+          {artifactKey === "brief" && (
+            <p className="text-xs text-gray-500">
+              Your answers become the brief. The AI structures and formats them — it never
+              invents content you didn't provide.
+            </p>
+          )}
+
           {/* The interview: [E] required, [F] prefilled */}
           {questions.length > 0 && (
             <div className="flex flex-col gap-2.5">
@@ -200,7 +210,7 @@ export function CreateArtifactDialog({
               <button
                 type="button"
                 disabled={unanswered > 0}
-                onClick={() => onGenerate(composeGuidance(questions, answers, guidance))}
+                onClick={() => onGenerate(composeGuidance(questions, answers, guidance), answers)}
                 className="text-xs px-3 py-1.5 rounded bg-primary-600 text-white hover:bg-primary-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Generate

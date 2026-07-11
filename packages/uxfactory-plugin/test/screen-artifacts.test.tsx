@@ -652,6 +652,7 @@ describe("AC-3: Create → dialog → Generate enqueues, shows generating…, fl
       payload: {
         artifact: "illustrations",
         guidance: "Illustration style in a phrase\nflat geometric",
+        answers: { style: "flat geometric" },
       },
     });
   });
@@ -1139,10 +1140,10 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: {
+      payload: expect.objectContaining({
         artifact: "sitemap",
         guidance: expect.stringContaining("List the pages this product needs"),
-      },
+      }),
     });
   });
 
@@ -1203,10 +1204,10 @@ describe("Regenerate button — always visible on draft rows (WCAG 2.1.1)", () =
 
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: {
+      payload: expect.objectContaining({
         artifact: "sitemap",
         guidance: expect.stringContaining("Home, Pricing"),
-      },
+      }),
     });
   });
 });
@@ -1328,6 +1329,7 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
       payload: {
         artifact: "illustrations",
         guidance: expect.stringContaining("Illustration style in a phrase"),
+        answers: { style: "test answer" },
       },
     });
   });
@@ -1348,6 +1350,100 @@ describe("Guided Create dialog — guiding copy, guidance payload, Cancel", () =
     expect(bridge.enqueue).not.toHaveBeenCalled();
     // Row is untouched — no pending state
     expect(screen.queryByText("generating…")).not.toBeInTheDocument();
+  });
+});
+
+// ─── Dialog answers passthrough (product-brief root gate) ────────────────────
+
+describe("Dialog answers passthrough (product-brief root gate)", () => {
+  const briefMissingArtifacts: ArtifactRow[] = MERIDIAN_ARTIFACTS.map((a) =>
+    a.key === "brief"
+      ? ({ ...a, status: "missing" as const, meta: "", path: null } satisfies ArtifactRow)
+      : a,
+  );
+
+  it("Product Brief dialog: filling all four fields and clicking Generate ships an answers record with the typed text", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(
+      within(dialog).getByLabelText(/What problem does this product solve/i),
+      "Helps clinics schedule faster",
+    );
+    await user.type(
+      within(dialog).getByLabelText(/How will you measure success/i),
+      "30% fewer no-shows in 90 days",
+    );
+    await user.type(
+      within(dialog).getByLabelText(/explicitly out of scope/i),
+      "Billing integrations",
+    );
+    await user.type(
+      within(dialog).getByLabelText(/constraints are non-negotiable/i),
+      "Must ship on the existing EHR stack",
+    );
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+
+    expect(bridge.enqueue).toHaveBeenCalledWith({
+      kind: "generate-artifact",
+      payload: {
+        artifact: "brief",
+        guidance: expect.stringContaining("Helps clinics schedule faster"),
+        answers: {
+          problem: "Helps clinics schedule faster",
+          outcomes: "30% fewer no-shows in 90 days",
+          "out-of-scope": "Billing integrations",
+          constraints: "Must ship on the existing EHR stack",
+        },
+      },
+    });
+  });
+
+  it("the open brief dialog shows the brief-only honesty note; a non-brief dialog does not", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const briefDialog = await screen.findByRole("dialog");
+    expect(
+      within(briefDialog).getByText(
+        "Your answers become the brief. The AI structures and formats them — it never " +
+          "invents content you didn't provide.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(briefDialog).getByRole("button", { name: /^Cancel$/i }));
+
+    await user.click(await screen.findByRole("button", { name: /Create Illustrations/i }));
+    const otherDialog = await screen.findByRole("dialog");
+    expect(
+      within(otherDialog).queryByText(/Your answers become the brief/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Seed enqueues no answers key on the payload", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Seed Personas/i }));
+
+    const call = (bridge.enqueue as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      payload: Record<string, unknown>;
+    };
+    expect(call.payload).not.toHaveProperty("answers");
   });
 });
 
@@ -1671,10 +1767,10 @@ describe("prerequisite chaining in the create dialog", () => {
     await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
     expect(bridge.enqueue).toHaveBeenCalledWith({
       kind: "generate-artifact",
-      payload: {
+      payload: expect.objectContaining({
         artifact: "features",
         guidance: expect.stringContaining("Browse FAQ, Contact support"),
-      },
+      }),
     });
   });
 

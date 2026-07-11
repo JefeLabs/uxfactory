@@ -315,7 +315,11 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
 
   // ── Enqueue generate-artifact job (from the dialog's Generate) ──────────────
 
-  async function handleGenerate(row: ArtifactRow, guidance: string): Promise<void> {
+  async function handleGenerate(
+    row: ArtifactRow,
+    guidance: string,
+    answers?: Record<string, string>,
+  ): Promise<void> {
     // Advance the chain: the next prerequisite's interview opens immediately;
     // an empty chain closes the dialog. Drafts enqueue in dependency order —
     // the worker processes sequentially, so downstream drafts see upstream files.
@@ -338,7 +342,13 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     try {
       const { id } = await enqueue.mutateAsync({
         kind: "generate-artifact",
-        payload: { artifact: row.key, guidance },
+        payload: {
+          artifact: row.key,
+          guidance,
+          ...(answers !== undefined && Object.values(answers).some((v) => v.trim() !== "")
+            ? { answers }
+            : {}),
+        },
       });
       pendingIdsRef.current[id] = row.key;
       void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
@@ -433,8 +443,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       onOpenChange={(open) => {
         if (!open) setDialogChain([]);
       }}
-      onGenerate={(guidance) => {
-        if (dialogRow !== null) void handleGenerate(dialogRow, guidance);
+      onGenerate={(guidance, answers) => {
+        if (dialogRow !== null) void handleGenerate(dialogRow, guidance, answers);
       }}
     />
   );
