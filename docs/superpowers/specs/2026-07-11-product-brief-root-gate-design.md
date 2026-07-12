@@ -47,6 +47,14 @@ user-authored, and a precondition for creating anything else.
   prose: the intake path guarantees the base minimum for briefs created
   in-panel, and a pasted brief must count without fighting a format checker.
 
+**Delivered semantics:** the panel's brief row is computed by the bridge as
+exists-and-non-empty — a candidate whose content is empty or whitespace-only
+does not count as found, and resolution falls through to the next candidate
+(canonical, then legacy). This is status fidelity in the bridge's existing row
+computation, not gate policy (the bridge stays a pure relay); it matches the
+worker's `briefExists` (non-empty-after-trim), so both layers share one
+definition of "a brief exists."
+
 ### The base minimum is already defined
 
 `ARTIFACT_ELICITATION["product-brief"]` already holds four all-[E] (user-

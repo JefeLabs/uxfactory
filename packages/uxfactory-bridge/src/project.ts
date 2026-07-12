@@ -181,6 +181,29 @@ async function findConcernFile(root: string, key: string): Promise<string | null
   return null;
 }
 
+/**
+ * Same as findConcernFile, but a candidate whose content is empty or
+ * whitespace-only does not count as found — iteration continues to the next
+ * candidate. Used for the BRIEF concern only: per spec
+ * 2026-07-11-product-brief-root-gate-design.md, "a brief exists = the
+ * resolved artifact file exists and is non-empty" (status fidelity, matching
+ * the worker's briefExists — not gate policy, which stays out of the bridge).
+ */
+async function findNonEmptyConcernFile(root: string, key: string): Promise<string | null> {
+  const candidates = [CONCERN_CANONICAL[key]!, ...(CONCERN_LEGACY[key] ?? [])];
+  for (const rel of candidates) {
+    const abs = path.join(root, rel);
+    if (!(await fileAccessible(abs))) continue;
+    try {
+      const content = await readFile(abs, "utf8");
+      if (content.trim() !== "") return abs;
+    } catch {
+      // unreadable — try the next candidate
+    }
+  }
+  return null;
+}
+
 // ─── Utility helpers ─────────────────────────────────────────────────────────
 
 async function fileAccessible(filePath: string): Promise<boolean> {
@@ -385,8 +408,12 @@ async function buildArtifacts(
   const rows: ArtifactRow[] = [];
 
   // ── product: brief ────────────────────────────────────────────────────────
+  // Root gate (spec 2026-07-11-product-brief-root-gate-design.md): the brief
+  // is the one artifact the panel gate keys off — an existing-but-empty file
+  // must report missing here, or the gate lifts while the worker's
+  // briefExists (non-empty-after-trim) still refuses the job.
   {
-    const foundPath = await findConcernFile(root, "brief");
+    const foundPath = await findNonEmptyConcernFile(root, "brief");
     rows.push({
       key: "brief",
       group: "product",

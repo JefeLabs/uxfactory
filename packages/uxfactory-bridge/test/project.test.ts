@@ -650,6 +650,54 @@ describe("snapshot rows: typography and a11y-spec", () => {
   });
 });
 
+// ─── brief row: status fidelity (empty file ≠ present) ─────────────────────────
+// Spec 2026-07-11-product-brief-root-gate-design.md: "a brief exists = the
+// resolved artifact file exists and is non-empty" — the worker's briefExists
+// already enforces this; the bridge's snapshot row must agree, or an empty
+// brief.md lifts the panel gate while the worker still refuses the job.
+
+describe("snapshot rows: brief — empty file does not count as present", () => {
+  beforeEach(async () => {
+    await addGitMarker(root);
+    app = await createBridge({ dataDir });
+  });
+
+  it("empty file at the canonical brief path → row status missing", async () => {
+    await writeTxt(path.join(root, ".uxfactory/artifacts/brief.md"), "");
+
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    const rows = (res.json() as { artifacts: Array<{ key: string; status: string }> }).artifacts;
+    expect(rows.find((r) => r.key === "brief")?.status).toBe("missing");
+  });
+
+  it("whitespace-only file at the canonical brief path → row status missing", async () => {
+    await writeTxt(path.join(root, ".uxfactory/artifacts/brief.md"), "   \n\t\n  ");
+
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    const rows = (res.json() as { artifacts: Array<{ key: string; status: string }> }).artifacts;
+    expect(rows.find((r) => r.key === "brief")?.status).toBe("missing");
+  });
+
+  it("non-empty file at the canonical brief path → row status up-to-date", async () => {
+    await writeTxt(path.join(root, ".uxfactory/artifacts/brief.md"), "# Brief\nA product.");
+
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    const rows = (res.json() as { artifacts: Array<{ key: string; status: string }> }).artifacts;
+    expect(rows.find((r) => r.key === "brief")?.status).toBe("up-to-date");
+  });
+
+  it("empty canonical + non-empty legacy → row status up-to-date via the legacy file", async () => {
+    await writeTxt(path.join(root, ".uxfactory/artifacts/brief.md"), "");
+    await writeTxt(path.join(root, "brief.md"), "# Legacy Brief\nStill valid.");
+
+    const res = await app.inject({ method: "GET", url: "/project/snapshot" });
+    const rows = (res.json() as { artifacts: Array<{ key: string; status: string; path: string | null }> }).artifacts;
+    const brief = rows.find((r) => r.key === "brief");
+    expect(brief?.status).toBe("up-to-date");
+    expect(brief?.path).toBe(path.join(root, "brief.md"));
+  });
+});
+
 // ─── personas: the first SET artifact (one file per instance) ─────────────────
 
 describe("snapshot rows: personas set artifact", () => {
