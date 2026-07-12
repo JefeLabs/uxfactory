@@ -47,6 +47,14 @@ function makeMeridianSnapshot(
     profile: null,
     artifacts: [
       {
+        key: "brief",
+        group: "product",
+        label: "Product Brief",
+        status: "up-to-date",
+        meta: "",
+        path: "/home/user/meridian/.uxfactory/artifacts/brief.md",
+      },
+      {
         key: "icons",
         group: "assets",
         label: "Icons",
@@ -539,6 +547,93 @@ describe("AC-5: Create on Illustrations enqueues generate-artifact + inline stat
     await waitFor(() => {
       expect(screen.queryByText("Generating…")).not.toBeInTheDocument();
     });
+  });
+});
+
+// ─── Root gate: Illustrations Create disabled without a product brief ────────
+// Mirrors Artifacts.tsx's gate (spec 2026-07-11-product-brief-root-gate-design.md):
+// every non-brief generate-artifact entry point is disabled while the brief is
+// missing, with a reachable tooltip explaining why.
+
+describe("Root gate — Illustrations Create disabled without a product brief", () => {
+  const GATED_TOOLTIP_COPY =
+    "Supply your product brief first — every artifact derives from it.";
+
+  function snapshotWithBrief(briefStatus: "missing" | "up-to-date"): ProjectSnapshot {
+    return makeMeridianSnapshot({
+      artifacts: [
+        {
+          key: "brief",
+          group: "product",
+          label: "Product Brief",
+          status: briefStatus,
+          meta: "",
+          path: briefStatus === "missing" ? null : "/home/user/meridian/.uxfactory/artifacts/brief.md",
+        },
+        {
+          key: "icons",
+          group: "assets",
+          label: "Icons",
+          status: "up-to-date",
+          meta: "",
+          path: "/home/user/meridian/design/assets/icons.json",
+        },
+        {
+          key: "photography",
+          group: "assets",
+          label: "Photography",
+          status: "up-to-date",
+          meta: "",
+          path: "/home/user/meridian/design/assets/photography.json",
+        },
+        {
+          key: "illustrations",
+          group: "assets",
+          label: "Illustrations",
+          status: "missing",
+          meta: "",
+          path: null,
+        },
+      ],
+    });
+  }
+
+  it("brief missing → Create is disabled with the gating tooltip reachable", async () => {
+    const user = userEvent.setup();
+    resetStores(snapshotWithBrief("missing"));
+    await renderWithProviders(<Assets bridge={makeBridge()} bus={makeBus()} />, {
+      initialEntries: ["/tabs/assets"],
+    });
+
+    const create = screen.getByRole("button", { name: "Create" });
+    expect(create).toBeDisabled();
+
+    await user.hover(create);
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip")).toHaveTextContent(GATED_TOOLTIP_COPY);
+    });
+  });
+
+  it("brief missing → Create click does not enqueue generate-artifact", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    resetStores(snapshotWithBrief("missing"));
+    await renderWithProviders(<Assets bridge={bridge} bus={makeBus()} />, {
+      initialEntries: ["/tabs/assets"],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(bridge.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("brief present → Create is enabled", async () => {
+    resetStores(snapshotWithBrief("up-to-date"));
+    await renderWithProviders(<Assets bridge={makeBridge()} bus={makeBus()} />, {
+      initialEntries: ["/tabs/assets"],
+    });
+
+    expect(screen.getByRole("button", { name: "Create" })).toBeEnabled();
   });
 });
 

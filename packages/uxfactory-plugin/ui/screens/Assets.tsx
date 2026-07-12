@@ -80,10 +80,13 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { ROOT_ARTIFACT, requiresRootArtifact } from "@uxfactory/spec";
+
 import type { Bridge } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { ActionTooltip, Card, ChipGroup } from "../components/index.js";
+import { ARTIFACT_KEY_BY_ID, REGISTRY_ID_BY_KEY } from "../lib/artifact-mapping.js";
 import {
   FIXTURE_PHOTOS,
   DEFAULT_ICON_NAMES,
@@ -177,6 +180,23 @@ function iconSvg(name: string): string {
   return renderToStaticMarkup(<Icon size={24} strokeWidth={2} />);
 }
 
+// ─── Root gate (spec 2026-07-11-product-brief-root-gate-design.md) ───────────
+// Mirrors Artifacts.tsx's BRIEF_KEY/requiresBrief — every generate-artifact
+// entry point on this screen (currently: the Illustrations Create button)
+// gates the same way the Artifacts inventory does.
+
+/** Panel key for the root artifact (the brief) — every other artifact gates on it. */
+const BRIEF_KEY = ARTIFACT_KEY_BY_ID[ROOT_ARTIFACT] ?? "brief";
+
+/** True when `key`'s artifact must not be created before the brief exists. */
+function requiresBrief(key: string): boolean {
+  return requiresRootArtifact(REGISTRY_ID_BY_KEY[key] ?? key);
+}
+
+/** Copy for a gated Create action while the brief is missing (verbatim, matches Artifacts.tsx). */
+const GATED_TOOLTIP_COPY =
+  "Supply your product brief first — every artifact derives from it.";
+
 // ─── Scope filter ─────────────────────────────────────────────────────────────
 
 type ScopeFilter = "all" | "icons" | "photos" | "illustrations";
@@ -234,6 +254,14 @@ export function Assets({
     );
     return artifact !== undefined && artifact.status !== "missing";
   })();
+
+  /**
+   * Root gate: the brief is user-authored intent — nothing else derives
+   * without it. Absent row counts as missing (same derivation as Artifacts.tsx).
+   */
+  const briefRow = snapshot?.artifacts.find((a) => a.key === BRIEF_KEY);
+  const briefMissing = (briefRow?.status ?? "missing") === "missing";
+  const illusGated = briefMissing && requiresBrief("illustrations");
 
   /**
    * Icons to display:
@@ -295,6 +323,7 @@ export function Assets({
    * illustrations artifact as non-missing (illusDefined effect clears it).
    */
   async function handleCreate(): Promise<void> {
+    if (illusGated) return;
     setIllusGenerating(true);
     try {
       await enqueue.mutateAsync({
@@ -504,18 +533,31 @@ export function Assets({
                       Define an illustration style so generated designs stay
                       on-brand.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => void handleCreate()}
-                      className={[
-                        "text-sm px-4 py-2 rounded-lg",
-                        "bg-primary-600 text-white hover:bg-primary-700",
-                        "font-medium",
-                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
-                      ].join(" ")}
-                    >
-                      Create
-                    </button>
+                    {(() => {
+                      const createButton = (
+                        <button
+                          type="button"
+                          onClick={() => void handleCreate()}
+                          disabled={illusGated}
+                          className={[
+                            "text-sm px-4 py-2 rounded-lg",
+                            "bg-primary-600 text-white hover:bg-primary-700",
+                            "font-medium",
+                            "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600",
+                            "disabled:opacity-50 disabled:cursor-not-allowed",
+                          ].join(" ")}
+                        >
+                          Create
+                        </button>
+                      );
+                      return illusGated ? (
+                        <ActionTooltip label={GATED_TOOLTIP_COPY}>
+                          <span tabIndex={0}>{createButton}</span>
+                        </ActionTooltip>
+                      ) : (
+                        createButton
+                      );
+                    })()}
                   </div>
                 )
               ) : (
