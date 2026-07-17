@@ -99,3 +99,14 @@ export type {
   CoordinateAxis,
   ParseAddressResult,
 } from "./canonical-address.js";
+export {
+  resolveViewport,
+  resolveAxesFromModes,
+  deriveFallbackLabel,
+  coordinatesFromVariantProps,
+} from "./identity-resolve.js";
+export type {
+  AxesResolution,
+  FallbackLabelResolution,
+  ViewportResolution,
+} from "./identity-resolve.js";
