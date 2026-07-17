@@ -1194,6 +1194,20 @@ function validateProposalsBody(
 // `proposal.mode`/`proposal.theme` are run through `normalizeCoordinateToken`
 // so only an actual registry member ever lands in `coordinates` — a
 // non-member value is silently not filled (never written unresolved).
+// `matchedComponentKey`'s `entry.roleName` is normalized the same way (a
+// component-registry entry can predate the PUT boundary's own LABEL_RE
+// guard, or be hand-edited on disk — legacy data, not just fresh writes).
+//
+// ATOMICITY (post-review fix): `applyIdentityProposal` is called by the
+// route below on a CANDIDATE — a `structuredClone` of the real record, never
+// the record living in `manifest.records` — so it is free to mutate its
+// argument in place. The route only commits the candidate into
+// `manifest.records[durableId]` AFTER `serializeAddress` on the *candidate*
+// succeeds; if either this function or that serialize call throws for any
+// reason (including one this normalization doesn't cover — e.g. an already
+// on-disk record whose PRE-EXISTING label was never valid, untouched by this
+// proposal), the original record is never touched and the batch's
+// already-applied proposals are unaffected. See the route's own comment.
 
 function toAddressCoordinates(c: Coordinates): AddressCoordinates {
   return {
@@ -1204,15 +1218,20 @@ function toAddressCoordinates(c: Coordinates): AddressCoordinates {
   };
 }
 
-/** Apply one proposal to `record` in place; returns true iff anything changed. */
+/**
+ * Apply one proposal to `candidate` in place; returns true iff anything
+ * changed. `candidate` MUST be a private clone the caller is free to mutate
+ * and discard (never the live object in `manifest.records`) — see the
+ * ATOMICITY note above and the route's own commit-on-success logic below.
+ */
 function applyIdentityProposal(
-  record: NodeIdentityRecord,
+  candidate: NodeIdentityRecord,
   proposal: IdentityProposal,
   components: ComponentRegistry,
   registries: IdentityRegistries,
 ): boolean {
   let changed = false;
-  const lastSeg = record.path[record.path.length - 1];
+  const lastSeg = candidate.path[candidate.path.length - 1];
   const guarded = lastSeg !== undefined && (lastSeg.confirmed === true || lastSeg.provenance === "elicited");
   const reasoningNote = `${proposal.reasoning} [vision confidence: ${proposal.confidence}]`;
 
@@ -1226,28 +1245,31 @@ function applyIdentityProposal(
       lastSeg.provenance = "inferred";
       lastSeg.source = "vision";
       lastSeg.confirmed = false;
-      record.reasoning = reasoningNote;
+      candidate.reasoning = reasoningNote;
       changed = true;
     }
   }
 
   // Closed-set component match — a BINDING proposal, not a name (§C).
-  // `entry.roleName` is guaranteed LABEL_RE-valid by the component-registry
-  // PUT boundary (`validateComponentsBody`), so it needs no re-normalization
-  // here — it is trusted the same way the deterministic extraction pass
-  // (identity-assemble.ts) already trusts it.
+  // `entry.roleName` is EXPECTED to be LABEL_RE-valid — the component-registry
+  // PUT boundary (`validateComponentsBody`) enforces this for every write it
+  // handles — but a registry entry can predate that guard (legacy data) or be
+  // hand-edited on disk, so it is normalized here too, same as `proposal.label`
+  // above. A roleName that normalizes to nothing usable means this aspect of
+  // the proposal is a no-op (never writes an empty/invalid label).
   if (proposal.matchedComponentKey !== undefined && !guarded) {
     const entry = components.components.find((c) => c.key === proposal.matchedComponentKey);
-    if (entry !== undefined) {
+    const normalizedRoleName = entry !== undefined ? toKebabLabel(entry.roleName) : "";
+    if (entry !== undefined && normalizedRoleName !== "") {
       if (lastSeg !== undefined) {
-        lastSeg.label = entry.roleName;
+        lastSeg.label = normalizedRoleName;
         lastSeg.provenance = "inferred";
         lastSeg.source = "vision";
         lastSeg.confirmed = false;
       }
-      record.definitionRef = proposal.matchedComponentKey;
-      record.resolutionStatus = proposal.resolutionStatus ?? "bound";
-      record.reasoning = reasoningNote;
+      candidate.definitionRef = proposal.matchedComponentKey;
+      candidate.resolutionStatus = proposal.resolutionStatus ?? "bound";
+      candidate.reasoning = reasoningNote;
       changed = true;
     }
   }
@@ -1256,10 +1278,10 @@ function applyIdentityProposal(
   // overwrite a derived/bound axis, however it was resolved), AND only when
   // the proposed value normalizes to an actual registry member — a
   // non-member value is silently ignored (not filled, not written raw).
-  if (proposal.mode !== undefined && record.coordinates.mode === undefined) {
+  if (proposal.mode !== undefined && candidate.coordinates.mode === undefined) {
     const normalizedMode = normalizeCoordinateToken("mode", proposal.mode, registries);
     if (normalizedMode !== null) {
-      record.coordinates.mode = {
+      candidate.coordinates.mode = {
         value: normalizedMode,
         provenance: "inferred",
         source: "vision",
@@ -1269,10 +1291,10 @@ function applyIdentityProposal(
       changed = true;
     }
   }
-  if (proposal.theme !== undefined && record.coordinates.theme === undefined) {
+  if (proposal.theme !== undefined && candidate.coordinates.theme === undefined) {
     const normalizedTheme = normalizeCoordinateToken("theme", proposal.theme, registries);
     if (normalizedTheme !== null) {
-      record.coordinates.theme = {
+      candidate.coordinates.theme = {
         value: normalizedTheme,
         provenance: "inferred",
         source: "vision",
@@ -1713,35 +1735,40 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       const errors: string[] = [];
 
       for (const proposal of validated.proposals) {
-        const record = manifest.records[proposal.durableId];
-        if (record === undefined) {
+        const original = manifest.records[proposal.durableId];
+        if (original === undefined) {
           skipped++;
           continue;
         }
-        // Backstop (post-review fix): with the label/mode/theme normalization
-        // above and the component-registry roleName guard, this try/catch
-        // should be unreachable on validated input — it exists so ONE
-        // unexpected throw (e.g. from stale/hand-edited manifest data this
-        // proposal never even touches) can never 500 the whole route or
-        // discard proposals already merged earlier in this same batch. The
-        // manifest write below still persists every successfully-merged
-        // record regardless of a later proposal's failure.
+        // Backstop (post-review fix — ATOMIC): with the label/mode/theme/
+        // roleName normalization above, this try/catch should be unreachable
+        // on validated input — it exists so ONE unexpected throw (e.g. from
+        // stale/hand-edited manifest data — a PRE-EXISTING invalid segment
+        // this proposal never even touches) can never 500 the whole route,
+        // discard proposals already merged earlier in this batch, OR persist
+        // a partially-mutated record. `applyIdentityProposal` and
+        // `serializeAddress` run against a `candidate` — a private clone —
+        // and `original` (still referenced by `manifest.records`) is
+        // reassigned ONLY after both succeed. On any throw, `original` is
+        // simply left in place, byte-for-byte as it was before this proposal.
         try {
-          if (!applyIdentityProposal(record, proposal, components, registries)) {
+          const candidate = structuredClone(original);
+          if (!applyIdentityProposal(candidate, proposal, components, registries)) {
             skipped++;
             continue;
           }
-          record.updatedAt = now;
-          record.address = serializeAddress(
+          candidate.updatedAt = now;
+          candidate.address = serializeAddress(
             {
-              path: record.path.map((seg) => ({
+              path: candidate.path.map((seg) => ({
                 label: seg.label,
                 ...(seg.ordinal !== undefined ? { ordinal: seg.ordinal } : {}),
               })),
-              coordinates: toAddressCoordinates(record.coordinates),
+              coordinates: toAddressCoordinates(candidate.coordinates),
             } satisfies CanonicalAddress,
             registries,
           );
+          manifest.records[proposal.durableId] = candidate;
           applied++;
         } catch (err) {
           skipped++;

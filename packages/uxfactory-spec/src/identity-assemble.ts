@@ -68,12 +68,24 @@ import {
   type Provenance,
   type ProvenancedValue,
 } from "./node-identity.js";
-import { serializeAddress, type AddressCoordinates, type CanonicalAddress } from "./canonical-address.js";
+import {
+  serializeAddress,
+  toKebabLabel,
+  type AddressCoordinates,
+  type CanonicalAddress,
+} from "./canonical-address.js";
 import { resolveViewport, resolveAxesFromModes, deriveFallbackLabel, coordinatesFromVariantProps } from "./identity-resolve.js";
 
 // ─── small local helpers ────────────────────────────────────────────────────
 
-/** lowercase, non-alphanumeric runs -> single "-", trim ends. No length cap — a path/page label, not a component role-name. */
+/**
+ * lowercase, non-alphanumeric runs -> single "-", trim ends. No length cap —
+ * used ONLY for the page-tier label below (`resolvePageTier`), which is a
+ * pre-existing, narrower risk not in scope for this fix (a page named with a
+ * leading digit, e.g. "3D Prototypes", on a MULTI-page project would still
+ * produce a `LABEL_RE`-invalid `pageSegment.label` — logged, not fixed here;
+ * `kebabComponentName` below uses the guaranteed-valid `toKebabLabel` instead).
+ */
 function kebab(input: string): string {
   return input
     .toLowerCase()
@@ -94,9 +106,17 @@ function stripVariantSyntax(name: string): string {
   return match ? name.slice(0, match.index) : name;
 }
 
-/** kebab of a component/main-component name, stripped of variant syntax first; falls back to "component" if nothing survives. */
+/**
+ * Kebab of a component/main-component name, stripped of variant syntax
+ * first; falls back to "component" if nothing survives. Uses `toKebabLabel`
+ * (not a plain kebab-case transform) so the result is GUARANTEED
+ * `LABEL_RE`-valid — a plain kebab of e.g. "3D Card" would produce
+ * "3d-card", which still fails the grammar's leading-letter constraint and
+ * would throw in `serializeAddress` below. "component" itself is a valid
+ * label, so the fallback never needs its own re-check.
+ */
 function kebabComponentName(name: string): string {
-  const slug = kebab(stripVariantSyntax(name));
+  const slug = toKebabLabel(stripVariantSyntax(name));
   return slug === "" ? "component" : slug;
 }
 
@@ -190,11 +210,22 @@ function resolveLabel(
     const mc = node.mainComponent;
     const entry = findComponentEntry(components, mc.key);
     if (entry !== undefined) {
+      // Post-review fix (parity with the proposals-merge route): entry.roleName
+      // is a REGISTERED value, potentially written before the component-registry
+      // PUT boundary started enforcing LABEL_RE (legacy data), or hand-edited on
+      // disk. Normalize it the same way; a roleName that normalizes to nothing
+      // usable falls back to the instance's own name rather than emitting an
+      // invalid/empty label that would throw in serializeAddress downstream.
+      const normalizedRoleName = toKebabLabel(entry.roleName);
+      const label = normalizedRoleName !== "" ? normalizedRoleName : kebabComponentName(mc.name);
       return {
-        label: entry.roleName,
+        label,
         provenance: "derived",
         source: "registry",
-        reasoning: `label "${entry.roleName}" derived from bound instance of "${mc.name}"`,
+        reasoning:
+          normalizedRoleName !== ""
+            ? `label "${label}" derived from bound instance of "${mc.name}"`
+            : `label "${label}" derived from bound instance of "${mc.name}" (registry roleName "${entry.roleName}" is not a valid kebab label — fell back to the instance name)`,
         matchability: "matchable",
         resolutionStatus: "bound",
         definitionRef: entry.key,
@@ -216,11 +247,17 @@ function resolveLabel(
   if (node.kind === "COMPONENT" || node.kind === "COMPONENT_SET") {
     const entry = findComponentEntry(components, node.figmaNodeId);
     if (entry !== undefined) {
+      // Same legacy-roleName guard as case 1 above.
+      const normalizedRoleName = toKebabLabel(entry.roleName);
+      const label = normalizedRoleName !== "" ? normalizedRoleName : kebabComponentName(node.currentName);
       return {
-        label: entry.roleName,
+        label,
         provenance: "derived",
         source: "registry",
-        reasoning: `label "${entry.roleName}" derived from component definition "${node.currentName}"`,
+        reasoning:
+          normalizedRoleName !== ""
+            ? `label "${label}" derived from component definition "${node.currentName}"`
+            : `label "${label}" derived from component definition "${node.currentName}" (registry roleName "${entry.roleName}" is not a valid kebab label — fell back to the definition name)`,
         matchability: "matchable",
         definitionRef: entry.key,
         ...(entry.codeBinding !== undefined ? { codeBinding: entry.codeBinding } : {}),

@@ -1116,6 +1116,63 @@ describe("POST /project/identity/proposals", () => {
     expect(res.json()).toEqual({ applied: 2, skipped: 1 });
   });
 
+  // ─── post-review fix: atomicity + legacy roleName ──────────────────────────
+
+  it("ATOMICITY: a proposal that doesn't touch a record's pre-existing invalid segment still leaves the WHOLE record byte-identical when serialize throws", async () => {
+    // A record whose EXISTING last segment is legacy-invalid — never written
+    // by this route (both the label and matchedComponentKey paths now
+    // normalize), only reachable via hand-edited/pre-guard manifest data.
+    // serializeAddress throws on this segment's label regardless of what the
+    // proposal below actually changes (mode, a DIFFERENT field).
+    const legacy = composedRecord("n-legacy", "placeholder");
+    legacy.path = [{ label: "Not Valid!!!", provenance: "inferred", source: "prior-name" }];
+    await writeManifest(dataDir, [legacy]);
+    const before = await readManifest(dataDir);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-legacy", mode: "dark", confidence: "low", reasoning: "Should never persist." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { applied: number; skipped: number; errors?: string[] };
+    expect(body).toEqual({ applied: 0, skipped: 1, errors: [expect.stringContaining("n-legacy")] });
+
+    // The WHOLE record — including coordinates.mode, which the throwing
+    // candidate DID set before serialize failed — is untouched: proof the
+    // route never commits a partially-mutated record.
+    const after = await readManifest(dataDir);
+    expect(after.records["n-legacy"]).toEqual(before.records["n-legacy"]);
+    expect(after.records["n-legacy"]!.coordinates.mode).toBeUndefined();
+  });
+
+  it("a matchedComponentKey against a LEGACY non-kebab roleName (bypassing the PUT guard, written directly to disk) applies with the NORMALIZED label — never corrupt, never partial", async () => {
+    // Bypass validateComponentsBody entirely — simulate a component-registry.json
+    // written before the PUT guard existed, or hand-edited.
+    const legacyRegistry: ComponentRegistry = {
+      version: 1,
+      components: [{ key: "nav-key", roleName: "Nav Item", source: "manual", matchability: "matchable" }],
+    };
+    await writeFile(
+      path.join(dataDir, "component-registry.json"),
+      `${JSON.stringify(legacyRegistry, null, 2)}\n`,
+      "utf8",
+    );
+    await writeManifest(dataDir, [matchableRecord("n-nav", "nav-old")]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-nav", matchedComponentKey: "nav-key", confidence: "high", reasoning: "Matches the nav item." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ applied: 1, skipped: 0 });
+
+    const manifest = await readManifest(dataDir);
+    const nav = manifest.records["n-nav"]!;
+    expect(nav.path[0]!.label).toBe("nav-item"); // normalized, not the raw "Nav Item"
+    expect(nav.definitionRef).toBe("nav-key");
+    expect(nav.address).toBe("nav-item@desktop"); // serializes cleanly
+  });
+
   it.each([
     ["missing proposals key", {}],
     ["null body", null],

@@ -196,6 +196,79 @@ describe("identityProposeCmd — success path against a live bridge", () => {
     expect(code).toBe(EXIT.OK);
     expect(io.outText()).toMatch(/applied 0, skipped 1/);
   });
+
+  it("surfaces the bridge's per-proposal errors[] (fix D) when a proposal is skipped due to an unexpected throw", async () => {
+    // A registered "dark" mode token, so the mode proposal below normalizes
+    // to a real registry member and `applyIdentityProposal` actually
+    // proceeds to `serializeAddress` (the default empty-palette registries
+    // would otherwise reject "dark" outright — a different code path, not
+    // the one this test is proving).
+    await fetch(`${bridgeHandle.url}/project/identity/registries`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        registries: {
+          version: 1,
+          breakpoints: { bands: [{ name: "desktop", min: 0, max: null }] },
+          palette: {
+            collections: [
+              {
+                collectionId: "mode-coll",
+                name: "Mode",
+                axis: "mode",
+                values: [{ modeId: "1:0", token: "dark" }],
+              },
+            ],
+          },
+          states: { states: ["default"], defaultState: "default" },
+        },
+      }),
+    });
+
+    // A manifest record with a legacy-invalid (pre-existing, un-normalized)
+    // last segment — mirrors the bridge's own atomicity test. A mode-only
+    // proposal against it doesn't touch that segment, but serialize still
+    // throws on it, so the bridge's backstop reports it in `errors[]`.
+    const manifest: NodeManifest = {
+      version: 1,
+      records: {
+        "n-legacy": {
+          durableId: "n-legacy",
+          figmaNodeId: "f-legacy",
+          address: "placeholder@desktop",
+          scope: ["home"],
+          path: [{ label: "Not Valid!!!", provenance: "inferred", source: "prior-name" }],
+          coordinates: { viewport: { value: "desktop", provenance: "derived", source: "structure" } },
+          kind: "FRAME",
+          pathRoleDefault: "section",
+          isDefinition: false,
+          matchability: "composed",
+          composition: [],
+          currentName: "Legacy",
+          updatedAt: "2020-01-01T00:00:00.000Z",
+        },
+      },
+    };
+    await mkdir(path.join(root, ".uxfactory"), { recursive: true });
+    await writeFile(
+      path.join(root, ".uxfactory", "node-manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8",
+    );
+
+    const file = path.join(root, "identity-proposals.json");
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-legacy", mode: "dark", confidence: "low", reasoning: "Should be reported, not silent." },
+    ];
+    await writeFile(file, JSON.stringify({ proposals }), "utf8");
+
+    const io = makeIO();
+    const code = await identityProposeCmd(file, {}, io, client);
+    expect(code).toBe(EXIT.OK); // still a successful bridge round-trip
+    expect(io.outText()).toMatch(/applied 0, skipped 1/);
+    expect(io.errText()).toMatch(/1 proposal\(s\) skipped with an error/);
+    expect(io.errText()).toMatch(/n-legacy/);
+  });
 });
 
 // ---------------------------------------------------------------------------

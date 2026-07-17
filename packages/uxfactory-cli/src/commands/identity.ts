@@ -165,8 +165,16 @@ export async function identityProposeCmd(
     return EXIT.TRANSPORT;
   }
 
-  const body = res.body as { applied: number; skipped: number };
+  const body = res.body as { applied: number; skipped: number; errors?: string[] };
   io.out(`identity propose: applied ${body.applied}, skipped ${body.skipped}`);
+  // The bridge's per-proposal backstop (see project.ts) surfaces an `errors`
+  // entry for any proposal it had to skip due to an unexpected throw — print
+  // each one so a human (and the worker skill loop reading this command's
+  // output) can see WHICH proposal was skipped and why, not just a count.
+  if (Array.isArray(body.errors) && body.errors.length > 0) {
+    io.err(`identity propose: ${body.errors.length} proposal(s) skipped with an error:`);
+    for (const e of body.errors) io.err(`  - ${e}`);
+  }
   return EXIT.OK;
 }
 

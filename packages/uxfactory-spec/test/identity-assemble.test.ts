@@ -561,6 +561,102 @@ describe("assembleIdentities — unregistered bound instance", () => {
   });
 });
 
+// ─── post-review fix: legacy non-kebab registry roleName ────────────────────
+// A component-registry entry's `roleName` becomes a path label here (cases 1
+// and 3 of resolveLabel) and is then handed to `serializeAddress`, which
+// throws on anything that isn't LABEL_RE-clean kebab. The bridge's PUT
+// boundary now rejects a non-kebab roleName going forward (Task 10 review),
+// but a roleName written before that guard existed (or hand-edited on disk)
+// must still be handled gracefully here — normalized, not thrown on.
+
+const legacyRoleNameComponents: ComponentRegistry = {
+  version: 1,
+  components: [
+    { key: "nav-key", roleName: "Nav Item", source: "manual", matchability: "matchable" },
+  ],
+};
+
+describe("assembleIdentities — legacy non-kebab registry roleName", () => {
+  it("a bound instance matched to a registry entry with a non-kebab roleName normalizes the label and serializes cleanly", () => {
+    const registries = defaultIdentityRegistries();
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-home", name: "Home" },
+      pageCount: 1,
+      nodes: [
+        {
+          durableId: "n-section",
+          figmaNodeId: "f-section",
+          parentDurableId: null,
+          ordinal: 0,
+          kind: "FRAME",
+          width: 1440,
+          currentName: "Section",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: true,
+        },
+        {
+          durableId: "n-nav",
+          figmaNodeId: "f-nav",
+          parentDurableId: "n-section",
+          ordinal: 0,
+          kind: "INSTANCE",
+          width: null,
+          currentName: "Nav Item Instance",
+          resolvedModes: {},
+          mainComponent: { key: "nav-key", name: "Nav Item", remote: false },
+          variantProperties: null,
+          isPageChild: false,
+        },
+      ],
+    };
+
+    expect(() => assembleIdentities(extraction, registries, legacyRoleNameComponents)).not.toThrow();
+    const { records } = assembleIdentities(extraction, registries, legacyRoleNameComponents);
+    const nav = byId(records, "n-nav");
+    // Normalized ("Nav Item" -> "nav-item"), not the raw registered roleName.
+    expect(nav.path.at(-1)).toMatchObject({ label: "nav-item", provenance: "derived", source: "registry" });
+    // Still a real bound match — matchability/resolutionStatus/definitionRef unaffected.
+    expect(nav.resolutionStatus).toBe("bound");
+    expect(nav.matchability).toBe("matchable");
+    expect(nav.definitionRef).toBe("nav-key");
+    expect(nav.address).toBe("section/nav-item@desktop");
+  });
+
+  it("a COMPONENT definition matched to a registry entry with a non-kebab roleName normalizes the label and serializes cleanly", () => {
+    const registries = defaultIdentityRegistries();
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-home", name: "Home" },
+      pageCount: 1,
+      nodes: [
+        {
+          durableId: "n-def",
+          figmaNodeId: "nav-key", // matches the registry entry by figmaNodeId (local definition)
+          parentDurableId: null,
+          ordinal: 0,
+          kind: "COMPONENT",
+          width: 1440,
+          currentName: "Nav Item",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: true,
+        },
+      ],
+    };
+
+    expect(() => assembleIdentities(extraction, registries, legacyRoleNameComponents)).not.toThrow();
+    const { records } = assembleIdentities(extraction, registries, legacyRoleNameComponents);
+    const def = byId(records, "n-def");
+    expect(def.path.at(-1)).toMatchObject({ label: "nav-item", provenance: "derived", source: "registry" });
+    expect(def.definitionRef).toBe("nav-key");
+    expect(def.address).toBe("nav-item@desktop");
+  });
+});
+
 // ─── rule 2: COMPONENT / COMPONENT_SET definitions ──────────────────────────
 
 describe("assembleIdentities — COMPONENT/COMPONENT_SET definitions", () => {
