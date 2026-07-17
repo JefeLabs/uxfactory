@@ -91,3 +91,10 @@ export type {
   ProvenancedValue,
   StateRegistry,
 } from "./node-identity.js";
+export { serializeAddress, parseAddress, normalizeCoordinateToken } from "./canonical-address.js";
+export type {
+  AddressCoordinates,
+  CanonicalAddress,
+  CoordinateAxis,
+  ParseAddressResult,
+} from "./canonical-address.js";
