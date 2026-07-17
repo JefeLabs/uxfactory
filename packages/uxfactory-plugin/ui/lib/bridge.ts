@@ -224,10 +224,14 @@ export interface Bridge {
   /** PUT /project/identity/components {components} → {ok} (whole-set replace). */
   putIdentityComponents?(components: ComponentTypeEntry[]): Promise<{ ok: boolean }>;
   /**
-   * POST /project/identity/extraction — bridge-side route lands in Task 8;
-   * until then this 404s. Callers must tolerate the 404 (toast/log, no crash).
+   * POST /project/identity/extraction {extraction} → {ok, count, addresses}
+   * (addresses capped at 50). Assembles + upserts node-manifest.json
+   * (Task 8, MVP — structure only, no vision). Callers should still tolerate
+   * a 404 (toast/log, no crash) for older bridge builds without this route.
    */
-  postIdentityExtraction?(extraction: IdentityExtraction): Promise<{ ok: boolean }>;
+  postIdentityExtraction?(
+    extraction: IdentityExtraction,
+  ): Promise<{ ok: boolean; count: number; addresses: string[] }>;
 }
 
 /** One AC row in the traceability tree, with its linked canvas nodes. */
@@ -563,7 +567,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     },
 
     postIdentityExtraction(extraction: IdentityExtraction) {
-      return post<{ ok: boolean }>(rooted("/project/identity/extraction"), extraction);
+      return post<{ ok: boolean; count: number; addresses: string[] }>(
+        rooted("/project/identity/extraction"),
+        { extraction },
+      );
     },
   };
 }

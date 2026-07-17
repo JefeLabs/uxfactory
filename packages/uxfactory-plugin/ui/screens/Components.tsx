@@ -107,6 +107,7 @@ export function Components({
   const [isCheckLoading, setIsCheckLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<{ nodes: number; components: number } | null>(null);
+  const [identityResult, setIdentityResult] = useState<{ count: number; addresses: string[] } | null>(null);
 
   // ── Subscribe to canvas selection ─────────────────────────────────────────
   useEffect(() => {
@@ -135,21 +136,24 @@ export function Components({
         nodes: payload.extraction.nodes.length,
         components: payload.components.length,
       });
+      setIdentityResult(null);
 
       void bridge.putIdentityComponents?.(payload.components).catch(() => {
         toast("Failed to save components — is the bridge running?");
       });
 
-      // Task 8 lands the extraction route bridge-side; a 404 today is
-      // expected — tolerate it (toast, no crash) rather than surfacing a
-      // generic failure.
-      void bridge.postIdentityExtraction?.(payload.extraction).catch((err: unknown) => {
-        if (err instanceof BridgeError && err.status === 404) {
-          toast("Bridge not ready for identity extraction yet");
-        } else {
-          toast("Failed to post identity extraction — is the bridge running?");
-        }
-      });
+      // Tolerate a 404 (older bridge build without this route) — toast, no
+      // crash — rather than surfacing a generic failure.
+      void bridge
+        .postIdentityExtraction?.(payload.extraction)
+        .then((res) => setIdentityResult({ count: res.count, addresses: res.addresses }))
+        .catch((err: unknown) => {
+          if (err instanceof BridgeError && err.status === 404) {
+            toast("Bridge not ready for identity extraction yet");
+          } else {
+            toast("Failed to post identity extraction — is the bridge running?");
+          }
+        });
     });
     return () => unsub?.();
   }, [bus, bridge, toast]);
@@ -271,6 +275,14 @@ export function Components({
           {scanResult !== null && (
             <p className="mt-2 text-xs text-gray-500 text-center">
               {scanResult.nodes} nodes scanned, {scanResult.components} components harvested
+            </p>
+          )}
+          {identityResult !== null && (
+            <p className="mt-1 text-xs text-gray-500 text-center">
+              {identityResult.count} node {identityResult.count === 1 ? "identity" : "identities"} assembled
+              {identityResult.addresses.length > 0
+                ? ` (e.g. ${identityResult.addresses.slice(0, 3).join(", ")})`
+                : ""}
             </p>
           )}
         </div>

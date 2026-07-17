@@ -13,6 +13,7 @@
  *   GET  /project/identity/components
  *   PUT  /project/identity/components
  *   GET  /project/identity/manifest
+ *   POST /project/identity/extraction
  *   GET  /project/artifact
  *   PUT  /project/artifact
  *   POST /project/open
@@ -37,12 +38,20 @@ import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
-import { parseStoryFile, storyToEngine, defaultIdentityRegistries, validateIdentityRegistries } from "@uxfactory/spec";
+import {
+  parseStoryFile,
+  storyToEngine,
+  defaultIdentityRegistries,
+  validateIdentityRegistries,
+  assembleIdentities,
+} from "@uxfactory/spec";
 import type {
   IdentityRegistries,
   ComponentRegistry,
   ComponentTypeEntry,
   NodeManifest,
+  IdentityExtraction,
+  ExtractedNode,
 } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
 import type { WorkerPresenceEntry, ManagedInfo } from "./worker-presence.js";
@@ -945,6 +954,85 @@ function validateComponentsBody(
   return { ok: true, components: parsed };
 }
 
+// ─── Node identity: extraction wire-shape validation ────────────────────────
+// Same defensive posture as validateComponentsBody above: check the fields
+// assembleIdentities and the record shape actually need, collect every
+// violation (not just the first), and never persist on failure.
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function validateExtractionBody(
+  body: unknown,
+): { ok: true; extraction: IdentityExtraction } | { ok: false; errors: string[] } {
+  const extractionRaw = isPlainObject(body) ? body["extraction"] : undefined;
+  if (!isPlainObject(extractionRaw)) {
+    return { ok: false, errors: ['"extraction" must be an object'] };
+  }
+  const e = extractionRaw;
+  const errors: string[] = [];
+
+  if (e["version"] !== 1) {
+    errors.push('"extraction.version" must be 1');
+  }
+
+  const page = e["page"];
+  if (
+    !isPlainObject(page) ||
+    typeof page["figmaNodeId"] !== "string" ||
+    typeof page["name"] !== "string"
+  ) {
+    errors.push('"extraction.page" must be an object with string "figmaNodeId" and "name"');
+  }
+
+  if (typeof e["pageCount"] !== "number") {
+    errors.push('"extraction.pageCount" must be a number');
+  }
+
+  const nodesRaw = e["nodes"];
+  if (!Array.isArray(nodesRaw)) {
+    errors.push('"extraction.nodes" must be an array');
+    return { ok: false, errors };
+  }
+
+  const nodes: ExtractedNode[] = [];
+  nodesRaw.forEach((raw, i) => {
+    if (!isPlainObject(raw)) {
+      errors.push(`extraction.nodes[${i}] must be an object`);
+      return;
+    }
+    if (
+      typeof raw["durableId"] !== "string" ||
+      typeof raw["figmaNodeId"] !== "string" ||
+      !(raw["parentDurableId"] === null || typeof raw["parentDurableId"] === "string") ||
+      typeof raw["ordinal"] !== "number" ||
+      typeof raw["kind"] !== "string" ||
+      !(raw["width"] === null || typeof raw["width"] === "number") ||
+      typeof raw["currentName"] !== "string" ||
+      !isPlainObject(raw["resolvedModes"]) ||
+      !(raw["mainComponent"] === null || isPlainObject(raw["mainComponent"])) ||
+      !(raw["variantProperties"] === null || isPlainObject(raw["variantProperties"])) ||
+      typeof raw["isPageChild"] !== "boolean"
+    ) {
+      errors.push(
+        `extraction.nodes[${i}] must be a valid ExtractedNode: string "durableId"/"figmaNodeId"/"kind"/"currentName"; "parentDurableId" string|null; number "ordinal"; "width" number|null; "resolvedModes" object; "mainComponent" object|null; "variantProperties" object|null; boolean "isPageChild"`,
+      );
+      return;
+    }
+    nodes.push(raw as unknown as ExtractedNode);
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    extraction: { ...(e as unknown as IdentityExtraction), nodes },
+  };
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -1226,6 +1314,66 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       } catch {
         return { manifest: { version: 1, records: {} } as NodeManifest };
       }
+    },
+  );
+
+  // ── POST /project/identity/extraction ────────────────────────────────────
+  // MVP cut: assembles from structural facts alone, no vision. Loads
+  // registries/components/prior-manifest (file or their documented
+  // defaults — same read pattern as the GETs above), runs assembleIdentities
+  // (Task 7 — it already carries appliedAddress/appliedAt forward from the
+  // prior record per durableId), then upserts the assembled records into the
+  // manifest: only durableIds present in THIS extraction are replaced, every
+  // other record is left byte-identical (a partial-page scan must not wipe
+  // records outside its scope).
+  app.post<{ Querystring: { root?: string }; Body: { extraction?: unknown } }>(
+    "/project/identity/extraction",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
+      const validated = validateExtractionBody(req.body);
+      if (!validated.ok) {
+        return reply.code(400).send({ errors: validated.errors });
+      }
+      const { extraction } = validated;
+
+      const registriesPath = path.join(ctx.dataDir, "identity-registries.json");
+      let registries: IdentityRegistries;
+      try {
+        registries = JSON.parse(await readFile(registriesPath, "utf8")) as IdentityRegistries;
+      } catch {
+        registries = defaultIdentityRegistries();
+      }
+
+      const componentsPath = path.join(ctx.dataDir, "component-registry.json");
+      let components: ComponentRegistry;
+      try {
+        components = JSON.parse(await readFile(componentsPath, "utf8")) as ComponentRegistry;
+      } catch {
+        components = { version: 1, components: [] };
+      }
+
+      const manifestPath = path.join(ctx.dataDir, "node-manifest.json");
+      let priorManifest: NodeManifest;
+      try {
+        priorManifest = JSON.parse(await readFile(manifestPath, "utf8")) as NodeManifest;
+      } catch {
+        priorManifest = { version: 1, records: {} };
+      }
+
+      const { records } = assembleIdentities(extraction, registries, components, priorManifest);
+
+      const merged: NodeManifest = { version: 1, records: { ...priorManifest.records } };
+      for (const record of records) {
+        merged.records[record.durableId] = record;
+      }
+
+      await mkdir(ctx.dataDir, { recursive: true });
+      await writeFile(manifestPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+
+      const addresses = records.map((r) => r.address);
+      return { ok: true, count: records.length, addresses: addresses.slice(0, 50) };
     },
   );
 

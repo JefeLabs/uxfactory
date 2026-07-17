@@ -1,5 +1,6 @@
 /**
- * identity.test.ts — TDD tests for the node-identity bridge routes (Task 2).
+ * identity.test.ts — TDD tests for the node-identity bridge routes (Task 2,
+ * Task 8).
  *
  * Test matrix:
  *  - GET /project/identity/registries: default (no file) → { registries: defaultIdentityRegistries() }
@@ -10,10 +11,17 @@
  *    (replace, not merge); malformed body → 400 { errors }, nothing persisted;
  *    file on disk stays the canonical { version: 1, components } shape
  *  - GET /project/identity/manifest: default (no file) → { manifest: { version: 1, records: {} } }
+ *  - POST /project/identity/extraction (Task 8, MVP — structure only, no
+ *    vision): assembles from persisted registries/components + prior
+ *    manifest, upserts node-manifest.json by durableId, replies
+ *    { ok, count, addresses } (addresses capped at 50); a second POST
+ *    against a hand-confirmed prior record preserves the confirmed label and
+ *    applied stamps; a partial extraction leaves other durableIds untouched;
+ *    malformed body → 400 { errors }, nothing persisted.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -22,6 +30,8 @@ import type {
   IdentityRegistries,
   ComponentRegistry,
   ComponentTypeEntry,
+  ExtractedNode,
+  IdentityExtraction,
   NodeManifest,
 } from "@uxfactory/spec";
 import { createBridge } from "../src/server.js";
@@ -264,5 +274,309 @@ describe("GET /project/identity/manifest", () => {
     expect(res.json()).toEqual({
       manifest: { version: 1, records: {} } satisfies NodeManifest,
     });
+  });
+});
+
+// ─── POST /project/identity/extraction ───────────────────────────────────────
+
+/** Custom (non-default) breakpoints — proves the route reads the persisted
+ *  registries file rather than silently falling back to defaultIdentityRegistries(). */
+function customRegistries(): IdentityRegistries {
+  return {
+    version: 1,
+    breakpoints: {
+      bands: [
+        { name: "small", min: 0, max: 767 },
+        { name: "big", min: 768, max: null },
+      ],
+    },
+    palette: { collections: [] },
+    states: { states: ["default", "hover"], defaultState: "default" },
+  };
+}
+
+const buttonComponent: ComponentTypeEntry = {
+  key: "button-key",
+  roleName: "button",
+  source: "figma-document",
+  matchability: "matchable",
+};
+
+function heroNode(): ExtractedNode {
+  return {
+    durableId: "n-hero",
+    figmaNodeId: "f-hero",
+    parentDurableId: null,
+    ordinal: 0,
+    kind: "FRAME",
+    width: 1440,
+    currentName: "Hero",
+    resolvedModes: {},
+    mainComponent: null,
+    variantProperties: null,
+    isPageChild: true,
+  };
+}
+
+function heroButtonNode(): ExtractedNode {
+  return {
+    durableId: "n-hero-button",
+    figmaNodeId: "f-hero-button",
+    parentDurableId: "n-hero",
+    ordinal: 0,
+    kind: "INSTANCE",
+    width: null,
+    currentName: "Button",
+    resolvedModes: {},
+    mainComponent: { key: "button-key", name: "Button", remote: false },
+    variantProperties: null,
+    isPageChild: false,
+  };
+}
+
+function footerNode(): ExtractedNode {
+  return {
+    durableId: "n-footer",
+    figmaNodeId: "f-footer",
+    parentDurableId: null,
+    ordinal: 1,
+    kind: "FRAME",
+    width: 1440,
+    currentName: "Footer",
+    resolvedModes: {},
+    mainComponent: null,
+    variantProperties: null,
+    isPageChild: true,
+  };
+}
+
+function baseExtraction(nodes: ExtractedNode[]): IdentityExtraction {
+  return {
+    version: 1,
+    page: { figmaNodeId: "0:1", name: "Home" },
+    pageCount: 1,
+    nodes,
+  };
+}
+
+async function readManifest(dataDir: string): Promise<NodeManifest> {
+  const raw = await readFile(path.join(dataDir, "node-manifest.json"), "utf8");
+  return JSON.parse(raw) as NodeManifest;
+}
+
+describe("POST /project/identity/extraction", () => {
+  beforeEach(async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/project/identity/registries",
+      payload: { registries: customRegistries() },
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/project/identity/components",
+      payload: { components: [buttonComponent] },
+    });
+  });
+
+  it("assembles from the persisted registries/components, upserts node-manifest.json, and replies { ok, count, addresses }", async () => {
+    const extraction = baseExtraction([heroNode(), heroButtonNode(), footerNode()]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/extraction",
+      payload: { extraction },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; count: number; addresses: string[] };
+    expect(body.ok).toBe(true);
+    expect(body.count).toBe(3);
+    expect([...body.addresses].sort()).toEqual(["footer@big", "hero/button@big", "hero@big"]);
+
+    const manifest = await readManifest(dataDir);
+    expect(Object.keys(manifest.records).sort()).toEqual(["n-footer", "n-hero", "n-hero-button"]);
+
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.address).toBe("hero@big");
+    expect(hero.scope).toEqual(["home"]);
+    expect(hero.path).toEqual([{ label: "hero", provenance: "inferred", source: "prior-name" }]);
+
+    const button = manifest.records["n-hero-button"]!;
+    expect(button.address).toBe("hero/button@big");
+    // definitionRef only populates when the bound instance's mainComponent
+    // key matched an entry in the PERSISTED component-registry.json file —
+    // proves the route loaded it from disk, not the [] default.
+    expect(button.definitionRef).toBe("button-key");
+    expect(button.matchability).toBe("matchable");
+    expect(button.resolutionStatus).toBe("bound");
+
+    const footer = manifest.records["n-footer"]!;
+    expect(footer.address).toBe("footer@big");
+  });
+
+  it("caps addresses in the reply at 50 but reports the true assembled count; the manifest holds every record", async () => {
+    const nodes: ExtractedNode[] = Array.from({ length: 60 }, (_, i) => ({
+      durableId: `n-section-${i}`,
+      figmaNodeId: `f-section-${i}`,
+      parentDurableId: null,
+      ordinal: i,
+      kind: "FRAME",
+      width: 1440,
+      currentName: `Section ${i}`,
+      resolvedModes: {},
+      mainComponent: null,
+      variantProperties: null,
+      isPageChild: true,
+    }));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/extraction",
+      payload: { extraction: baseExtraction(nodes) },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; count: number; addresses: string[] };
+    expect(body.count).toBe(60);
+    expect(body.addresses).toHaveLength(50);
+
+    const manifest = await readManifest(dataDir);
+    expect(Object.keys(manifest.records)).toHaveLength(60);
+  });
+
+  it("a second POST honors a hand-confirmed prior record: keeps the confirmed label and preserves applied stamps", async () => {
+    const nodes = [heroNode(), heroButtonNode(), footerNode()];
+    const extraction = baseExtraction(nodes);
+
+    // Baseline POST.
+    await app.inject({ method: "POST", url: "/project/identity/extraction", payload: { extraction } });
+
+    // Hand-seed a manifest where "n-hero" carries a user-confirmed label and
+    // an already-applied canvas address — state this task's route doesn't
+    // itself produce (no confirm/apply routes exist yet), but which
+    // assembleIdentities (Task 7) must honor and carry forward on re-derive.
+    const seeded: NodeManifest = {
+      version: 1,
+      records: {
+        "n-hero": {
+          durableId: "n-hero",
+          figmaNodeId: "f-hero",
+          address: "custom-hero@big",
+          scope: ["home"],
+          path: [{ label: "custom-hero", provenance: "inferred", source: "prior-name", confirmed: true }],
+          coordinates: { viewport: { value: "big", provenance: "derived", source: "structure" } },
+          kind: "FRAME",
+          pathRoleDefault: "section",
+          isDefinition: false,
+          matchability: "composed",
+          composition: ["n-hero-button"],
+          currentName: "Hero",
+          updatedAt: "2020-01-01T00:00:00.000Z",
+          appliedAddress: "custom-hero@big",
+          appliedAt: "2020-01-01T00:00:01.000Z",
+        },
+      },
+    };
+    await writeFile(path.join(dataDir, "node-manifest.json"), `${JSON.stringify(seeded, null, 2)}\n`, "utf8");
+
+    // Second POST — same extraction, re-deriving over the seeded prior.
+    const res = await app.inject({ method: "POST", url: "/project/identity/extraction", payload: { extraction } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; count: number; addresses: string[] };
+    expect(body.count).toBe(3);
+
+    const manifest = await readManifest(dataDir);
+
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.path[hero.path.length - 1]).toMatchObject({ label: "custom-hero", confirmed: true });
+    expect(hero.address).toBe("custom-hero@big");
+    expect(hero.appliedAddress).toBe("custom-hero@big");
+    expect(hero.appliedAt).toBe("2020-01-01T00:00:01.000Z");
+
+    // Bound-instance labels ALWAYS recompute (rule 2: "derived labels never
+    // take the prior-manifest override") — but they DO inherit the parent's
+    // (now-confirmed) path segment.
+    const button = manifest.records["n-hero-button"]!;
+    expect(button.address).toBe("custom-hero/button@big");
+    expect(button.appliedAddress).toBeUndefined();
+
+    // A composed node with no prior override re-derives fresh, unaffected
+    // by the hero's seeded confirmation.
+    const footer = manifest.records["n-footer"]!;
+    expect(footer.address).toBe("footer@big");
+  });
+
+  it("a partial-page extraction leaves other durableIds' records byte-identical (no wipe)", async () => {
+    const allNodes = [heroNode(), heroButtonNode(), footerNode()];
+    await app.inject({
+      method: "POST",
+      url: "/project/identity/extraction",
+      payload: { extraction: baseExtraction(allNodes) },
+    });
+    const before = await readManifest(dataDir);
+
+    // Simulate a partial re-scan: only the footer this time.
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/extraction",
+      payload: { extraction: baseExtraction([footerNode()]) },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; count: number; addresses: string[] };
+    expect(body.count).toBe(1);
+    expect(body.addresses).toEqual(["footer@big"]);
+
+    const after = await readManifest(dataDir);
+    expect(Object.keys(after.records).sort()).toEqual(["n-footer", "n-hero", "n-hero-button"]);
+    expect(after.records["n-hero"]).toEqual(before.records["n-hero"]);
+    expect(after.records["n-hero-button"]).toEqual(before.records["n-hero-button"]);
+  });
+
+  it.each([
+    ["missing extraction key", {}],
+    ["null body", null],
+    ["extraction not an object", { extraction: "nope" }],
+    [
+      "extraction missing nodes array",
+      { extraction: { version: 1, page: { figmaNodeId: "0:1", name: "Home" }, pageCount: 1 } },
+    ],
+    [
+      "extraction.nodes not an array",
+      { extraction: { version: 1, page: { figmaNodeId: "0:1", name: "Home" }, pageCount: 1, nodes: "nope" } },
+    ],
+    [
+      "extraction.page missing",
+      { extraction: { version: 1, pageCount: 1, nodes: [] } },
+    ],
+    [
+      "extraction.pageCount not a number",
+      { extraction: { version: 1, page: { figmaNodeId: "0:1", name: "Home" }, pageCount: "1", nodes: [] } },
+    ],
+    [
+      "a node missing required string fields",
+      {
+        extraction: {
+          version: 1,
+          page: { figmaNodeId: "0:1", name: "Home" },
+          pageCount: 1,
+          nodes: [{ durableId: "a" }],
+        },
+      },
+    ],
+  ])("POST with malformed body (%s) replies 400 and persists nothing", async (_label, payload) => {
+    const before = await app.inject({ method: "GET", url: "/project/identity/manifest" });
+
+    const post = await app.inject({
+      method: "POST",
+      url: "/project/identity/extraction",
+      payload: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    });
+    expect(post.statusCode).toBe(400);
+    const body = post.json() as { errors: string[] };
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors.length).toBeGreaterThan(0);
+
+    // Nothing written — the manifest is exactly what it was before.
+    const after = await app.inject({ method: "GET", url: "/project/identity/manifest" });
+    expect(after.json()).toEqual(before.json());
   });
 });

@@ -291,8 +291,8 @@ describe("bridge putIdentityComponents()", () => {
 // ─── postIdentityExtraction() ─────────────────────────────────────────────────
 
 describe("bridge postIdentityExtraction()", () => {
-  it("POSTs the extraction body to /project/identity/extraction", async () => {
-    const fakeFetch = jsonFetch({ ok: true });
+  it("POSTs { extraction } (wrapped, matching putIdentityComponents' { components } convention) to /project/identity/extraction", async () => {
+    const fakeFetch = jsonFetch({ ok: true, count: 0, addresses: [] });
     const bridge = createBridge(fakeFetch);
     const extraction = {
       version: 1 as const,
@@ -306,12 +306,12 @@ describe("bridge postIdentityExtraction()", () => {
       `${BASE}/project/identity/extraction`,
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify(extraction),
+        body: JSON.stringify({ extraction }),
       }),
     );
   });
 
-  it("rejects with a BridgeError carrying status 404 when the bridge route doesn't exist yet (Task 8)", async () => {
+  it("rejects with a BridgeError carrying status 404 against an older bridge build without this route", async () => {
     const fakeFetch = errorFetch(404, { error: "not found" });
     const bridge = createBridge(fakeFetch);
     const extraction = {

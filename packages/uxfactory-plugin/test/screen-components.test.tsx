@@ -579,10 +579,12 @@ describe("Scan identities", () => {
     expect(screen.getByRole("button", { name: "Scan identities" })).toHaveTextContent("Scanning…");
   });
 
-  it("on reply: PUTs components, POSTs the extraction, and renders the one-line result", async () => {
+  it("on reply: PUTs components, POSTs the extraction, and renders the one-line result plus the assembled count/addresses", async () => {
     const bus = makeBus();
     const putIdentityComponents = vi.fn().mockResolvedValue({ ok: true });
-    const postIdentityExtraction = vi.fn().mockResolvedValue({ ok: true });
+    const postIdentityExtraction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, count: 2, addresses: ["hero@mobile", "hero/headline@mobile"] });
     const bridge = makeBridge({ putIdentityComponents, postIdentityExtraction });
 
     await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
@@ -603,12 +605,17 @@ describe("Scan identities", () => {
     expect(
       screen.getByText("2 nodes scanned, 1 components harvested"),
     ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("2 node identities assembled (e.g. hero@mobile, hero/headline@mobile)"),
+      ).toBeInTheDocument();
+    });
 
     // Button returns to its idle label once the reply lands.
     expect(screen.getByRole("button", { name: "Scan identities" })).toHaveTextContent("Scan identities");
   });
 
-  it("tolerates a 404 from postIdentityExtraction (bridge route lands in Task 8) — toasts, never crashes", async () => {
+  it("tolerates a 404 from postIdentityExtraction (older bridge build without this route) — toasts, never crashes", async () => {
     const bus = makeBus();
     const postIdentityExtraction = vi
       .fn()
