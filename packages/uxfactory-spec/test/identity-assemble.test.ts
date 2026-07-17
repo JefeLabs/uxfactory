@@ -15,6 +15,7 @@ import { assembleIdentities } from "../src/identity-assemble.js";
 import {
   defaultIdentityRegistries,
   type ComponentRegistry,
+  type Coordinates,
   type ExtractedNode,
   type IdentityExtraction,
   type IdentityRegistries,
@@ -509,6 +510,221 @@ describe("assembleIdentities — prior-manifest override", () => {
     const button = byId(records, "n-button");
     expect(button.appliedAddress).toBeUndefined();
     expect(button.appliedAt).toBeUndefined();
+  });
+});
+
+// ─── Task 7b: prior-manifest override, extended to COORDINATES ─────────────
+// Symmetric with the label override above (`priorOverrideSegment`): a prior
+// coordinate that is provenance "elicited" (user override) or an inferred
+// coordinate the user confirmed (`confirmed: true`) SURVIVES re-derivation
+// instead of being silently recomputed from structure on the next scan.
+// Derived/defaulted coordinates always recompute — exactly like an
+// unconfirmed inferred label.
+
+function registriesWithModeAxis(): IdentityRegistries {
+  const base = defaultIdentityRegistries();
+  return {
+    ...base,
+    palette: {
+      collections: [
+        {
+          collectionId: "mode-coll",
+          name: "Mode",
+          axis: "mode",
+          values: [
+            { modeId: "m-light", token: "light" },
+            { modeId: "m-dark", token: "dark" },
+          ],
+          defaultToken: "light",
+        },
+      ],
+    },
+  };
+}
+
+/** One page-child FRAME, bound to the "light" mode via `resolvedModes` — fresh derivation always yields mode "light" absent a prior override. */
+function extractionWithOneCoordinateNode(): IdentityExtraction {
+  return {
+    version: 1,
+    page: { figmaNodeId: "page-home", name: "Home" },
+    pageCount: 1,
+    nodes: [
+      {
+        durableId: "n-section",
+        figmaNodeId: "f-section",
+        parentDurableId: null,
+        ordinal: 0,
+        kind: "FRAME",
+        width: 1440,
+        currentName: "Section",
+        resolvedModes: { "mode-coll": "m-light" },
+        mainComponent: null,
+        variantProperties: null,
+        isPageChild: true,
+      },
+    ],
+  };
+}
+
+/** A minimal prior manifest with exactly one record ("n-section") carrying the given coordinates. */
+function priorWithSectionCoordinates(coordinates: Coordinates): NodeManifest {
+  return {
+    version: 1,
+    records: {
+      "n-section": {
+        durableId: "n-section",
+        figmaNodeId: "old-f-section",
+        address: "section@desktop",
+        scope: ["home"],
+        path: [{ label: "section", provenance: "inferred", source: "prior-name" }],
+        coordinates,
+        kind: "FRAME",
+        pathRoleDefault: "section",
+        isDefinition: false,
+        composition: [],
+        currentName: "Section",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    },
+  };
+}
+
+describe("assembleIdentities — prior-manifest override (coordinates, Task 7b)", () => {
+  it("MUST-COVER: an elicited prior mode coordinate (dark) survives instead of the freshly-derived one (light)", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+    const prior = priorWithSectionCoordinates({ mode: { value: "dark", provenance: "elicited", source: "user" } });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    const section = byId(records, "n-section");
+    expect(section.coordinates.mode).toMatchObject({ value: "dark", provenance: "elicited", source: "user" });
+    expect(section.address).toBe("section@desktop@dark");
+    expect(section.reasoning).toContain('kept prior mode "dark" (elicited)');
+  });
+
+  it("MUST-COVER: a confirmed inferred prior mode coordinate (dark) survives instead of the freshly-derived one (light)", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+    const prior = priorWithSectionCoordinates({
+      mode: { value: "dark", provenance: "inferred", source: "vision", confidence: "low", confirmed: true },
+    });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    const section = byId(records, "n-section");
+    expect(section.coordinates.mode).toMatchObject({ value: "dark", provenance: "inferred", confirmed: true });
+    expect(section.address).toBe("section@desktop@dark");
+    expect(section.reasoning).toContain('kept prior mode "dark" (inferred, confirmed)');
+  });
+
+  it("MUST-COVER: a prior DERIVED mode coordinate does NOT survive — recomputes fresh", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+    const prior = priorWithSectionCoordinates({ mode: { value: "dark", provenance: "derived", source: "structure" } });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    const section = byId(records, "n-section");
+    expect(section.coordinates.mode).toMatchObject({ value: "light", provenance: "derived" });
+    // "light" is the registry default — never printed.
+    expect(section.address).toBe("section@desktop");
+  });
+
+  it("MUST-COVER: a prior DEFAULTED mode coordinate does NOT survive — recomputes fresh", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+    const prior = priorWithSectionCoordinates({ mode: { value: "dark", provenance: "defaulted", source: "registry-default" } });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    expect(byId(records, "n-section").coordinates.mode).toMatchObject({ value: "light", provenance: "derived" });
+  });
+
+  it("MUST-COVER: no prior coordinate on the axis at all -> fresh derivation, unaffected", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+    // Prior record exists, but its coordinates object has no "mode" key.
+    const prior = priorWithSectionCoordinates({ viewport: { value: "desktop", provenance: "derived", source: "structure" } });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    expect(byId(records, "n-section").coordinates.mode).toMatchObject({ value: "light", provenance: "derived" });
+  });
+
+  it("no prior manifest at all -> fresh derivation, unaffected (same as calling assembleIdentities with no 4th arg)", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+
+    const { records } = assembleIdentities(extraction, registries, components);
+    expect(byId(records, "n-section").coordinates.mode).toMatchObject({ value: "light", provenance: "derived" });
+  });
+
+  it("symmetric across axes: an elicited prior VIEWPORT coordinate survives over the freshly-derived one from width", () => {
+    const registries = defaultIdentityRegistries();
+    const extraction = extractionWithOneCoordinateNode(); // width 1440 -> fresh "desktop"
+    const prior = priorWithSectionCoordinates({ viewport: { value: "tablet", provenance: "elicited", source: "user" } });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    const section = byId(records, "n-section");
+    expect(section.coordinates.viewport).toMatchObject({ value: "tablet", provenance: "elicited", source: "user" });
+    expect(section.address).toBe("section@tablet");
+  });
+
+  it("a preserved viewport override propagates to descendants exactly like a fresh one would", () => {
+    const registries = defaultIdentityRegistries();
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-home", name: "Home" },
+      pageCount: 1,
+      nodes: [
+        ...extractionWithOneCoordinateNode().nodes,
+        {
+          durableId: "n-child",
+          figmaNodeId: "f-child",
+          parentDurableId: "n-section",
+          ordinal: 0,
+          kind: "GROUP",
+          width: null,
+          currentName: "Child",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: false,
+        },
+      ],
+    };
+    const prior = priorWithSectionCoordinates({ viewport: { value: "tablet", provenance: "elicited", source: "user" } });
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    const child = byId(records, "n-child");
+    expect(child.coordinates.viewport).toMatchObject({ value: "tablet", provenance: "derived", source: "structure" });
+    expect(child.reasoning).toContain("inherited from root frame");
+  });
+
+  it("does not regress label preservation: label AND coordinate overrides on the same node both survive independently", () => {
+    const registries = registriesWithModeAxis();
+    const extraction = extractionWithOneCoordinateNode();
+    const prior: NodeManifest = {
+      version: 1,
+      records: {
+        "n-section": {
+          durableId: "n-section",
+          figmaNodeId: "old-f-section",
+          address: "login-card@desktop@dark",
+          scope: ["home"],
+          path: [{ label: "login-card", provenance: "elicited", source: "user" }],
+          coordinates: { mode: { value: "dark", provenance: "elicited", source: "user" } },
+          kind: "FRAME",
+          pathRoleDefault: "section",
+          isDefinition: false,
+          composition: [],
+          currentName: "Section",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+
+    const { records } = assembleIdentities(extraction, registries, components, prior);
+    const section = byId(records, "n-section");
+    expect(section.path.at(-1)).toMatchObject({ label: "login-card", provenance: "elicited" });
+    expect(section.coordinates.mode).toMatchObject({ value: "dark", provenance: "elicited" });
+    expect(section.address).toBe("login-card@desktop@dark");
   });
 });
 

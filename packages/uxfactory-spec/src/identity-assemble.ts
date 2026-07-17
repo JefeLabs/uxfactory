@@ -27,7 +27,9 @@
  *  5. Coordinates — viewport resolved at page children, inherited by
  *     descendants (or overridden by a variant prop); mode/theme via
  *     `resolveAxesFromModes`; state from variant props only, never
- *     defaulted.
+ *     defaulted; plus, per axis, the SAME prior-manifest override as rule 2
+ *     (Task 7b) — a confirmed/elicited prior coordinate survives
+ *     re-derivation instead of being silently recomputed.
  *  6. Address + record fields (`serializeAddress`, `pathRoleDefault`,
  *     `composition`, prior `appliedAddress`/`appliedAt` carry-forward).
  *  7. `reasoning` — a teaching-surface string per record, composed from the
@@ -316,6 +318,36 @@ function axisReasoningNote(axisName: string, pv: ProvenancedValue): string {
 }
 
 /**
+ * A prior record's coordinate on one axis, when it's eligible to override a
+ * freshly-*derived* coordinate — the SAME predicate `priorOverrideSegment`
+ * (above) applies to labels, applied per coordinate axis instead of to the
+ * path's last segment: `confirmed: true` (an inferred coordinate the user
+ * ratified via the confirm gate) or provenance `"elicited"` (the user
+ * replaced/created the coordinate outright via override — see the bridge's
+ * `POST /project/identity/confirm` route, `applyConfirmation`). A prior
+ * derived/defaulted coordinate is NOT preserved — like an unconfirmed
+ * inferred label, it recomputes fresh on every extraction pass.
+ */
+function priorOverrideCoordinate(
+  durableId: string,
+  axis: keyof Coordinates,
+  prior: NodeManifest | undefined,
+): ProvenancedValue | null {
+  if (!prior) return null;
+  const priorRecord = prior.records[durableId];
+  if (!priorRecord) return null;
+  const priorValue = priorRecord.coordinates[axis];
+  if (!priorValue) return null;
+  if (priorValue.confirmed === true || priorValue.provenance === "elicited") return priorValue;
+  return null;
+}
+
+/** Reasoning note for a preserved coordinate — mirrors `resolveLabel`'s override reasoning line for labels. */
+function priorOverrideCoordinateReasoning(axisName: string, pv: ProvenancedValue): string {
+  return `kept prior ${axisName} "${pv.value}" (${pv.provenance}${pv.confirmed ? ", confirmed" : ""}) from the manifest instead of re-deriving`;
+}
+
+/**
  * Resolve one node's coordinates (rule 5). Viewport: a variant prop wins
  * outright; else page children resolve from width (`resolveViewport`); else
  * descendants inherit the parent's already-resolved viewport value
@@ -327,40 +359,79 @@ function axisReasoningNote(axisName: string, pv: ProvenancedValue): string {
  * omission-at-default is enforced by `serializeAddress` for mode/theme, but
  * state has no registry-default-fill path at all, so it's simply absent
  * when no variant prop supplies it).
+ *
+ * LAST, per axis: `priorOverrideCoordinate` — a confirmed-inferred or
+ * elicited prior coordinate on this durableId's axis SURVIVES re-derivation,
+ * symmetric with rule 2's label override (`priorOverrideSegment`). This
+ * wins over every fresh-derivation path above (variant prop included) — a
+ * user's confirm/override gate outranks structure, exactly as it does for
+ * labels. A preserved viewport also propagates to descendants via
+ * `parentCoordinates`, since callers store this function's returned
+ * `coordinates` (post-override) before resolving children.
  */
 function resolveCoordinatesForNode(
   node: ExtractedNode,
   parentCoordinates: Coordinates | undefined,
   registries: IdentityRegistries,
+  prior: NodeManifest | undefined,
 ): CoordinateResolution {
-  const reasoningParts: string[] = [];
   const variantCoords = node.variantProperties ? coordinatesFromVariantProps(node.variantProperties, registries) : {};
 
   let viewport: ProvenancedValue | undefined;
+  let viewportReasoning: string | undefined;
   if (variantCoords.viewport !== undefined) {
     viewport = variantCoords.viewport;
-    reasoningParts.push(`viewport "${viewport.value}" from a variant property`);
+    viewportReasoning = `viewport "${viewport.value}" from a variant property`;
   } else if (node.isPageChild) {
     if (node.width !== null) {
       const resolved = resolveViewport(node.width, registries);
       viewport = { value: resolved.token, provenance: resolved.provenance, confidence: resolved.confidence, source: "structure" };
-      reasoningParts.push(resolved.reasoning);
+      viewportReasoning = resolved.reasoning;
     }
   } else if (parentCoordinates?.viewport !== undefined) {
     viewport = { value: parentCoordinates.viewport.value, provenance: "derived", source: "structure", confidence: "high" };
-    reasoningParts.push(`viewport "${viewport.value}" inherited from root frame`);
+    viewportReasoning = `viewport "${viewport.value}" inherited from root frame`;
   }
 
   const axes = resolveAxesFromModes(node.resolvedModes, registries);
-  const mode = variantCoords.mode ?? axes.mode;
-  const theme = variantCoords.theme ?? axes.theme;
-  if (variantCoords.mode !== undefined) reasoningParts.push(`mode "${variantCoords.mode.value}" from a variant property`);
-  else if (axes.mode !== undefined) reasoningParts.push(axisReasoningNote("mode", axes.mode));
-  if (variantCoords.theme !== undefined) reasoningParts.push(`theme "${variantCoords.theme.value}" from a variant property`);
-  else if (axes.theme !== undefined) reasoningParts.push(axisReasoningNote("theme", axes.theme));
+  let mode = variantCoords.mode ?? axes.mode;
+  let modeReasoning: string | undefined;
+  if (variantCoords.mode !== undefined) modeReasoning = `mode "${variantCoords.mode.value}" from a variant property`;
+  else if (axes.mode !== undefined) modeReasoning = axisReasoningNote("mode", axes.mode);
 
-  const state = variantCoords.state;
-  if (state !== undefined) reasoningParts.push(`state "${state.value}" from a variant property`);
+  let theme = variantCoords.theme ?? axes.theme;
+  let themeReasoning: string | undefined;
+  if (variantCoords.theme !== undefined) themeReasoning = `theme "${variantCoords.theme.value}" from a variant property`;
+  else if (axes.theme !== undefined) themeReasoning = axisReasoningNote("theme", axes.theme);
+
+  let state = variantCoords.state;
+  let stateReasoning: string | undefined;
+  if (state !== undefined) stateReasoning = `state "${state.value}" from a variant property`;
+
+  const viewportOverride = priorOverrideCoordinate(node.durableId, "viewport", prior);
+  if (viewportOverride !== null) {
+    viewport = viewportOverride;
+    viewportReasoning = priorOverrideCoordinateReasoning("viewport", viewportOverride);
+  }
+  const modeOverride = priorOverrideCoordinate(node.durableId, "mode", prior);
+  if (modeOverride !== null) {
+    mode = modeOverride;
+    modeReasoning = priorOverrideCoordinateReasoning("mode", modeOverride);
+  }
+  const themeOverride = priorOverrideCoordinate(node.durableId, "theme", prior);
+  if (themeOverride !== null) {
+    theme = themeOverride;
+    themeReasoning = priorOverrideCoordinateReasoning("theme", themeOverride);
+  }
+  const stateOverride = priorOverrideCoordinate(node.durableId, "state", prior);
+  if (stateOverride !== null) {
+    state = stateOverride;
+    stateReasoning = priorOverrideCoordinateReasoning("state", stateOverride);
+  }
+
+  const reasoningParts = [viewportReasoning, modeReasoning, themeReasoning, stateReasoning].filter(
+    (part): part is string => part !== undefined,
+  );
 
   const coordinates: Coordinates = {
     ...(viewport !== undefined ? { viewport } : {}),
@@ -426,7 +497,7 @@ export function assembleIdentities(
   const coordReasoningById = new Map<string, string[]>();
   for (const node of extraction.nodes) {
     const parentCoords = node.parentDurableId === null ? undefined : coordById.get(node.parentDurableId);
-    const { coordinates, reasoningParts } = resolveCoordinatesForNode(node, parentCoords, registries);
+    const { coordinates, reasoningParts } = resolveCoordinatesForNode(node, parentCoords, registries, prior);
     coordById.set(node.durableId, coordinates);
     coordReasoningById.set(node.durableId, reasoningParts);
   }
