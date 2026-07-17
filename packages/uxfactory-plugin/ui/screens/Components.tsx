@@ -11,6 +11,11 @@
  * - Linked components list: green/hollow dots, rollup, unlink on hover
  * - Zero-ACs callout when snapshot.requirements is empty → links to Artifacts
  * - Sticky footer "Check my design" → enqueue check-design job → navigate to /tabs/checks?run=<id>
+ * - Interpret → enqueue identity-interpret job (Task 11, Phase-3 vision proposals)
+ *   for the active root; disabled until a scan has produced a node-identity
+ *   manifest (identityManifestQuery). Mirrors Scan's inline state, not a new
+ *   progress surface — bridge.events() failure detection + a timeout backstop,
+ *   same idiom as Artifacts.tsx's generation tracking.
  *
  * V1 seams (documented per spec honesty table):
  * - Sync badge is always "not mapped" (no bridge read for drift state in v1)
@@ -21,7 +26,7 @@
  * stable stored reference. Never return a new object literal from a selector.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ComponentTypeEntry, IdentityExtraction } from "@uxfactory/spec";
@@ -31,7 +36,20 @@ import type { PluginBus } from "../lib/plugin-bus.js";
 import { bytesToBase64 } from "../lib/base64.js";
 import { useAppStore } from "../stores/app.js";
 import { Card } from "../components/index.js";
-import { linksQuery, putLinksMutation, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
+import {
+  linksQuery,
+  putLinksMutation,
+  enqueueMutation,
+  identityManifestQuery,
+  queryKeys,
+  activeRoot,
+} from "../queries.js";
+
+/** "Interpret" gives up waiting on a terminal signal after this long — the
+ *  button re-enables (not necessarily a failure; the bridge never broadcasts
+ *  a positive completion event, see the SSE effect below). Same ceiling as
+ *  Artifacts.tsx's PENDING_TIMEOUT_MS. */
+const INTERPRET_TIMEOUT_MS = 5 * 60 * 1000;
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -110,6 +128,18 @@ export function Components({
   const [scanResult, setScanResult] = useState<{ nodes: number; components: number } | null>(null);
   const [identityResult, setIdentityResult] = useState<{ count: number; addresses: string[] } | null>(null);
 
+  // ── Interpret identities (Task 11 — Phase 3 vision proposals) ──────────────
+  const [isInterpreting, setIsInterpreting] = useState(false);
+  const [interpretError, setInterpretError] = useState<string | null>(null);
+  /** Enqueue id of the in-flight identity-interpret job, for SSE tracking. */
+  const interpretJobIdRef = useRef<string | null>(null);
+  const interpretTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The node-identity manifest gates Interpret: disabled until a scan has
+  // produced at least one record (bridge.getIdentityManifest, Task 8).
+  const manifestResult = useQuery(identityManifestQuery(bridge));
+  const manifestRecordCount = Object.keys(manifestResult.data?.manifest.records ?? {}).length;
+
   // ── Subscribe to canvas selection ─────────────────────────────────────────
   useEffect(() => {
     const unsub = bus.onSelection((raw) => {
@@ -152,6 +182,12 @@ export function Components({
         .then((res) => {
           setIdentityResult({ count: res.count, addresses: res.addresses });
           bus.requestIdentityCrops?.();
+          // A fresh extraction may have written the manifest for the first
+          // time (or added records) — refetch so Interpret's gate + any
+          // manifest-driven UI picks it up.
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+          });
         })
         .catch((err: unknown) => {
           if (err instanceof BridgeError && err.status === 404) {
@@ -162,7 +198,7 @@ export function Components({
         });
     });
     return () => unsub?.();
-  }, [bus, bridge, toast]);
+  }, [bus, bridge, toast, queryClient]);
 
   // ── Subscribe to identity-crops replies — base64-encode + POST them ────────
   useEffect(() => {
@@ -194,6 +230,81 @@ export function Components({
   function handleScanIdentities(): void {
     setIsScanning(true);
     bus.requestIdentityScan?.();
+  }
+
+  // ── Interpret identities ────────────────────────────────────────────────────
+
+  /** Clear the running-job bookkeeping (timer + tracked id) for Interpret. */
+  function clearInterpretTracking(): void {
+    if (interpretTimerRef.current !== null) {
+      clearTimeout(interpretTimerRef.current);
+      interpretTimerRef.current = null;
+    }
+    interpretJobIdRef.current = null;
+  }
+
+  // SSE: surface a failed identity-interpret run inline — same heuristic
+  // Artifacts.tsx uses for generate-artifact failures (an adapter
+  // {type:"error"} chunk tied to this screen's tracked enqueue id). The
+  // bridge never broadcasts a positive completion signal on the SSE (POST
+  // /pipeline/result is stored, not broadcast), so there is no symmetric
+  // "success" event to watch for here — a successful run is only observable
+  // by the manifest query eventually reflecting new proposals (invalidated
+  // below) or by the timeout backstop simply giving up the wait.
+  useEffect(() => {
+    if (!isInterpreting) return;
+    const teardown = bridge.events((ev) => {
+      if (interpretJobIdRef.current === null || ev.requestId !== interpretJobIdRef.current) return;
+      const payload = ev.event as { type?: unknown } | null;
+      if (payload !== null && typeof payload === "object" && payload.type === "error") {
+        clearInterpretTracking();
+        setIsInterpreting(false);
+        setInterpretError("Interpretation failed — see worker logs");
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+        });
+      }
+    });
+    return teardown;
+  }, [isInterpreting, bridge, queryClient]);
+
+  // Clear any outstanding Interpret timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (interpretTimerRef.current !== null) clearTimeout(interpretTimerRef.current);
+    };
+  }, []);
+
+  async function handleInterpret(): Promise<void> {
+    setIsInterpreting(true);
+    setInterpretError(null);
+    let id: string;
+    try {
+      ({ id } = await enqueue.mutateAsync({
+        kind: "identity-interpret",
+        payload: { root: activeRoot(bridge) },
+      }));
+    } catch {
+      setIsInterpreting(false);
+      toast("Interpret failed to enqueue — is the bridge running?");
+      return;
+    }
+
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+    });
+
+    // "Running" persists until the SSE effect above sees a failure for this
+    // id, or this timeout gives up tracking it (not a failure judgment —
+    // just stop occupying the button; see the SSE effect's comment). Clear
+    // any stale timer from a prior run first (defensive; shouldn't happen
+    // since the button is disabled while isInterpreting is true).
+    clearInterpretTracking();
+    interpretJobIdRef.current = id;
+    interpretTimerRef.current = setTimeout(() => {
+      clearInterpretTracking();
+      setIsInterpreting(false);
+    }, INTERPRET_TIMEOUT_MS);
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
@@ -288,22 +399,43 @@ export function Components({
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4 pb-20">
 
-        {/* ── Scan identities — node-identity scaffolding (Task 4) ────────── */}
+        {/* ── Scan identities + Interpret — node-identity scaffolding ─────── */}
         <div>
-          <button
-            type="button"
-            onClick={() => handleScanIdentities()}
-            disabled={isScanning}
-            aria-label="Scan identities"
-            className={[
-              "w-full py-2 px-4 rounded font-medium text-sm transition-colors",
-              !isScanning
-                ? "bg-primary-600 text-white hover:bg-primary-700"
-                : "bg-gray-200 text-gray-400 cursor-not-allowed",
-            ].join(" ")}
-          >
-            {isScanning ? "Scanning…" : "Scan identities"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleScanIdentities()}
+              disabled={isScanning}
+              aria-label="Scan identities"
+              className={[
+                "flex-1 py-2 px-4 rounded font-medium text-sm transition-colors",
+                !isScanning
+                  ? "bg-primary-600 text-white hover:bg-primary-700"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed",
+              ].join(" ")}
+            >
+              {isScanning ? "Scanning…" : "Scan identities"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleInterpret()}
+              disabled={isInterpreting || manifestRecordCount === 0}
+              aria-label="Interpret"
+              title={
+                manifestRecordCount === 0
+                  ? "Scan identities first — Interpret needs a node-identity manifest"
+                  : undefined
+              }
+              className={[
+                "flex-1 py-2 px-4 rounded font-medium text-sm transition-colors",
+                !isInterpreting && manifestRecordCount > 0
+                  ? "bg-primary-600 text-white hover:bg-primary-700"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed",
+              ].join(" ")}
+            >
+              {isInterpreting ? "Interpreting…" : "Interpret"}
+            </button>
+          </div>
           {scanResult !== null && (
             <p className="mt-2 text-xs text-gray-500 text-center">
               {scanResult.nodes} nodes scanned, {scanResult.components} components harvested
@@ -315,6 +447,11 @@ export function Components({
               {identityResult.addresses.length > 0
                 ? ` (e.g. ${identityResult.addresses.slice(0, 3).join(", ")})`
                 : ""}
+            </p>
+          )}
+          {interpretError !== null && (
+            <p className="mt-1 text-xs text-warn-600 text-center" role="alert">
+              {interpretError}
             </p>
           )}
         </div>

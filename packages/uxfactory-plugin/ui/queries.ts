@@ -33,6 +33,7 @@ export const queryKeys = {
     ["latestRender", run ?? null] as const,
   artifact: (root: string | null, key: string) => ["artifact", root, key] as const,
   renderQueue: (root: string | null) => ["renderQueue", root] as const,
+  identityManifest: (root: string | null) => ["identityManifest", root] as const,
 };
 
 /** QueryClient: queries retry once, mutations never retry. */
@@ -162,6 +163,19 @@ export function putLinksMutation(bridge: Bridge) {
 export function enqueueMutation(bridge: Bridge) {
   return { mutationFn: (req: PipelineEnqueueRequest) => bridge.enqueue(req) };
 }
+/**
+ * The node-identity manifest (Task 8's node-manifest.json) — gates the
+ * Components tab's Interpret action (Task 11) on a non-empty record set.
+ */
+export function identityManifestQuery(bridge: Bridge) {
+  return queryOptions({
+    queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+    queryFn: () => bridge.getIdentityManifest!(),
+    enabled: typeof bridge.getIdentityManifest === "function",
+    staleTime: 0,
+  });
+}
+
 export function putArtifactMutation(bridge: Bridge) {
   return {
     mutationFn: (vars: { key: string; content: string }) =>

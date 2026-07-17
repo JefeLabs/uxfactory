@@ -362,6 +362,37 @@ describe("bridge postIdentityCrops()", () => {
   });
 });
 
+// ─── getIdentityManifest() ─────────────────────────────────────────────────
+
+describe("bridge getIdentityManifest() (Task 11)", () => {
+  it("GETs /project/identity/manifest and returns {manifest}", async () => {
+    const manifest = { version: 1 as const, records: { "n-1": { durableId: "n-1" } } };
+    const fakeFetch = jsonFetch({ manifest });
+    const bridge = createBridge(fakeFetch);
+
+    const result = await bridge.getIdentityManifest!();
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      `${BASE}/project/identity/manifest`,
+      undefined,
+    );
+    expect(result).toEqual({ manifest });
+  });
+
+  it("appends ?root= when a project root is set", async () => {
+    const fakeFetch = jsonFetch({ manifest: { version: 1, records: {} } });
+    const bridge = createBridge(fakeFetch);
+    bridge.setProjectRoot!("/repo/root");
+
+    await bridge.getIdentityManifest!();
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      `${BASE}/project/identity/manifest?root=${encodeURIComponent("/repo/root")}`,
+      undefined,
+    );
+  });
+});
+
 // ─── BridgeError ─────────────────────────────────────────────────────────────
 
 describe("BridgeError", () => {

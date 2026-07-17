@@ -14,7 +14,7 @@
 // node-identity types are shared cross-package via @uxfactory/spec (same
 // precedent as router.tsx/Prompt.tsx/etc.) — NOT mirrored, unlike the
 // bridge-package types below.
-import type { ComponentTypeEntry, IdentityExtraction } from "@uxfactory/spec";
+import type { ComponentTypeEntry, IdentityExtraction, NodeManifest } from "@uxfactory/spec";
 
 // ─── Mirrored types (do NOT import from @uxfactory/bridge) ───────────────────
 
@@ -241,6 +241,13 @@ export interface Bridge {
   postIdentityCrops?(
     crops: Array<{ durableId: string; base64: string }>,
   ): Promise<{ ok: boolean; written: number }>;
+  /**
+   * GET /project/identity/manifest → {manifest} (Task 8's node-manifest.json).
+   * Always 200 — an empty {version:1, records:{}} manifest when the file is
+   * missing, never a 404. Gates the panel's Interpret action (Task 11).
+   * Optional — absent in legacy bridge builds.
+   */
+  getIdentityManifest?(): Promise<{ manifest: NodeManifest }>;
 }
 
 /** One AC row in the traceability tree, with its linked canvas nodes. */
@@ -587,6 +594,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
         rooted("/project/identity/crops"),
         { crops },
       );
+    },
+
+    getIdentityManifest() {
+      return request<{ manifest: NodeManifest }>(rooted("/project/identity/manifest"));
     },
   };
 }

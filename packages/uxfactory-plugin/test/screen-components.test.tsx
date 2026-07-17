@@ -23,7 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 
-import type { Bridge, Link, ProjectSnapshot } from "../ui/lib/bridge.js";
+import type { Bridge, BridgeEvent, Link, ProjectSnapshot } from "../ui/lib/bridge.js";
 import { BridgeError } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { Components } from "../ui/screens/Components.js";
@@ -628,6 +628,34 @@ describe("Scan identities", () => {
     expect(screen.getByRole("button", { name: "Scan identities" })).toHaveTextContent("Scan identities");
   });
 
+  it("invalidates the identity manifest query after a successful extraction POST (Task 11)", async () => {
+    const bus = makeBus();
+    const getIdentityManifest = vi.fn().mockResolvedValue({
+      manifest: { version: 1, records: {} },
+    });
+    const bridge = makeBridge({
+      putIdentityComponents: vi.fn().mockResolvedValue({ ok: true }),
+      postIdentityExtraction: vi
+        .fn()
+        .mockResolvedValue({ ok: true, count: 2, addresses: ["hero@mobile"] }),
+      getIdentityManifest,
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(getIdentityManifest).toHaveBeenCalled());
+    const callsBeforeExtraction = getIdentityManifest.mock.calls.length;
+
+    act(() => {
+      bus._fireIdentityExtraction(makeIdentityExtractionPayload());
+    });
+
+    await waitFor(() => {
+      expect(getIdentityManifest.mock.calls.length).toBeGreaterThan(callsBeforeExtraction);
+    });
+  });
+
   it("tolerates a 404 from postIdentityExtraction (older bridge build without this route) — toasts, never crashes", async () => {
     const bus = makeBus();
     const postIdentityExtraction = vi
@@ -818,6 +846,179 @@ describe("Identity crops (Task 9)", () => {
     });
 
     // No crash — nothing else to assert (bridge silently has no crops route).
+  });
+});
+
+// ─── Interpret identities (Task 11 — Phase 3 vision proposals) ────────────────
+
+/** A node-identity manifest with `count` records — enough to enable Interpret. */
+function makeManifest(count: number) {
+  const records: Record<string, unknown> = {};
+  for (let i = 0; i < count; i++) {
+    records[`n-${i}`] = { durableId: `n-${i}`, address: `node-${i}@desktop` };
+  }
+  return { manifest: { version: 1, records } };
+}
+
+/** Bridge whose `events()` capture handler is exposed for manual SSE emission. */
+function makeEventfulBridge(overrides: Partial<Bridge> = {}): {
+  bridge: Bridge;
+  emit: (ev: BridgeEvent) => void;
+} {
+  let handler: ((ev: BridgeEvent) => void) | null = null;
+  const bridge = makeBridge({
+    events: vi.fn((cb: (ev: BridgeEvent) => void) => {
+      handler = cb;
+      return () => {
+        handler = null;
+      };
+    }),
+    ...overrides,
+  });
+  return {
+    bridge,
+    emit: (ev) => {
+      if (handler !== null) handler(ev);
+    },
+  };
+}
+
+describe("Interpret identities (Task 11)", () => {
+  it("is disabled when the node-identity manifest has no records", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue(makeManifest(0)),
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getIdentityManifest).toHaveBeenCalled());
+
+    expect(screen.getByRole("button", { name: "Interpret" })).toBeDisabled();
+  });
+
+  it("is disabled when the bridge lacks getIdentityManifest (legacy fixture)", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge(); // no getIdentityManifest at all
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    expect(screen.getByRole("button", { name: "Interpret" })).toBeDisabled();
+  });
+
+  it("is enabled once the manifest has records, and clicking enqueues identity-interpret for the active root", async () => {
+    const bus = makeBus();
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue(makeManifest(2)),
+      getProjectRoot: vi.fn().mockReturnValue("/repo/root"),
+      enqueue: vi.fn().mockResolvedValue({ id: "job-1" }),
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+
+    const interpretBtn = await screen.findByRole("button", { name: "Interpret" });
+    await waitFor(() => expect(interpretBtn).not.toBeDisabled());
+
+    await user.click(interpretBtn);
+
+    await waitFor(() => {
+      expect(bridge.enqueue).toHaveBeenCalledWith({
+        kind: "identity-interpret",
+        payload: { root: "/repo/root" },
+      });
+    });
+
+    // Running state shown while the job is tracked.
+    expect(screen.getByRole("button", { name: "Interpret" })).toHaveTextContent(
+      "Interpreting…",
+    );
+  });
+
+  it("invalidates the identity manifest query once the enqueue resolves", async () => {
+    const bus = makeBus();
+    const user = userEvent.setup();
+    const getIdentityManifest = vi.fn().mockResolvedValue(makeManifest(1));
+    const bridge = makeBridge({
+      getIdentityManifest,
+      enqueue: vi.fn().mockResolvedValue({ id: "job-1" }),
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+
+    const interpretBtn = await screen.findByRole("button", { name: "Interpret" });
+    await waitFor(() => expect(interpretBtn).not.toBeDisabled());
+
+    const callsBeforeClick = getIdentityManifest.mock.calls.length;
+    await user.click(interpretBtn);
+
+    // The invalidated query refetches — a fresh getIdentityManifest call
+    // beyond whatever ran at mount.
+    await waitFor(() => {
+      expect(getIdentityManifest.mock.calls.length).toBeGreaterThan(callsBeforeClick);
+    });
+  });
+
+  it("clears the running state, shows an error, and re-invalidates the manifest on an SSE failure frame for the tracked job", async () => {
+    const bus = makeBus();
+    const user = userEvent.setup();
+    const getIdentityManifest = vi.fn().mockResolvedValue(makeManifest(1));
+    const { bridge, emit } = makeEventfulBridge({
+      getIdentityManifest,
+      enqueue: vi.fn().mockResolvedValue({ id: "job-err" }),
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+
+    const interpretBtn = await screen.findByRole("button", { name: "Interpret" });
+    await waitFor(() => expect(interpretBtn).not.toBeDisabled());
+    await user.click(interpretBtn);
+
+    await waitFor(() => expect(bridge.events).toHaveBeenCalled());
+    const callsBeforeEmit = getIdentityManifest.mock.calls.length;
+
+    act(() => {
+      emit({ requestId: "job-err", event: { type: "error" }, seq: 1 });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Interpretation failed — see worker logs",
+      );
+    });
+    expect(screen.getByRole("button", { name: "Interpret" })).toHaveTextContent("Interpret");
+    await waitFor(() => {
+      expect(getIdentityManifest.mock.calls.length).toBeGreaterThan(callsBeforeEmit);
+    });
+  });
+
+  it("does not fire enqueue when disabled (empty manifest) even if clicked", async () => {
+    const bus = makeBus();
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue(makeManifest(0)),
+      enqueue: vi.fn().mockResolvedValue({ id: "job-1" }),
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getIdentityManifest).toHaveBeenCalled());
+
+    const interpretBtn = screen.getByRole("button", { name: "Interpret" });
+    await user.click(interpretBtn);
+
+    expect(bridge.enqueue).not.toHaveBeenCalled();
   });
 });
 
