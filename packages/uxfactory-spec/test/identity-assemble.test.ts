@@ -697,6 +697,86 @@ describe("assembleIdentities — prior-manifest override (coordinates, Task 7b)"
     expect(child.reasoning).toContain("inherited from root frame");
   });
 
+  it("override precedence: an elicited prior STATE coordinate wins over a fresh variant-prop-derived state", () => {
+    // Locks in the interpretive call from the Task 7b self-review — a
+    // confirmed/elicited prior coordinate outranks EVERY fresh-derivation
+    // path in `resolveCoordinatesForNode`, including a variant property
+    // (the strongest normal signal, since it's read before structural/
+    // inherited fallbacks). Without this test, a future refactor that
+    // reordered the override check ahead of variant-prop resolution (or
+    // dropped it) would silently flip this precedence and nothing would
+    // catch it.
+    const registries = defaultIdentityRegistries();
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-home", name: "Home" },
+      pageCount: 1,
+      nodes: [
+        {
+          durableId: "n-section",
+          figmaNodeId: "f-section",
+          parentDurableId: null,
+          ordinal: 0,
+          kind: "FRAME",
+          width: 1440,
+          currentName: "Section",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: true,
+        },
+        {
+          durableId: "n-btn",
+          figmaNodeId: "f-btn",
+          parentDurableId: "n-section",
+          ordinal: 0,
+          kind: "INSTANCE",
+          width: null,
+          currentName: "Button",
+          resolvedModes: {},
+          mainComponent: { key: "button-key", name: "Button", remote: false },
+          variantProperties: { State: "Hover" },
+          isPageChild: false,
+        },
+      ],
+    };
+
+    // Companion case: no prior at all -> state derives fresh from the
+    // variant prop ("Hover" -> "hover"). Proves the override path above
+    // doesn't break ordinary variant-prop derivation when there's nothing
+    // to preserve.
+    const { records: freshRecords } = assembleIdentities(extraction, registries, components);
+    const freshBtn = byId(freshRecords, "n-btn");
+    expect(freshBtn.coordinates.state).toMatchObject({ value: "hover", provenance: "derived", source: "structure" });
+    expect(freshBtn.address).toContain("@state=hover");
+
+    // With a prior elicited override on the SAME axis -> the override wins
+    // over the variant-prop-derived "hover".
+    const prior: NodeManifest = {
+      version: 1,
+      records: {
+        "n-btn": {
+          durableId: "n-btn",
+          figmaNodeId: "old-f-btn",
+          address: "section/button@state=focus",
+          scope: ["home"],
+          path: [{ label: "button", provenance: "derived", source: "registry" }],
+          coordinates: { state: { value: "focus", provenance: "elicited", source: "user" } },
+          kind: "INSTANCE",
+          pathRoleDefault: "component",
+          isDefinition: false,
+          composition: [],
+          currentName: "Button",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    };
+    const { records: overriddenRecords } = assembleIdentities(extraction, registries, components, prior);
+    const overriddenBtn = byId(overriddenRecords, "n-btn");
+    expect(overriddenBtn.coordinates.state).toMatchObject({ value: "focus", provenance: "elicited", source: "user" });
+    expect(overriddenBtn.address).toContain("@state=focus");
+  });
+
   it("does not regress label preservation: label AND coordinate overrides on the same node both survive independently", () => {
     const registries = registriesWithModeAxis();
     const extraction = extractionWithOneCoordinateNode();
