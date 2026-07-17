@@ -13,6 +13,7 @@ import {
 } from "@tanstack/react-query";
 import type {
   Bridge,
+  IdentityConfirmationItem,
   Link,
   PipelineEnqueueRequest,
 } from "./lib/bridge.js";
@@ -34,6 +35,7 @@ export const queryKeys = {
   artifact: (root: string | null, key: string) => ["artifact", root, key] as const,
   renderQueue: (root: string | null) => ["renderQueue", root] as const,
   identityManifest: (root: string | null) => ["identityManifest", root] as const,
+  identityComponents: (root: string | null) => ["identityComponents", root] as const,
 };
 
 /** QueryClient: queries retry once, mutations never retry. */
@@ -174,6 +176,32 @@ export function identityManifestQuery(bridge: Bridge) {
     enabled: typeof bridge.getIdentityManifest === "function",
     staleTime: 0,
   });
+}
+
+/**
+ * The component registry (GET /project/identity/components) — feeds the
+ * Components-tab identity inventory's library filter/badges (Task 13).
+ */
+export function identityComponentsQuery(bridge: Bridge) {
+  return queryOptions({
+    queryKey: queryKeys.identityComponents(activeRoot(bridge)),
+    queryFn: () => bridge.getIdentityComponents!(),
+    enabled: typeof bridge.getIdentityComponents === "function",
+    staleTime: 5_000,
+  });
+}
+
+/**
+ * POST /project/identity/confirm (Task 12) — the caller composes one or many
+ * per-segment confirm/override items into a single request (a per-row
+ * confirm, a row's inline override, or the inventory's "Confirm all
+ * high-confidence" batch all funnel through this one mutation).
+ */
+export function confirmIdentityMutation(bridge: Bridge) {
+  return {
+    mutationFn: (confirmations: IdentityConfirmationItem[]) =>
+      bridge.confirmIdentity!(confirmations),
+  };
 }
 
 export function putArtifactMutation(bridge: Bridge) {

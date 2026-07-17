@@ -267,6 +267,20 @@ export interface Bridge {
    */
   getIdentityManifest?(): Promise<{ manifest: NodeManifest }>;
   /**
+   * GET /project/identity/components → {components} (component-registry.json;
+   * empty array when the file is missing, never a 404). Feeds the Components
+   * tab's identity-inventory library filter/badges. Optional — absent in
+   * legacy bridge builds.
+   */
+  getIdentityComponents?(): Promise<{ components: ComponentTypeEntry[] }>;
+  /**
+   * POST /project/identity/confirm {confirmations} → {ok, updated, errors?}
+   * (Task 12) — ratify (`confirm`) or replace (`override`) one segment of one
+   * manifest record per item; callers compose several items into ONE request
+   * for a per-node or batch gesture. Optional — absent in legacy bridge builds.
+   */
+  confirmIdentity?(confirmations: IdentityConfirmationItem[]): Promise<IdentityConfirmResponse>;
+  /**
    * GET /pipeline/result/:id — poll a generative job's terminal result. Not
    * root-scoped (request ids are already globally unique on the bridge).
    * Optional — absent in legacy bridge builds.
@@ -319,6 +333,36 @@ export interface RenderQueueJob {
   frames: { name: string; width: number; height: number }[];
   /** Publish-time provenance: the job's run generated without required grounding. */
   ungoverned?: boolean;
+}
+
+// ─── Task 12: identity confirm/override ───────────────────────────────────────
+
+/**
+ * The confirm route's closed segment enum (project.ts's CONFIRM_SEGMENT_VALUES):
+ * "label" always targets the TARGET record's own last `path` segment — never
+ * an ancestor's — the other four each target one `coordinates` axis.
+ */
+export type IdentityConfirmSegment = "label" | "viewport" | "mode" | "theme" | "state";
+
+export interface IdentityConfirmationItem {
+  durableId: string;
+  segment: IdentityConfirmSegment;
+  action: "confirm" | "override";
+  /** Required (non-empty) when action is "override"; ignored for "confirm". */
+  value?: string;
+}
+
+/**
+ * `errors` is a flat array of "<durableId>.<segment>: <reason>" strings, one
+ * per per-item tier-2 rejection (e.g. confirming a non-inferred segment, or
+ * an override value that doesn't normalize) — omitted entirely when nothing
+ * failed. `updated` counts RECORDS touched, not confirmation items (several
+ * items for the same durableId in one batch collapse to 1).
+ */
+export interface IdentityConfirmResponse {
+  ok: boolean;
+  updated: number;
+  errors?: string[];
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -622,6 +666,18 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     getIdentityManifest() {
       return request<{ manifest: NodeManifest }>(rooted("/project/identity/manifest"));
+    },
+
+    getIdentityComponents() {
+      return request<{ components: ComponentTypeEntry[] }>(
+        rooted("/project/identity/components"),
+      );
+    },
+
+    confirmIdentity(confirmations: IdentityConfirmationItem[]) {
+      return post<IdentityConfirmResponse>(rooted("/project/identity/confirm"), {
+        confirmations,
+      });
     },
 
     async getPipelineResult(id: string): Promise<PipelineResultPoll> {

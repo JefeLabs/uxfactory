@@ -47,6 +47,7 @@ import {
   queryKeys,
   activeRoot,
 } from "../queries.js";
+import { IdentityInventory } from "./components/IdentityInventory.js";
 
 /** "Interpret" gives up polling for a terminal result after this long — the
  *  button re-enables (not necessarily a failure judgment; see the timeout's
@@ -516,6 +517,11 @@ export function Components({
             </p>
           )}
         </div>
+
+        {/* ── Identity inventory (Task 13) — suggest→confirm surface over
+             the node-identity manifest Scan/Interpret above produce. Renders
+             nothing until there's at least one manifest record. ──────────── */}
+        <IdentityInventory bridge={bridge} />
 
         {/* ── Selection card ───────────────────────────────────────────── */}
         <Card>
