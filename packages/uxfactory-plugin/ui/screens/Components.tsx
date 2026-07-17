@@ -179,33 +179,47 @@ export function Components({
       });
       setIdentityResult(null);
 
-      void bridge.putIdentityComponents?.(payload.components).catch(() => {
+      // Post-review fix (must-fix #4): sequence the extraction POST after the
+      // components PUT settles, instead of firing both concurrently. The
+      // extraction route reads component-registry.json off disk — racing it
+      // against a PUT that hasn't committed yet could match the first
+      // assembly against a stale/empty registry. `Promise.resolve(...)` (not
+      // a direct `.catch`/`.then` off the optional-chained call) so a bridge
+      // that lacks `putIdentityComponents` entirely (older/legacy fixture)
+      // still proceeds to attempt `postIdentityExtraction` on its own,
+      // preserving the two routes' independence — only their ORDER changes.
+      // A PUT failure (caught below) also still lets extraction proceed
+      // against whatever registry is currently on disk, same as before this
+      // PUT/POST pair was sequenced.
+      const componentsPut = Promise.resolve(bridge.putIdentityComponents?.(payload.components)).catch(() => {
         toast("Failed to save components — is the bridge running?");
       });
 
-      // Tolerate a 404 (older bridge build without this route) — toast, no
-      // crash — rather than surfacing a generic failure. Only on a
-      // SUCCESSFUL extraction POST do we go on to request root-tier crops
-      // (Task 9) — a failed/missing extraction has nothing worth screenshotting.
-      void bridge
-        .postIdentityExtraction?.(payload.extraction)
-        .then((res) => {
-          setIdentityResult({ count: res.count, addresses: res.addresses });
-          bus.requestIdentityCrops?.();
-          // A fresh extraction may have written the manifest for the first
-          // time (or added records) — refetch so Interpret's gate + any
-          // manifest-driven UI picks it up.
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+      void componentsPut.then(() => {
+        // Tolerate a 404 (older bridge build without this route) — toast, no
+        // crash — rather than surfacing a generic failure. Only on a
+        // SUCCESSFUL extraction POST do we go on to request root-tier crops
+        // (Task 9) — a failed/missing extraction has nothing worth screenshotting.
+        void bridge
+          .postIdentityExtraction?.(payload.extraction)
+          .then((res) => {
+            setIdentityResult({ count: res.count, addresses: res.addresses });
+            bus.requestIdentityCrops?.();
+            // A fresh extraction may have written the manifest for the first
+            // time (or added records) — refetch so Interpret's gate + any
+            // manifest-driven UI picks it up.
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+            });
+          })
+          .catch((err: unknown) => {
+            if (err instanceof BridgeError && err.status === 404) {
+              toast("Bridge not ready for identity extraction yet");
+            } else {
+              toast("Failed to post identity extraction — is the bridge running?");
+            }
           });
-        })
-        .catch((err: unknown) => {
-          if (err instanceof BridgeError && err.status === 404) {
-            toast("Bridge not ready for identity extraction yet");
-          } else {
-            toast("Failed to post identity extraction — is the bridge running?");
-          }
-        });
+      });
     });
     return () => unsub?.();
   }, [bus, bridge, toast, queryClient]);

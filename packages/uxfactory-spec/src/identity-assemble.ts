@@ -73,6 +73,7 @@ import {
 import {
   serializeAddress,
   toKebabLabel,
+  registryDefault,
   type AddressCoordinates,
   type CanonicalAddress,
 } from "./canonical-address.js";
@@ -81,12 +82,14 @@ import { resolveViewport, resolveAxesFromModes, deriveFallbackLabel, coordinates
 // ─── small local helpers ────────────────────────────────────────────────────
 
 /**
- * lowercase, non-alphanumeric runs -> single "-", trim ends. No length cap —
- * used ONLY for the page-tier label below (`resolvePageTier`), which is a
- * pre-existing, narrower risk not in scope for this fix (a page named with a
- * leading digit, e.g. "3D Prototypes", on a MULTI-page project would still
- * produce a `LABEL_RE`-invalid `pageSegment.label` — logged, not fixed here;
- * `kebabComponentName` below uses the guaranteed-valid `toKebabLabel` instead).
+ * lowercase, non-alphanumeric runs -> single "-", trim ends. No length cap.
+ * Used only as the pre-kebab step for the page-tier label below
+ * (`resolvePageTier`), which then funnels the result through `toKebabLabel`
+ * (must-fix #1) so a page named with a leading digit (e.g. "404 Prototypes")
+ * can never produce a `LABEL_RE`-invalid `pageSegment.label` — that used to
+ * throw in `serializeAddress` and abort the whole manifest on any multi-page
+ * project with such a page name. `kebabComponentName` below independently
+ * uses the guaranteed-valid `toKebabLabel` for the same reason.
  */
 function kebab(input: string): string {
   return input
@@ -132,7 +135,13 @@ interface PageTier {
 }
 
 function resolvePageTier(extraction: IdentityExtraction): PageTier {
-  const pageLabel = kebab(extraction.page.name) || "page";
+  // Must-fix #1: a plain `kebab` of a digit-leading page name ("404 Page" ->
+  // "404-page") is not `LABEL_RE`-valid and would throw in `serializeAddress`
+  // below (pageCount > 1 makes this the FIRST path segment of every record —
+  // one bad page name aborts the entire manifest). Funnel through
+  // `toKebabLabel`; fall back to the safe constant "page" when nothing valid
+  // survives, same shape as the pre-existing empty-name fallback.
+  const pageLabel = toKebabLabel(kebab(extraction.page.name)) || "page";
   if (extraction.pageCount === 1) {
     return { scope: [pageLabel], pageSegment: null };
   }
@@ -299,9 +308,30 @@ function resolveLabel(
 
 // ─── §4: sibling ordinals ───────────────────────────────────────────────────
 
-/** A stable string key for a resolved coordinate vector — collision grouping needs to compare vectors, not object identity. */
-function coordinateKey(c: Coordinates): string {
-  return [c.viewport?.value ?? "", c.mode?.value ?? "", c.theme?.value ?? "", c.state?.value ?? ""].join("|");
+/**
+ * A stable string key for a resolved coordinate vector — collision grouping
+ * needs to compare vectors, not object identity.
+ *
+ * Post-review fix (must-fix #2): keyed on the ADDRESS-RENDERED vector, not
+ * the raw one. `serializeAddress` OMITS any mode/theme/state coordinate that
+ * equals its axis's registry default (canonical-address.ts), so two siblings
+ * — one with e.g. `state` explicitly set to the default value, one with no
+ * `state` at all — render byte-identical addresses but used to key
+ * DIFFERENTLY here, so neither got an ordinal and the rendered addresses
+ * collided undetected. Dropping default-valued mode/theme/state coordinates
+ * before hashing (mirroring `registryDefault`, the exact predicate
+ * `serializeAddress` itself uses) makes two siblings collide here IFF their
+ * rendered addresses would collide. `viewport` has no registry default
+ * (§3.3) and is never dropped.
+ */
+function coordinateKey(c: Coordinates, r: IdentityRegistries): string {
+  const axisKey = (axis: "mode" | "theme" | "state", value: string | undefined): string => {
+    if (value === undefined || value === registryDefault(axis, r)) return "";
+    return value;
+  };
+  return [c.viewport?.value ?? "", axisKey("mode", c.mode?.value), axisKey("theme", c.theme?.value), axisKey("state", c.state?.value)].join(
+    "|",
+  );
 }
 
 // ─── §5: coordinates ────────────────────────────────────────────────────────
@@ -524,7 +554,7 @@ export function assembleIdentities(
     for (const sib of sorted) {
       const label = labelById.get(sib.durableId)!.label;
       const coords = coordById.get(sib.durableId)!;
-      const key = `${label} ${coordinateKey(coords)}`;
+      const key = `${label} ${coordinateKey(coords, registries)}`;
       const count = (seen.get(key) ?? 0) + 1;
       seen.set(key, count);
       ordinalById.set(sib.durableId, count >= 2 ? count : undefined);

@@ -1112,6 +1112,19 @@ async function exportIdentityCrops(): Promise<void> {
  * the only impure step, executing that plan). A node that no longer exists
  * (e.g. deleted since the last scan) is reported in `failed`, never thrown —
  * one missing node must not abort renames for the rest of the batch.
+ *
+ * Post-review fix (must-fix #3): the `node.name = ...` write itself is also
+ * guarded, not just the deleted-node lookup above it. Figma throws renaming
+ * certain nodes (e.g. some instance sublayers, which extraction does reach)
+ * — previously that throw was UNCAUGHT, so it escaped this function, aborted
+ * the `for` loop before the remaining renames ran, and skipped the
+ * `post({type:"identity-applied", ...})` below entirely. The outer
+ * `handleMessage` catch then swallowed it as a generic `render-error`, and
+ * the UI's `isApplyPending` — set right before this message was sent — never
+ * saw an `identity-applied` reply to clear it, so the Apply buttons stayed
+ * disabled until the plugin window remounted. Catching per-item keeps the
+ * loop unconditional: every rename is attempted, and `identity-applied`
+ * always posts with the full applied/failed split.
  */
 function applyIdentityWriteback(
   renames: { figmaNodeId: string; durableId: string; newName: string }[],
@@ -1125,7 +1138,12 @@ function applyIdentityWriteback(
       failed.push({ durableId: rename.durableId, error: `node ${rename.figmaNodeId} not found` });
       continue;
     }
-    node.name = rename.newName;
+    try {
+      node.name = rename.newName;
+    } catch (err) {
+      failed.push({ durableId: rename.durableId, error: String(err) });
+      continue;
+    }
     applied.push({ durableId: rename.durableId, newName: rename.newName });
   }
 

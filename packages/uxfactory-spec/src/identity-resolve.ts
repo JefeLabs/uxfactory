@@ -24,7 +24,7 @@ import {
   type PaletteCollection,
   type ProvenancedValue,
 } from "./node-identity.js";
-import { normalizeCoordinateToken, type CoordinateAxis } from "./canonical-address.js";
+import { normalizeCoordinateToken, toKebabLabel, type CoordinateAxis } from "./canonical-address.js";
 
 // ─── viewport ───────────────────────────────────────────────────────────────
 
@@ -209,6 +209,17 @@ function isCoordinateNoise(segment: string, r: IdentityRegistries): boolean {
  * "version" — those belong in `coordinates`, not the path label. Mode/theme
  * tokens are deliberately KEPT (see `isCoordinateNoise`). Empty after
  * stripping → the lowercased `kind` ("FRAME" → "frame").
+ *
+ * Post-review fix (must-fix #1): the surviving segments are re-kebabbed
+ * through `toKebabLabel`, not just joined — a plain `kebabCase` join can
+ * still produce a `LABEL_RE`-invalid, digit-leading label ("404 Page" →
+ * "404-page"), which is used UNMODIFIED as a path segment in
+ * `identity-assemble.ts` and would throw the whole manifest assembly in
+ * `serializeAddress`. When `toKebabLabel` rejects the joined candidate (only
+ * possible via a leading digit — see `kebabCase` for why every other
+ * `LABEL_RE` failure mode is already structurally impossible here), this
+ * falls back to the lowercased `kind`, same as the empty-after-stripping
+ * case below — a `kind` like "frame"/"instance" is always `LABEL_RE`-valid.
  */
 export function deriveFallbackLabel(
   currentName: string,
@@ -227,14 +238,24 @@ export function deriveFallbackLabel(
     return true;
   });
   const strippedList = stripped.map((s) => `"${s}"`).join(", ");
+  const strippedNote = stripped.length > 0 ? `, stripping coordinate token(s) ${strippedList}` : "";
 
   if (kept.length > 0) {
-    const strippedNote = stripped.length > 0 ? `, stripping coordinate token(s) ${strippedList}` : "";
+    const joined = kept.join("-");
+    const label = toKebabLabel(joined);
+    if (label !== "") {
+      return {
+        label,
+        provenance: "inferred",
+        source: "prior-name",
+        reasoning: `kebabbed prior name "${currentName}"${strippedNote}`,
+      };
+    }
     return {
-      label: kept.join("-"),
+      label: kind.toLowerCase(),
       provenance: "inferred",
       source: "prior-name",
-      reasoning: `kebabbed prior name "${currentName}"${strippedNote}`,
+      reasoning: `kebabbed prior name "${currentName}"${strippedNote} produced "${joined}", which is not a valid path label (must start with a letter) — fell back to kind "${kind}"`,
     };
   }
 

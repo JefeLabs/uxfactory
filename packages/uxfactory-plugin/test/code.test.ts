@@ -1146,4 +1146,56 @@ describe("code.ts identity-apply (Task 14)", () => {
     expect(reply.applied).toEqual([]);
     expect(reply.failed).toEqual([]);
   });
+
+  // Post-review fix (must-fix #3): a per-item throw on `node.name = ...`
+  // (Figma throws renaming certain nodes, e.g. some instance sublayers) used
+  // to escape the `for` loop uncaught, skipping every remaining rename AND
+  // the `post({type:"identity-applied", ...})` call below it entirely — the
+  // UI's `isApplyPending` (set right before this message was sent) then
+  // never saw a reply to clear it, leaving the Apply buttons disabled until
+  // remount.
+  it("a node whose .name setter throws lands in failed[], the rest still land in applied[], and identity-applied still posts", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const poisoned = fig.createFrame();
+    fig.currentPage.appendChild(poisoned);
+    // Simulate Figma throwing on a rename it refuses (e.g. an instance
+    // sublayer) — a getter/setter pair standing in for the plain `name`
+    // field so the write itself throws.
+    let currentName = "Poisoned (old name)";
+    Object.defineProperty(poisoned, "name", {
+      get: () => currentName,
+      set: () => {
+        throw new Error("cannot rename this node");
+      },
+      configurable: true,
+    });
+
+    const healthy = fig.createFrame();
+    healthy.name = "Footer (old name)";
+    fig.currentPage.appendChild(healthy);
+
+    await fig.__send({
+      type: "identity-apply",
+      renames: [
+        { figmaNodeId: poisoned.id, durableId: "n-poisoned", newName: "poisoned@desktop" },
+        { figmaNodeId: healthy.id, durableId: "n-footer", newName: "footer@desktop" },
+      ],
+    });
+
+    // The loop was NOT aborted — the healthy rename after the throwing one
+    // still landed.
+    expect(healthy.name).toBe("footer@desktop");
+    expect(currentName).toBe("Poisoned (old name)"); // write never took effect
+
+    // identity-applied still posted (this is the crux of the bug: it
+    // previously never fired once the throw escaped the loop).
+    const reply = lastOfType(fig, "identity-applied")!;
+    expect(reply).toBeDefined();
+    expect(reply.applied).toEqual([{ durableId: "n-footer", newName: "footer@desktop" }]);
+    expect(reply.failed).toEqual([
+      { durableId: "n-poisoned", error: expect.stringContaining("cannot rename this node") },
+    ]);
+  });
 });

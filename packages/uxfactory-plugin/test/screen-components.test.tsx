@@ -711,6 +711,57 @@ describe("Scan identities", () => {
       ).toBeInTheDocument();
     });
   });
+
+  // Post-review fix (must-fix #4): the extraction route reads
+  // component-registry.json off disk, so firing the PUT and the extraction
+  // POST concurrently could race the POST against a PUT that hasn't
+  // committed yet, matching against a stale/empty registry. This proves the
+  // POST is genuinely BLOCKED on the PUT settling, not merely observed after
+  // it by coincidence — the PUT is held pending on a manually-controlled
+  // promise, and the POST is asserted not-yet-called across several
+  // microtask turns before the PUT is released.
+  it("must-fix #4: does not POST the extraction until the components PUT resolves", async () => {
+    const bus = makeBus();
+    let resolvePut: (() => void) | undefined;
+    const putIdentityComponents = vi.fn(
+      () =>
+        new Promise<{ ok: boolean }>((resolve) => {
+          resolvePut = () => resolve({ ok: true });
+        }),
+    );
+    const postIdentityExtraction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, count: 2, addresses: ["hero@mobile"] });
+    const bridge = makeBridge({ putIdentityComponents, postIdentityExtraction });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    const payload = makeIdentityExtractionPayload();
+    act(() => {
+      bus._fireIdentityExtraction(payload);
+    });
+
+    await waitFor(() => expect(putIdentityComponents).toHaveBeenCalledWith(payload.components));
+
+    // Give the microtask queue several turns — if the POST were still firing
+    // concurrently (the bug), it would have run by now.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(postIdentityExtraction).not.toHaveBeenCalled();
+
+    // Only once the PUT resolves does the POST fire.
+    await act(async () => {
+      resolvePut?.();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(postIdentityExtraction).toHaveBeenCalledWith(payload.extraction));
+  });
 });
 
 // ─── Root-tier identity crops (Task 9) ─────────────────────────────────────

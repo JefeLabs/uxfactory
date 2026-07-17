@@ -124,8 +124,13 @@ function isAxisMember(axis: CoordinateAxis, value: string, r: IdentityRegistries
  * .defaultToken` on the (first, declaration-order) collection tagged with
  * that axis for `mode`/`theme`, `StateRegistry.defaultState` for `state`.
  * `viewport` has no registry default (§3.3) and always returns `undefined`.
+ *
+ * Exported (post-review, must-fix #2) so `identity-assemble.ts`'s sibling-
+ * ordinal collision key can mirror this exact default-omission predicate
+ * instead of re-deriving it — the two must never drift, since collision
+ * grouping has to match what `serializeAddress` actually renders below.
  */
-function registryDefault(axis: "mode" | "theme" | "state", r: IdentityRegistries): string | undefined {
+export function registryDefault(axis: "mode" | "theme" | "state", r: IdentityRegistries): string | undefined {
   if (axis === "state") return r.states.defaultState;
   const paletteAxis: PaletteAxis = axis;
   for (const collection of r.palette.collections) {

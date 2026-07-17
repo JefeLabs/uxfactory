@@ -1148,3 +1148,159 @@ describe("assembleIdentities — page child with null width", () => {
     expect(widthless.address).toBe("widthless-root");
   });
 });
+
+// ─── post-review fix (must-fix #1): digit-leading composed/page labels ──────
+// A plain kebab of a digit-leading name ("404 Page" -> "404-page") fails
+// LABEL_RE (must start with a letter) and used to throw straight out of
+// `serializeAddress`, aborting the ENTIRE manifest assembly — not just the
+// one bad record. Both producers (deriveFallbackLabel's composed-node
+// fallback, resolvePageTier's page-tier label) must guarantee a
+// LABEL_RE-valid result.
+
+describe("assembleIdentities — must-fix #1: digit-leading composed node label does not throw", () => {
+  it('a composed node named "404 Page" assembles without throwing and produces a valid address', () => {
+    const registries = defaultIdentityRegistries();
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-home", name: "Home" },
+      pageCount: 1,
+      nodes: [
+        {
+          durableId: "n-404",
+          figmaNodeId: "f-404",
+          parentDurableId: null,
+          ordinal: 0,
+          kind: "FRAME",
+          width: 1440,
+          currentName: "404 Page",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: true,
+        },
+      ],
+    };
+
+    expect(() => assembleIdentities(extraction, registries, components)).not.toThrow();
+    const { records } = assembleIdentities(extraction, registries, components);
+    const rec = byId(records, "n-404");
+    // "404-page" fails LABEL_RE (leading digit) -> falls back to the kind ("frame").
+    expect(rec.path.at(-1)?.label).toBe("frame");
+    expect(rec.path.at(-1)?.label).toMatch(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/);
+    expect(rec.address).toBe("frame@desktop");
+  });
+});
+
+describe("assembleIdentities — must-fix #1: digit-leading page name (multi-page) does not throw", () => {
+  it('pageCount>1 with a digit-leading page name ("404 Prototypes") assembles instead of throwing in serializeAddress', () => {
+    const registries = defaultIdentityRegistries();
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-404", name: "404 Prototypes" },
+      pageCount: 2,
+      nodes: [
+        {
+          durableId: "n-section",
+          figmaNodeId: "f-section",
+          parentDurableId: null,
+          ordinal: 0,
+          kind: "FRAME",
+          width: 1440,
+          currentName: "Section",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: true,
+        },
+      ],
+    };
+
+    expect(() => assembleIdentities(extraction, registries, components)).not.toThrow();
+    const { records } = assembleIdentities(extraction, registries, components);
+    const section = byId(records, "n-section");
+    // "404-prototypes" fails LABEL_RE (leading digit) -> page tier falls back to "page".
+    expect(section.path[0]).toMatchObject({ label: "page" });
+    expect(section.path[0]?.label).toMatch(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/);
+    expect(section.address).toBe("page/section@desktop");
+  });
+});
+
+// ─── post-review fix (must-fix #2): ordinal key must be address-shaped ─────
+// `serializeAddress` OMITS a mode/theme/state coordinate equal to its axis's
+// registry default. Two same-label siblings — one with that coordinate
+// explicitly set to the default value, one with no coordinate on that axis
+// at all — render BYTE-IDENTICAL addresses. The ordinal collision key must
+// treat them as colliding (and assign an ordinal) instead of keying them
+// apart, or the two renders duplicate silently.
+
+describe("assembleIdentities — must-fix #2: ordinal key is address-shaped, not raw-coordinate-shaped", () => {
+  it("a sibling with state=<registry default> and a sibling with no state at all collide (get distinct ordinals) instead of rendering identical addresses", () => {
+    const registries = defaultIdentityRegistries(); // states: ["default","hover","focus","disabled"], defaultState "default"
+    const extraction: IdentityExtraction = {
+      version: 1,
+      page: { figmaNodeId: "page-home", name: "Home" },
+      pageCount: 1,
+      nodes: [
+        {
+          durableId: "n-section",
+          figmaNodeId: "f-section",
+          parentDurableId: null,
+          ordinal: 0,
+          kind: "FRAME",
+          width: 1440,
+          currentName: "Section",
+          resolvedModes: {},
+          mainComponent: null,
+          variantProperties: null,
+          isPageChild: true,
+        },
+        {
+          // No variant props at all -> no `state` coordinate.
+          durableId: "n-card-plain",
+          figmaNodeId: "f-card-plain",
+          parentDurableId: "n-section",
+          ordinal: 0,
+          kind: "INSTANCE",
+          width: null,
+          currentName: "Card",
+          resolvedModes: {},
+          mainComponent: { key: "card-key", name: "Card", remote: false },
+          variantProperties: null,
+          isPageChild: false,
+        },
+        {
+          // State explicitly "Default" -> normalizes to "default", the
+          // registry's default state value -> OMITTED on serialize, exactly
+          // like the sibling above that has no state coordinate at all.
+          durableId: "n-card-explicit-default",
+          figmaNodeId: "f-card-explicit-default",
+          parentDurableId: "n-section",
+          ordinal: 1,
+          kind: "INSTANCE",
+          width: null,
+          currentName: "Card",
+          resolvedModes: {},
+          mainComponent: { key: "card-key", name: "Card", remote: false },
+          variantProperties: { State: "Default" },
+          isPageChild: false,
+        },
+      ],
+    };
+
+    const { records } = assembleIdentities(extraction, registries, components);
+    const plain = byId(records, "n-card-plain");
+    const explicitDefault = byId(records, "n-card-explicit-default");
+
+    // Neither address carries a state coordinate (both are the default) —
+    // so without the fix they'd be byte-identical.
+    expect(plain.address).not.toContain("state");
+    expect(explicitDefault.address).not.toContain("state");
+    expect(plain.address).not.toBe(explicitDefault.address);
+
+    // First in document order carries no ordinal; the collider gets #2.
+    expect(plain.path.at(-1)?.ordinal).toBeUndefined();
+    expect(explicitDefault.path.at(-1)?.ordinal).toBe(2);
+    expect(plain.address).toBe("section/card@desktop");
+    expect(explicitDefault.address).toBe("section/card#2@desktop");
+  });
+});

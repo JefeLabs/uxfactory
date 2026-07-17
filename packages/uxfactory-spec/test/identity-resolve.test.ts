@@ -196,6 +196,32 @@ describe("deriveFallbackLabel", () => {
     expect(result.provenance).toBe("inferred");
     expect(result.source).toBe("prior-name");
   });
+
+  // ─── post-review fix (must-fix #1): digit-leading kebab is not LABEL_RE-valid ──
+
+  it('MUST-FIX #1: "404 Page" kebabs to a digit-leading candidate — falls back to lowercased kind, not "404-page"', () => {
+    const r = defaultIdentityRegistries();
+    const result = deriveFallbackLabel("404 Page", "FRAME", r);
+    // "404-page" fails LABEL_RE (must start with a letter); this must NEVER
+    // reach serializeAddress, which would throw and abort the whole manifest.
+    expect(result.label).toBe("frame");
+    expect(result.label).toMatch(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/);
+    expect(result.provenance).toBe("inferred");
+    expect(result.source).toBe("prior-name");
+  });
+
+  it('MUST-FIX #1: "3D Hero" (digit-leading after kebab-casing "3d") falls back to kind', () => {
+    const r = defaultIdentityRegistries();
+    const result = deriveFallbackLabel("3D Hero", "FRAME", r);
+    expect(result.label).toBe("frame");
+    expect(result.label).toMatch(/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/);
+  });
+
+  it('MUST-FIX #1: a trailing digit-leading segment ("Hero 42") is still LABEL_RE-valid ("hero-42") and is kept, not defaulted — only a LEADING digit forces the kind fallback', () => {
+    const r = defaultIdentityRegistries();
+    const result = deriveFallbackLabel("Hero 42", "FRAME", r);
+    expect(result.label).toBe("hero-42");
+  });
 });
 
 // ─── coordinatesFromVariantProps ────────────────────────────────────────────
