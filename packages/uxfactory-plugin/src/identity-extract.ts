@@ -21,6 +21,16 @@ export interface IdentitySourceNode {
   resolvedVariableModes?: Record<string, string>;
   mainComponent?: { key: string; name: string; remote: boolean } | null;
   variantProperties?: Record<string, string> | null;
+  /**
+   * The real Figma component key (`node.key`), present on COMPONENT/
+   * COMPONENT_SET nodes. The Task 4 Figma-side adapter populates this from
+   * `node.key`. `harvestComponents` uses it (falling back to `id` when
+   * absent) so a tree-walked definition and the `mainComponent.key` of
+   * instances pointing at it land under the SAME registry key — assembly
+   * matches `instance.mainComponent.key` against registry keys, so a
+   * definition and its instances must dedupe into one entry.
+   */
+  componentKey?: string;
   getPluginData(key: string): string;
   setPluginData(key: string, value: string): void;
 }
@@ -180,36 +190,63 @@ function roleNameFor(name: string, fallbackType: string): string {
 /**
  * Walks the tree collecting component definitions (a) COMPONENT/COMPONENT_SET
  * nodes found in the tree, and (b) the mainComponent of every INSTANCE.
- * Deduped by key (first occurrence wins), in walk order.
+ * Deduped by key.
+ *
+ * Definitions are always the authoritative source for a key: a tree-walked
+ * definition uses `componentKey ?? id` (real Figma component key when the
+ * adapter populated it, else the node id as a last resort), and an instance
+ * whose `mainComponent.key` resolves to the SAME key must dedupe into that
+ * one entry — never the other way around. Two passes make this true
+ * regardless of document order (an instance can appear before or after its
+ * own master component in the tree): pass 1 collects every definition
+ * unconditionally (first-definition-wins only guards the pathological case
+ * of two definitions sharing a key); pass 2 adds instance-derived entries
+ * only for keys no definition already claimed.
  */
 export function harvestComponents(pageChildren: IdentitySourceNode[]): ComponentTypeEntry[] {
   const byKey = new Map<string, ComponentTypeEntry>();
+  const definitionKeys = new Set<string>();
 
-  function add(key: string, name: string, fallbackType: string, remote: boolean): void {
-    if (byKey.has(key)) return;
-    byKey.set(key, {
-      key,
-      roleName: roleNameFor(name, fallbackType),
-      source: remote ? "figma-library" : "figma-document",
-      matchability: "matchable",
-    });
-  }
-
-  function walk(node: IdentitySourceNode): void {
+  function walkDefinitions(node: IdentitySourceNode): void {
     if (node.type === "COMPONENT" || node.type === "COMPONENT_SET") {
-      add(node.id, node.name, node.type, false);
-    }
-    if (node.type === "INSTANCE" && node.mainComponent) {
-      const mc = node.mainComponent;
-      add(mc.key, mc.name, "COMPONENT", mc.remote);
+      const key = node.componentKey ?? node.id;
+      if (!definitionKeys.has(key)) {
+        definitionKeys.add(key);
+        byKey.set(key, {
+          key,
+          roleName: roleNameFor(node.name, node.type),
+          source: "figma-document",
+          matchability: "matchable",
+        });
+      }
     }
     for (const child of node.children ?? []) {
-      walk(child);
+      walkDefinitions(child);
+    }
+  }
+
+  function walkInstances(node: IdentitySourceNode): void {
+    if (node.type === "INSTANCE" && node.mainComponent) {
+      const mc = node.mainComponent;
+      if (!byKey.has(mc.key)) {
+        byKey.set(mc.key, {
+          key: mc.key,
+          roleName: roleNameFor(mc.name, "COMPONENT"),
+          source: mc.remote ? "figma-library" : "figma-document",
+          matchability: "matchable",
+        });
+      }
+    }
+    for (const child of node.children ?? []) {
+      walkInstances(child);
     }
   }
 
   for (const root of pageChildren) {
-    walk(root);
+    walkDefinitions(root);
+  }
+  for (const root of pageChildren) {
+    walkInstances(root);
   }
 
   return Array.from(byKey.values());

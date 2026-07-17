@@ -22,6 +22,7 @@ interface NodeSpec {
   mainComponent?: { key: string; name: string; remote: boolean } | null;
   variantProperties?: Record<string, string> | null;
   pluginData?: Record<string, string>;
+  componentKey?: string;
 }
 
 function buildNode(spec: NodeSpec): IdentitySourceNode {
@@ -35,6 +36,7 @@ function buildNode(spec: NodeSpec): IdentitySourceNode {
     resolvedVariableModes: spec.resolvedVariableModes,
     mainComponent: spec.mainComponent,
     variantProperties: spec.variantProperties,
+    componentKey: spec.componentKey,
     getPluginData(key: string): string {
       return store.get(key) ?? "";
     },
@@ -406,6 +408,53 @@ describe("harvestComponents — collects definitions + instance mainComponents",
     const entries = harvestComponents(tree.map(buildNode));
     expect(entries).toHaveLength(1);
     expect(entries[0]!.key).toBe("shared-key");
+  });
+
+  it("dedupes a definition (componentKey) and an instance pointing at it into one entry, keeping the definition's fields", () => {
+    const tree: NodeSpec[] = [
+      { id: "def-node-id", name: "Card/Elevated", type: "COMPONENT", componentKey: "real-figma-key" },
+      {
+        id: "inst1",
+        name: "Card instance",
+        type: "INSTANCE",
+        // A remote/renamed mainComponent view of the SAME component — if the
+        // instance-derived entry won, source would wrongly read
+        // "figma-library" and roleName would read "renamed". The
+        // definition must win: source "figma-document", roleName "card".
+        mainComponent: { key: "real-figma-key", name: "Renamed/Elsewhere", remote: true },
+      },
+    ];
+    const entries = harvestComponents(tree.map(buildNode));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual({
+      key: "real-figma-key",
+      roleName: "card",
+      source: "figma-document",
+      matchability: "matchable",
+    });
+  });
+
+  it("dedupes regardless of visit order — instance appears before its own definition in doc order", () => {
+    const tree: NodeSpec[] = [
+      {
+        id: "inst1",
+        name: "Card instance",
+        type: "INSTANCE",
+        mainComponent: { key: "shared-real-key", name: "Card", remote: false },
+      },
+      { id: "def-node-id", name: "Card", type: "COMPONENT", componentKey: "shared-real-key" },
+    ];
+    const entries = harvestComponents(tree.map(buildNode));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.key).toBe("shared-real-key");
+    expect(entries[0]!.source).toBe("figma-document");
+  });
+
+  it("falls back to node id as the key when a COMPONENT has no componentKey", () => {
+    const tree: NodeSpec[] = [{ id: "no-key-node", name: "Card", type: "COMPONENT" }];
+    const entries = harvestComponents(tree.map(buildNode));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.key).toBe("no-key-node");
   });
 
   it("walks nested subtrees to find components and instances at any depth", () => {
