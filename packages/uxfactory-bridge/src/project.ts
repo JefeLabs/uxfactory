@@ -8,6 +8,11 @@
  *   PUT  /project/profile
  *   GET  /project/links
  *   PUT  /project/links
+ *   GET  /project/identity/registries
+ *   PUT  /project/identity/registries
+ *   GET  /project/identity/components
+ *   PUT  /project/identity/components
+ *   GET  /project/identity/manifest
  *   GET  /project/artifact
  *   PUT  /project/artifact
  *   POST /project/open
@@ -32,7 +37,8 @@ import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
-import { parseStoryFile, storyToEngine } from "@uxfactory/spec";
+import { parseStoryFile, storyToEngine, defaultIdentityRegistries, validateIdentityRegistries } from "@uxfactory/spec";
+import type { IdentityRegistries, ComponentRegistry, NodeManifest } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
 import type { WorkerPresenceEntry, ManagedInfo } from "./worker-presence.js";
 
@@ -1088,6 +1094,84 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       await mkdir(ctx.dataDir, { recursive: true });
       await writeFile(linksPath, `${JSON.stringify(links, null, 2)}\n`, "utf8");
       return { ok: true };
+    },
+  );
+
+  // ── GET /project/identity/registries ─────────────────────────────────────
+  app.get<{ Querystring: { root?: string } }>(
+    "/project/identity/registries",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const registriesPath = path.join(ctx.dataDir, "identity-registries.json");
+      try {
+        const raw = await readFile(registriesPath, "utf8");
+        return { registries: JSON.parse(raw) as IdentityRegistries };
+      } catch {
+        return { registries: defaultIdentityRegistries() };
+      }
+    },
+  );
+
+  // ── PUT /project/identity/registries ─────────────────────────────────────
+  app.put<{ Querystring: { root?: string }; Body: { registries?: unknown } }>(
+    "/project/identity/registries",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const result = validateIdentityRegistries(req.body?.registries);
+      if (!result.ok) {
+        return reply.code(400).send({ errors: result.errors });
+      }
+      const registriesPath = path.join(ctx.dataDir, "identity-registries.json");
+      await mkdir(ctx.dataDir, { recursive: true });
+      await writeFile(registriesPath, `${JSON.stringify(result.value, null, 2)}\n`, "utf8");
+      return { ok: true };
+    },
+  );
+
+  // ── GET /project/identity/components ─────────────────────────────────────
+  app.get<{ Querystring: { root?: string } }>(
+    "/project/identity/components",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const componentsPath = path.join(ctx.dataDir, "component-registry.json");
+      try {
+        const raw = await readFile(componentsPath, "utf8");
+        return JSON.parse(raw) as ComponentRegistry;
+      } catch {
+        return { version: 1, components: [] } as ComponentRegistry;
+      }
+    },
+  );
+
+  // ── PUT /project/identity/components ──────────────────────────────────────
+  app.put<{ Querystring: { root?: string }; Body: ComponentRegistry }>(
+    "/project/identity/components",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const componentsPath = path.join(ctx.dataDir, "component-registry.json");
+      await mkdir(ctx.dataDir, { recursive: true });
+      await writeFile(componentsPath, `${JSON.stringify(req.body, null, 2)}\n`, "utf8");
+      return { ok: true };
+    },
+  );
+
+  // ── GET /project/identity/manifest ───────────────────────────────────────
+  app.get<{ Querystring: { root?: string } }>(
+    "/project/identity/manifest",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const manifestPath = path.join(ctx.dataDir, "node-manifest.json");
+      try {
+        const raw = await readFile(manifestPath, "utf8");
+        return JSON.parse(raw) as NodeManifest;
+      } catch {
+        return { version: 1, records: {} } as NodeManifest;
+      }
     },
   );
 
