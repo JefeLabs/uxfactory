@@ -1,5 +1,6 @@
 import { TransportError } from "./exit.js";
 import type { RenderReport } from "@uxfactory/bridge";
+import type { IdentityProposal, NodeManifest } from "@uxfactory/spec";
 
 /**
  * Opaque canvas review request as relayed by the bridge (§14.2).
@@ -98,6 +99,35 @@ export class BridgeClient {
     if (res.status !== 200) {
       throw new TransportError(`bridge rejected the review report (HTTP ${res.status})`);
     }
+  }
+
+  /** GET /project/identity/manifest[?root=] → the node-identity manifest. Throws TransportError on transport/non-200. */
+  async getIdentityManifest(root?: string): Promise<{ manifest: NodeManifest }> {
+    const qs = root !== undefined && root.trim() !== "" ? `?root=${encodeURIComponent(root)}` : "";
+    const res = await this.request(`/project/identity/manifest${qs}`, { method: "GET" });
+    if (res.status !== 200) {
+      throw new TransportError(`bridge rejected the manifest request (HTTP ${res.status})`);
+    }
+    return (await this.json(res)) as { manifest: NodeManifest };
+  }
+
+  /**
+   * POST /project/identity/proposals[?root=] → merge vision proposals into the
+   * manifest. Returns the raw HTTP status + parsed body (a 400 carries
+   * `{ errors }`, a 200 carries `{ applied, skipped }`) so the command can
+   * report either. Throws TransportError only on a network failure.
+   */
+  async postIdentityProposals(
+    proposals: IdentityProposal[],
+    root?: string,
+  ): Promise<{ status: number; body: unknown }> {
+    const qs = root !== undefined && root.trim() !== "" ? `?root=${encodeURIComponent(root)}` : "";
+    const res = await this.request(`/project/identity/proposals${qs}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ proposals }),
+    });
+    return { status: res.status, body: await this.json(res) };
   }
 
   private async request(routePath: string, init: RequestInit): Promise<Response> {

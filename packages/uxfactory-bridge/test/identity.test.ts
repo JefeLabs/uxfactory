@@ -32,6 +32,8 @@ import type {
   ComponentTypeEntry,
   ExtractedNode,
   IdentityExtraction,
+  IdentityProposal,
+  NodeIdentityRecord,
   NodeManifest,
 } from "@uxfactory/spec";
 import { createBridge } from "../src/server.js";
@@ -695,5 +697,299 @@ describe("POST /project/identity/crops", () => {
 
     // Nothing written — the crops dir was never even created.
     await expect(access(path.join(dataDir, "identity", "crops"))).rejects.toThrow();
+  });
+});
+
+// ─── POST /project/identity/proposals ─────────────────────────────────────────
+// Task 10, Phase 3: merges the node-identity worker skill's vision proposals
+// into node-manifest.json as INFERRED (never settled — skill §D).
+
+/** A minimal composed record: inferred, un-confirmed last segment. */
+function composedRecord(durableId: string, label: string): NodeIdentityRecord {
+  return {
+    durableId,
+    figmaNodeId: `f-${durableId}`,
+    address: `${label}@desktop`,
+    scope: ["home"],
+    path: [{ label, provenance: "inferred", source: "prior-name" }],
+    coordinates: { viewport: { value: "desktop", provenance: "derived", source: "structure" } },
+    kind: "FRAME",
+    pathRoleDefault: "section",
+    isDefinition: false,
+    matchability: "composed",
+    composition: [],
+    currentName: label,
+    updatedAt: "2020-01-01T00:00:00.000Z",
+  };
+}
+
+/** A record whose last path segment is user-confirmed — the protected case. */
+function confirmedRecord(durableId: string, label: string): NodeIdentityRecord {
+  const rec = composedRecord(durableId, label);
+  rec.path = [{ label, provenance: "inferred", source: "prior-name", confirmed: true }];
+  return rec;
+}
+
+/** A record eligible for a closed-set component match (currently unmatched/composed). */
+function matchableRecord(durableId: string, label: string): NodeIdentityRecord {
+  const rec = composedRecord(durableId, label);
+  rec.path = [{ label, provenance: "inferred", source: "prior-name" }];
+  return rec;
+}
+
+async function writeManifest(dataDir: string, records: NodeIdentityRecord[]): Promise<void> {
+  const manifest: NodeManifest = {
+    version: 1,
+    records: Object.fromEntries(records.map((r) => [r.durableId, r])),
+  };
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(path.join(dataDir, "node-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
+const buttonEntry: ComponentTypeEntry = {
+  key: "button-key",
+  roleName: "button",
+  source: "figma-document",
+  matchability: "matchable",
+};
+
+describe("POST /project/identity/proposals", () => {
+  beforeEach(async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/project/identity/components",
+      payload: { components: [buttonEntry] },
+    });
+  });
+
+  it("applies a label proposal to an un-confirmed composed record: last segment + reasoning + re-serialized address", async () => {
+    await writeManifest(dataDir, [composedRecord("n-hero", "hero-old")]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-hero",
+        label: "hero-banner",
+        confidence: "high",
+        reasoning: "Large lead section with a headline and a single CTA.",
+      },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ applied: 1, skipped: 0 });
+
+    const manifest = await readManifest(dataDir);
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.path).toEqual([
+      { label: "hero-banner", provenance: "inferred", source: "vision", confirmed: false },
+    ]);
+    expect(hero.reasoning).toContain("Large lead section with a headline and a single CTA.");
+    expect(hero.reasoning).toContain("high");
+    // Address re-serialized from the NEW label + existing coordinates.
+    expect(hero.address).toBe("hero-banner@desktop");
+  });
+
+  it("SKIPS a label proposal when the current last segment is confirmed:true — no overwrite", async () => {
+    await writeManifest(dataDir, [confirmedRecord("n-hero", "custom-hero")]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-hero",
+        label: "hero-banner",
+        confidence: "high",
+        reasoning: "Should never apply — the user already confirmed a label.",
+      },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.path).toEqual([
+      { label: "custom-hero", provenance: "inferred", source: "prior-name", confirmed: true },
+    ]);
+    expect(hero.address).toBe("custom-hero@desktop");
+    expect(hero.reasoning).toBeUndefined();
+  });
+
+  it("SKIPS a label proposal when the current last segment provenance is elicited — no overwrite", async () => {
+    const rec = composedRecord("n-hero", "elicited-hero");
+    rec.path = [{ label: "elicited-hero", provenance: "elicited", source: "user" }];
+    await writeManifest(dataDir, [rec]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-hero", label: "hero-banner", confidence: "low", reasoning: "Should not apply." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.path[0]!.label).toBe("elicited-hero");
+  });
+
+  it("matchedComponentKey sets definitionRef + label from the registry roleName + resolutionStatus (default 'bound')", async () => {
+    await writeManifest(dataDir, [matchableRecord("n-button", "button-old")]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-button",
+        matchedComponentKey: "button-key",
+        confidence: "high",
+        reasoning: "Pixel-identical to the registered button primary variant.",
+      },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 1, skipped: 0 });
+
+    const manifest = await readManifest(dataDir);
+    const button = manifest.records["n-button"]!;
+    expect(button.path[0]).toMatchObject({ label: "button", provenance: "inferred", source: "vision", confirmed: false });
+    expect(button.definitionRef).toBe("button-key");
+    expect(button.resolutionStatus).toBe("bound");
+    expect(button.address).toBe("button@desktop");
+  });
+
+  it("matchedComponentKey honors an explicit resolutionStatus (e.g. 'drifted')", async () => {
+    await writeManifest(dataDir, [matchableRecord("n-button", "button-old")]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-button",
+        matchedComponentKey: "button-key",
+        resolutionStatus: "drifted",
+        confidence: "high",
+        reasoning: "Looks like a detached, hand-rebuilt copy of the registered button.",
+      },
+    ];
+    await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-button"]!.resolutionStatus).toBe("drifted");
+  });
+
+  it("a matchedComponentKey with no matching registry entry is a no-op (skipped)", async () => {
+    await writeManifest(dataDir, [matchableRecord("n-button", "button-old")]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-button",
+        matchedComponentKey: "no-such-key",
+        confidence: "high",
+        reasoning: "Unresolvable key.",
+      },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-button"]!.definitionRef).toBeUndefined();
+    expect(manifest.records["n-button"]!.path[0]!.label).toBe("button-old");
+  });
+
+  it("fills mode ONLY when the axis is currently absent; leaves an existing axis untouched", async () => {
+    const withoutMode = composedRecord("n-nomode", "section-a");
+    const withMode = composedRecord("n-withmode", "section-b");
+    withMode.coordinates.mode = { value: "light", provenance: "derived", source: "structure" };
+    await writeManifest(dataDir, [withoutMode, withMode]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-nomode", mode: "dark", confidence: "low", reasoning: "Dark background, light text." },
+      { durableId: "n-withmode", mode: "dark", confidence: "low", reasoning: "Should not overwrite." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 1, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const filled = manifest.records["n-nomode"]!;
+    expect(filled.coordinates.mode).toEqual({
+      value: "dark",
+      provenance: "inferred",
+      source: "vision",
+      confidence: "low",
+      confirmed: false,
+    });
+    expect(filled.address).toBe("section-a@desktop@dark");
+
+    const untouched = manifest.records["n-withmode"]!;
+    expect(untouched.coordinates.mode).toEqual({ value: "light", provenance: "derived", source: "structure" });
+    expect(untouched.address).toBe("section-b@desktop"); // unchanged — the whole proposal was a no-op
+  });
+
+  it("fills theme ONLY when the axis is currently absent", async () => {
+    await writeManifest(dataDir, [composedRecord("n-theme", "section-c")]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-theme", theme: "students", confidence: "high", reasoning: "Orange accent throughout." },
+    ];
+    await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-theme"]!.coordinates.theme).toEqual({
+      value: "students",
+      provenance: "inferred",
+      source: "vision",
+      confidence: "high",
+      confirmed: false,
+    });
+  });
+
+  it("a durableId absent from the manifest is skipped (no error)", async () => {
+    await writeManifest(dataDir, []);
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-ghost", label: "ghost", confidence: "high", reasoning: "No such record." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+  });
+
+  it("a mixed batch reports combined applied/skipped counts", async () => {
+    await writeManifest(dataDir, [
+      composedRecord("n-a", "section-a"),
+      confirmedRecord("n-b", "section-b"),
+      matchableRecord("n-c", "section-c"),
+    ]);
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-a", label: "hero", confidence: "high", reasoning: "r1" },
+      { durableId: "n-b", label: "hero", confidence: "high", reasoning: "r2 (should skip)" },
+      { durableId: "n-c", matchedComponentKey: "button-key", confidence: "high", reasoning: "r3" },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 2, skipped: 1 });
+  });
+
+  it.each([
+    ["missing proposals key", {}],
+    ["null body", null],
+    ["proposals not an array", { proposals: "nope" }],
+    ["entry missing durableId", { proposals: [{ confidence: "high", reasoning: "x" }] }],
+    ["entry missing confidence", { proposals: [{ durableId: "n-a", reasoning: "x" }] }],
+    ["entry with invalid confidence", { proposals: [{ durableId: "n-a", confidence: "medium", reasoning: "x" }] }],
+    ["entry missing reasoning", { proposals: [{ durableId: "n-a", confidence: "high" }] }],
+    [
+      "entry with invalid resolutionStatus",
+      {
+        proposals: [
+          { durableId: "n-a", confidence: "high", reasoning: "x", resolutionStatus: "nope" },
+        ],
+      },
+    ],
+  ])("POST with malformed body (%s) replies 400 and persists nothing", async (_label, payload) => {
+    await writeManifest(dataDir, [composedRecord("n-a", "section-a")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/proposals",
+      payload: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { errors: string[] };
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors.length).toBeGreaterThan(0);
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
   });
 });

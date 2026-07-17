@@ -145,6 +145,37 @@ export interface NodeManifest {
   records: Record<string, NodeIdentityRecord>;
 }
 
+// ─── Phase 3: vision interpretation proposals ───────────────────────────────
+
+/**
+ * One vision-derived proposal for a single manifest record, produced by the
+ * `node-identity` worker SKILL (skill/node-identity/SKILL.md) and posted to
+ * the bridge (`POST /project/identity/proposals`) for merge. Every field the
+ * skill can propose is optional EXCEPT `confidence` and `reasoning` — per
+ * node-identity-interpretation.SKILL.md §D, an Inferred value is never
+ * emitted without both a confidence signal and a teaching-surface reason.
+ * The bridge merges a proposal as INFERRED (never settled) — see
+ * project.ts's proposals route for the exact merge rules.
+ */
+export interface IdentityProposal {
+  /** The manifest record this proposal targets (NodeIdentityRecord.durableId). */
+  durableId: string;
+  /** Open-vocab semantic label for a COMPOSED section (§A2) — e.g. "pricing-table". */
+  label?: string;
+  /** Closed-set match against the component registry — a BINDING proposal (§C), not a name. */
+  matchedComponentKey?: string;
+  /** Mode-axis fallback token — proposed ONLY when the record's mode axis is absent. */
+  mode?: string;
+  /** Theme-axis fallback token — proposed ONLY when the record's theme axis is absent. */
+  theme?: string;
+  /** §C resolution status for a matchedComponentKey proposal (default "bound" when omitted). */
+  resolutionStatus?: "bound" | "drifted" | "custom";
+  /** How sure the vision step is — low confidence still surfaces, never auto-settles either way. */
+  confidence: "high" | "low";
+  /** Teaching-surface: why this proposal was made. */
+  reasoning: string;
+}
+
 // ─── defaults ────────────────────────────────────────────────────────────────
 
 /** The out-of-the-box registries: standard 3-band breakpoints, no palette axes, default state list. */

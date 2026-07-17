@@ -21,6 +21,7 @@ import { classifyCmd } from "./commands/classify.js";
 import { migrateStoriesCmd } from "./commands/migrate-stories.js";
 import { validateArtifactCmd } from "./commands/validate-artifact.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
+import { identityProposeCmd, identityShowCmd } from "./commands/identity.js";
 // renderCmd, bridgeCmd, workerCmd, and upCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call;
@@ -484,6 +485,35 @@ export function buildProgram(): Command {
     .action(async (report: string, opts: { bridge?: string }) => {
       const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
       lastCode = await canvasPostCmd(report, consoleIO, client);
+    });
+
+  // ---- identity command group (node-identity Phase 3: vision proposals) ----
+  const identity = program
+    .command("identity")
+    .description("Node-identity manifest commands (vision proposals / observability)");
+
+  identity
+    .command("propose <file>")
+    .description(
+      "Parse a proposals JSON file ({ proposals: IdentityProposal[] }) and POST it to the " +
+        "bridge for merge (the node-identity worker skill's output — never a model call here)",
+    )
+    .option("--bridge <url>", "bridge base URL")
+    .option("--root <path>", "project root (?root= — default: the bridge's launch root)")
+    .action(async (file: string, opts: { bridge?: string; root?: string }) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await identityProposeCmd(file, { root: opts.root }, consoleIO, client);
+    });
+
+  identity
+    .command("show")
+    .description("Print the node-identity manifest: an addresses table, or the full JSON (--json)")
+    .option("--json", "machine-readable output (the full manifest)")
+    .option("--bridge <url>", "bridge base URL")
+    .option("--root <path>", "project root (?root= — default: the bridge's launch root)")
+    .action(async (opts: { json?: boolean; bridge?: string; root?: string }) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await identityShowCmd({ json: opts.json, root: opts.root }, consoleIO, client);
     });
 
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [

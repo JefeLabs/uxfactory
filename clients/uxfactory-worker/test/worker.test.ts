@@ -546,6 +546,9 @@ describe('generative branch routing', () => {
     }
     expect(isDeterministic('generate-artifact')).toBe(false);
     expect(isDeterministic('canvas-review')).toBe(false);
+    // identity-interpret (Phase 3 vision) is a generative kind (skill-driven), NOT a
+    // deterministic CLI handler — it routes to runGenerative by absence from DETERMINISTIC.
+    expect(isDeterministic('identity-interpret')).toBe(false);
     // generate-design is a generative kind (skill-driven), NOT a deterministic CLI handler.
     expect(isDeterministic('generate-design')).toBe(false);
   });
@@ -1296,6 +1299,25 @@ describe('runGenerative', () => {
     expect(adapter.lastInput?.messages[0]?.content).toMatch(/review the pending canvas/i);
     expect(out.status).toBe(0);
     // canvas-review has no artifact path.
+    expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
+  });
+
+  it('identity-interpret: uses the node-identity skill + an IO-contract-referencing instruction', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+
+    const out = await runGenerative(
+      { id: 'pr_ii', kind: 'identity-interpret', payload: { root: projectRoot }, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('node-identity'));
+    const user = adapter.lastInput?.messages[0]?.content as string;
+    expect(user).toMatch(/identity propose identity-proposals\.json/);
+    expect(out.status).toBe(0);
+    // identity-interpret has no artifact path (mirrors canvas-review).
     expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
   });
 

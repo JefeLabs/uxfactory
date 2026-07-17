@@ -6,6 +6,10 @@
  *   - `generate-artifact` → the `generate` skill: draft ONE UX artifact for a
  *     classification + project and write it to the registry's expected path.
  *   - `canvas-review`      → the `vision-review` skill: review the pending canvas.
+ *   - `identity-interpret` → the `node-identity` skill (Phase 3): propose
+ *     labels / component matches / mode-theme fallbacks for the project's
+ *     node-identity manifest from its registries + root-tier crops, then
+ *     `uxfactory identity propose` them to the bridge for merge.
  *   - `generate-design`    → the `design` skill: author self-contained
  *     `design/screens/<page>.html` screens + a `design/trace.json` coverage
  *     manifest covering the stories, then iterate the deterministic
@@ -1327,6 +1331,21 @@ function planGenerative(
     return {
       systemPrompt: loadSkill('vision-review'),
       user: 'Review the pending canvas request; post the best-effort report.',
+    };
+  }
+
+  if (req.kind === 'identity-interpret') {
+    // Phase 3 (vision interpretation): the payload's `root` is informational
+    // only — ctx.projectRoot (already the sandboxed working directory, per
+    // ensureSkillPermissions above) is what the skill actually operates in,
+    // matching every other skill's "Work in ${ctx.projectRoot}" convention.
+    return {
+      systemPrompt: loadSkill('node-identity'),
+      user:
+        'Interpret this project\'s node-identity manifest per the skill\'s IO contract: read the ' +
+        'registries, component registry, and root-tier crops, propose labels / component matches / ' +
+        'axis fallbacks for every in-scope page-child record, then run ' +
+        '`uxfactory identity propose identity-proposals.json` to post them.',
     };
   }
 

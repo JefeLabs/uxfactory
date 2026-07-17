@@ -80,6 +80,7 @@ export type {
   Coordinates,
   ExtractedNode,
   IdentityExtraction,
+  IdentityProposal,
   IdentityRegistries,
   Matchability,
   NodeIdentityRecord,

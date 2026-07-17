@@ -20,7 +20,14 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** The skills the worker may run as a systemPrompt. */
-export type SkillName = 'generate' | 'vision-review' | 'intake' | 'batch' | 'design' | 'craft-review';
+export type SkillName =
+  | 'generate'
+  | 'vision-review'
+  | 'intake'
+  | 'batch'
+  | 'design'
+  | 'craft-review'
+  | 'node-identity';
 
 /** Resolve `<repo>/skill/<name>/SKILL.md` from this module's location. */
 function skillPath(name: SkillName): string {

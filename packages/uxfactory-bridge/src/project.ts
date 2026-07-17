@@ -15,6 +15,7 @@
  *   GET  /project/identity/manifest
  *   POST /project/identity/extraction
  *   POST /project/identity/crops
+ *   POST /project/identity/proposals
  *   GET  /project/artifact
  *   PUT  /project/artifact
  *   POST /project/open
@@ -45,14 +46,20 @@ import {
   defaultIdentityRegistries,
   validateIdentityRegistries,
   assembleIdentities,
+  serializeAddress,
 } from "@uxfactory/spec";
 import type {
   IdentityRegistries,
   ComponentRegistry,
   ComponentTypeEntry,
   NodeManifest,
+  NodeIdentityRecord,
   IdentityExtraction,
   ExtractedNode,
+  IdentityProposal,
+  Coordinates,
+  CanonicalAddress,
+  AddressCoordinates,
 } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
 import type { WorkerPresenceEntry, ManagedInfo } from "./worker-presence.js";
@@ -1074,6 +1081,165 @@ function validateCropsBody(
   return { ok: true, crops };
 }
 
+// ─── Node identity: proposals wire-shape validation ─────────────────────────
+// Same defensive posture as the three validators above: collect only the
+// fields the merge below actually needs to get right, fail the WHOLE request
+// on any violation (never partial-apply), and require exactly durableId +
+// confidence + reasoning on every entry — the skill's IO contract (skill/
+// node-identity/SKILL.md) never emits a proposal without them (§D: "never
+// emit an Inferred value without a confirm gate").
+
+const CONFIDENCE_VALUES = new Set(["high", "low"]);
+const RESOLUTION_STATUS_VALUES = new Set(["bound", "drifted", "custom"]);
+
+function validateProposalsBody(
+  body: unknown,
+): { ok: true; proposals: IdentityProposal[] } | { ok: false; errors: string[] } {
+  const proposalsRaw = isPlainObject(body) ? body["proposals"] : undefined;
+  if (!Array.isArray(proposalsRaw)) {
+    return { ok: false, errors: ['"proposals" must be an array'] };
+  }
+
+  const errors: string[] = [];
+  const proposals: IdentityProposal[] = [];
+  proposalsRaw.forEach((raw, i) => {
+    if (!isPlainObject(raw)) {
+      errors.push(`proposals[${i}] must be an object`);
+      return;
+    }
+    if (typeof raw["durableId"] !== "string" || raw["durableId"].trim() === "") {
+      errors.push(`proposals[${i}].durableId must be a non-empty string`);
+      return;
+    }
+    if (!CONFIDENCE_VALUES.has(raw["confidence"] as string)) {
+      errors.push(`proposals[${i}].confidence must be "high" or "low"`);
+      return;
+    }
+    if (typeof raw["reasoning"] !== "string") {
+      errors.push(`proposals[${i}].reasoning must be a string`);
+      return;
+    }
+    if (raw["label"] !== undefined && typeof raw["label"] !== "string") {
+      errors.push(`proposals[${i}].label must be a string when present`);
+      return;
+    }
+    if (raw["matchedComponentKey"] !== undefined && typeof raw["matchedComponentKey"] !== "string") {
+      errors.push(`proposals[${i}].matchedComponentKey must be a string when present`);
+      return;
+    }
+    if (raw["mode"] !== undefined && typeof raw["mode"] !== "string") {
+      errors.push(`proposals[${i}].mode must be a string when present`);
+      return;
+    }
+    if (raw["theme"] !== undefined && typeof raw["theme"] !== "string") {
+      errors.push(`proposals[${i}].theme must be a string when present`);
+      return;
+    }
+    if (
+      raw["resolutionStatus"] !== undefined &&
+      !RESOLUTION_STATUS_VALUES.has(raw["resolutionStatus"] as string)
+    ) {
+      errors.push(
+        `proposals[${i}].resolutionStatus must be "bound" | "drifted" | "custom" when present`,
+      );
+      return;
+    }
+    proposals.push(raw as unknown as IdentityProposal);
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, proposals };
+}
+
+// ─── Node identity: proposals merge (Task 10, Phase 3: vision interpretation) ─
+// Merges one IdentityProposal into a manifest record as INFERRED — never
+// settled (skill §D). `label` (open-vocab, composed sections) and
+// `matchedComponentKey` (closed-set binding, §C) both mutate the SAME
+// surface: the record's LAST path segment (its own label) — so both are
+// guarded identically by the confirm gate: a last segment that is already
+// `confirmed: true` or `provenance: "elicited"` is user-ratified and NEVER
+// overwritten by a vision proposal, of either kind. `mode`/`theme` only fill
+// an axis that is currently ABSENT on the record — an existing derived/bound
+// axis is never overwritten, however it was resolved. `confidence` has no
+// field on PathSegment (a frozen shape — see node-identity.ts), so for a
+// label change it is folded into the record-level `reasoning` teaching
+// surface instead; coordinates DO carry `confidence` natively (ProvenancedValue).
+
+function toAddressCoordinates(c: Coordinates): AddressCoordinates {
+  return {
+    ...(c.viewport !== undefined ? { viewport: c.viewport.value } : {}),
+    ...(c.mode !== undefined ? { mode: c.mode.value } : {}),
+    ...(c.theme !== undefined ? { theme: c.theme.value } : {}),
+    ...(c.state !== undefined ? { state: c.state.value } : {}),
+  };
+}
+
+/** Apply one proposal to `record` in place; returns true iff anything changed. */
+function applyIdentityProposal(
+  record: NodeIdentityRecord,
+  proposal: IdentityProposal,
+  components: ComponentRegistry,
+): boolean {
+  let changed = false;
+  const lastSeg = record.path[record.path.length - 1];
+  const guarded = lastSeg !== undefined && (lastSeg.confirmed === true || lastSeg.provenance === "elicited");
+  const reasoningNote = `${proposal.reasoning} [vision confidence: ${proposal.confidence}]`;
+
+  // Open-vocab semantic label (composed sections) — §A2/§B2.
+  if (proposal.label !== undefined && lastSeg !== undefined && !guarded) {
+    lastSeg.label = proposal.label;
+    lastSeg.provenance = "inferred";
+    lastSeg.source = "vision";
+    lastSeg.confirmed = false;
+    record.reasoning = reasoningNote;
+    changed = true;
+  }
+
+  // Closed-set component match — a BINDING proposal, not a name (§C).
+  if (proposal.matchedComponentKey !== undefined && !guarded) {
+    const entry = components.components.find((c) => c.key === proposal.matchedComponentKey);
+    if (entry !== undefined) {
+      if (lastSeg !== undefined) {
+        lastSeg.label = entry.roleName;
+        lastSeg.provenance = "inferred";
+        lastSeg.source = "vision";
+        lastSeg.confirmed = false;
+      }
+      record.definitionRef = proposal.matchedComponentKey;
+      record.resolutionStatus = proposal.resolutionStatus ?? "bound";
+      record.reasoning = reasoningNote;
+      changed = true;
+    }
+  }
+
+  // Mode/theme fallback — ONLY when that axis is currently absent (never
+  // overwrite a derived/bound axis, however it was resolved).
+  if (proposal.mode !== undefined && record.coordinates.mode === undefined) {
+    record.coordinates.mode = {
+      value: proposal.mode,
+      provenance: "inferred",
+      source: "vision",
+      confidence: proposal.confidence,
+      confirmed: false,
+    };
+    changed = true;
+  }
+  if (proposal.theme !== undefined && record.coordinates.theme === undefined) {
+    record.coordinates.theme = {
+      value: proposal.theme,
+      provenance: "inferred",
+      source: "vision",
+      confidence: proposal.confidence,
+      confirmed: false,
+    };
+    changed = true;
+  }
+
+  return changed;
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -1449,6 +1615,84 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       }
 
       return { ok: true, written };
+    },
+  );
+
+  // ── POST /project/identity/proposals ─────────────────────────────────────
+  // Task 10, Phase 3: merges the node-identity worker skill's vision proposals
+  // into node-manifest.json — the single writer for this file (see the
+  // extraction route above for the same read-current/mutate/write-back
+  // pattern). Every applied change re-serializes the record's `address` from
+  // its (possibly just-updated) path + coordinates, so the manifest's address
+  // string never drifts from what it actually encodes. See
+  // applyIdentityProposal's comment for the exact per-field merge rules.
+  app.post<{ Querystring: { root?: string }; Body: { proposals?: unknown } }>(
+    "/project/identity/proposals",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
+      const validated = validateProposalsBody(req.body);
+      if (!validated.ok) {
+        return reply.code(400).send({ errors: validated.errors });
+      }
+
+      const registriesPath = path.join(ctx.dataDir, "identity-registries.json");
+      let registries: IdentityRegistries;
+      try {
+        registries = JSON.parse(await readFile(registriesPath, "utf8")) as IdentityRegistries;
+      } catch {
+        registries = defaultIdentityRegistries();
+      }
+
+      const componentsPath = path.join(ctx.dataDir, "component-registry.json");
+      let components: ComponentRegistry;
+      try {
+        components = JSON.parse(await readFile(componentsPath, "utf8")) as ComponentRegistry;
+      } catch {
+        components = { version: 1, components: [] };
+      }
+
+      const manifestPath = path.join(ctx.dataDir, "node-manifest.json");
+      let manifest: NodeManifest;
+      try {
+        manifest = JSON.parse(await readFile(manifestPath, "utf8")) as NodeManifest;
+      } catch {
+        manifest = { version: 1, records: {} };
+      }
+
+      const now = new Date().toISOString();
+      let applied = 0;
+      let skipped = 0;
+
+      for (const proposal of validated.proposals) {
+        const record = manifest.records[proposal.durableId];
+        if (record === undefined) {
+          skipped++;
+          continue;
+        }
+        if (!applyIdentityProposal(record, proposal, components)) {
+          skipped++;
+          continue;
+        }
+        record.updatedAt = now;
+        record.address = serializeAddress(
+          {
+            path: record.path.map((seg) => ({
+              label: seg.label,
+              ...(seg.ordinal !== undefined ? { ordinal: seg.ordinal } : {}),
+            })),
+            coordinates: toAddressCoordinates(record.coordinates),
+          } satisfies CanonicalAddress,
+          registries,
+        );
+        applied++;
+      }
+
+      await mkdir(ctx.dataDir, { recursive: true });
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+      return { applied, skipped };
     },
   );
 

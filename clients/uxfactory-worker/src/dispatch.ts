@@ -6,9 +6,10 @@
  * The engine stays self-contained: dispatch knows the CLI's *command surface*, not
  * its internals — it never imports `@uxfactory/cli`.
  *
- * Generative kinds (`generate-artifact` / `canvas-review` / `generate-design`) are
- * NOT handled here — they run a SKILL through the autonomous `AgentAdapter`. Routing
- * is by absence: `isDeterministic(kind)` is false for them, so the loop hands them to
+ * Generative kinds (`generate-artifact` / `canvas-review` / `identity-interpret` /
+ * `generate-design`) are NOT handled here — they run a SKILL through the
+ * autonomous `AgentAdapter`. Routing is by absence: `isDeterministic(kind)` is
+ * false for them, so the loop hands them to
  * `runGenerative`. It lives in `./generative.ts` and is re-exported from this module
  * so the loop keeps a single dispatch import surface; importing it pulls in no runtime
  * `@helmsmith/*` code.
