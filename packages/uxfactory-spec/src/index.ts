@@ -64,3 +64,30 @@ export type {
   ValidationFinding,
   ValidatorContext,
 } from "./artifact-validators.js";
+export {
+  defaultIdentityRegistries,
+  validateIdentityRegistries,
+  modeTokens,
+  themeTokens,
+} from "./node-identity.js";
+export type {
+  AtomicLevel,
+  BreakpointBand,
+  BreakpointRegistry,
+  ComponentRegistry,
+  ComponentTypeEntry,
+  Coordinates,
+  ExtractedNode,
+  IdentityExtraction,
+  IdentityRegistries,
+  Matchability,
+  NodeIdentityRecord,
+  NodeManifest,
+  PaletteAxis,
+  PaletteCollection,
+  PaletteRegistry,
+  PathSegment,
+  Provenance,
+  ProvenancedValue,
+  StateRegistry,
+} from "./node-identity.js";
