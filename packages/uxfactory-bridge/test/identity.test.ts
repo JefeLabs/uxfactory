@@ -1208,3 +1208,399 @@ describe("POST /project/identity/proposals", () => {
     expect(after).toEqual(before);
   });
 });
+
+// ─── POST /project/identity/confirm ────────────────────────────────────────
+// Task 12, Phase 4: ratifies (`confirm`) or replaces (`override`) ONE
+// segment — the path's last label, or one of the four coordinate axes — of
+// ONE manifest record.
+
+/**
+ * A record covering every provenance/presence case a confirm/override test
+ * needs: `label` and `viewport` are both "inferred" (confirm-eligible);
+ * `mode` is "derived" (the confirm-REJECTED case — nothing to ratify);
+ * `theme` and `state` are intentionally OMITTED (the absent-axis case —
+ * confirm rejects it, override may create it).
+ */
+function confirmFixtureRecord(durableId: string, label: string): NodeIdentityRecord {
+  return {
+    durableId,
+    figmaNodeId: `f-${durableId}`,
+    address: `${label}@desktop`,
+    scope: ["home"],
+    path: [{ label, provenance: "inferred", source: "prior-name" }],
+    coordinates: {
+      viewport: { value: "desktop", provenance: "inferred", source: "vision", confidence: "high", confirmed: false },
+      mode: { value: "light", provenance: "derived", source: "structure" },
+    },
+    kind: "FRAME",
+    pathRoleDefault: "section",
+    isDefinition: false,
+    matchability: "composed",
+    composition: [],
+    currentName: label,
+    updatedAt: "2020-01-01T00:00:00.000Z",
+  };
+}
+
+describe("POST /project/identity/confirm", () => {
+  beforeEach(async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/project/identity/registries",
+      payload: { registries: proposalsRegistries() },
+    });
+  });
+
+  it("confirm flips confirmed:true on an inferred LABEL segment — provenance and value unchanged", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "label", action: "confirm" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.path).toEqual([{ label: "hero", provenance: "inferred", source: "prior-name", confirmed: true }]);
+    expect(hero.address).toBe("hero@desktop");
+  });
+
+  it("confirm flips confirmed:true on an inferred COORDINATE segment (viewport) — provenance unchanged", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "viewport", action: "confirm" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const viewport = manifest.records["n-hero"]!.coordinates.viewport!;
+    expect(viewport).toEqual({
+      value: "desktop",
+      provenance: "inferred",
+      source: "vision",
+      confidence: "high",
+      confirmed: true,
+    });
+  });
+
+  it("override replaces the LABEL value, sets provenance elicited/source user, drops confirmed, and re-serializes address", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [{ durableId: "n-hero", segment: "label", action: "override", value: "Custom Hero!!" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.path).toEqual([{ label: "custom-hero", provenance: "elicited", source: "user" }]);
+    expect(hero.address).toBe("custom-hero@desktop");
+  });
+
+  it("override replaces a COORDINATE value, sets provenance elicited/source user, and re-serializes address", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [{ durableId: "n-hero", segment: "viewport", action: "override", value: "tablet" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const viewport = manifest.records["n-hero"]!.coordinates.viewport!;
+    expect(viewport).toEqual({ value: "tablet", provenance: "elicited", source: "user" });
+    expect(manifest.records["n-hero"]!.address).toBe("hero@tablet");
+  });
+
+  it("override normalizes a viewport synonym via normalizeCoordinateToken (\"web\" → \"desktop\")", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "viewport", action: "override", value: "web" }] },
+    });
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.coordinates.viewport!.value).toBe("desktop");
+  });
+
+  it("override CAN create a previously-absent coordinate (state), appearing in the re-serialized address", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+    expect(before.records["n-hero"]!.coordinates.state).toBeUndefined();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "state", action: "override", value: "hover" }] },
+    });
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const record = manifest.records["n-hero"]!;
+    expect(record.coordinates.state).toEqual({ value: "hover", provenance: "elicited", source: "user" });
+    expect(record.address).toBe("hero@desktop@state=hover");
+  });
+
+  it("override replaces the MODE coordinate (derived → elicited), a distinct registry lookup from viewport/state", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "mode", action: "override", value: "dark" }] },
+    });
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.coordinates.mode).toEqual({
+      value: "dark",
+      provenance: "elicited",
+      source: "user",
+    });
+    // "dark" != mode's registry default ("light") so it's rendered — as keyless (mode serializes bare, like viewport).
+    expect(manifest.records["n-hero"]!.address).toBe("hero@desktop@dark");
+  });
+
+  it("override CREATES the THEME coordinate (previously absent), a distinct registry lookup from mode", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+    expect(before.records["n-hero"]!.coordinates.theme).toBeUndefined();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [{ durableId: "n-hero", segment: "theme", action: "override", value: "students" }],
+      },
+    });
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.coordinates.theme).toEqual({
+      value: "students",
+      provenance: "elicited",
+      source: "user",
+    });
+    expect(manifest.records["n-hero"]!.address).toBe("hero@desktop@theme=students");
+  });
+
+  it("override coordinate with a non-registry token is a per-item error — updated:0, nothing changed", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [{ durableId: "n-hero", segment: "viewport", action: "override", value: "giant-screen" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: true; updated: number; errors: string[] };
+    expect(body).toEqual({ ok: true, updated: 0, errors: [expect.stringContaining("n-hero.viewport")] });
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+
+  it("override label with punctuation-only value (nothing survives kebabbing) is a per-item error", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "label", action: "override", value: "!!!" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: true; updated: number; errors: string[] };
+    expect(body.updated).toBe(0);
+    expect(body.errors[0]).toContain("n-hero.label");
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+
+  it("confirm on a DERIVED segment (mode) is rejected — nothing to confirm", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "mode", action: "confirm" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: true; updated: number; errors: string[] };
+    expect(body.updated).toBe(0);
+    expect(body.errors[0]).toContain("n-hero.mode");
+    expect(body.errors[0]).toContain("derived");
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+
+  it("confirm on an ABSENT coordinate (theme, never set) is rejected — nothing to confirm", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "theme", action: "confirm" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: true; updated: number; errors: string[] };
+    expect(body.updated).toBe(0);
+    expect(body.errors[0]).toContain("n-hero.theme");
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+
+  it("unknown durableId is a per-item error, not a hard failure of the batch", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [
+          { durableId: "n-ghost", segment: "label", action: "confirm" },
+          { durableId: "n-hero", segment: "label", action: "confirm" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: true; updated: number; errors: string[] };
+    expect(body.updated).toBe(1);
+    expect(body.errors).toEqual([expect.stringContaining("n-ghost")]);
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.path[0]!.confirmed).toBe(true);
+  });
+
+  it("multiple items for the SAME durableId accumulate onto one candidate — updated counts RECORDS, not items", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [
+          { durableId: "n-hero", segment: "label", action: "override", value: "new-name" },
+          { durableId: "n-hero", segment: "viewport", action: "confirm" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.path).toEqual([{ label: "new-name", provenance: "elicited", source: "user" }]);
+    expect(hero.coordinates.viewport!.confirmed).toBe(true);
+    expect(hero.address).toBe("new-name@desktop");
+  });
+
+  it("within one batch, an override that elicits a segment makes a LATER confirm of that same segment fail", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: {
+        confirmations: [
+          { durableId: "n-hero", segment: "viewport", action: "override", value: "tablet" },
+          { durableId: "n-hero", segment: "viewport", action: "confirm" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: true; updated: number; errors: string[] };
+    expect(body.updated).toBe(1); // the override still landed
+    expect(body.errors).toEqual([expect.stringContaining("elicited")]);
+
+    const manifest = await readManifest(dataDir);
+    const viewport = manifest.records["n-hero"]!.coordinates.viewport!;
+    expect(viewport).toEqual({ value: "tablet", provenance: "elicited", source: "user" });
+    expect(viewport.confirmed).toBeUndefined();
+  });
+
+  it("response omits `errors` entirely when nothing failed", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: { confirmations: [{ durableId: "n-hero", segment: "label", action: "confirm" }] },
+    });
+    const body = res.json() as Record<string, unknown>;
+    expect("errors" in body).toBe(false);
+  });
+
+  it.each([
+    ["missing confirmations key", {}],
+    ["null body", null],
+    ["confirmations not an array", { confirmations: "nope" }],
+    ["entry missing durableId", { confirmations: [{ segment: "label", action: "confirm" }] }],
+    ["entry missing segment", { confirmations: [{ durableId: "n-hero", action: "confirm" }] }],
+    [
+      "entry with invalid segment",
+      { confirmations: [{ durableId: "n-hero", segment: "color", action: "confirm" }] },
+    ],
+    ["entry missing action", { confirmations: [{ durableId: "n-hero", segment: "label" }] }],
+    [
+      "entry with invalid action",
+      { confirmations: [{ durableId: "n-hero", segment: "label", action: "delete" }] },
+    ],
+    [
+      "override missing value",
+      { confirmations: [{ durableId: "n-hero", segment: "label", action: "override" }] },
+    ],
+    [
+      "override with empty-string value",
+      { confirmations: [{ durableId: "n-hero", segment: "label", action: "override", value: "" }] },
+    ],
+    [
+      "value wrong type",
+      { confirmations: [{ durableId: "n-hero", segment: "label", action: "override", value: 42 }] },
+    ],
+  ])("POST with malformed body (%s) replies 400 and persists nothing", async (_label, payload) => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/confirm",
+      payload: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { errors: string[] };
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors.length).toBeGreaterThan(0);
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+});

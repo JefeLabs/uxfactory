@@ -16,6 +16,7 @@
  *   POST /project/identity/extraction
  *   POST /project/identity/crops
  *   POST /project/identity/proposals
+ *   POST /project/identity/confirm
  *   GET  /project/artifact
  *   PUT  /project/artifact
  *   POST /project/open
@@ -1308,6 +1309,191 @@ function applyIdentityProposal(
   return changed;
 }
 
+// ─── Task 12: confirm/override route ────────────────────────────────────────
+// A confirmation ratifies (`confirm`) or replaces (`override`) ONE segment —
+// the path's last label, or one of the four coordinate axes — of ONE
+// manifest record. The route is deliberately per-segment; the panel composes
+// per-node/whole-session gestures out of many items in one request (task-12
+// brief, "Granularity note").
+//
+// Two-tier validation, mirroring the proposals route's body-shape/business-
+// rule split (see that route's own comment above):
+//  - Tier 1 (`validateConfirmationsBody`) is pure shape — array-ness, item
+//    object-ness, durableId/segment/action enum membership, and `value`
+//    required (non-empty string) when action is "override". ANY tier-1
+//    failure 400s the WHOLE request with every offending item's error,
+//    nothing persisted — exactly `validateProposalsBody`'s contract, checked
+//    before the manifest/registries are even read.
+//  - Tier 2 (`applyConfirmation`, driven by the route loop) is business rules
+//    that need the loaded manifest/registries: does the durableId exist; for
+//    confirm, is the target segment actually present AND provenance
+//    "inferred" (derived/defaulted/elicited/absent all reject); for
+//    override, does the value normalize (registry member for a coordinate
+//    axis via `normalizeCoordinateToken`, non-empty kebab for label via
+//    `toKebabLabel`). A tier-2 failure is a PER-ITEM error — collected into
+//    `errors[]` — that does not fail the rest of the batch, mirroring the
+//    proposals route's skip+errors precedent. Chosen over a whole-batch 400
+//    because (a) the brief's own TDD notes phrase these as "400/error" and
+//    "rejected", not as an unconditional whole-request 400, and (b) a batch
+//    is deliberately how the panel composes many independent per-segment
+//    gestures in one request — one bad item shouldn't void every other
+//    confirmation submitted alongside it.
+//
+// CONFIRM never touches provenance — the tag records epistemic origin,
+// confirmation records ratification (`confirmed: true` only).
+//
+// OVERRIDE always sets provenance "elicited", source "user", and — since
+// `confirmed` only has meaning for "inferred" (see `ProvenancedValue`'s own
+// doc) — leaves it unset (a freshly-created coordinate never had one; a
+// label override drops any prior `confirmed`, since it no longer applies to
+// an elicited segment). Override may CREATE a coordinate that was
+// previously absent (e.g. a state axis omitted at its registry default) —
+// there is nothing to "replace" yet, but overriding is still valid: the
+// user is asserting an explicit value exactly as if the axis already existed.
+//
+// Multiple items in one request MAY target the same durableId (e.g. confirm
+// "label" and override "viewport" for the same node) — the route
+// accumulates all of a durableId's mutations onto ONE shared candidate
+// (never re-cloning from the original per item), so a LATER item in the
+// batch sees an EARLIER one's effect: an override that turns a segment
+// "elicited" makes a later "confirm" of that same segment correctly fail —
+// there is no longer anything inferred left to ratify.
+//
+// ATOMICITY: same shape as the proposals route — each candidate is a
+// `structuredClone`, mutated in place, and only committed into
+// `manifest.records` after `serializeAddress` succeeds on it. A backstop
+// try/catch means one candidate's unexpected serialize failure never
+// corrupts that record (the original is left untouched) and never discards
+// other candidates already committed from the same batch.
+
+const CONFIRM_SEGMENT_VALUES = new Set(["label", "viewport", "mode", "theme", "state"]);
+const CONFIRM_ACTION_VALUES = new Set(["confirm", "override"]);
+
+interface IdentityConfirmationItem {
+  durableId: string;
+  segment: "label" | "viewport" | "mode" | "theme" | "state";
+  action: "confirm" | "override";
+  value?: string;
+}
+
+/** Tier 1 — pure body-shape validation; needs no manifest/registries. */
+function validateConfirmationsBody(
+  body: unknown,
+): { ok: true; confirmations: IdentityConfirmationItem[] } | { ok: false; errors: string[] } {
+  const confirmationsRaw = isPlainObject(body) ? body["confirmations"] : undefined;
+  if (!Array.isArray(confirmationsRaw)) {
+    return { ok: false, errors: ['"confirmations" must be an array'] };
+  }
+
+  const errors: string[] = [];
+  const confirmations: IdentityConfirmationItem[] = [];
+  confirmationsRaw.forEach((raw, i) => {
+    if (!isPlainObject(raw)) {
+      errors.push(`confirmations[${i}] must be an object`);
+      return;
+    }
+    if (typeof raw["durableId"] !== "string" || raw["durableId"].trim() === "") {
+      errors.push(`confirmations[${i}].durableId must be a non-empty string`);
+      return;
+    }
+    if (!CONFIRM_SEGMENT_VALUES.has(raw["segment"] as string)) {
+      errors.push(`confirmations[${i}].segment must be one of "label" | "viewport" | "mode" | "theme" | "state"`);
+      return;
+    }
+    if (!CONFIRM_ACTION_VALUES.has(raw["action"] as string)) {
+      errors.push(`confirmations[${i}].action must be "confirm" | "override"`);
+      return;
+    }
+    if (raw["action"] === "override" && (typeof raw["value"] !== "string" || raw["value"].trim() === "")) {
+      errors.push(`confirmations[${i}].value must be a non-empty string when action is "override"`);
+      return;
+    }
+    if (raw["value"] !== undefined && typeof raw["value"] !== "string") {
+      errors.push(`confirmations[${i}].value must be a string when present`);
+      return;
+    }
+    confirmations.push({
+      durableId: raw["durableId"],
+      segment: raw["segment"] as IdentityConfirmationItem["segment"],
+      action: raw["action"] as IdentityConfirmationItem["action"],
+      ...(typeof raw["value"] === "string" ? { value: raw["value"] } : {}),
+    });
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, confirmations };
+}
+
+/**
+ * Tier 2 — apply one already-shape-valid confirmation to `candidate` in
+ * place. `candidate` MUST be a private clone the caller owns (see the
+ * ATOMICITY note above). Every failure path returns BEFORE mutating
+ * `candidate` — a rejected item is guaranteed to leave it exactly as the
+ * caller passed it in, so the route's map-of-candidates accumulation (a
+ * later successful item for the same durableId) is never corrupted by an
+ * earlier rejected one.
+ */
+function applyConfirmation(
+  candidate: NodeIdentityRecord,
+  item: IdentityConfirmationItem,
+  registries: IdentityRegistries,
+): { ok: true } | { ok: false; error: string } {
+  const where = `${item.durableId}.${item.segment}`;
+
+  if (item.segment === "label") {
+    const lastSeg = candidate.path[candidate.path.length - 1];
+    if (lastSeg === undefined) {
+      return { ok: false, error: `${where}: record has no path segments` };
+    }
+    if (item.action === "confirm") {
+      if (lastSeg.provenance !== "inferred") {
+        return {
+          ok: false,
+          error: `${where}: cannot confirm — provenance is "${lastSeg.provenance}", only inferred segments can be confirmed`,
+        };
+      }
+      lastSeg.confirmed = true;
+      return { ok: true };
+    }
+    // override — normalize free text to a grammar-valid kebab label.
+    const normalized = toKebabLabel(item.value ?? "");
+    if (normalized === "") {
+      return { ok: false, error: `${where}: override value "${item.value}" is not a valid label` };
+    }
+    lastSeg.label = normalized;
+    lastSeg.provenance = "elicited";
+    lastSeg.source = "user";
+    delete lastSeg.confirmed;
+    return { ok: true };
+  }
+
+  // coordinate segment (viewport | mode | theme | state)
+  const axis = item.segment;
+  const current = candidate.coordinates[axis];
+  if (item.action === "confirm") {
+    if (current === undefined) {
+      return { ok: false, error: `${where}: cannot confirm — segment is not set` };
+    }
+    if (current.provenance !== "inferred") {
+      return {
+        ok: false,
+        error: `${where}: cannot confirm — provenance is "${current.provenance}", only inferred segments can be confirmed`,
+      };
+    }
+    current.confirmed = true;
+    return { ok: true };
+  }
+  // override — registry-member only; may CREATE the axis if it was absent.
+  const normalized = normalizeCoordinateToken(axis, item.value ?? "", registries);
+  if (normalized === null) {
+    return { ok: false, error: `${where}: override value "${item.value}" is not a registered ${axis} token` };
+  }
+  candidate.coordinates[axis] = { value: normalized, provenance: "elicited", source: "user" };
+  return { ok: true };
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -1780,6 +1966,88 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
       return { applied, skipped, ...(errors.length > 0 ? { errors } : {}) };
+    },
+  );
+
+  // ── POST /project/identity/confirm ───────────────────────────────────────
+  // Task 12, Phase 4: lets the panel ratify an inferred segment (`confirm`)
+  // or replace any segment's value (`override`). See the
+  // `validateConfirmationsBody`/`applyConfirmation` comment block above this
+  // plugin for the two-tier validation split, the same-durableId
+  // accumulation rule, and the atomicity guarantee.
+  app.post<{ Querystring: { root?: string }; Body: { confirmations?: unknown } }>(
+    "/project/identity/confirm",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
+      const validated = validateConfirmationsBody(req.body);
+      if (!validated.ok) {
+        return reply.code(400).send({ errors: validated.errors });
+      }
+
+      const registriesPath = path.join(ctx.dataDir, "identity-registries.json");
+      let registries: IdentityRegistries;
+      try {
+        registries = JSON.parse(await readFile(registriesPath, "utf8")) as IdentityRegistries;
+      } catch {
+        registries = defaultIdentityRegistries();
+      }
+
+      const manifestPath = path.join(ctx.dataDir, "node-manifest.json");
+      let manifest: NodeManifest;
+      try {
+        manifest = JSON.parse(await readFile(manifestPath, "utf8")) as NodeManifest;
+      } catch {
+        manifest = { version: 1, records: {} };
+      }
+
+      const now = new Date().toISOString();
+      const errors: string[] = [];
+      // durableId → the shared candidate accumulating every confirmation
+      // this batch applied to it so far (see the comment block above).
+      const candidates = new Map<string, NodeIdentityRecord>();
+
+      for (const item of validated.confirmations) {
+        const original = manifest.records[item.durableId];
+        if (original === undefined) {
+          errors.push(`${item.durableId}: not found in manifest`);
+          continue;
+        }
+        const candidate = candidates.get(item.durableId) ?? structuredClone(original);
+        const result = applyConfirmation(candidate, item, registries);
+        if (!result.ok) {
+          errors.push(result.error);
+          continue;
+        }
+        candidates.set(item.durableId, candidate);
+      }
+
+      let updated = 0;
+      for (const [durableId, candidate] of candidates) {
+        try {
+          candidate.updatedAt = now;
+          candidate.address = serializeAddress(
+            {
+              path: candidate.path.map((seg) => ({
+                label: seg.label,
+                ...(seg.ordinal !== undefined ? { ordinal: seg.ordinal } : {}),
+              })),
+              coordinates: toAddressCoordinates(candidate.coordinates),
+            } satisfies CanonicalAddress,
+            registries,
+          );
+          manifest.records[durableId] = candidate;
+          updated++;
+        } catch (err) {
+          errors.push(`${durableId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      await mkdir(ctx.dataDir, { recursive: true });
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+      return { ok: true, updated, ...(errors.length > 0 ? { errors } : {}) };
     },
   );
 
