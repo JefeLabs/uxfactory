@@ -110,3 +110,5 @@ export type {
   FallbackLabelResolution,
   ViewportResolution,
 } from "./identity-resolve.js";
+export { assembleIdentities } from "./identity-assemble.js";
+export type { AssembleIdentitiesResult } from "./identity-assemble.js";
