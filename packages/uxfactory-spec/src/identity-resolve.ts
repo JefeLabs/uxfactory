@@ -173,12 +173,30 @@ function kebabCase(input: string): string {
     .replace(/-+$/, "");
 }
 
-/** A kebab segment that is itself coordinate-resolvable — a breakpoint band name, a viewport device synonym, a registered mode token, or a registered theme token. Reuses `normalizeCoordinateToken` so this can never drift from the viewport registry/synonym table maintained in canonical-address.ts. */
+/**
+ * A kebab segment that is itself *viewport*-resolvable — a breakpoint band
+ * name or a viewport device synonym. Reuses `normalizeCoordinateToken` so
+ * this can never drift from the viewport registry/synonym table maintained
+ * in canonical-address.ts.
+ *
+ * Deliberately does NOT check mode/theme: viewport is the actual
+ * responsive-family suffix (a presentation variant of one semantic thing —
+ * "Hero Section: Desktop" and "Hero Section: Ipad version" are the *same*
+ * section), so stripping it is safe. Mode/theme are not — a section can be
+ * legitimately *named* for its brand or mode (grammar §7's "Discover
+ * Students" section keeps "students" in its label AND separately carries
+ * `@theme=students`; the redundancy is intended, not noise). Stripping a
+ * brand/mode token here would corrupt section identity — two differently
+ * *named* sections (`discover-schools`, `discover-students`) would collapse
+ * onto the same label the moment "schools"/"students" also happen to be
+ * registered theme tokens, which is exactly the section-membership-from-
+ * brand inference `node-identity-interpretation.SKILL.md` §D forbids. An
+ * occasionally-redundant label (`hero-dark@dark`) is cosmetic; a corrupted,
+ * colliding label is a correctness failure — so this errs conservative.
+ */
 function isCoordinateNoise(segment: string, r: IdentityRegistries): boolean {
   if (segment === "version") return true;
   if (normalizeCoordinateToken("viewport", segment, r) !== null) return true;
-  if (normalizeCoordinateToken("mode", segment, r) !== null) return true;
-  if (normalizeCoordinateToken("theme", segment, r) !== null) return true;
   return false;
 }
 
@@ -187,9 +205,10 @@ function isCoordinateNoise(segment: string, r: IdentityRegistries): boolean {
  * node (provenance doc §3's "path label … falls back to prior name" row) —
  * `Inferred`, not `Derived`, since a prior name is a human's old guess, not
  * a structural fact. Kebabs `currentName`, then strips every segment that is
- * itself coordinate-resolvable (see `isCoordinateNoise`) plus the noise word
- * "version" — those belong in `coordinates`, not the path label. Empty
- * after stripping → the lowercased `kind` ("FRAME" → "frame").
+ * itself viewport-resolvable (see `isCoordinateNoise`) plus the noise word
+ * "version" — those belong in `coordinates`, not the path label. Mode/theme
+ * tokens are deliberately KEPT (see `isCoordinateNoise`). Empty after
+ * stripping → the lowercased `kind` ("FRAME" → "frame").
  */
 export function deriveFallbackLabel(
   currentName: string,

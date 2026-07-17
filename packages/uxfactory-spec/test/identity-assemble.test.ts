@@ -24,13 +24,14 @@ import {
 // ─── shared fixtures ────────────────────────────────────────────────────────
 
 /**
- * Registries with a theme axis (default vs. students, non-default) — needed
- * for the Discover Students case. Deliberately uses the grammar doc's own
- * `default`/`vibrant`-style vocabulary (§3.2) rather than "schools" as the
- * default token: "schools" would collide with `deriveFallbackLabel`'s
- * coordinate-noise stripping on "Discover Schools features- desktop" (it
- * would read as a theme token and get stripped from the section's OWN
- * label, breaking the brief's expected "discover-schools-features").
+ * Registries with a theme axis (schools default, students non-default) —
+ * the grammar §7 worked example's own vocabulary. `deriveFallbackLabel`
+ * keeps mode/theme tokens in the label (only viewport tokens strip — see
+ * identity-resolve.ts's `isCoordinateNoise`), so "schools" being a
+ * registered theme token no longer collides with the "Discover Schools
+ * features- desktop" section's own label: both the label
+ * ("discover-schools-features") and, separately, the "students" section's
+ * `@theme=students` coordinate survive intact — matching §7 byte-for-byte.
  */
 function registriesWithTheme(): IdentityRegistries {
   const base = defaultIdentityRegistries();
@@ -43,10 +44,10 @@ function registriesWithTheme(): IdentityRegistries {
           name: "Brand",
           axis: "theme",
           values: [
-            { modeId: "t-default", token: "default" },
+            { modeId: "t-schools", token: "schools" },
             { modeId: "t-students", token: "students" },
           ],
-          defaultToken: "default",
+          defaultToken: "schools",
         },
       ],
     },
@@ -209,22 +210,10 @@ describe("assembleIdentities — worked-example fixture (pageCount 2)", () => {
     expect(byId(records, "n-hero-tablet").address).toBe("home/hero-section@tablet");
     expect(byId(records, "n-hero-desktop-button").address).toBe("home/hero-section/button@desktop");
     expect(byId(records, "n-card-2").address).toBe("home/discover-schools-features/card#2@desktop");
-    // NOTE ("discover-students-features" vs "discover-features" — see below): this is the one
-    // address in the brief's fixture list this suite does NOT reproduce byte-for-byte, and it's a
-    // discovered interaction, not a bug here. `deriveFallbackLabel` (Task 6, already shipped and
-    // tested — identity-resolve.test.ts's "strips a registered theme token" case literally covers
-    // `deriveFallbackLabel("Discover Students", ...)` -> "discover") strips any path-label segment
-    // that is ITSELF a registered coordinate token, on purpose (the grammar's anti-redundancy
-    // rule: a coordinate's value should never also sit duplicated in the label). Registering
-    // "students" as the theme token needed to produce `@theme=students` at all means the section's
-    // OWN currentName segment "Students" is *itself* now coordinate-noise and gets stripped by the
-    // very same rule — same mechanism, same reasoning, as "desktop"/"tablet" being stripped from
-    // every other section name in this fixture. The brief's fixture prose predates verifying this
-    // specific interaction against Task 6's shipped, tested behavior; rule 5 explicitly says reuse
-    // `deriveFallbackLabel` as-is, so this suite asserts the mechanism's real (and, per the
-    // grammar's own no-redundant-coordinate-in-label principle, arguably more correct) output
-    // rather than hand-editing around it. Flagged in the task report.
-    expect(byId(records, "n-discover-students").address).toBe("home/discover-features@desktop@theme=students");
+    // "students" stays in the label AND separately carries @theme=students — grammar §7's
+    // intended redundancy. Fixed post-controller-review: `deriveFallbackLabel` now keeps mode/
+    // theme tokens (only viewport strips) — see identity-resolve.ts's `isCoordinateNoise`.
+    expect(byId(records, "n-discover-students").address).toBe("home/discover-students-features@desktop@theme=students");
   });
 
   it("hero desktop/tablet: same label, different viewport -> NEITHER carries an ordinal", () => {

@@ -171,16 +171,22 @@ describe("deriveFallbackLabel", () => {
     expect(result.label).toBe("header");
   });
 
-  it("strips a registered mode token", () => {
+  it("KEEPS a registered mode token — mode can be part of a section's real name, not stripped like viewport", () => {
     const r = withModeAndTheme();
     const result = deriveFallbackLabel("Hero Dark", "FRAME", r);
-    expect(result.label).toBe("hero");
+    expect(result.label).toBe("hero-dark");
   });
 
-  it("strips a registered theme token", () => {
+  it('KEEPS a registered theme token — grammar §7: "Discover Students" stays in the label AND separately carries @theme=students; the redundancy is intended', () => {
     const r = withModeAndTheme();
     const result = deriveFallbackLabel("Discover Students", "FRAME", r);
-    expect(result.label).toBe("discover");
+    expect(result.label).toBe("discover-students");
+  });
+
+  it('is robust to "schools" being a registered theme token — the section keyword survives regardless (only viewport tokens strip)', () => {
+    const r = withModeAndTheme(); // registers "schools"/"students" as theme tokens
+    const result = deriveFallbackLabel("Discover Schools features- desktop", "FRAME", r);
+    expect(result.label).toBe("discover-schools-features");
   });
 
   it('empty after stripping → lowercased kind ("Desktop" alone, kind FRAME → "frame")', () => {
