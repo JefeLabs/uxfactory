@@ -11,6 +11,8 @@ import { planAnnotations } from "./annotation-plan.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
 import { snapshotNode } from "./canvas-snapshot.js";
 import type { CanvasSnapshot, SnapshotFrame, FrameLike } from "./canvas-snapshot.js";
+import { extractIdentityTree, harvestComponents } from "./identity-extract.js";
+import { toIdentitySourceNode, type RawIdentityNode } from "./identity-adapter.js";
 
 /** The narrow node surface the orchestrator uses (cast from the real figma node). */
 interface EditableNode {
@@ -73,6 +75,29 @@ interface PageNode {
   appendChild(node: EditableNode): void;
 }
 
+/**
+ * The narrow node surface the identity-scan walk touches (cast from the real
+ * figma node — a real SceneNode structurally satisfies every field here).
+ * `mainComponent` is intentionally NOT read as a sync property: plugin-typings
+ * 1.130 documents it as write-only under a `dynamic-page` manifest, so the
+ * walk always goes through `getMainComponentAsync()` instead.
+ */
+interface IdentityScanNode {
+  id: string;
+  name: string;
+  type: string;
+  width?: number;
+  resolvedVariableModes?: Record<string, string>;
+  variantProperties?: Record<string, string> | null;
+  /** Component key — present on COMPONENT/COMPONENT_SET nodes only. */
+  key?: string;
+  children?: readonly IdentityScanNode[];
+  getPluginData(key: string): string;
+  setPluginData(key: string, value: string): void;
+  /** Present on INSTANCE nodes; resolves the (possibly remote) main component. */
+  getMainComponentAsync?(): Promise<{ key: string; name: string; remote: boolean } | null>;
+}
+
 /** The narrow figma surface the orchestrator uses. */
 interface FigmaApi {
   currentPage: PageNode;
@@ -127,6 +152,7 @@ async function handleMessage(msg: UiToMain): Promise<void> {
     if (msg.type === "render") await renderSpec(msg.spec, msg.jobId);
     else if (msg.type === "review") await drawReview(msg.report);
     else if (msg.type === "review-selection") await reviewSelection();
+    else if (msg.type === "identity-scan") await scanIdentity();
     else if (msg.type === "undo") applyUndo();
     else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
     else if (msg.type === "storage-get") {
@@ -966,6 +992,63 @@ async function reviewSelection(): Promise<void> {
   } catch (err) {
     post({ type: "review-selection-error", message: String(err) });
   }
+}
+
+// ---- identity scan (node-identity feature, Task 4) ----
+
+/**
+ * Walks a real Figma node subtree into a `RawIdentityNode` tree. The ONLY
+ * impure work lives here: resolving each INSTANCE's main component via
+ * `getMainComponentAsync` (await) before recursing into children. Every
+ * other field is a synchronous read off the live node. getPluginData/
+ * setPluginData are passed straight through (closures over `node`) so
+ * `identity-adapter.ts` / `identity-extract.ts`'s durable-id writes still
+ * land on the real node.
+ */
+async function buildRawIdentityNode(node: IdentityScanNode): Promise<RawIdentityNode> {
+  let mainComponent: { key: string; name: string; remote: boolean } | null | undefined;
+  if (node.type === "INSTANCE" && typeof node.getMainComponentAsync === "function") {
+    mainComponent = await node.getMainComponentAsync();
+  }
+
+  const children = node.children
+    ? await Promise.all(node.children.map((child) => buildRawIdentityNode(child)))
+    : undefined;
+
+  return {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    width: node.width,
+    resolvedVariableModes: node.resolvedVariableModes,
+    variantProperties: node.variantProperties,
+    key: node.key,
+    mainComponent,
+    children,
+    getPluginData: (key: string) => node.getPluginData(key),
+    setPluginData: (key: string, value: string) => node.setPluginData(key, value),
+  };
+}
+
+/**
+ * Scans the current page: builds `IdentitySourceNode` views over every page
+ * child's subtree (resolving INSTANCE main components async first), then
+ * runs Task 3's pure `extractIdentityTree` + `harvestComponents` over them
+ * and posts the result to the UI.
+ */
+async function scanIdentity(): Promise<void> {
+  const page = fig.currentPage;
+  const pageChildren = page.children as unknown as readonly IdentityScanNode[];
+  const rawNodes = await Promise.all(pageChildren.map((child) => buildRawIdentityNode(child)));
+  const sourceNodes = rawNodes.map(toIdentitySourceNode);
+
+  const { extraction, truncated } = extractIdentityTree(sourceNodes, {
+    page: { figmaNodeId: page.id, name: page.name },
+    pageCount: fig.root.children.length,
+  });
+  const components = harvestComponents(sourceNodes);
+
+  post({ type: "identity-extraction", extraction, components, truncated });
 }
 
 function applyUndo(): void {

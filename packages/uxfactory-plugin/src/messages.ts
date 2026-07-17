@@ -1,6 +1,7 @@
 import type { PluginRenderReport } from "./report.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
 import type { CanvasSnapshot } from "./canvas-snapshot.js";
+import type { ComponentTypeEntry, IdentityExtraction } from "@uxfactory/spec";
 
 /** A selected node mapped to the §7.5 reporting fields. */
 export interface SelectionNode {
@@ -41,7 +42,8 @@ export type UiToMain =
   | { type: "file-info-request" }
   | { type: "insert-icon"; name: string; svg: string; size: number }
   | { type: "notify"; message: string }
-  | { type: "close" };
+  | { type: "close" }
+  | { type: "identity-scan" };
 
 /** Messages the main thread sends to the iframe UI. */
 export type MainToUi =
@@ -55,4 +57,10 @@ export type MainToUi =
   | { type: "review-selection-error"; message: string }
   | { type: "storage-value"; key: string; value: unknown }
   | { type: "file-info"; name: string; fileKey: string }
-  | { type: "icon-inserted"; nodeId: string };
+  | { type: "icon-inserted"; nodeId: string }
+  | {
+      type: "identity-extraction";
+      extraction: IdentityExtraction;
+      components: ComponentTypeEntry[];
+      truncated: number;
+    };

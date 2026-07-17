@@ -24,6 +24,7 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 
 import type { Bridge, Link, ProjectSnapshot } from "../ui/lib/bridge.js";
+import { BridgeError } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { Components } from "../ui/screens/Components.js";
 import { useAppStore } from "../ui/stores/app.js";
@@ -32,13 +33,16 @@ import { renderWithProviders } from "./test-utils.js";
 // ─── Fake bus ─────────────────────────────────────────────────────────────────
 
 type SelectionCb = (sel: unknown) => void;
+type IdentityExtractionCb = (payload: unknown) => void;
 
 interface FakeBus extends PluginBus {
   _fireSelection(sel: unknown): void;
+  _fireIdentityExtraction(payload: unknown): void;
 }
 
 function makeBus(): FakeBus {
   let selectionCbs: SelectionCb[] = [];
+  let identityExtractionCbs: IdentityExtractionCb[] = [];
   return {
     storageGet: vi.fn().mockResolvedValue(undefined),
     storageSet: vi.fn().mockResolvedValue(undefined),
@@ -54,8 +58,18 @@ function makeBus(): FakeBus {
     },
     selectNodes: vi.fn(),
     postReview: vi.fn(),
+    requestIdentityScan: vi.fn(),
+    onIdentityExtraction(cb: IdentityExtractionCb) {
+      identityExtractionCbs.push(cb);
+      return () => {
+        identityExtractionCbs = identityExtractionCbs.filter((c) => c !== cb);
+      };
+    },
     _fireSelection(sel: unknown) {
       for (const cb of selectionCbs) cb(sel);
+    },
+    _fireIdentityExtraction(payload: unknown) {
+      for (const cb of identityExtractionCbs) cb(payload);
     },
   };
 }
@@ -523,6 +537,129 @@ describe("AC-9: Unit-type change persists on linked row", () => {
           unitType: "Organism",
         }),
       ]);
+    });
+  });
+});
+
+// ─── Scan identities (node-identity feature, Task 4) ──────────────────────────
+
+function makeIdentityExtractionPayload(overrides: { truncated?: number } = {}) {
+  return {
+    extraction: {
+      version: 1 as const,
+      page: { figmaNodeId: "0:1", name: "Page 1" },
+      pageCount: 1,
+      nodes: [
+        { durableId: "n-1", figmaNodeId: "1:1", parentDurableId: null, ordinal: 0, kind: "FRAME", width: 375, currentName: "Hero", resolvedModes: {}, mainComponent: null, variantProperties: null, isPageChild: true },
+        { durableId: "n-2", figmaNodeId: "1:2", parentDurableId: "n-1", ordinal: 0, kind: "TEXT", width: null, currentName: "Headline", resolvedModes: {}, mainComponent: null, variantProperties: null, isPageChild: false },
+      ],
+    },
+    components: [
+      { key: "c1", roleName: "icon", source: "figma-document" as const, matchability: "matchable" as const },
+    ],
+    truncated: overrides.truncated ?? 0,
+  };
+}
+
+describe("Scan identities", () => {
+  it("requests a scan on click and shows a scanning state", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge();
+    const user = userEvent.setup();
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    const scanBtn = screen.getByRole("button", { name: "Scan identities" });
+    await user.click(scanBtn);
+
+    expect(bus.requestIdentityScan).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Scan identities" })).toHaveTextContent("Scanning…");
+  });
+
+  it("on reply: PUTs components, POSTs the extraction, and renders the one-line result", async () => {
+    const bus = makeBus();
+    const putIdentityComponents = vi.fn().mockResolvedValue({ ok: true });
+    const postIdentityExtraction = vi.fn().mockResolvedValue({ ok: true });
+    const bridge = makeBridge({ putIdentityComponents, postIdentityExtraction });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    const payload = makeIdentityExtractionPayload();
+    act(() => {
+      bus._fireIdentityExtraction(payload);
+    });
+
+    await waitFor(() => {
+      expect(putIdentityComponents).toHaveBeenCalledWith(payload.components);
+    });
+    expect(postIdentityExtraction).toHaveBeenCalledWith(payload.extraction);
+
+    expect(
+      screen.getByText("2 nodes scanned, 1 components harvested"),
+    ).toBeInTheDocument();
+
+    // Button returns to its idle label once the reply lands.
+    expect(screen.getByRole("button", { name: "Scan identities" })).toHaveTextContent("Scan identities");
+  });
+
+  it("tolerates a 404 from postIdentityExtraction (bridge route lands in Task 8) — toasts, never crashes", async () => {
+    const bus = makeBus();
+    const postIdentityExtraction = vi
+      .fn()
+      .mockRejectedValue(new BridgeError(404, { error: "not found" }));
+    const bridge = makeBridge({
+      putIdentityComponents: vi.fn().mockResolvedValue({ ok: true }),
+      postIdentityExtraction,
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    const payload = makeIdentityExtractionPayload();
+    act(() => {
+      bus._fireIdentityExtraction(payload);
+    });
+
+    await waitFor(() => {
+      expect(
+        useAppStore
+          .getState()
+          .toasts.some((t) => t.message.includes("Bridge not ready for identity extraction yet")),
+      ).toBe(true);
+    });
+
+    // The scan result still rendered — a 404 on the extraction POST doesn't
+    // blank out what the scan itself found.
+    expect(
+      screen.getByText("2 nodes scanned, 1 components harvested"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not crash when the bridge lacks putIdentityComponents/postIdentityExtraction (legacy fixture)", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge(); // no identity methods at all
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    act(() => {
+      bus._fireIdentityExtraction(makeIdentityExtractionPayload());
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("2 nodes scanned, 1 components harvested"),
+      ).toBeInTheDocument();
     });
   });
 });

@@ -11,6 +11,11 @@
  * reliably without depending on EventSource.
  */
 
+// node-identity types are shared cross-package via @uxfactory/spec (same
+// precedent as router.tsx/Prompt.tsx/etc.) — NOT mirrored, unlike the
+// bridge-package types below.
+import type { ComponentTypeEntry, IdentityExtraction } from "@uxfactory/spec";
+
 // ─── Mirrored types (do NOT import from @uxfactory/bridge) ───────────────────
 
 export type ArtifactGroup = "product" | "ia-ux" | "design" | "assets";
@@ -216,6 +221,13 @@ export interface Bridge {
    * project had nothing to archive.
    */
   resetProject?(): Promise<{ ok: boolean; archived: string[]; archiveDir: string | null }>;
+  /** PUT /project/identity/components {components} → {ok} (whole-set replace). */
+  putIdentityComponents?(components: ComponentTypeEntry[]): Promise<{ ok: boolean }>;
+  /**
+   * POST /project/identity/extraction — bridge-side route lands in Task 8;
+   * until then this 404s. Callers must tolerate the 404 (toast/log, no crash).
+   */
+  postIdentityExtraction?(extraction: IdentityExtraction): Promise<{ ok: boolean }>;
 }
 
 /** One AC row in the traceability tree, with its linked canvas nodes. */
@@ -544,6 +556,14 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
         rooted("/project/reset"),
         {},
       );
+    },
+
+    putIdentityComponents(components: ComponentTypeEntry[]) {
+      return put<{ ok: boolean }>(rooted("/project/identity/components"), { components });
+    },
+
+    postIdentityExtraction(extraction: IdentityExtraction) {
+      return post<{ ok: boolean }>(rooted("/project/identity/extraction"), extraction);
     },
   };
 }

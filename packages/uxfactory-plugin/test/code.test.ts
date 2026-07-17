@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { makeFigma, type FakeFigma } from "./figma-mock.js";
+import { makeFigma, type FakeFigma, type FakeNode } from "./figma-mock.js";
 import type { MainToUi } from "../src/messages.js";
 import type { DesignSpec, FigjamSpec } from "@uxfactory/spec";
 
@@ -842,5 +842,121 @@ describe("code.ts select-nodes", () => {
     // selection should remain empty, no crash
     expect(fig.currentPage.selection).toHaveLength(0);
     expect(fig.viewport.scrollAndZoomIntoViewCalls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// identity-scan (node-identity feature, Task 4)
+// ---------------------------------------------------------------------------
+describe("code.ts identity-scan (Task 4)", () => {
+  it("scans the current page and posts identity-extraction with page + nodes in doc order", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const frame = fig.createFrame();
+    frame.name = "Hero";
+    const text = fig.createText();
+    text.name = "Headline";
+    frame.appendChild(text);
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({ type: "identity-scan" });
+
+    const reply = lastOfType(fig, "identity-extraction");
+    expect(reply).toBeDefined();
+    expect(reply!.extraction.page).toEqual({
+      figmaNodeId: fig.currentPage.id,
+      name: fig.currentPage.name,
+    });
+    expect(reply!.extraction.pageCount).toBe(1); // just the initial page
+    expect(reply!.extraction.nodes.map((n) => n.currentName)).toEqual(["Hero", "Headline"]);
+    expect(reply!.extraction.nodes[0]!.isPageChild).toBe(true);
+    expect(reply!.extraction.nodes[1]!.isPageChild).toBe(false);
+    expect(reply!.truncated).toBe(0);
+  });
+
+  it("stamps a durable id onto the real Figma node via setPluginData", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const frame = fig.createFrame();
+    frame.name = "Card";
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({ type: "identity-scan" });
+
+    expect(frame._pluginData.get("uxf:durableId")).toMatch(/^n-[0-9a-z]{12}$/);
+    const reply = lastOfType(fig, "identity-extraction")!;
+    expect(reply.extraction.nodes[0]!.durableId).toBe(frame._pluginData.get("uxf:durableId"));
+  });
+
+  it("harvests a COMPONENT's real .key as componentKey (required for downstream dedupe)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const comp = fig.createComponent();
+    comp.name = "Icon/Star";
+    comp.key = "real-figma-key-1";
+    fig.currentPage.appendChild(comp);
+
+    await fig.__send({ type: "identity-scan" });
+
+    const reply = lastOfType(fig, "identity-extraction")!;
+    expect(reply.components).toEqual([
+      { key: "real-figma-key-1", roleName: "icon", source: "figma-document", matchability: "matchable" },
+    ]);
+  });
+
+  it("resolves an INSTANCE's main component via getMainComponentAsync and dedupes against its definition", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const comp = fig.createComponent();
+    comp.name = "Button/Primary";
+    comp.key = "shared-key";
+    fig.currentPage.appendChild(comp);
+
+    const inst = (comp as unknown as { createInstance(): FakeNode }).createInstance();
+    inst.name = "Button instance";
+    // A remote/renamed view of the SAME component — the definition (found via
+    // .key) must win the harvest; the async-resolved mainComponent must still
+    // appear verbatim on the instance's own extracted node.
+    inst._mainComponentResult = { key: "shared-key", name: "Renamed/Elsewhere", remote: true };
+    fig.currentPage.appendChild(inst);
+
+    await fig.__send({ type: "identity-scan" });
+
+    const reply = lastOfType(fig, "identity-extraction")!;
+    expect(reply.components).toEqual([
+      { key: "shared-key", roleName: "button", source: "figma-document", matchability: "matchable" },
+    ]);
+    const instNode = reply.extraction.nodes.find((n) => n.currentName === "Button instance");
+    expect(instNode?.mainComponent).toEqual({
+      key: "shared-key",
+      name: "Renamed/Elsewhere",
+      remote: true,
+    });
+  });
+
+  it("pageCount reflects the total number of pages in the file, not the current page's children", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    fig.createPage();
+    fig.createPage();
+
+    await fig.__send({ type: "identity-scan" });
+
+    const reply = lastOfType(fig, "identity-extraction")!;
+    expect(reply.extraction.pageCount).toBe(3); // initial page + 2 created
+  });
+
+  it("posts an empty extraction (no crash) when the page has no children", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "identity-scan" });
+
+    const reply = lastOfType(fig, "identity-extraction")!;
+    expect(reply.extraction.nodes).toEqual([]);
+    expect(reply.components).toEqual([]);
+    expect(reply.truncated).toBe(0);
   });
 });

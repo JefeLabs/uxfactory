@@ -24,7 +24,9 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ComponentTypeEntry, IdentityExtraction } from "@uxfactory/spec";
 import type { Bridge, Link } from "../lib/bridge.js";
+import { BridgeError } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
 import { useAppStore } from "../stores/app.js";
 import { Card } from "../components/index.js";
@@ -103,6 +105,8 @@ export function Components({
   const [unitType, setUnitType] = useState("Page");
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [isCheckLoading, setIsCheckLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<{ nodes: number; components: number } | null>(null);
 
   // ── Subscribe to canvas selection ─────────────────────────────────────────
   useEffect(() => {
@@ -116,6 +120,45 @@ export function Components({
     });
     return unsub;
   }, [bus]);
+
+  // ── Subscribe to identity-extraction replies (Scan identities) ─────────────
+  useEffect(() => {
+    const unsub = bus.onIdentityExtraction?.((raw) => {
+      setIsScanning(false);
+      if (raw === null || typeof raw !== "object") return;
+      const payload = raw as {
+        extraction: IdentityExtraction;
+        components: ComponentTypeEntry[];
+        truncated: number;
+      };
+      setScanResult({
+        nodes: payload.extraction.nodes.length,
+        components: payload.components.length,
+      });
+
+      void bridge.putIdentityComponents?.(payload.components).catch(() => {
+        toast("Failed to save components — is the bridge running?");
+      });
+
+      // Task 8 lands the extraction route bridge-side; a 404 today is
+      // expected — tolerate it (toast, no crash) rather than surfacing a
+      // generic failure.
+      void bridge.postIdentityExtraction?.(payload.extraction).catch((err: unknown) => {
+        if (err instanceof BridgeError && err.status === 404) {
+          toast("Bridge not ready for identity extraction yet");
+        } else {
+          toast("Failed to post identity extraction — is the bridge running?");
+        }
+      });
+    });
+    return () => unsub?.();
+  }, [bus, bridge, toast]);
+
+  // ── Scan identities ────────────────────────────────────────────────────────
+  function handleScanIdentities(): void {
+    setIsScanning(true);
+    bus.requestIdentityScan?.();
+  }
 
   // ── Derived values ────────────────────────────────────────────────────────
   const requirements = snapshot?.requirements ?? [];
@@ -208,6 +251,29 @@ export function Components({
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
       <div className="flex flex-col gap-4 p-4 pb-20">
+
+        {/* ── Scan identities — node-identity scaffolding (Task 4) ────────── */}
+        <div>
+          <button
+            type="button"
+            onClick={() => handleScanIdentities()}
+            disabled={isScanning}
+            aria-label="Scan identities"
+            className={[
+              "w-full py-2 px-4 rounded font-medium text-sm transition-colors",
+              !isScanning
+                ? "bg-primary-600 text-white hover:bg-primary-700"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed",
+            ].join(" ")}
+          >
+            {isScanning ? "Scanning…" : "Scan identities"}
+          </button>
+          {scanResult !== null && (
+            <p className="mt-2 text-xs text-gray-500 text-center">
+              {scanResult.nodes} nodes scanned, {scanResult.components} components harvested
+            </p>
+          )}
+        </div>
 
         {/* ── Selection card ───────────────────────────────────────────── */}
         <Card>

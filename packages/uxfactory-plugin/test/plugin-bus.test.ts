@@ -196,6 +196,36 @@ describe("plugin-bus selectNodes", () => {
   });
 });
 
+describe("plugin-bus requestIdentityScan", () => {
+  it("sends an identity-scan message", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    bus.requestIdentityScan!();
+    expect(sent).toContainEqual({ type: "identity-scan" });
+  });
+});
+
+describe("plugin-bus onIdentityExtraction", () => {
+  it("fires the callback with {extraction, components, truncated} and stops after unsubscribe", () => {
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    const calls: unknown[] = [];
+    const unsub = bus.onIdentityExtraction!((payload) => calls.push(payload));
+
+    const extraction = { version: 1, page: { figmaNodeId: "0:1", name: "Page 1" }, pageCount: 1, nodes: [] };
+    const components = [{ key: "c1", roleName: "icon", source: "figma-document", matchability: "matchable" }];
+    t.deliver({ type: "identity-extraction", extraction, components, truncated: 0 });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ extraction, components, truncated: 0 });
+
+    unsub();
+    t.deliver({ type: "identity-extraction", extraction, components, truncated: 5 });
+    expect(calls).toHaveLength(1); // still 1 — unsubscribed
+  });
+});
+
 describe("plugin-bus postReview", () => {
   it("sends a review message with the provided report", () => {
     const sent: unknown[] = [];

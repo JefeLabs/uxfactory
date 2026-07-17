@@ -261,6 +261,75 @@ describe("bridge verify()", () => {
   });
 });
 
+// ─── putIdentityComponents() ──────────────────────────────────────────────────
+
+describe("bridge putIdentityComponents()", () => {
+  it("PUTs {components} to /project/identity/components", async () => {
+    const fakeFetch = jsonFetch({ ok: true });
+    const bridge = createBridge(fakeFetch);
+    const components = [
+      { key: "c1", roleName: "icon", source: "figma-document" as const, matchability: "matchable" as const },
+    ];
+    await bridge.putIdentityComponents!(components);
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      `${BASE}/project/identity/components`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ components }),
+      }),
+    );
+  });
+
+  it("rejects with BridgeError on a 400 validation failure", async () => {
+    const fakeFetch = errorFetch(400, { errors: ['"components" must be an array'] });
+    const bridge = createBridge(fakeFetch);
+    await expect(bridge.putIdentityComponents!([])).rejects.toBeInstanceOf(BridgeError);
+  });
+});
+
+// ─── postIdentityExtraction() ─────────────────────────────────────────────────
+
+describe("bridge postIdentityExtraction()", () => {
+  it("POSTs the extraction body to /project/identity/extraction", async () => {
+    const fakeFetch = jsonFetch({ ok: true });
+    const bridge = createBridge(fakeFetch);
+    const extraction = {
+      version: 1 as const,
+      page: { figmaNodeId: "0:1", name: "Page 1" },
+      pageCount: 1,
+      nodes: [],
+    };
+    await bridge.postIdentityExtraction!(extraction);
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      `${BASE}/project/identity/extraction`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(extraction),
+      }),
+    );
+  });
+
+  it("rejects with a BridgeError carrying status 404 when the bridge route doesn't exist yet (Task 8)", async () => {
+    const fakeFetch = errorFetch(404, { error: "not found" });
+    const bridge = createBridge(fakeFetch);
+    const extraction = {
+      version: 1 as const,
+      page: { figmaNodeId: "0:1", name: "Page 1" },
+      pageCount: 1,
+      nodes: [],
+    };
+    try {
+      await bridge.postIdentityExtraction!(extraction);
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(BridgeError);
+      expect((err as BridgeError).status).toBe(404);
+    }
+  });
+});
+
 // ─── BridgeError ─────────────────────────────────────────────────────────────
 
 describe("BridgeError", () => {

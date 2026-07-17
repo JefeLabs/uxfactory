@@ -27,6 +27,18 @@ export interface PluginBus {
   onRendered?(cb: (report: unknown) => void): () => void;
   /** Subscribes to MainToUi "render-error" messages. Returns an unsubscribe function. */
   onRenderError?(cb: (message: string) => void): () => void;
+  /**
+   * Fire-and-forget: ask the main thread to scan the current page for
+   * node identity (extraction + component harvest).
+   * Optional for fixture compatibility — the real bus always implements it.
+   */
+  requestIdentityScan?(): void;
+  /**
+   * Subscribes to MainToUi "identity-extraction" replies — the payload is
+   * `{extraction, components, truncated}` (see messages.ts). Returns an
+   * unsubscribe function. Optional for fixture compatibility.
+   */
+  onIdentityExtraction?(cb: (payload: unknown) => void): () => void;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -113,6 +125,9 @@ export function createBus(
   const renderedListeners = new Set<(report: unknown) => void>();
   const renderErrorListeners = new Set<(message: string) => void>();
 
+  // Set of active identity-extraction listeners.
+  const identityExtractionListeners = new Set<(payload: unknown) => void>();
+
   subscribe((raw: unknown) => {
     if (!raw || typeof raw !== "object") return;
     const msg = raw as MainToUi;
@@ -137,6 +152,13 @@ export function createBus(
       for (const cb of renderedListeners) cb(msg.report);
     } else if (msg.type === "render-error") {
       for (const cb of renderErrorListeners) cb(msg.message);
+    } else if (msg.type === "identity-extraction") {
+      const payload = {
+        extraction: msg.extraction,
+        components: msg.components,
+        truncated: msg.truncated,
+      };
+      for (const cb of identityExtractionListeners) cb(payload);
     }
   });
 
@@ -248,6 +270,15 @@ export function createBus(
     onRenderError(cb: (message: string) => void): () => void {
       renderErrorListeners.add(cb);
       return () => renderErrorListeners.delete(cb);
+    },
+
+    requestIdentityScan(): void {
+      send({ type: "identity-scan" });
+    },
+
+    onIdentityExtraction(cb: (payload: unknown) => void): () => void {
+      identityExtractionListeners.add(cb);
+      return () => identityExtractionListeners.delete(cb);
     },
   };
 }

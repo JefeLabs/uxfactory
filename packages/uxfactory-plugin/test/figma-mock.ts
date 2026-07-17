@@ -80,6 +80,20 @@ export class FakeNode {
   setPluginData(key: string, value: string): void {
     this._pluginData.set(key, value);
   }
+  getPluginData(key: string): string {
+    return this._pluginData.get(key) ?? "";
+  }
+  /** node-identity (Task 4): resolved-modes map, test-settable. */
+  resolvedVariableModes: Record<string, string> | undefined = undefined;
+  /** node-identity (Task 4): variant properties, test-settable. */
+  variantProperties: Record<string, string> | null | undefined = undefined;
+  /** node-identity (Task 4): the real Figma component key (COMPONENT/COMPONENT_SET only). */
+  key: string | undefined = undefined;
+  /** node-identity (Task 4): what getMainComponentAsync() resolves to for an INSTANCE. */
+  _mainComponentResult: { key: string; name: string; remote: boolean } | null = null;
+  async getMainComponentAsync(): Promise<{ key: string; name: string; remote: boolean } | null> {
+    return this._mainComponentResult;
+  }
   /** Fix I3: settable clipsContent property (mirrors real Figma FrameNode). */
   clipsContent: boolean | undefined = undefined;
   /**
