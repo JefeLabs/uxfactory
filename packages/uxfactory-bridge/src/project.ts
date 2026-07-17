@@ -38,7 +38,12 @@ import os from "node:os";
 import path from "node:path";
 import { platform } from "node:process";
 import { parseStoryFile, storyToEngine, defaultIdentityRegistries, validateIdentityRegistries } from "@uxfactory/spec";
-import type { IdentityRegistries, ComponentRegistry, NodeManifest } from "@uxfactory/spec";
+import type {
+  IdentityRegistries,
+  ComponentRegistry,
+  ComponentTypeEntry,
+  NodeManifest,
+} from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
 import type { WorkerPresenceEntry, ManagedInfo } from "./worker-presence.js";
 
@@ -897,6 +902,49 @@ async function buildTrace(root: string, dataDir: string): Promise<{
   return { features, unassigned };
 }
 
+// ─── Node identity: component registry wire-shape validation ────────────────
+// The wire shape (`{ components: ComponentTypeEntry[] }`) is looser than the
+// full ComponentTypeEntry type — it only checks the fields callers actually
+// need to get right to avoid corrupting the store. The file on disk stays the
+// canonical ComponentRegistry shape (`{ version: 1, components }`).
+
+function validateComponentsBody(
+  body: unknown,
+): { ok: true; components: ComponentTypeEntry[] } | { ok: false; errors: string[] } {
+  const components =
+    body !== null && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)["components"]
+      : undefined;
+  if (!Array.isArray(components)) {
+    return { ok: false, errors: ['"components" must be an array'] };
+  }
+
+  const errors: string[] = [];
+  const parsed: ComponentTypeEntry[] = [];
+  components.forEach((entry, i) => {
+    if (
+      entry === null ||
+      typeof entry !== "object" ||
+      Array.isArray(entry) ||
+      typeof (entry as Record<string, unknown>)["key"] !== "string" ||
+      typeof (entry as Record<string, unknown>)["roleName"] !== "string" ||
+      typeof (entry as Record<string, unknown>)["source"] !== "string" ||
+      typeof (entry as Record<string, unknown>)["matchability"] !== "string"
+    ) {
+      errors.push(
+        `components[${i}] must be an object with string "key", "roleName", "source", and "matchability"`,
+      );
+      return;
+    }
+    parsed.push(entry as unknown as ComponentTypeEntry);
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, components: parsed };
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -1139,22 +1187,28 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       const componentsPath = path.join(ctx.dataDir, "component-registry.json");
       try {
         const raw = await readFile(componentsPath, "utf8");
-        return JSON.parse(raw) as ComponentRegistry;
+        const registry = JSON.parse(raw) as ComponentRegistry;
+        return { components: registry.components };
       } catch {
-        return { version: 1, components: [] } as ComponentRegistry;
+        return { components: [] as ComponentTypeEntry[] };
       }
     },
   );
 
   // ── PUT /project/identity/components ──────────────────────────────────────
-  app.put<{ Querystring: { root?: string }; Body: ComponentRegistry }>(
+  app.put<{ Querystring: { root?: string }; Body: { components?: unknown } }>(
     "/project/identity/components",
     async (req, reply) => {
       const ctx = await resolveRoot(req.query.root, reply);
       if (ctx === null) return reply;
+      const result = validateComponentsBody(req.body);
+      if (!result.ok) {
+        return reply.code(400).send({ errors: result.errors });
+      }
       const componentsPath = path.join(ctx.dataDir, "component-registry.json");
+      const registry: ComponentRegistry = { version: 1, components: result.components };
       await mkdir(ctx.dataDir, { recursive: true });
-      await writeFile(componentsPath, `${JSON.stringify(req.body, null, 2)}\n`, "utf8");
+      await writeFile(componentsPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
       return { ok: true };
     },
   );
@@ -1168,9 +1222,9 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       const manifestPath = path.join(ctx.dataDir, "node-manifest.json");
       try {
         const raw = await readFile(manifestPath, "utf8");
-        return JSON.parse(raw) as NodeManifest;
+        return { manifest: JSON.parse(raw) as NodeManifest };
       } catch {
-        return { version: 1, records: {} } as NodeManifest;
+        return { manifest: { version: 1, records: {} } as NodeManifest };
       }
     },
   );
