@@ -379,6 +379,61 @@ describe("Identity inventory: Confirm all high-confidence", () => {
     ).toBeInTheDocument();
   });
 
+  it("scopes the batch to visible rows only — a row hidden by the library filter is excluded", async () => {
+    const user = userEvent.setup();
+    const twoSourceRegistry: ComponentTypeEntry[] = [
+      { key: "comp-a", roleName: "section-a", source: "figma-document", matchability: "matchable" },
+      { key: "comp-b", roleName: "section-b", source: "figma-library", matchability: "matchable" },
+    ];
+    const recA = makeRecord({
+      durableId: "n-a",
+      address: "a@desktop",
+      currentName: "A",
+      definitionRef: "comp-a",
+      path: [{ label: "a", provenance: "inferred", confirmed: false }],
+    });
+    const recB = makeRecord({
+      durableId: "n-b",
+      address: "b@desktop",
+      currentName: "B",
+      definitionRef: "comp-b",
+      path: [{ label: "b", provenance: "inferred", confirmed: false }],
+    });
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue({
+        manifest: { version: 1, records: { "n-a": recA, "n-b": recB } },
+      }),
+      getIdentityComponents: vi.fn().mockResolvedValue({ components: twoSourceRegistry }),
+    });
+    const bus = makeBus();
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await screen.findByText("a@desktop");
+    await screen.findByText("b@desktop");
+
+    // Both visible, both batch-eligible, before any filtering.
+    expect(
+      screen.getByRole("button", { name: "Confirm all high-confidence" }),
+    ).toHaveTextContent("Confirm all high-confidence (2)");
+
+    // Hide the figma-library row (n-b) — reviewing internal-DS components only.
+    const filterGroup = screen.getByRole("toolbar", {
+      name: "Filter by component-registry source",
+    });
+    await user.click(within(filterGroup).getByRole("button", { name: "figma-library" }));
+    await waitFor(() => expect(screen.queryByText("b@desktop")).not.toBeInTheDocument());
+
+    const btn = screen.getByRole("button", { name: "Confirm all high-confidence" });
+    expect(btn).toHaveTextContent("Confirm all high-confidence (1)");
+    await user.click(btn);
+
+    await waitFor(() => expect(bridge.confirmIdentity).toHaveBeenCalledTimes(1));
+    expect(bridge.confirmIdentity).toHaveBeenCalledWith([
+      { durableId: "n-a", segment: "label", action: "confirm" },
+    ]);
+  });
+
   it("is disabled once nothing inferred remains unconfirmed/high-confidence", async () => {
     const bridge = makeBridge({
       getIdentityManifest: vi.fn().mockResolvedValue({
@@ -453,6 +508,110 @@ describe("Identity inventory: override", () => {
     await user.type(input, "abc{Escape}");
 
     expect(bridge.confirmIdentity).not.toHaveBeenCalled();
+  });
+
+  it("fires an override confirmation for a coordinate axis (not just label)", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    await renderInventory(bridge);
+
+    await user.click(screen.getByRole("button", { name: "Override viewport for hero@desktop" }));
+    const input = screen.getByLabelText("Override viewport for hero@desktop");
+    await user.clear(input);
+    await user.type(input, "tablet{Enter}");
+
+    await waitFor(() =>
+      expect(bridge.confirmIdentity).toHaveBeenCalledWith([
+        { durableId: "n-hero", segment: "viewport", action: "override", value: "tablet" },
+      ]),
+    );
+  });
+});
+
+// ─── Per-item confirm/override errors (route 200s with errors[] on tier-2
+// rejection — e.g. a bad override value, or a confirm that raced a
+// provenance change) ─────────────────────────────────────────────────────
+
+describe("Identity inventory: per-item confirm/override errors", () => {
+  it("surfaces a non-empty errors[] from a 200 response via the panel's toast idiom", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      confirmIdentity: vi.fn().mockResolvedValue({
+        ok: true,
+        updated: 0,
+        errors: ['n-hero.label: override value "???" is not a valid label'],
+      }),
+    });
+    await renderInventory(bridge);
+
+    await user.click(screen.getByRole("button", { name: "Override label for hero@desktop" }));
+    const input = screen.getByLabelText("Override label for hero@desktop");
+    await user.clear(input);
+    await user.type(input, "???{Enter}");
+
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(
+        toasts.some((t) =>
+          t.message.includes('n-hero.label: override value "???" is not a valid label'),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("still invalidates the manifest query even when errors[] is non-empty", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      confirmIdentity: vi.fn().mockResolvedValue({
+        ok: true,
+        updated: 0,
+        errors: ["n-hero.label: rejected"],
+      }),
+    });
+    await renderInventory(bridge);
+
+    const callsBefore = (bridge.getIdentityManifest as ReturnType<typeof vi.fn>).mock.calls
+      .length;
+    await user.click(screen.getByRole("button", { name: "Confirm label for hero@desktop" }));
+
+    await waitFor(() =>
+      expect(
+        (bridge.getIdentityManifest as ReturnType<typeof vi.fn>).mock.calls.length,
+      ).toBeGreaterThan(callsBefore),
+    );
+  });
+
+  it("resyncs the override draft to the true current value after a rejected override", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      confirmIdentity: vi.fn().mockResolvedValue({
+        ok: true,
+        updated: 0,
+        errors: ['n-hero.label: override value "???" is not a valid label'],
+      }),
+    });
+    await renderInventory(bridge);
+
+    await user.click(screen.getByRole("button", { name: "Override label for hero@desktop" }));
+    await user.clear(screen.getByLabelText("Override label for hero@desktop"));
+    await user.type(screen.getByLabelText("Override label for hero@desktop"), "???{Enter}");
+
+    // Rejected server-side; getIdentityManifest still resolves with the
+    // unchanged "hero" label. Reopening the editor must show the true
+    // current value, not the stale rejected "???" draft. (Query by "textbox"
+    // role, not label text — the override PENCIL BUTTON reuses the same
+    // aria-label once editing closes, so a plain queryByLabelText would
+    // still match it.)
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("textbox", { name: "Override label for hero@desktop" }),
+      ).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Override label for hero@desktop" }));
+    const reopened = screen.getByLabelText(
+      "Override label for hero@desktop",
+    ) as HTMLInputElement;
+    expect(reopened.value).toBe("hero");
   });
 });
 

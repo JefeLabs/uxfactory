@@ -22,14 +22,17 @@
  * record's own last `path` segment (never an ancestor's; an ancestor's label
  * is confirmed via THAT record's own row). "Confirm all high-confidence"
  * composes one request from every inferred, not-yet-confirmed segment across
- * the WHOLE manifest — regardless of the library filter below, which is a
- * display/labeling concern only, not a data scope (see LIBRARY_SOURCES'
- * comment). Coordinate segments additionally require confidence !== "low"
- * (hold-for-confirm: a low-confidence value is never swept into the batch,
- * though it stays individually confirmable via its own row button). Path
- * labels have no `confidence` field at all (only ProvenancedValue —
+ * the currently VISIBLE rows only (post library-filter) — a row hidden by
+ * the filter is never silently swept into a batch the user can't see, which
+ * would defeat hold-for-confirm. Coordinate segments additionally require
+ * confidence !== "low" (a low-confidence value is never swept into the
+ * batch, though it stays individually confirmable via its own row button).
+ * Path labels have no `confidence` field at all (only ProvenancedValue —
  * coordinates — carry one; PathSegment does not), so an inferred label is
- * always batch-eligible.
+ * always batch-eligible. The route 200s even when individual items are
+ * tier-2-rejected (`{ok:true, updated, errors:["<durableId>.<segment>: ..."]}`)
+ * — the confirm mutation's onSuccess checks `data.errors` and toasts a
+ * summary so a rejected override/confirm never looks like silent success.
  *
  * LIBRARY FILTER: a multi-select over the four ComponentTypeEntry.source
  * values, defaulting to all-selected (nothing hidden on load). A record with
@@ -40,10 +43,10 @@
  * the dropdown only documents that ordering as a note.
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CheckCircle2, Pencil } from "lucide-react";
-import type { Coordinates, NodeIdentityRecord, Provenance } from "@uxfactory/spec";
+import type { ComponentTypeEntry, Coordinates, NodeIdentityRecord, Provenance } from "@uxfactory/spec";
 import type { Bridge, IdentityConfirmSegment, IdentityConfirmationItem } from "../../lib/bridge.js";
 import { Card, ChipGroup, InfoTooltip } from "../../components/index.js";
 import { useAppStore } from "../../stores/app.js";
@@ -138,6 +141,18 @@ function collectHighConfidenceConfirmations(
   return items;
 }
 
+/** The registry `source` a record's `definitionRef` resolves to, or null when
+ *  unset/unresolved — such a record is never hidden by the library filter
+ *  (it isn't part of what the filter labels). */
+function sourceForRecord(
+  record: NodeIdentityRecord,
+  components: ComponentTypeEntry[],
+): string | null {
+  if (record.definitionRef === undefined) return null;
+  const entry = components.find((c) => c.key === record.definitionRef);
+  return entry?.source ?? null;
+}
+
 // ─── Segment chip — provenance tier styling + confirm/override affordances ────
 //
 // Derived: settled/quiet — plain muted text, no chip surface, no action.
@@ -180,6 +195,14 @@ function SegmentChip({
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
+
+  // Keep `draft` pinned to the true current value whenever the editor is
+  // closed — so a rejected override (tier-2 error surfaced elsewhere, then
+  // the manifest refetches unchanged) or any other prop update never leaves
+  // a stale draft behind for the next time the editor opens.
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
 
   const isConfirmable = provenance === "inferred" && confirmed !== true;
   const isConfirmedInferred = provenance === "inferred" && confirmed === true;
@@ -344,10 +367,24 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
 
   const confirmMutation = useMutation({
     ...confirmIdentityMutation(bridge),
-    onSuccess: () => {
+    onSuccess: (data) => {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.identityManifest(activeRoot(bridge)),
       });
+      // The route 200s with {ok:true, ...} even when individual items were
+      // rejected (tier-2 business-rule failures — e.g. an override value
+      // that doesn't normalize, or a confirm that raced a provenance
+      // change) — react-query's onError never fires for those, so a silent
+      // 200 would otherwise look like success right up until the
+      // invalidated refetch quietly reverts the row. Surface via the same
+      // toast idiom every other mutation in this screen uses on failure.
+      if (data.errors !== undefined && data.errors.length > 0) {
+        toast(
+          data.errors.length === 1
+            ? `Identity confirmation failed: ${data.errors[0]}`
+            : `${data.errors.length} identity confirmations failed: ${data.errors.join("; ")}`,
+        );
+      }
     },
     onError: () => toast("Failed to save identity confirmation — is the bridge running?"),
   });
@@ -356,17 +393,33 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
   const components = componentsResult.data?.components ?? [];
 
   const tree = useMemo(() => buildTree(records), [records]);
-  const batchItems = useMemo(() => collectHighConfidenceConfirmations(records), [records]);
+
+  // Rows currently hidden by the library filter — deriving this here (not
+  // just at render time) lets the batch below scope to exactly what's on
+  // screen.
+  const visibleRows = useMemo(
+    () =>
+      tree.filter((row) => {
+        const source = sourceForRecord(row.record, components);
+        return source === null || selectedSources.includes(source);
+      }),
+    [tree, components, selectedSources],
+  );
+
+  // "Confirm all high-confidence" must never confirm a segment the user
+  // can't currently see — a filter that hides `figma-library` rows to
+  // review only internal-DS ones would otherwise silently ratify inferred
+  // segments on the hidden rows too, defeating hold-for-confirm. Scoped to
+  // visibleRows, not the full manifest.
+  const batchItems = useMemo(() => {
+    const visibleRecords: Record<string, NodeIdentityRecord> = {};
+    for (const row of visibleRows) visibleRecords[row.record.durableId] = row.record;
+    return collectHighConfidenceConfirmations(visibleRecords);
+  }, [visibleRows]);
 
   // Nothing scanned/assembled yet — the Scan/Interpret controls above already
   // communicate that state; this surface just stays out of the way.
   if (Object.keys(records).length === 0) return null;
-
-  function sourceFor(record: NodeIdentityRecord): string | null {
-    if (record.definitionRef === undefined) return null;
-    const entry = components.find((c) => c.key === record.definitionRef);
-    return entry?.source ?? null;
-  }
 
   function handleConfirm(durableId: string, segment: SegmentKind): void {
     confirmMutation.mutate([{ durableId, segment, action: "confirm" }]);
@@ -378,11 +431,6 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
     if (batchItems.length === 0) return;
     confirmMutation.mutate(batchItems);
   }
-
-  const visibleRows = tree.filter((row) => {
-    const source = sourceFor(row.record);
-    return source === null || selectedSources.includes(source);
-  });
 
   return (
     <div>
@@ -429,7 +477,7 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
             key={record.durableId}
             record={record}
             depth={depth}
-            sourceBadge={sourceFor(record)}
+            sourceBadge={sourceForRecord(record, components)}
             onConfirm={handleConfirm}
             onOverride={handleOverride}
           />
