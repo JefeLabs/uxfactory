@@ -15,7 +15,12 @@ import { startBridge } from "@uxfactory/bridge";
 import type { IdentityProposal, NodeManifest } from "@uxfactory/spec";
 import { BridgeClient } from "../src/client.js";
 import { EXIT } from "../src/exit.js";
-import { identityProposeCmd, identityShowCmd, validateProposalsFile } from "../src/commands/identity.js";
+import {
+  identityProposeCmd,
+  identityShowCmd,
+  identityCheckCmd,
+  validateProposalsFile,
+} from "../src/commands/identity.js";
 import { makeIO } from "./helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -344,6 +349,125 @@ describe("identityShowCmd", () => {
 });
 
 // ---------------------------------------------------------------------------
+// identityCheckCmd
+// ---------------------------------------------------------------------------
+
+describe("identityCheckCmd", () => {
+  it("exits 2 when the bridge is unreachable", async () => {
+    const deadClient = new BridgeClient("http://127.0.0.1:19998");
+    const io = makeIO();
+    const code = await identityCheckCmd({}, io, deadClient);
+    expect(code).toBe(EXIT.TRANSPORT);
+    expect(io.errText()).toMatch(/bridge unreachable/i);
+  });
+
+  it("exits 0 for an empty manifest and states every check's zero-finding reason, incl. the route checks' vacuous note", async () => {
+    const bridgeHandle = await startBridge({ port: 0, dataDir: path.join(root, ".uxfactory") });
+    try {
+      const client = new BridgeClient(bridgeHandle.url);
+      const io = makeIO();
+      const code = await identityCheckCmd({}, io, client);
+      expect(code).toBe(EXIT.OK);
+      expect(io.outText()).toMatch(/0 finding\(s\) across 5 check\(s\)/);
+      expect(io.outText()).not.toMatch(/FAIL/);
+      expect(io.outText()).toMatch(/route-traceable-stories: 0 \(vacuous/);
+      expect(io.outText()).toMatch(/address-validity: 0 \(clean\)/);
+    } finally {
+      await bridgeHandle.close();
+    }
+  });
+
+  /** The bridge reads node-manifest.json fresh off disk on every GET — writing it directly is enough, no API call needed. */
+  async function seedManifest(manifest: NodeManifest): Promise<void> {
+    await mkdir(path.join(root, ".uxfactory"), { recursive: true });
+    await writeFile(
+      path.join(root, ".uxfactory", "node-manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
+  it("exits 1 (GATE_FAIL) when an address no longer parses against the current registries", async () => {
+    const bridgeHandle = await startBridge({ port: 0, dataDir: path.join(root, ".uxfactory") });
+    try {
+      const client = new BridgeClient(bridgeHandle.url);
+      const manifest: NodeManifest = {
+        version: 1,
+        records: {
+          "n-bad": {
+            durableId: "n-bad",
+            figmaNodeId: "f-bad",
+            address: "hero@nonexistent-coordinate",
+            scope: [],
+            path: [{ label: "hero", provenance: "derived", source: "structure" }],
+            coordinates: {},
+            kind: "FRAME",
+            pathRoleDefault: "section",
+            isDefinition: false,
+            composition: [],
+            currentName: "Hero",
+            updatedAt: "2020-01-01T00:00:00.000Z",
+          },
+        },
+      };
+      await seedManifest(manifest);
+
+      const io = makeIO();
+      const code = await identityCheckCmd({}, io, client);
+      expect(code).toBe(EXIT.GATE_FAIL);
+      expect(io.outText()).toMatch(/FAIL \(error-level finding present\)/);
+      expect(io.outText()).toMatch(/address-validity: 1 \(1 error\)/);
+      expect(io.outText()).toMatch(/\[error\] n-bad:/);
+    } finally {
+      await bridgeHandle.close();
+    }
+  });
+
+  it("a drifted record is warn-only — exits 0, not 1 — and --json carries the full findings array", async () => {
+    const bridgeHandle = await startBridge({ port: 0, dataDir: path.join(root, ".uxfactory") });
+    try {
+      const client = new BridgeClient(bridgeHandle.url);
+      const manifest: NodeManifest = {
+        version: 1,
+        records: {
+          "n-drifted": {
+            durableId: "n-drifted",
+            figmaNodeId: "f-drifted",
+            address: "cta@desktop",
+            scope: [],
+            path: [{ label: "cta", provenance: "derived", source: "structure" }],
+            coordinates: { viewport: { value: "desktop", provenance: "derived", source: "structure" } },
+            kind: "INSTANCE",
+            pathRoleDefault: "component",
+            isDefinition: false,
+            resolutionStatus: "drifted",
+            composition: [],
+            currentName: "CTA",
+            updatedAt: "2020-01-01T00:00:00.000Z",
+          },
+        },
+      };
+      await seedManifest(manifest);
+
+      const humanIO = makeIO();
+      expect(await identityCheckCmd({}, humanIO, client)).toBe(EXIT.OK);
+      expect(humanIO.outText()).toMatch(/drift-surfacing: 1 \(1 warn\)/);
+      expect(humanIO.outText()).toMatch(/should rebind/);
+
+      const jsonIO = makeIO();
+      const code = await identityCheckCmd({ json: true }, jsonIO, client);
+      expect(code).toBe(EXIT.OK);
+      const parsed = JSON.parse(jsonIO.outText()) as { findings: Array<{ level: string; check: string }> };
+      expect(parsed.findings).toEqual([
+        expect.objectContaining({ level: "warn", check: "drift-surfacing", durableId: "n-drifted" }),
+      ]);
+    } finally {
+      await bridgeHandle.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // CLI integration via run()
 // ---------------------------------------------------------------------------
 
@@ -374,5 +498,22 @@ describe("identity propose/show — CLI integration via run()", () => {
     } finally {
       await bridgeHandle.close();
     }
+  });
+
+  it("run(['identity', 'check', '--bridge', url]) exits 0 against a live bridge with an empty manifest", async () => {
+    const bridgeHandle = await startBridge({ port: 0, dataDir: path.join(root, ".uxfactory") });
+    try {
+      const { run } = await import("../src/cli.js");
+      const code = await run(["node", "uxfactory", "identity", "check", "--bridge", bridgeHandle.url]);
+      expect(code).toBe(EXIT.OK);
+    } finally {
+      await bridgeHandle.close();
+    }
+  });
+
+  it("run(['identity', 'check', '--bridge', deadUrl]) exits 2 when the bridge is unreachable", async () => {
+    const { run } = await import("../src/cli.js");
+    const code = await run(["node", "uxfactory", "identity", "check", "--bridge", "http://127.0.0.1:19998"]);
+    expect(code).toBe(EXIT.TRANSPORT);
   });
 });

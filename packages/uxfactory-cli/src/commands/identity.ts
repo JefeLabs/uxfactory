@@ -1,12 +1,16 @@
 /**
- * identity.ts — `uxfactory identity propose <file>` and `uxfactory identity show`.
+ * identity.ts — `uxfactory identity propose <file>`, `uxfactory identity show`,
+ * and `uxfactory identity check`.
  *
- * The engine (this CLI) stays LLM-free: `propose` only PARSES a proposals JSON
- * file (already written by the worker's `node-identity` SKILL — see
- * skill/node-identity/SKILL.md) and POSTs it to the bridge for merge; no model
- * call happens here. `show` is a cheap read-only observability command over the
- * manifest the bridge already serves — useful both for the skill loop (to see
- * what changed) and for a human checking in on the pipeline.
+ * The engine (this CLI) stays LLM-free throughout: `propose` only PARSES a
+ * proposals JSON file (already written by the worker's `node-identity` SKILL
+ * — see skill/node-identity/SKILL.md) and POSTs it to the bridge for merge,
+ * no model call happens here. `show` is a cheap read-only observability
+ * command over the manifest the bridge already serves. `check` (Phase 5,
+ * task-15-brief.md) runs the five pure conformance checks from
+ * `@uxfactory/spec`'s identity-conformance.ts over the manifest/registries/
+ * component-registry the bridge serves — this is what turns node-identity
+ * into governance (drift, composition, route trace), not just a naming tool.
  */
 
 import { readFile } from "node:fs/promises";
@@ -14,7 +18,13 @@ import { TransportError } from "../exit.js";
 import { EXIT } from "../exit.js";
 import type { IO } from "../io.js";
 import type { BridgeClient } from "../client.js";
-import type { IdentityProposal, NodeManifest } from "@uxfactory/spec";
+import type { ComponentTypeEntry, IdentityProposal, IdentityRegistries, NodeManifest } from "@uxfactory/spec";
+import {
+  CONFORMANCE_CHECKS,
+  runConformanceChecks,
+  type ConformanceCheckName,
+  type ConformanceFinding,
+} from "@uxfactory/spec";
 
 // ---------------------------------------------------------------------------
 // shared shape-validation (mirrors the bridge's own wire-shape validators —
@@ -241,4 +251,113 @@ export async function identityShowCmd(
     io.out(formatRecord(r));
   }
   return EXIT.OK;
+}
+
+// ---------------------------------------------------------------------------
+// identity check
+// ---------------------------------------------------------------------------
+
+export interface IdentityCheckFlags {
+  bridge?: string;
+  root?: string;
+  json?: boolean;
+}
+
+/**
+ * The zero-findings note per check — printed instead of a finding list so a
+ * clean run still says WHY each check is clean, not just that it is. The
+ * route checks are "vacuous" rather than a genuine "pass" today: the
+ * canonical story schema carries no route/destination field yet (see
+ * `@uxfactory/spec`'s identity-conformance.ts module doc), so
+ * `route-traceable-stories` is always called with an empty promise list, and
+ * `nav-consumes-anchors` has no candidates unless some manifest record
+ * happens to carry a `route`.
+ */
+const CHECK_ZERO_NOTE: Record<ConformanceCheckName, string> = {
+  "address-validity": "clean",
+  "drift-surfacing": "no drifted records",
+  "composed-node-conformance": "all composed nodes fully governed",
+  "route-traceable-stories": "vacuous — the canonical story schema carries no route/destination field yet",
+  "nav-consumes-anchors": "no broken nav/link references (also vacuous when no record carries a route)",
+};
+
+/**
+ * `uxfactory identity check [--json]`
+ *
+ * Runs all five deterministic node-identity conformance checks (address
+ * validity, drift surfacing, composed-node conformance, route-traceable
+ * stories, nav-consumes-anchors — see `@uxfactory/spec`'s
+ * identity-conformance.ts) over the manifest/registries/component-registry
+ * the bridge already serves. LLM-free: every check is a pure function: this
+ * command only fetches the three stores and formats the result.
+ *
+ * Exit codes:
+ *   0 — no error-level finding (warn-level findings may still be present)
+ *   1 — at least one error-level finding (only `address-validity` produces one)
+ *   2 — bridge unreachable/transport error
+ */
+export async function identityCheckCmd(
+  flags: IdentityCheckFlags,
+  io: IO,
+  client: BridgeClient,
+): Promise<number> {
+  let manifest: NodeManifest;
+  let registries: IdentityRegistries;
+  let components: ComponentTypeEntry[];
+  try {
+    const [manifestRes, registriesRes, componentsRes] = await Promise.all([
+      client.getIdentityManifest(flags.root),
+      client.getIdentityRegistries(flags.root),
+      client.getIdentityComponents(flags.root),
+    ]);
+    manifest = manifestRes.manifest;
+    registries = registriesRes.registries;
+    components = componentsRes.components;
+  } catch (err) {
+    if (err instanceof TransportError) {
+      io.err(`identity check: bridge unreachable — ${err.message}`);
+      return EXIT.TRANSPORT;
+    }
+    throw err;
+  }
+
+  // storyRoutes stays [] — see CHECK_ZERO_NOTE's route-traceable-stories entry.
+  const findings = runConformanceChecks({ manifest, registries, components, storyRoutes: [] });
+  const hasError = findings.some((f) => f.level === "error");
+  const exitCode = hasError ? EXIT.GATE_FAIL : EXIT.OK;
+
+  if (flags.json === true) {
+    io.out(JSON.stringify({ findings }));
+    return exitCode;
+  }
+
+  const byCheck = new Map<ConformanceCheckName, ConformanceFinding[]>();
+  for (const name of CONFORMANCE_CHECKS) byCheck.set(name, []);
+  for (const f of findings) byCheck.get(f.check)!.push(f);
+
+  io.out(
+    `identity check: ${findings.length} finding(s) across ${CONFORMANCE_CHECKS.length} check(s)` +
+      (hasError ? " — FAIL (error-level finding present)" : ""),
+  );
+  for (const name of CONFORMANCE_CHECKS) {
+    const checkFindings = byCheck.get(name)!;
+    if (checkFindings.length === 0) {
+      io.out(`  ${name}: 0 (${CHECK_ZERO_NOTE[name]})`);
+      continue;
+    }
+    const errorCount = checkFindings.filter((f) => f.level === "error").length;
+    const warnCount = checkFindings.filter((f) => f.level === "warn").length;
+    const counts = [
+      errorCount > 0 ? `${errorCount} error` : null,
+      warnCount > 0 ? `${warnCount} warn` : null,
+    ]
+      .filter((s): s is string => s !== null)
+      .join(", ");
+    io.out(`  ${name}: ${checkFindings.length} (${counts})`);
+    for (const f of checkFindings) {
+      const prefix = f.durableId !== undefined ? `${f.durableId}: ` : "";
+      io.out(`    [${f.level}] ${prefix}${f.message}`);
+    }
+  }
+  return exitCode;
 }

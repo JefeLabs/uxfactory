@@ -119,3 +119,19 @@ export type {
 } from "./identity-resolve.js";
 export { assembleIdentities } from "./identity-assemble.js";
 export type { AssembleIdentitiesResult } from "./identity-assemble.js";
+export {
+  CONFORMANCE_CHECKS,
+  checkAddressValidity,
+  checkDriftSurfacing,
+  checkComposedNodeConformance,
+  checkRouteTraceableStories,
+  checkNavConsumesAnchors,
+  runConformanceChecks,
+} from "./identity-conformance.js";
+export type {
+  ConformanceCheckName,
+  ConformanceFinding,
+  ConformanceInputs,
+  ConformanceLevel,
+  StoryRoutePromise,
+} from "./identity-conformance.js";

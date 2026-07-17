@@ -21,7 +21,7 @@ import { classifyCmd } from "./commands/classify.js";
 import { migrateStoriesCmd } from "./commands/migrate-stories.js";
 import { validateArtifactCmd } from "./commands/validate-artifact.js";
 import { canvasFetchCmd, canvasPostCmd } from "./commands/canvas.js";
-import { identityProposeCmd, identityShowCmd } from "./commands/identity.js";
+import { identityProposeCmd, identityShowCmd, identityCheckCmd } from "./commands/identity.js";
 // renderCmd, bridgeCmd, workerCmd, and upCmd are lazy-loaded inside their actions
 // (renderCmd avoids pulling in @resvg/resvg-js native binding on every CLI call;
 //  bridgeCmd avoids pulling in fastify on every call;
@@ -514,6 +514,21 @@ export function buildProgram(): Command {
     .action(async (opts: { json?: boolean; bridge?: string; root?: string }) => {
       const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
       lastCode = await identityShowCmd({ json: opts.json, root: opts.root }, consoleIO, client);
+    });
+
+  identity
+    .command("check")
+    .description(
+      "Run the deterministic node-identity conformance checks (address validity, drift, " +
+        "composed-node governance, route trace) over the manifest — grouped summary, or the " +
+        "full findings array (--json). Exits 1 iff any error-level finding.",
+    )
+    .option("--json", "machine-readable output (the full findings array)")
+    .option("--bridge <url>", "bridge base URL")
+    .option("--root <path>", "project root (?root= — default: the bridge's launch root)")
+    .action(async (opts: { json?: boolean; bridge?: string; root?: string }) => {
+      const client = new BridgeClient(resolveBridgeUrl(opts.bridge));
+      lastCode = await identityCheckCmd({ json: opts.json, root: opts.root }, consoleIO, client);
     });
 
   const stubs: ReadonlyArray<readonly [name: string, phase: string, desc: string]> = [

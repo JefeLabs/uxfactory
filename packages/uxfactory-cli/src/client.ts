@@ -1,6 +1,6 @@
 import { TransportError } from "./exit.js";
 import type { RenderReport } from "@uxfactory/bridge";
-import type { IdentityProposal, NodeManifest } from "@uxfactory/spec";
+import type { ComponentTypeEntry, IdentityProposal, IdentityRegistries, NodeManifest } from "@uxfactory/spec";
 
 /**
  * Opaque canvas review request as relayed by the bridge (§14.2).
@@ -109,6 +109,26 @@ export class BridgeClient {
       throw new TransportError(`bridge rejected the manifest request (HTTP ${res.status})`);
     }
     return (await this.json(res)) as { manifest: NodeManifest };
+  }
+
+  /** GET /project/identity/registries[?root=] → the identity registries (breakpoints/palette/states). Throws TransportError on transport/non-200. */
+  async getIdentityRegistries(root?: string): Promise<{ registries: IdentityRegistries }> {
+    const qs = root !== undefined && root.trim() !== "" ? `?root=${encodeURIComponent(root)}` : "";
+    const res = await this.request(`/project/identity/registries${qs}`, { method: "GET" });
+    if (res.status !== 200) {
+      throw new TransportError(`bridge rejected the registries request (HTTP ${res.status})`);
+    }
+    return (await this.json(res)) as { registries: IdentityRegistries };
+  }
+
+  /** GET /project/identity/components[?root=] → the component registry's entries. Throws TransportError on transport/non-200. */
+  async getIdentityComponents(root?: string): Promise<{ components: ComponentTypeEntry[] }> {
+    const qs = root !== undefined && root.trim() !== "" ? `?root=${encodeURIComponent(root)}` : "";
+    const res = await this.request(`/project/identity/components${qs}`, { method: "GET" });
+    if (res.status !== 200) {
+      throw new TransportError(`bridge rejected the components request (HTTP ${res.status})`);
+    }
+    return (await this.json(res)) as { components: ComponentTypeEntry[] };
   }
 
   /**
