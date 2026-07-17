@@ -1604,3 +1604,142 @@ describe("POST /project/identity/confirm", () => {
     expect(after).toEqual(before);
   });
 });
+
+// ─── POST /project/identity/applied ────────────────────────────────────────
+// Task 14, Phase 4: stamps `appliedAddress`/`appliedAt` on a manifest record
+// after the plugin main thread has confirmed writing the corresponding
+// canvas rename — the panel calls this AFTER the bus round-trip acks
+// (identity-apply → identity-applied), never before.
+
+describe("POST /project/identity/applied", () => {
+  it("stamps appliedAddress and a fresh ISO appliedAt on the targeted record", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = new Date();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/applied",
+      payload: { applied: [{ durableId: "n-hero", appliedAddress: "hero@desktop" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, stamped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const hero = manifest.records["n-hero"]!;
+    expect(hero.appliedAddress).toBe("hero@desktop");
+    expect(hero.appliedAt).toBeDefined();
+    expect(new Date(hero.appliedAt!).getTime()).toBeGreaterThanOrEqual(before.getTime());
+
+    // Nothing else about the record changed.
+    expect(hero.address).toBe("hero@desktop");
+    expect(hero.path).toEqual([{ label: "hero", provenance: "inferred", source: "prior-name" }]);
+  });
+
+  it("stamps multiple records from one batch", async () => {
+    await writeManifest(dataDir, [
+      confirmFixtureRecord("n-hero", "hero"),
+      confirmFixtureRecord("n-footer", "footer"),
+    ]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/applied",
+      payload: {
+        applied: [
+          { durableId: "n-hero", appliedAddress: "hero@desktop" },
+          { durableId: "n-footer", appliedAddress: "footer@desktop" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, stamped: 2 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.appliedAddress).toBe("hero@desktop");
+    expect(manifest.records["n-footer"]!.appliedAddress).toBe("footer@desktop");
+  });
+
+  it("re-stamping an already-applied record overwrites the prior appliedAddress/appliedAt", async () => {
+    const rec = confirmFixtureRecord("n-hero", "hero");
+    rec.appliedAddress = "old-hero@desktop";
+    rec.appliedAt = "2020-01-01T00:00:00.000Z";
+    await writeManifest(dataDir, [rec]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/applied",
+      payload: { applied: [{ durableId: "n-hero", appliedAddress: "hero@desktop" }] },
+    });
+    expect(res.json()).toEqual({ ok: true, stamped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.appliedAddress).toBe("hero@desktop");
+    expect(manifest.records["n-hero"]!.appliedAt).not.toBe("2020-01-01T00:00:00.000Z");
+  });
+
+  it("a durableId absent from the manifest is skipped (not counted, no error) — atomic-ish per record", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/applied",
+      payload: {
+        applied: [
+          { durableId: "n-ghost", appliedAddress: "ghost@desktop" },
+          { durableId: "n-hero", appliedAddress: "hero@desktop" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, stamped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.appliedAddress).toBe("hero@desktop");
+    expect(Object.keys(manifest.records)).toEqual(["n-hero"]); // no ghost record created
+  });
+
+  it("an empty applied[] batch is a no-op — replies { ok: true, stamped: 0 }", async () => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/applied",
+      payload: { applied: [] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, stamped: 0 });
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+
+  it.each([
+    ["missing applied key", {}],
+    ["null body", null],
+    ["applied not an array", { applied: "nope" }],
+    ["entry missing durableId", { applied: [{ appliedAddress: "hero@desktop" }] }],
+    ["entry missing appliedAddress", { applied: [{ durableId: "n-hero" }] }],
+    ["entry with non-string durableId", { applied: [{ durableId: 1, appliedAddress: "hero@desktop" }] }],
+    ["entry with non-string appliedAddress", { applied: [{ durableId: "n-hero", appliedAddress: 1 }] }],
+    ["entry with empty-string durableId", { applied: [{ durableId: "", appliedAddress: "hero@desktop" }] }],
+    ["entry with empty-string appliedAddress", { applied: [{ durableId: "n-hero", appliedAddress: "" }] }],
+  ])("POST with malformed body (%s) replies 400 and persists nothing", async (_label, payload) => {
+    await writeManifest(dataDir, [confirmFixtureRecord("n-hero", "hero")]);
+    const before = await readManifest(dataDir);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/applied",
+      payload: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { errors: string[] };
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors.length).toBeGreaterThan(0);
+
+    const after = await readManifest(dataDir);
+    expect(after).toEqual(before);
+  });
+});

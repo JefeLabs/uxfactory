@@ -1,11 +1,30 @@
 /**
- * IdentityInventory.tsx — the Components tab's suggest→confirm surface for
- * the node-identity manifest (Task 13, Phase 4). Renders identityManifestQuery's
- * flat NodeIdentityRecord map as a tree, with per-segment provenance chips,
- * confirm gates, inline override, a teaching-surface reasoning tooltip, and
- * a library-source filter/badge row. Mounted by Components.tsx alongside its
+ * IdentityInventory.tsx — the Components tab's suggest→confirm→apply surface
+ * for the node-identity manifest (Task 13 + Task 14, Phase 4). Renders
+ * identityManifestQuery's flat NodeIdentityRecord map as a tree, with
+ * per-segment provenance chips, confirm gates, inline override, a
+ * teaching-surface reasoning tooltip, a library-source filter/badge row, and
+ * a write-back Apply surface. Mounted by Components.tsx alongside its
  * existing selection/link-composer content — this joins the tab, it doesn't
  * replace anything there.
+ *
+ * APPLY / WRITE-BACK (Task 14): `planIdentityWriteback` (src/identity-apply.ts,
+ * a pure module — imported directly, not duplicated) decides, per record,
+ * whether it's settled enough to write to the canvas and what the stored
+ * `node.name` should be (the §3.1 storage split). Per-row "Apply" and the
+ * header "Apply all" both plan over the same set — the currently VISIBLE
+ * rows (mirrors "Confirm all high-confidence"'s scoping below: a row hidden
+ * by the library filter is never silently applied) — with the SAME
+ * `includeFlagged` toggle, so a row's individual Apply button and the batch
+ * button always agree on whether that row is eligible. Applying is a TWO-STEP
+ * round trip: `bus.requestIdentityApply` fires the renames at the plugin main
+ * thread (fire-and-forget); the `identity-applied` ack names which durableIds
+ * actually got written. Only THOSE stamp `POST /project/identity/applied`
+ * with `appliedAddress` = the record's full canonical `address` (never the
+ * possibly-label-only `newName` that was actually written to `node.name` for
+ * a component/instance — the stamp records the canonical address, storage
+ * detail is beneath it). A row is "Applied" once `record.address ===
+ * record.appliedAddress`.
  *
  * TREE DERIVATION: parent→child comes from each record's own `composition`
  * array — node-identity.ts documents it explicitly as "child durableIds"
@@ -43,11 +62,12 @@
  * the dropdown only documents that ordering as a note.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CheckCircle2, Pencil } from "lucide-react";
 import type { ComponentTypeEntry, Coordinates, NodeIdentityRecord, Provenance } from "@uxfactory/spec";
-import type { Bridge, IdentityConfirmSegment, IdentityConfirmationItem } from "../../lib/bridge.js";
+import { BridgeError, type Bridge, type IdentityConfirmSegment, type IdentityConfirmationItem } from "../../lib/bridge.js";
+import type { PluginBus } from "../../lib/plugin-bus.js";
 import { Card, ChipGroup, InfoTooltip } from "../../components/index.js";
 import { useAppStore } from "../../stores/app.js";
 import {
@@ -57,6 +77,7 @@ import {
   identityManifestQuery,
   queryKeys,
 } from "../../queries.js";
+import { planIdentityWriteback, type IdentityWritebackRename } from "../../../src/identity-apply.js";
 
 type SegmentKind = IdentityConfirmSegment;
 type CoordAxis = keyof Coordinates;
@@ -276,20 +297,84 @@ function SegmentChip({
   );
 }
 
+// ─── Row-level apply control — write-back to the canvas (Task 14) ───────────
+//
+// Applied: `record.address === record.appliedAddress` — a quiet check badge,
+// no action (re-applying an unchanged address is a no-op the user has no
+// reason to repeat). Not applied + plannable (this record survived
+// planIdentityWriteback's gate): an enabled Apply button. Not applied + held:
+// a disabled Apply button carrying the planner's hold `reason` as its title,
+// so hovering explains why (never a silent no-op).
+
+function RowApplyControl({
+  record,
+  rename,
+  heldReason,
+  applyDisabled,
+  onApply,
+}: {
+  record: NodeIdentityRecord;
+  rename: IdentityWritebackRename | undefined;
+  heldReason: string | undefined;
+  applyDisabled: boolean;
+  onApply: () => void;
+}): React.JSX.Element {
+  const isApplied = record.address !== "" && record.address === record.appliedAddress;
+
+  if (isApplied) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[11px] text-green-600 shrink-0"
+        title={`Applied to canvas as "${record.appliedAddress}"`}
+      >
+        <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
+        Applied
+      </span>
+    );
+  }
+
+  const canApply = rename !== undefined && !applyDisabled;
+  return (
+    <button
+      type="button"
+      onClick={onApply}
+      disabled={!canApply}
+      aria-label={`Apply ${record.address}`}
+      title={rename === undefined ? heldReason : undefined}
+      className={[
+        "text-[11px] px-1.5 py-0.5 rounded font-medium shrink-0 transition-colors",
+        canApply
+          ? "bg-primary-50 text-primary-700 border border-primary-100 hover:bg-primary-100"
+          : "bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed",
+      ].join(" ")}
+    >
+      Apply
+    </button>
+  );
+}
+
 // ─── Row ───────────────────────────────────────────────────────────────────
 
 function IdentityRow({
   record,
   depth,
   sourceBadge,
+  rename,
+  heldReason,
+  applyDisabled,
   onConfirm,
   onOverride,
+  onApply,
 }: {
   record: NodeIdentityRecord;
   depth: number;
   sourceBadge: string | null;
+  rename: IdentityWritebackRename | undefined;
+  heldReason: string | undefined;
+  applyDisabled: boolean;
   onConfirm: (durableId: string, segment: SegmentKind) => void;
   onOverride: (durableId: string, segment: SegmentKind, value: string) => void;
+  onApply: (durableId: string) => void;
 }): React.JSX.Element {
   const path = record.path ?? [];
   const lastSeg = path[path.length - 1];
@@ -318,6 +403,13 @@ function IdentityRow({
         {record.reasoning !== undefined && record.reasoning !== "" && (
           <InfoTooltip label={`Reasoning: ${record.reasoning}`} content={record.reasoning} />
         )}
+        <RowApplyControl
+          record={record}
+          rename={rename}
+          heldReason={heldReason}
+          applyDisabled={applyDisabled}
+          onApply={() => onApply(record.durableId)}
+        />
       </div>
       <div className="flex flex-wrap items-center gap-1 mt-1">
         {lastSeg !== undefined && (
@@ -355,7 +447,13 @@ function IdentityRow({
 
 // ─── IdentityInventory ───────────────────────────────────────────────────────
 
-export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Element | null {
+export function IdentityInventory({
+  bridge,
+  bus,
+}: {
+  bridge: Bridge;
+  bus: PluginBus;
+}): React.JSX.Element | null {
   const queryClient = useQueryClient();
   const toast = useAppStore((s) => s.toast);
 
@@ -364,6 +462,16 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
   const [selectedSources, setSelectedSources] = useState<string[]>(
     LIBRARY_SOURCES.map((s) => s.value),
   );
+
+  // ── Apply / write-back (Task 14) ────────────────────────────────────────
+  const [includeFlagged, setIncludeFlagged] = useState(false);
+  const [isApplyPending, setIsApplyPending] = useState(false);
+  // durableId → the record's full canonical `address` at the moment its
+  // rename was sent — read back once the identity-applied ack names which
+  // durableIds actually landed, so the applied-stamp POST always carries the
+  // CANONICAL address (never the possibly-label-only `newName` a component/
+  // instance actually got written as — see the module doc).
+  const pendingAddressRef = useRef<Map<string, string>>(new Map());
 
   const confirmMutation = useMutation({
     ...confirmIdentityMutation(bridge),
@@ -417,6 +525,76 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
     return collectHighConfidenceConfirmations(visibleRecords);
   }, [visibleRows]);
 
+  // Same VISIBLE-rows scoping as "Confirm all high-confidence" above, for
+  // the exact same reason: a row hidden by the library filter must never be
+  // silently swept into a write-back batch the user can't currently see.
+  // Per-row Apply and "Apply all" both read this ONE plan, so they always
+  // agree on a given row's eligibility.
+  const writebackPlan = useMemo(
+    () => planIdentityWriteback(visibleRows.map((row) => row.record), { includeFlagged }),
+    [visibleRows, includeFlagged],
+  );
+  const renameByDurableId = useMemo(() => {
+    const m = new Map<string, IdentityWritebackRename>();
+    for (const rename of writebackPlan.renames) m.set(rename.durableId, rename);
+    return m;
+  }, [writebackPlan]);
+  const heldReasonByDurableId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const h of writebackPlan.held) m.set(h.durableId, h.reason);
+    return m;
+  }, [writebackPlan]);
+
+  // Subscribe to the plugin main thread's identity-applied ack. Only
+  // durableIds the main thread actually confirmed (`payload.applied`) get
+  // stamped — a `failed` entry (e.g. a deleted node) is surfaced via toast,
+  // never silently swallowed and never stamped as applied.
+  useEffect(() => {
+    const unsub = bus.onIdentityApplied?.((raw) => {
+      setIsApplyPending(false);
+      if (raw === null || typeof raw !== "object") return;
+      const payload = raw as {
+        applied: { durableId: string; newName: string }[];
+        failed: { durableId: string; error: string }[];
+      };
+
+      const stampItems = payload.applied
+        .map((a) => {
+          const appliedAddress = pendingAddressRef.current.get(a.durableId);
+          return appliedAddress !== undefined ? { durableId: a.durableId, appliedAddress } : null;
+        })
+        .filter((x): x is { durableId: string; appliedAddress: string } => x !== null);
+
+      if (stampItems.length > 0) {
+        void bridge
+          .postIdentityApplied?.(stampItems)
+          .then(() => {
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+            });
+          })
+          .catch((err: unknown) => {
+            toast(
+              err instanceof BridgeError && err.status === 404
+                ? "Bridge not ready for identity apply yet"
+                : "Failed to save applied identity stamp — is the bridge running?",
+            );
+          });
+      }
+
+      if (payload.failed.length > 0) {
+        toast(
+          payload.failed.length === 1
+            ? `Failed to apply to canvas: ${payload.failed[0]!.durableId}: ${payload.failed[0]!.error}`
+            : `${payload.failed.length} canvas applies failed: ${payload.failed
+                .map((f) => `${f.durableId}: ${f.error}`)
+                .join("; ")}`,
+        );
+      }
+    });
+    return () => unsub?.();
+  }, [bus, bridge, toast, queryClient]);
+
   // Nothing scanned/assembled yet — the Scan/Interpret controls above already
   // communicate that state; this surface just stays out of the way.
   if (Object.keys(records).length === 0) return null;
@@ -430,6 +608,26 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
   function handleConfirmAll(): void {
     if (batchItems.length === 0) return;
     confirmMutation.mutate(batchItems);
+  }
+
+  /** Sends one or many planned renames over the bus, remembering each
+   *  durableId's canonical address so the ack handler can stamp it. */
+  function sendApply(renames: IdentityWritebackRename[]): void {
+    if (renames.length === 0) return;
+    for (const rename of renames) {
+      const record = records[rename.durableId];
+      if (record !== undefined) pendingAddressRef.current.set(rename.durableId, record.address);
+    }
+    setIsApplyPending(true);
+    bus.requestIdentityApply?.(renames);
+  }
+  function handleApply(durableId: string): void {
+    const rename = renameByDurableId.get(durableId);
+    if (rename === undefined) return;
+    sendApply([rename]);
+  }
+  function handleApplyAll(): void {
+    sendApply(writebackPlan.renames);
   }
 
   return (
@@ -451,6 +649,32 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
           ].join(" ")}
         >
           {`Confirm all high-confidence${batchItems.length > 0 ? ` (${batchItems.length})` : ""}`}
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between px-3 pb-1 gap-2">
+        <label className="flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeFlagged}
+            onChange={(e) => setIncludeFlagged(e.target.checked)}
+            className="accent-primary-600"
+          />
+          include unconfirmed suggestions (flagged)
+        </label>
+        <button
+          type="button"
+          onClick={handleApplyAll}
+          disabled={writebackPlan.renames.length === 0 || isApplyPending}
+          aria-label="Apply all"
+          className={[
+            "text-[11px] px-2 py-1 rounded font-medium transition-colors shrink-0",
+            writebackPlan.renames.length > 0 && !isApplyPending
+              ? "bg-primary-600 text-white hover:bg-primary-700"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed",
+          ].join(" ")}
+        >
+          {`Apply all${writebackPlan.renames.length > 0 ? ` (${writebackPlan.renames.length})` : ""}`}
         </button>
       </div>
 
@@ -478,8 +702,12 @@ export function IdentityInventory({ bridge }: { bridge: Bridge }): React.JSX.Ele
             record={record}
             depth={depth}
             sourceBadge={sourceForRecord(record, components)}
+            rename={renameByDurableId.get(record.durableId)}
+            heldReason={heldReasonByDurableId.get(record.durableId)}
+            applyDisabled={isApplyPending}
             onConfirm={handleConfirm}
             onOverride={handleOverride}
+            onApply={handleApply}
           />
         ))}
       </Card>

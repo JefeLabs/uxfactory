@@ -17,6 +17,7 @@
  *   POST /project/identity/crops
  *   POST /project/identity/proposals
  *   POST /project/identity/confirm
+ *   POST /project/identity/applied
  *   GET  /project/artifact
  *   PUT  /project/artifact
  *   POST /project/open
@@ -1494,6 +1495,55 @@ function applyConfirmation(
   return { ok: true };
 }
 
+// ─── Node identity: applied-stamp wire-shape validation (Task 14, Phase 4) ────
+//
+// POST /project/identity/applied stamps `appliedAddress`/`appliedAt` on a
+// manifest record after the plugin main thread has confirmed writing a
+// canvas rename (the bus's identity-apply → identity-applied round-trip).
+// Unlike confirm/proposals, there is no tier-2 business rule to violate here
+// — a stamp is always valid once its shape checks out — so a durableId that
+// doesn't resolve in the manifest is simply skipped (not an error, not
+// counted in `stamped`): the write-back planner already decided this record
+// was appliable; a manifest that has since moved on (re-scanned, durableId
+// gone) shouldn't fail the whole batch over it.
+
+interface IdentityAppliedItem {
+  durableId: string;
+  appliedAddress: string;
+}
+
+function validateAppliedBody(
+  body: unknown,
+): { ok: true; applied: IdentityAppliedItem[] } | { ok: false; errors: string[] } {
+  const appliedRaw = isPlainObject(body) ? body["applied"] : undefined;
+  if (!Array.isArray(appliedRaw)) {
+    return { ok: false, errors: ['"applied" must be an array'] };
+  }
+
+  const errors: string[] = [];
+  const applied: IdentityAppliedItem[] = [];
+  appliedRaw.forEach((raw, i) => {
+    if (!isPlainObject(raw)) {
+      errors.push(`applied[${i}] must be an object`);
+      return;
+    }
+    if (typeof raw["durableId"] !== "string" || raw["durableId"].trim() === "") {
+      errors.push(`applied[${i}].durableId must be a non-empty string`);
+      return;
+    }
+    if (typeof raw["appliedAddress"] !== "string" || raw["appliedAddress"].trim() === "") {
+      errors.push(`applied[${i}].appliedAddress must be a non-empty string`);
+      return;
+    }
+    applied.push({ durableId: raw["durableId"], appliedAddress: raw["appliedAddress"] });
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, applied };
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -2048,6 +2098,50 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
       return { ok: true, updated, ...(errors.length > 0 ? { errors } : {}) };
+    },
+  );
+
+  // ── POST /project/identity/applied ───────────────────────────────────────
+  // Task 14, Phase 4: after the plugin main thread acks a canvas rename
+  // (identity-apply → identity-applied over the bus), the panel calls this
+  // to stamp `appliedAddress`/`appliedAt` on the corresponding manifest
+  // record — see validateAppliedBody's comment for why an unresolved
+  // durableId is a silent skip rather than a per-item error.
+  app.post<{ Querystring: { root?: string }; Body: { applied?: unknown } }>(
+    "/project/identity/applied",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
+      const validated = validateAppliedBody(req.body);
+      if (!validated.ok) {
+        return reply.code(400).send({ errors: validated.errors });
+      }
+
+      const manifestPath = path.join(ctx.dataDir, "node-manifest.json");
+      let manifest: NodeManifest;
+      try {
+        manifest = JSON.parse(await readFile(manifestPath, "utf8")) as NodeManifest;
+      } catch {
+        manifest = { version: 1, records: {} };
+      }
+
+      const now = new Date().toISOString();
+      let stamped = 0;
+      for (const item of validated.applied) {
+        const record = manifest.records[item.durableId];
+        if (record === undefined) continue;
+        record.appliedAddress = item.appliedAddress;
+        record.appliedAt = now;
+        stamped++;
+      }
+
+      if (stamped > 0) {
+        await mkdir(ctx.dataDir, { recursive: true });
+        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+      }
+
+      return { ok: true, stamped };
     },
   );
 

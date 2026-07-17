@@ -155,6 +155,7 @@ async function handleMessage(msg: UiToMain): Promise<void> {
     else if (msg.type === "review-selection") await reviewSelection();
     else if (msg.type === "identity-scan") await scanIdentity();
     else if (msg.type === "identity-crops") await exportIdentityCrops();
+    else if (msg.type === "identity-apply") applyIdentityWriteback(msg.renames);
     else if (msg.type === "undo") applyUndo();
     else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
     else if (msg.type === "storage-get") {
@@ -1101,6 +1102,34 @@ async function exportIdentityCrops(): Promise<void> {
   }
 
   post({ type: "identity-crops", crops });
+}
+
+// ---- identity write-back (node-identity feature, Task 14 — Phase 4: apply) ----
+
+/**
+ * Writes each planned rename's `newName` onto the live node (`identity-apply.ts`'s
+ * `planIdentityWriteback` already decided WHAT to write and WHETHER — this is
+ * the only impure step, executing that plan). A node that no longer exists
+ * (e.g. deleted since the last scan) is reported in `failed`, never thrown —
+ * one missing node must not abort renames for the rest of the batch.
+ */
+function applyIdentityWriteback(
+  renames: { figmaNodeId: string; durableId: string; newName: string }[],
+): void {
+  const applied: { durableId: string; newName: string }[] = [];
+  const failed: { durableId: string; error: string }[] = [];
+
+  for (const rename of renames) {
+    const node = fig.getNodeById(rename.figmaNodeId);
+    if (node === null) {
+      failed.push({ durableId: rename.durableId, error: `node ${rename.figmaNodeId} not found` });
+      continue;
+    }
+    node.name = rename.newName;
+    applied.push({ durableId: rename.durableId, newName: rename.newName });
+  }
+
+  post({ type: "identity-applied", applied, failed });
 }
 
 function applyUndo(): void {

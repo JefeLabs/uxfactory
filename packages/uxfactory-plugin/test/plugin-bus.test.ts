@@ -257,6 +257,37 @@ describe("plugin-bus onIdentityCrops", () => {
   });
 });
 
+describe("plugin-bus requestIdentityApply", () => {
+  it("sends an identity-apply message with the given renames", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    const renames = [{ figmaNodeId: "1:1", durableId: "n-hero", newName: "home/hero@desktop" }];
+    bus.requestIdentityApply!(renames);
+    expect(sent).toContainEqual({ type: "identity-apply", renames });
+  });
+});
+
+describe("plugin-bus onIdentityApplied", () => {
+  it("fires the callback with {applied, failed} and stops after unsubscribe", () => {
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    const calls: unknown[] = [];
+    const unsub = bus.onIdentityApplied!((payload) => calls.push(payload));
+
+    const applied = [{ durableId: "n-hero", newName: "home/hero@desktop" }];
+    const failed = [{ durableId: "n-ghost", error: "node 999:999 not found" }];
+    t.deliver({ type: "identity-applied", applied, failed });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ applied, failed });
+
+    unsub();
+    t.deliver({ type: "identity-applied", applied, failed });
+    expect(calls).toHaveLength(1); // still 1 — unsubscribed
+  });
+});
+
 describe("plugin-bus postReview", () => {
   it("sends a review message with the provided report", () => {
     const sent: unknown[] = [];

@@ -281,6 +281,19 @@ export interface Bridge {
    */
   confirmIdentity?(confirmations: IdentityConfirmationItem[]): Promise<IdentityConfirmResponse>;
   /**
+   * POST /project/identity/applied {applied: [{durableId, appliedAddress}]} →
+   * {ok, stamped} (Task 14) — called AFTER the plugin main thread acks a
+   * canvas rename (the bus's identity-apply → identity-applied round-trip),
+   * stamping each record's `appliedAddress`/`appliedAt`. `appliedAddress` is
+   * always the record's full canonical `address` — even for a component/
+   * instance whose WRITTEN node name was just its label (§3.1 storage
+   * split) — the applied stamp records the canonical address, not what
+   * literally landed in `node.name`. Optional — absent in legacy bridge builds.
+   */
+  postIdentityApplied?(
+    applied: Array<{ durableId: string; appliedAddress: string }>,
+  ): Promise<{ ok: boolean; stamped: number }>;
+  /**
    * GET /pipeline/result/:id — poll a generative job's terminal result. Not
    * root-scoped (request ids are already globally unique on the bridge).
    * Optional — absent in legacy bridge builds.
@@ -677,6 +690,12 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     confirmIdentity(confirmations: IdentityConfirmationItem[]) {
       return post<IdentityConfirmResponse>(rooted("/project/identity/confirm"), {
         confirmations,
+      });
+    },
+
+    postIdentityApplied(applied: Array<{ durableId: string; appliedAddress: string }>) {
+      return post<{ ok: boolean; stamped: number }>(rooted("/project/identity/applied"), {
+        applied,
       });
     },
 

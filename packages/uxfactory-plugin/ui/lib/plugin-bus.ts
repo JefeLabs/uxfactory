@@ -51,6 +51,19 @@ export interface PluginBus {
    * an unsubscribe function. Optional for fixture compatibility.
    */
   onIdentityCrops?(cb: (payload: unknown) => void): () => void;
+  /**
+   * Fire-and-forget: ask the main thread to write each planned rename's
+   * `newName` onto the live canvas node (Task 14 — write-back). Optional for
+   * fixture compatibility — the real bus always implements it.
+   */
+  requestIdentityApply?(renames: { figmaNodeId: string; durableId: string; newName: string }[]): void;
+  /**
+   * Subscribes to MainToUi "identity-applied" replies — the payload is
+   * `{applied: {durableId, newName}[], failed: {durableId, error}[]}` (see
+   * messages.ts). Returns an unsubscribe function. Optional for fixture
+   * compatibility.
+   */
+  onIdentityApplied?(cb: (payload: unknown) => void): () => void;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -143,6 +156,9 @@ export function createBus(
   // Set of active identity-crops listeners.
   const identityCropsListeners = new Set<(payload: unknown) => void>();
 
+  // Set of active identity-applied listeners.
+  const identityAppliedListeners = new Set<(payload: unknown) => void>();
+
   subscribe((raw: unknown) => {
     if (!raw || typeof raw !== "object") return;
     const msg = raw as MainToUi;
@@ -177,6 +193,9 @@ export function createBus(
     } else if (msg.type === "identity-crops") {
       const payload = { crops: msg.crops };
       for (const cb of identityCropsListeners) cb(payload);
+    } else if (msg.type === "identity-applied") {
+      const payload = { applied: msg.applied, failed: msg.failed };
+      for (const cb of identityAppliedListeners) cb(payload);
     }
   });
 
@@ -306,6 +325,15 @@ export function createBus(
     onIdentityCrops(cb: (payload: unknown) => void): () => void {
       identityCropsListeners.add(cb);
       return () => identityCropsListeners.delete(cb);
+    },
+
+    requestIdentityApply(renames: { figmaNodeId: string; durableId: string; newName: string }[]): void {
+      send({ type: "identity-apply", renames });
+    },
+
+    onIdentityApplied(cb: (payload: unknown) => void): () => void {
+      identityAppliedListeners.add(cb);
+      return () => identityAppliedListeners.delete(cb);
     },
   };
 }

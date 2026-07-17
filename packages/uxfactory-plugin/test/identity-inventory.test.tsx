@@ -89,9 +89,14 @@ function makeManifestResponse(): { manifest: NodeManifest } {
   };
 }
 
-// ─── Fake bus (Components requires one; the inventory itself doesn't use it) ──
+// ─── Fake bus — the inventory now drives the identity-apply round-trip
+// (Task 14) through it: `requestIdentityApply` is asserted on directly, and
+// `emitIdentityApplied` lets a test simulate the plugin main thread's ack
+// (the real bus dispatches this from an `identity-applied` MainToUi message —
+// see plugin-bus.ts's onIdentityApplied contract).  ──────────────────────
 
-function makeBus(): PluginBus {
+function makeBus(): PluginBus & { emitIdentityApplied: (payload: unknown) => void } {
+  let identityAppliedCb: ((payload: unknown) => void) | null = null;
   return {
     storageGet: vi.fn().mockResolvedValue(undefined),
     storageSet: vi.fn().mockResolvedValue(undefined),
@@ -102,6 +107,14 @@ function makeBus(): PluginBus {
     onSelection: vi.fn().mockReturnValue(() => {}),
     selectNodes: vi.fn(),
     postReview: vi.fn(),
+    requestIdentityApply: vi.fn(),
+    onIdentityApplied: vi.fn((cb: (payload: unknown) => void) => {
+      identityAppliedCb = cb;
+      return () => {
+        identityAppliedCb = null;
+      };
+    }),
+    emitIdentityApplied: (payload: unknown) => identityAppliedCb?.(payload),
   };
 }
 
@@ -126,6 +139,7 @@ function makeBridge(overrides: Partial<Bridge> = {}): Bridge {
     getIdentityManifest: vi.fn().mockResolvedValue(makeManifestResponse()),
     getIdentityComponents: vi.fn().mockResolvedValue({ components: registry }),
     confirmIdentity: vi.fn().mockResolvedValue({ ok: true, updated: 1 }),
+    postIdentityApplied: vi.fn().mockResolvedValue({ ok: true, stamped: 1 }),
     ...overrides,
   } as unknown as Bridge;
 }
@@ -167,14 +181,13 @@ afterEach(cleanup);
 
 // ─── Helper: mount Components and wait for the inventory rows to appear ───────
 
-async function renderInventory(bridge: Bridge) {
-  const bus = makeBus();
+async function renderInventory(bridge: Bridge, bus = makeBus()) {
   const result = await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
     initialEntries: ["/tabs/components"],
   });
   await waitFor(() => expect(bridge.getIdentityManifest).toHaveBeenCalled());
   await screen.findByText("hero@desktop");
-  return result;
+  return { ...result, bus };
 }
 
 function rowFor(container: HTMLElement, durableId: string): HTMLElement {
@@ -639,5 +652,217 @@ describe("Identity inventory: library filter", () => {
       expect(container.querySelector('[data-durable-id="n-hero"]')).not.toBeInTheDocument();
     });
     expect(container.querySelector('[data-durable-id="n-cta"]')).toBeInTheDocument();
+  });
+});
+
+// ─── Apply / write-back (Task 14) ────────────────────────────────────────────
+//
+// Fixture recap: n-hero's label is inferred+unconfirmed (no confidence field
+// — the flag-eligible bucket) and its viewport is inferred+high+unconfirmed
+// (also flag-eligible) — so by planIdentityWriteback's gate, n-hero is HELD
+// until "include unconfirmed suggestions (flagged)" is turned on. n-cta's
+// theme is inferred+LOW+unconfirmed — hold-low ALWAYS vetoes it, flag or not.
+
+describe("Identity inventory: apply gating (default, includeFlagged off)", () => {
+  it("disables Apply on a row held by an unconfirmed (flag-eligible) label/coordinate", async () => {
+    const bridge = makeBridge();
+    await renderInventory(bridge);
+
+    const btn = screen.getByRole("button", { name: "Apply hero@desktop" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute(
+      "title",
+      expect.stringContaining("include unconfirmed suggestions (flagged)"),
+    );
+  });
+
+  it("disables Apply on a row held by a low-confidence coordinate", async () => {
+    const bridge = makeBridge();
+    await renderInventory(bridge);
+
+    const btn = screen.getByRole("button", { name: "Apply hero/cta-button@desktop" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("title", "low-confidence, needs confirmation");
+  });
+
+  it("'Apply all' is disabled with no count when nothing is currently applyable", async () => {
+    const bridge = makeBridge();
+    await renderInventory(bridge);
+
+    const btn = screen.getByRole("button", { name: "Apply all" });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent("Apply all");
+    expect(btn).not.toHaveTextContent("(");
+  });
+});
+
+describe("Identity inventory: includeFlagged toggle", () => {
+  it("is labeled exactly 'include unconfirmed suggestions (flagged)'", async () => {
+    const bridge = makeBridge();
+    await renderInventory(bridge);
+
+    expect(
+      screen.getByLabelText("include unconfirmed suggestions (flagged)"),
+    ).not.toBeChecked();
+  });
+
+  it("enables the flag-eligible row's Apply once checked, but never the low-confidence row's", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    await renderInventory(bridge);
+
+    await user.click(screen.getByLabelText("include unconfirmed suggestions (flagged)"));
+
+    expect(screen.getByRole("button", { name: "Apply hero@desktop" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Apply hero/cta-button@desktop" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Apply all" })).toHaveTextContent(
+      "Apply all (1)",
+    );
+  });
+});
+
+describe("Identity inventory: per-row Apply fires the planner's exact rename", () => {
+  it("sends requestIdentityApply with the planned rename for a plain FRAME (full address as newName)", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    const { bus } = await renderInventory(bridge);
+
+    await user.click(screen.getByLabelText("include unconfirmed suggestions (flagged)"));
+    await user.click(screen.getByRole("button", { name: "Apply hero@desktop" }));
+
+    expect(bus.requestIdentityApply).toHaveBeenCalledWith([
+      { figmaNodeId: "fig-n-hero", durableId: "n-hero", newName: "hero@desktop" },
+    ]);
+  });
+
+  it("on ack, stamps POST /project/identity/applied with the record's full canonical address and invalidates the manifest query", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    const { bus } = await renderInventory(bridge);
+    const callsBefore = (bridge.getIdentityManifest as ReturnType<typeof vi.fn>).mock.calls
+      .length;
+
+    await user.click(screen.getByLabelText("include unconfirmed suggestions (flagged)"));
+    await user.click(screen.getByRole("button", { name: "Apply hero@desktop" }));
+
+    bus.emitIdentityApplied({
+      applied: [{ durableId: "n-hero", newName: "hero@desktop" }],
+      failed: [],
+    });
+
+    await waitFor(() =>
+      expect(bridge.postIdentityApplied).toHaveBeenCalledWith([
+        { durableId: "n-hero", appliedAddress: "hero@desktop" },
+      ]),
+    );
+    await waitFor(() =>
+      expect(
+        (bridge.getIdentityManifest as ReturnType<typeof vi.fn>).mock.calls.length,
+      ).toBeGreaterThan(callsBefore),
+    );
+  });
+
+  it("surfaces a failed apply via toast without stamping it", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    const { bus } = await renderInventory(bridge);
+
+    await user.click(screen.getByLabelText("include unconfirmed suggestions (flagged)"));
+    await user.click(screen.getByRole("button", { name: "Apply hero@desktop" }));
+
+    bus.emitIdentityApplied({
+      applied: [],
+      failed: [{ durableId: "n-hero", error: "node fig-n-hero not found" }],
+    });
+
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message.includes("node fig-n-hero not found"))).toBe(true);
+    });
+    expect(bridge.postIdentityApplied).not.toHaveBeenCalled();
+  });
+});
+
+describe("Identity inventory: applied badge", () => {
+  it("shows an Applied badge instead of the Apply button once address === appliedAddress", async () => {
+    const applied = { ...heroRecord, appliedAddress: "hero@desktop" };
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue({
+        manifest: { version: 1, records: { "n-hero": applied, "n-cta": ctaRecord } },
+      }),
+    });
+    await renderInventory(bridge);
+
+    expect(screen.queryByRole("button", { name: "Apply hero@desktop" })).not.toBeInTheDocument();
+    const heroText = screen.getByText("Applied");
+    expect(heroText).toBeInTheDocument();
+  });
+
+  it("still shows the Apply button for a row whose address has drifted from its appliedAddress", async () => {
+    const drifted = { ...heroRecord, appliedAddress: "old-hero@desktop" };
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue({
+        manifest: { version: 1, records: { "n-hero": drifted, "n-cta": ctaRecord } },
+      }),
+    });
+    await renderInventory(bridge);
+
+    expect(screen.getByRole("button", { name: "Apply hero@desktop" })).toBeInTheDocument();
+  });
+});
+
+describe("Identity inventory: 'Apply all' scoped to visible rows", () => {
+  it("excludes a row hidden by the library filter, mirroring 'Confirm all high-confidence'", async () => {
+    const user = userEvent.setup();
+    const twoSourceRegistry: ComponentTypeEntry[] = [
+      { key: "comp-a", roleName: "section-a", source: "figma-document", matchability: "matchable" },
+      { key: "comp-b", roleName: "section-b", source: "figma-library", matchability: "matchable" },
+    ];
+    const recA = makeRecord({
+      durableId: "n-a",
+      address: "a@desktop",
+      currentName: "A",
+      definitionRef: "comp-a",
+      path: [{ label: "a", provenance: "derived" }],
+    });
+    const recB = makeRecord({
+      durableId: "n-b",
+      address: "b@desktop",
+      currentName: "B",
+      definitionRef: "comp-b",
+      path: [{ label: "b", provenance: "derived" }],
+    });
+    const bridge = makeBridge({
+      getIdentityManifest: vi.fn().mockResolvedValue({
+        manifest: { version: 1, records: { "n-a": recA, "n-b": recB } },
+      }),
+      getIdentityComponents: vi.fn().mockResolvedValue({ components: twoSourceRegistry }),
+    });
+    const bus = makeBus();
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await screen.findByText("a@desktop");
+    await screen.findByText("b@desktop");
+
+    expect(screen.getByRole("button", { name: "Apply all" })).toHaveTextContent(
+      "Apply all (2)",
+    );
+
+    const filterGroup = screen.getByRole("toolbar", {
+      name: "Filter by component-registry source",
+    });
+    await user.click(within(filterGroup).getByRole("button", { name: "figma-library" }));
+    await waitFor(() => expect(screen.queryByText("b@desktop")).not.toBeInTheDocument());
+
+    const btn = screen.getByRole("button", { name: "Apply all" });
+    expect(btn).toHaveTextContent("Apply all (1)");
+    await user.click(btn);
+
+    expect(bus.requestIdentityApply).toHaveBeenCalledWith([
+      { figmaNodeId: "fig-n-a", durableId: "n-a", newName: "a@desktop" },
+    ]);
   });
 });

@@ -1088,3 +1088,62 @@ describe("code.ts identity-crops (Task 9)", () => {
     expect(reply.crops).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// identity-apply (node-identity feature, Task 14 — Phase 4: write-back)
+// ---------------------------------------------------------------------------
+describe("code.ts identity-apply (Task 14)", () => {
+  it("writes each rename's newName onto the live node and posts identity-applied with the applied list", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const frame = fig.createFrame();
+    frame.name = "Hero (old name)";
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({
+      type: "identity-apply",
+      renames: [{ figmaNodeId: frame.id, durableId: "n-hero", newName: "home/hero@desktop" }],
+    });
+
+    expect(frame.name).toBe("home/hero@desktop");
+    const reply = lastOfType(fig, "identity-applied")!;
+    expect(reply.applied).toEqual([{ durableId: "n-hero", newName: "home/hero@desktop" }]);
+    expect(reply.failed).toEqual([]);
+  });
+
+  it("reports a missing node in failed[] without throwing or aborting the rest of the batch", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const frame = fig.createFrame();
+    frame.name = "Footer (old name)";
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({
+      type: "identity-apply",
+      renames: [
+        { figmaNodeId: "999:999", durableId: "n-ghost", newName: "ghost@desktop" },
+        { figmaNodeId: frame.id, durableId: "n-footer", newName: "footer@desktop" },
+      ],
+    });
+
+    expect(frame.name).toBe("footer@desktop");
+    const reply = lastOfType(fig, "identity-applied")!;
+    expect(reply.applied).toEqual([{ durableId: "n-footer", newName: "footer@desktop" }]);
+    expect(reply.failed).toEqual([
+      { durableId: "n-ghost", error: expect.stringContaining("999:999") },
+    ]);
+  });
+
+  it("posts empty applied/failed (no crash) for an empty renames batch", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "identity-apply", renames: [] });
+
+    const reply = lastOfType(fig, "identity-applied")!;
+    expect(reply.applied).toEqual([]);
+    expect(reply.failed).toEqual([]);
+  });
+});

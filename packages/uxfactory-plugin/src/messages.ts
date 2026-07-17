@@ -44,7 +44,11 @@ export type UiToMain =
   | { type: "notify"; message: string }
   | { type: "close" }
   | { type: "identity-scan" }
-  | { type: "identity-crops" };
+  | { type: "identity-crops" }
+  | {
+      type: "identity-apply";
+      renames: { figmaNodeId: string; durableId: string; newName: string }[];
+    };
 
 /** Messages the main thread sends to the iframe UI. */
 export type MainToUi =
@@ -69,4 +73,11 @@ export type MainToUi =
       type: "identity-crops";
       /** One PNG per PAGE CHILD — identification tier, never deeper (permanent boundary). */
       crops: { durableId: string; figmaNodeId: string; bytes: Uint8Array }[];
+    }
+  | {
+      type: "identity-applied";
+      /** Renames the main thread actually wrote to `node.name`. */
+      applied: { durableId: string; newName: string }[];
+      /** Renames that could not be written (e.g. the node no longer exists). */
+      failed: { durableId: string; error: string }[];
     };

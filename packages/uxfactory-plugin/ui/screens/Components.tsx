@@ -521,7 +521,7 @@ export function Components({
         {/* ── Identity inventory (Task 13) — suggest→confirm surface over
              the node-identity manifest Scan/Interpret above produce. Renders
              nothing until there's at least one manifest record. ──────────── */}
-        <IdentityInventory bridge={bridge} />
+        <IdentityInventory bridge={bridge} bus={bus} />
 
         {/* ── Selection card ───────────────────────────────────────────── */}
         <Card>
