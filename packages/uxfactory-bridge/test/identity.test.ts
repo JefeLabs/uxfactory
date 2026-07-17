@@ -248,6 +248,14 @@ describe("GET + PUT /project/identity/components", () => {
       "entry with non-string field",
       { components: [{ key: "a", roleName: "b", source: "manual", matchability: 1 }] },
     ],
+    [
+      // Fix #3 (post-review): roleName becomes a path label downstream
+      // (identity-assemble.ts, and the proposals-merge route) — serializeAddress
+      // throws on anything that isn't kebab. Reject a non-kebab roleName at
+      // the write boundary instead of letting it crash a later request.
+      "entry with non-kebab roleName",
+      { components: [{ key: "a", roleName: "Nav Item", source: "manual", matchability: "matchable" }] },
+    ],
   ])("PUT with malformed body (%s) replies 400 and persists nothing", async (_label, payload) => {
     const put = await app.inject({
       method: "PUT",
@@ -753,8 +761,59 @@ const buttonEntry: ComponentTypeEntry = {
   matchability: "matchable",
 };
 
+/**
+ * Registries for the proposals-merge tests: the same breakpoint bands as
+ * `defaultIdentityRegistries()` (so existing "@desktop"-shaped fixtures are
+ * unaffected), PLUS a declared mode collection ("light"/"dark") and theme
+ * collection ("default"/"students") — needed so `normalizeCoordinateToken`
+ * (fix #2) has real registry members to resolve a proposed mode/theme value
+ * against, rather than rejecting everything because the palette is empty.
+ */
+function proposalsRegistries(): IdentityRegistries {
+  return {
+    version: 1,
+    breakpoints: {
+      bands: [
+        { name: "mobile", min: 0, max: 767 },
+        { name: "tablet", min: 768, max: 1279 },
+        { name: "desktop", min: 1280, max: null },
+      ],
+    },
+    palette: {
+      collections: [
+        {
+          collectionId: "VariableCollectionId:mode",
+          name: "Mode",
+          axis: "mode",
+          values: [
+            { modeId: "1:0", token: "light" },
+            { modeId: "1:1", token: "dark" },
+          ],
+          defaultToken: "light",
+        },
+        {
+          collectionId: "VariableCollectionId:theme",
+          name: "Brand",
+          axis: "theme",
+          values: [
+            { modeId: "2:0", token: "default" },
+            { modeId: "2:1", token: "students" },
+          ],
+          defaultToken: "default",
+        },
+      ],
+    },
+    states: { states: ["default", "hover", "focus", "disabled"], defaultState: "default" },
+  };
+}
+
 describe("POST /project/identity/proposals", () => {
   beforeEach(async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/project/identity/registries",
+      payload: { registries: proposalsRegistries() },
+    });
     await app.inject({
       method: "PUT",
       url: "/project/identity/components",
@@ -786,6 +845,34 @@ describe("POST /project/identity/proposals", () => {
     expect(hero.reasoning).toContain("high");
     // Address re-serialized from the NEW label + existing coordinates.
     expect(hero.address).toBe("hero-banner@desktop");
+  });
+
+  it("fix #1: kebab-normalizes a free-text label before writing it (\"Hero Banner\" → \"hero-banner\") — the CORRECT behavior, not just crash-avoidance", async () => {
+    await writeManifest(dataDir, [composedRecord("n-hero", "hero-old")]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-hero", label: "Hero Banner!!", confidence: "high", reasoning: "Vision returned free text." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ applied: 1, skipped: 0 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.path[0]!.label).toBe("hero-banner");
+    expect(manifest.records["n-hero"]!.address).toBe("hero-banner@desktop");
+  });
+
+  it("fix #1: a label that kebabs to nothing usable (punctuation-only) is skipped — never writes an empty segment", async () => {
+    await writeManifest(dataDir, [composedRecord("n-hero", "hero-old")]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-hero", label: "!!!", confidence: "low", reasoning: "Nothing survives kebabbing." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-hero"]!.path[0]!.label).toBe("hero-old");
   });
 
   it("SKIPS a label proposal when the current last segment is confirmed:true — no overwrite", async () => {
@@ -886,6 +973,50 @@ describe("POST /project/identity/proposals", () => {
     expect(manifest.records["n-button"]!.path[0]!.label).toBe("button-old");
   });
 
+  it("a matchedComponentKey proposal against a CONFIRMED record is skipped — definitionRef/resolutionStatus untouched", async () => {
+    await writeManifest(dataDir, [confirmedRecord("n-button", "custom-button")]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-button",
+        matchedComponentKey: "button-key",
+        confidence: "high",
+        reasoning: "Should never apply — the user already confirmed a label.",
+      },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const button = manifest.records["n-button"]!;
+    expect(button.path[0]).toEqual({ label: "custom-button", provenance: "inferred", source: "prior-name", confirmed: true });
+    expect(button.definitionRef).toBeUndefined();
+    expect(button.resolutionStatus).toBeUndefined();
+  });
+
+  it("a matchedComponentKey proposal against an ELICITED record is skipped — definitionRef/resolutionStatus untouched", async () => {
+    const rec = composedRecord("n-button", "elicited-button");
+    rec.path = [{ label: "elicited-button", provenance: "elicited", source: "user" }];
+    await writeManifest(dataDir, [rec]);
+
+    const proposals: IdentityProposal[] = [
+      {
+        durableId: "n-button",
+        matchedComponentKey: "button-key",
+        confidence: "high",
+        reasoning: "Should never apply — elicited is user-ratified.",
+      },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    const button = manifest.records["n-button"]!;
+    expect(button.path[0]!.label).toBe("elicited-button");
+    expect(button.definitionRef).toBeUndefined();
+    expect(button.resolutionStatus).toBeUndefined();
+  });
+
   it("fills mode ONLY when the axis is currently absent; leaves an existing axis untouched", async () => {
     const withoutMode = composedRecord("n-nomode", "section-a");
     const withMode = composedRecord("n-withmode", "section-b");
@@ -931,6 +1062,33 @@ describe("POST /project/identity/proposals", () => {
       confidence: "high",
       confirmed: false,
     });
+  });
+
+  it("fix #2: a mode value that is NOT a registry member is not filled (normalized against the palette, not written raw)", async () => {
+    await writeManifest(dataDir, [composedRecord("n-nomode2", "section-d")]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-nomode2", mode: "purple", confidence: "low", reasoning: "Not an actual registered mode." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-nomode2"]!.coordinates.mode).toBeUndefined();
+    expect(manifest.records["n-nomode2"]!.address).toBe("section-d@desktop");
+  });
+
+  it("fix #2: a theme value that is NOT a registry member is not filled", async () => {
+    await writeManifest(dataDir, [composedRecord("n-notheme", "section-e")]);
+
+    const proposals: IdentityProposal[] = [
+      { durableId: "n-notheme", theme: "acme-corp", confidence: "low", reasoning: "Not a registered theme token." },
+    ];
+    const res = await app.inject({ method: "POST", url: "/project/identity/proposals", payload: { proposals } });
+    expect(res.json()).toEqual({ applied: 0, skipped: 1 });
+
+    const manifest = await readManifest(dataDir);
+    expect(manifest.records["n-notheme"]!.coordinates.theme).toBeUndefined();
   });
 
   it("a durableId absent from the manifest is skipped (no error)", async () => {

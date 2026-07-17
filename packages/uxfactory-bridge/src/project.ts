@@ -47,6 +47,9 @@ import {
   validateIdentityRegistries,
   assembleIdentities,
   serializeAddress,
+  toKebabLabel,
+  normalizeCoordinateToken,
+  LABEL_RE,
 } from "@uxfactory/spec";
 import type {
   IdentityRegistries,
@@ -953,6 +956,18 @@ function validateComponentsBody(
       );
       return;
     }
+    // roleName becomes a path label (identity-assemble.ts's resolveLabel,
+    // cases 1/3) that flows straight into serializeAddress — a non-kebab
+    // roleName would throw there. Reject it here, at the write boundary,
+    // rather than let a malformed registry entry crash a later extraction
+    // or proposals-merge request.
+    const roleName = (entry as Record<string, unknown>)["roleName"] as string;
+    if (!LABEL_RE.test(roleName)) {
+      errors.push(
+        `components[${i}].roleName "${roleName}" must be a valid kebab path label (matches /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/) — it is used as a path segment`,
+      );
+      return;
+    }
     parsed.push(entry as unknown as ComponentTypeEntry);
   });
 
@@ -1166,6 +1181,19 @@ function validateProposalsBody(
 // field on PathSegment (a frozen shape — see node-identity.ts), so for a
 // label change it is folded into the record-level `reasoning` teaching
 // surface instead; coordinates DO carry `confidence` natively (ProvenancedValue).
+//
+// NORMALIZATION (post-review fix): vision returns free text ("Hero Banner"),
+// not a grammar-valid label — `serializeAddress` throws on anything that
+// isn't `LABEL_RE`-clean kebab, or a coordinate value outside
+// `[a-z][a-z0-9]*`. Canonicalizing a proposed label to kebab is the CORRECT
+// behavior (not just crash-avoidance — "Hero Banner" SHOULD become
+// "hero-banner"), so `proposal.label` is run through `toKebabLabel` before
+// it ever reaches a path segment; an empty result (nothing survived, or the
+// kebabbed text starts with a digit) means "no usable label" and that part
+// of the proposal is skipped, never written as an empty segment.
+// `proposal.mode`/`proposal.theme` are run through `normalizeCoordinateToken`
+// so only an actual registry member ever lands in `coordinates` — a
+// non-member value is silently not filled (never written unresolved).
 
 function toAddressCoordinates(c: Coordinates): AddressCoordinates {
   return {
@@ -1181,23 +1209,33 @@ function applyIdentityProposal(
   record: NodeIdentityRecord,
   proposal: IdentityProposal,
   components: ComponentRegistry,
+  registries: IdentityRegistries,
 ): boolean {
   let changed = false;
   const lastSeg = record.path[record.path.length - 1];
   const guarded = lastSeg !== undefined && (lastSeg.confirmed === true || lastSeg.provenance === "elicited");
   const reasoningNote = `${proposal.reasoning} [vision confidence: ${proposal.confidence}]`;
 
-  // Open-vocab semantic label (composed sections) — §A2/§B2.
+  // Open-vocab semantic label (composed sections) — §A2/§B2. Normalized to a
+  // grammar-valid kebab label; an empty normalization means nothing usable
+  // survived, so this aspect of the proposal is a no-op.
   if (proposal.label !== undefined && lastSeg !== undefined && !guarded) {
-    lastSeg.label = proposal.label;
-    lastSeg.provenance = "inferred";
-    lastSeg.source = "vision";
-    lastSeg.confirmed = false;
-    record.reasoning = reasoningNote;
-    changed = true;
+    const normalizedLabel = toKebabLabel(proposal.label);
+    if (normalizedLabel !== "") {
+      lastSeg.label = normalizedLabel;
+      lastSeg.provenance = "inferred";
+      lastSeg.source = "vision";
+      lastSeg.confirmed = false;
+      record.reasoning = reasoningNote;
+      changed = true;
+    }
   }
 
   // Closed-set component match — a BINDING proposal, not a name (§C).
+  // `entry.roleName` is guaranteed LABEL_RE-valid by the component-registry
+  // PUT boundary (`validateComponentsBody`), so it needs no re-normalization
+  // here — it is trusted the same way the deterministic extraction pass
+  // (identity-assemble.ts) already trusts it.
   if (proposal.matchedComponentKey !== undefined && !guarded) {
     const entry = components.components.find((c) => c.key === proposal.matchedComponentKey);
     if (entry !== undefined) {
@@ -1215,26 +1253,34 @@ function applyIdentityProposal(
   }
 
   // Mode/theme fallback — ONLY when that axis is currently absent (never
-  // overwrite a derived/bound axis, however it was resolved).
+  // overwrite a derived/bound axis, however it was resolved), AND only when
+  // the proposed value normalizes to an actual registry member — a
+  // non-member value is silently ignored (not filled, not written raw).
   if (proposal.mode !== undefined && record.coordinates.mode === undefined) {
-    record.coordinates.mode = {
-      value: proposal.mode,
-      provenance: "inferred",
-      source: "vision",
-      confidence: proposal.confidence,
-      confirmed: false,
-    };
-    changed = true;
+    const normalizedMode = normalizeCoordinateToken("mode", proposal.mode, registries);
+    if (normalizedMode !== null) {
+      record.coordinates.mode = {
+        value: normalizedMode,
+        provenance: "inferred",
+        source: "vision",
+        confidence: proposal.confidence,
+        confirmed: false,
+      };
+      changed = true;
+    }
   }
   if (proposal.theme !== undefined && record.coordinates.theme === undefined) {
-    record.coordinates.theme = {
-      value: proposal.theme,
-      provenance: "inferred",
-      source: "vision",
-      confidence: proposal.confidence,
-      confirmed: false,
-    };
-    changed = true;
+    const normalizedTheme = normalizeCoordinateToken("theme", proposal.theme, registries);
+    if (normalizedTheme !== null) {
+      record.coordinates.theme = {
+        value: normalizedTheme,
+        provenance: "inferred",
+        source: "vision",
+        confidence: proposal.confidence,
+        confirmed: false,
+      };
+      changed = true;
+    }
   }
 
   return changed;
@@ -1664,6 +1710,7 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       const now = new Date().toISOString();
       let applied = 0;
       let skipped = 0;
+      const errors: string[] = [];
 
       for (const proposal of validated.proposals) {
         const record = manifest.records[proposal.durableId];
@@ -1671,28 +1718,41 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
           skipped++;
           continue;
         }
-        if (!applyIdentityProposal(record, proposal, components)) {
+        // Backstop (post-review fix): with the label/mode/theme normalization
+        // above and the component-registry roleName guard, this try/catch
+        // should be unreachable on validated input — it exists so ONE
+        // unexpected throw (e.g. from stale/hand-edited manifest data this
+        // proposal never even touches) can never 500 the whole route or
+        // discard proposals already merged earlier in this same batch. The
+        // manifest write below still persists every successfully-merged
+        // record regardless of a later proposal's failure.
+        try {
+          if (!applyIdentityProposal(record, proposal, components, registries)) {
+            skipped++;
+            continue;
+          }
+          record.updatedAt = now;
+          record.address = serializeAddress(
+            {
+              path: record.path.map((seg) => ({
+                label: seg.label,
+                ...(seg.ordinal !== undefined ? { ordinal: seg.ordinal } : {}),
+              })),
+              coordinates: toAddressCoordinates(record.coordinates),
+            } satisfies CanonicalAddress,
+            registries,
+          );
+          applied++;
+        } catch (err) {
           skipped++;
-          continue;
+          errors.push(`${proposal.durableId}: ${err instanceof Error ? err.message : String(err)}`);
         }
-        record.updatedAt = now;
-        record.address = serializeAddress(
-          {
-            path: record.path.map((seg) => ({
-              label: seg.label,
-              ...(seg.ordinal !== undefined ? { ordinal: seg.ordinal } : {}),
-            })),
-            coordinates: toAddressCoordinates(record.coordinates),
-          } satisfies CanonicalAddress,
-          registries,
-        );
-        applied++;
       }
 
       await mkdir(ctx.dataDir, { recursive: true });
       await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
-      return { applied, skipped };
+      return { applied, skipped, ...(errors.length > 0 ? { errors } : {}) };
     },
   );
 

@@ -56,8 +56,36 @@ export type ParseAddressResult =
 
 // ─── grammar tokens (EBNF §5) ───────────────────────────────────────────────
 
-/** `kebab-token` (§5) with constraint 1 (no leading/trailing/double hyphen), lowercase only. */
-const LABEL_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+/**
+ * `kebab-token` (§5) with constraint 1 (no leading/trailing/double hyphen),
+ * lowercase only, and — the part callers most often trip on — the FIRST
+ * character must be a letter (a leading digit is not a valid label start,
+ * even though interior segments may start with one after a hyphen). Exported
+ * so any boundary that stores a path label (e.g. a component registry's
+ * `roleName`, which becomes a path label via `identity-assemble.ts`) can
+ * check it directly instead of re-deriving the grammar's own label rule.
+ */
+export const LABEL_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+
+/**
+ * Force arbitrary text (e.g. a vision-proposed free-text label like
+ * "Hero Banner") into a `LABEL_RE`-valid kebab label, or `""` when nothing
+ * valid survives (e.g. the input is empty/punctuation-only, or kebabbing
+ * leaves a label that starts with a digit — "3D Card" → "3d-card" fails
+ * LABEL_RE's leading-letter constraint). Callers MUST treat `""` as "no
+ * usable label" and skip applying it — never write an empty path segment.
+ * This is the single source of truth for "make text safe to serialize as a
+ * path label" so `serializeAddress` can never be handed a label it would
+ * throw on, given output that passed through here.
+ */
+export function toKebabLabel(input: string): string {
+  const kebabed = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+  return LABEL_RE.test(kebabed) ? kebabed : "";
+}
 
 /**
  * `registry-token` (§5) — lowercase alphanumeric, no hyphens; coordinate
