@@ -28,6 +28,7 @@ import type { ComponentTypeEntry, IdentityExtraction } from "@uxfactory/spec";
 import type { Bridge, Link } from "../lib/bridge.js";
 import { BridgeError } from "../lib/bridge.js";
 import type { PluginBus } from "../lib/plugin-bus.js";
+import { bytesToBase64 } from "../lib/base64.js";
 import { useAppStore } from "../stores/app.js";
 import { Card } from "../components/index.js";
 import { linksQuery, putLinksMutation, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
@@ -143,15 +144,46 @@ export function Components({
       });
 
       // Tolerate a 404 (older bridge build without this route) — toast, no
-      // crash — rather than surfacing a generic failure.
+      // crash — rather than surfacing a generic failure. Only on a
+      // SUCCESSFUL extraction POST do we go on to request root-tier crops
+      // (Task 9) — a failed/missing extraction has nothing worth screenshotting.
       void bridge
         .postIdentityExtraction?.(payload.extraction)
-        .then((res) => setIdentityResult({ count: res.count, addresses: res.addresses }))
+        .then((res) => {
+          setIdentityResult({ count: res.count, addresses: res.addresses });
+          bus.requestIdentityCrops?.();
+        })
         .catch((err: unknown) => {
           if (err instanceof BridgeError && err.status === 404) {
             toast("Bridge not ready for identity extraction yet");
           } else {
             toast("Failed to post identity extraction — is the bridge running?");
+          }
+        });
+    });
+    return () => unsub?.();
+  }, [bus, bridge, toast]);
+
+  // ── Subscribe to identity-crops replies — base64-encode + POST them ────────
+  useEffect(() => {
+    const unsub = bus.onIdentityCrops?.((raw) => {
+      if (raw === null || typeof raw !== "object") return;
+      const payload = raw as {
+        crops: Array<{ durableId: string; figmaNodeId: string; bytes: Uint8Array }>;
+      };
+      const crops = payload.crops.map((c) => ({
+        durableId: c.durableId,
+        base64: bytesToBase64(c.bytes),
+      }));
+
+      // Same 404-tolerant discipline as the extraction POST above.
+      void bridge
+        .postIdentityCrops?.(crops)
+        .catch((err: unknown) => {
+          if (err instanceof BridgeError && err.status === 404) {
+            toast("Bridge not ready for identity crops yet");
+          } else {
+            toast("Failed to post identity crops — is the bridge running?");
           }
         });
     });

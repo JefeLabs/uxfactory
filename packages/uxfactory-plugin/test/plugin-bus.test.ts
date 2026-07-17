@@ -226,6 +226,37 @@ describe("plugin-bus onIdentityExtraction", () => {
   });
 });
 
+describe("plugin-bus requestIdentityCrops", () => {
+  it("sends an identity-crops message", () => {
+    const sent: unknown[] = [];
+    const bus = createBus((msg) => sent.push(msg), () => {});
+    bus.requestIdentityCrops!();
+    expect(sent).toContainEqual({ type: "identity-crops" });
+  });
+});
+
+describe("plugin-bus onIdentityCrops", () => {
+  it("fires the callback with {crops} and stops after unsubscribe", () => {
+    const t = makeTransport();
+    const bus = createBus(t.post, t.listen);
+
+    const calls: unknown[] = [];
+    const unsub = bus.onIdentityCrops!((payload) => calls.push(payload));
+
+    const crops = [
+      { durableId: "n-abc123456789", figmaNodeId: "1:1", bytes: new Uint8Array([137, 80, 78, 71]) },
+    ];
+    t.deliver({ type: "identity-crops", crops });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ crops });
+
+    unsub();
+    t.deliver({ type: "identity-crops", crops });
+    expect(calls).toHaveLength(1); // still 1 — unsubscribed
+  });
+});
+
 describe("plugin-bus postReview", () => {
   it("sends a review message with the provided report", () => {
     const sent: unknown[] = [];

@@ -232,6 +232,15 @@ export interface Bridge {
   postIdentityExtraction?(
     extraction: IdentityExtraction,
   ): Promise<{ ok: boolean; count: number; addresses: string[] }>;
+  /**
+   * POST /project/identity/crops {crops: [{durableId, base64}]} → {ok, written}
+   * Writes each crop's PNG under `identity/crops/<durableId>.png` (root-tier
+   * crops pipeline, Task 9). Callers should still tolerate a 404 (toast/log,
+   * no crash) for older bridge builds without this route.
+   */
+  postIdentityCrops?(
+    crops: Array<{ durableId: string; base64: string }>,
+  ): Promise<{ ok: boolean; written: number }>;
 }
 
 /** One AC row in the traceability tree, with its linked canvas nodes. */
@@ -570,6 +579,13 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
       return post<{ ok: boolean; count: number; addresses: string[] }>(
         rooted("/project/identity/extraction"),
         { extraction },
+      );
+    },
+
+    postIdentityCrops(crops: Array<{ durableId: string; base64: string }>) {
+      return post<{ ok: boolean; written: number }>(
+        rooted("/project/identity/crops"),
+        { crops },
       );
     },
   };

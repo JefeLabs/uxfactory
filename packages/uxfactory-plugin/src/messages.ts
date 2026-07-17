@@ -43,7 +43,8 @@ export type UiToMain =
   | { type: "insert-icon"; name: string; svg: string; size: number }
   | { type: "notify"; message: string }
   | { type: "close" }
-  | { type: "identity-scan" };
+  | { type: "identity-scan" }
+  | { type: "identity-crops" };
 
 /** Messages the main thread sends to the iframe UI. */
 export type MainToUi =
@@ -63,4 +64,9 @@ export type MainToUi =
       extraction: IdentityExtraction;
       components: ComponentTypeEntry[];
       truncated: number;
+    }
+  | {
+      type: "identity-crops";
+      /** One PNG per PAGE CHILD — identification tier, never deeper (permanent boundary). */
+      crops: { durableId: string; figmaNodeId: string; bytes: Uint8Array }[];
     };

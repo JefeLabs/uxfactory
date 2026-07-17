@@ -330,6 +330,38 @@ describe("bridge postIdentityExtraction()", () => {
   });
 });
 
+// ─── postIdentityCrops() ───────────────────────────────────────────────────
+
+describe("bridge postIdentityCrops()", () => {
+  it("POSTs { crops } to /project/identity/crops", async () => {
+    const fakeFetch = jsonFetch({ ok: true, written: 1 });
+    const bridge = createBridge(fakeFetch);
+    const crops = [{ durableId: "n-abc123456789", base64: "iVBORw0KGgo=" }];
+    const result = await bridge.postIdentityCrops!(crops);
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      `${BASE}/project/identity/crops`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ crops }),
+      }),
+    );
+    expect(result).toEqual({ ok: true, written: 1 });
+  });
+
+  it("rejects with a BridgeError carrying status 404 against an older bridge build without this route", async () => {
+    const fakeFetch = errorFetch(404, { error: "not found" });
+    const bridge = createBridge(fakeFetch);
+    try {
+      await bridge.postIdentityCrops!([]);
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(BridgeError);
+      expect((err as BridgeError).status).toBe(404);
+    }
+  });
+});
+
 // ─── BridgeError ─────────────────────────────────────────────────────────────
 
 describe("BridgeError", () => {

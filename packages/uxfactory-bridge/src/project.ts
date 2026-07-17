@@ -14,6 +14,7 @@
  *   PUT  /project/identity/components
  *   GET  /project/identity/manifest
  *   POST /project/identity/extraction
+ *   POST /project/identity/crops
  *   GET  /project/artifact
  *   PUT  /project/artifact
  *   POST /project/open
@@ -1033,6 +1034,46 @@ function validateExtractionBody(
   };
 }
 
+// ─── Node identity: crops wire-shape validation ─────────────────────────────
+// Same defensive posture as the two validators above: the wire body must be
+// `{ crops: [{durableId, base64}] }` — anything else (missing key, not an
+// array, an entry missing either string field) fails the WHOLE request with
+// 400 and nothing is written. A durableId that IS a well-formed string but
+// doesn't match the durable-id shape (`/^n-[a-z0-9]+$/`) is a DIFFERENT,
+// narrower concern (path-safety) handled per-entry at write time in the
+// route below — that one skips just the offending crop rather than failing
+// the whole batch, since one bad id must not cost the other N-1 good crops.
+
+const DURABLE_ID_RE = /^n-[a-z0-9]+$/;
+
+function validateCropsBody(
+  body: unknown,
+): { ok: true; crops: Array<{ durableId: string; base64: string }> } | { ok: false; errors: string[] } {
+  const cropsRaw = isPlainObject(body) ? body["crops"] : undefined;
+  if (!Array.isArray(cropsRaw)) {
+    return { ok: false, errors: ['"crops" must be an array'] };
+  }
+
+  const errors: string[] = [];
+  const crops: Array<{ durableId: string; base64: string }> = [];
+  cropsRaw.forEach((raw, i) => {
+    if (
+      !isPlainObject(raw) ||
+      typeof raw["durableId"] !== "string" ||
+      typeof raw["base64"] !== "string"
+    ) {
+      errors.push(`crops[${i}] must be an object with string "durableId" and "base64"`);
+      return;
+    }
+    crops.push({ durableId: raw["durableId"], base64: raw["base64"] });
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, crops };
+}
+
 // ─── Fastify plugin ──────────────────────────────────────────────────────────
 
 export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
@@ -1374,6 +1415,40 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 
       const addresses = records.map((r) => r.address);
       return { ok: true, count: records.length, addresses: addresses.slice(0, 50) };
+    },
+  );
+
+  // ── POST /project/identity/crops ─────────────────────────────────────────
+  // Root-tier crops pipeline (Task 9, Phase 3: vision). Writes one PNG per
+  // crop under identity/crops/<durableId>.png — mkdir -p the dir, overwrite
+  // an existing crop for the same durableId (a re-scan always reflects the
+  // current canvas state). durableId is checked against DURABLE_ID_RE BEFORE
+  // it ever reaches path.join — anything else is skipped, never written,
+  // never a path escape (see validateCropsBody's comment for why this is a
+  // per-entry skip rather than a whole-request 400).
+  app.post<{ Querystring: { root?: string }; Body: { crops?: unknown } }>(
+    "/project/identity/crops",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+
+      const validated = validateCropsBody(req.body);
+      if (!validated.ok) {
+        return reply.code(400).send({ errors: validated.errors });
+      }
+
+      const cropsDir = path.join(ctx.dataDir, "identity", "crops");
+      await mkdir(cropsDir, { recursive: true });
+
+      let written = 0;
+      for (const crop of validated.crops) {
+        if (!DURABLE_ID_RE.test(crop.durableId)) continue;
+        const bytes = Buffer.from(crop.base64, "base64");
+        await writeFile(path.join(cropsDir, `${crop.durableId}.png`), bytes);
+        written++;
+      }
+
+      return { ok: true, written };
     },
   );
 

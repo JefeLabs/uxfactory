@@ -34,15 +34,18 @@ import { renderWithProviders } from "./test-utils.js";
 
 type SelectionCb = (sel: unknown) => void;
 type IdentityExtractionCb = (payload: unknown) => void;
+type IdentityCropsCb = (payload: unknown) => void;
 
 interface FakeBus extends PluginBus {
   _fireSelection(sel: unknown): void;
   _fireIdentityExtraction(payload: unknown): void;
+  _fireIdentityCrops(payload: unknown): void;
 }
 
 function makeBus(): FakeBus {
   let selectionCbs: SelectionCb[] = [];
   let identityExtractionCbs: IdentityExtractionCb[] = [];
+  let identityCropsCbs: IdentityCropsCb[] = [];
   return {
     storageGet: vi.fn().mockResolvedValue(undefined),
     storageSet: vi.fn().mockResolvedValue(undefined),
@@ -65,11 +68,21 @@ function makeBus(): FakeBus {
         identityExtractionCbs = identityExtractionCbs.filter((c) => c !== cb);
       };
     },
+    requestIdentityCrops: vi.fn(),
+    onIdentityCrops(cb: IdentityCropsCb) {
+      identityCropsCbs.push(cb);
+      return () => {
+        identityCropsCbs = identityCropsCbs.filter((c) => c !== cb);
+      };
+    },
     _fireSelection(sel: unknown) {
       for (const cb of selectionCbs) cb(sel);
     },
     _fireIdentityExtraction(payload: unknown) {
       for (const cb of identityExtractionCbs) cb(payload);
+    },
+    _fireIdentityCrops(payload: unknown) {
+      for (const cb of identityCropsCbs) cb(payload);
     },
   };
 }
@@ -668,6 +681,143 @@ describe("Scan identities", () => {
         screen.getByText("2 nodes scanned, 1 components harvested"),
       ).toBeInTheDocument();
     });
+  });
+});
+
+// ─── Root-tier identity crops (Task 9) ─────────────────────────────────────
+
+describe("Identity crops (Task 9)", () => {
+  it("requests crops only AFTER a successful extraction POST", async () => {
+    const bus = makeBus();
+    const postIdentityExtraction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, count: 2, addresses: ["hero@mobile"] });
+    const bridge = makeBridge({
+      putIdentityComponents: vi.fn().mockResolvedValue({ ok: true }),
+      postIdentityExtraction,
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    act(() => {
+      bus._fireIdentityExtraction(makeIdentityExtractionPayload());
+    });
+
+    await waitFor(() => {
+      expect(bus.requestIdentityCrops).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does NOT request crops when the extraction POST fails", async () => {
+    const bus = makeBus();
+    const postIdentityExtraction = vi
+      .fn()
+      .mockRejectedValue(new BridgeError(404, { error: "not found" }));
+    const bridge = makeBridge({
+      putIdentityComponents: vi.fn().mockResolvedValue({ ok: true }),
+      postIdentityExtraction,
+    });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    act(() => {
+      bus._fireIdentityExtraction(makeIdentityExtractionPayload());
+    });
+
+    await waitFor(() => {
+      expect(
+        useAppStore
+          .getState()
+          .toasts.some((t) => t.message.includes("Bridge not ready for identity extraction yet")),
+      ).toBe(true);
+    });
+    expect(bus.requestIdentityCrops).not.toHaveBeenCalled();
+  });
+
+  it("on identity-crops reply: base64-encodes each crop's bytes and POSTs them to the bridge", async () => {
+    const bus = makeBus();
+    const postIdentityCrops = vi.fn().mockResolvedValue({ ok: true, written: 2 });
+    const bridge = makeBridge({ postIdentityCrops });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    const cropsPayload = {
+      crops: [
+        { durableId: "n-hero123456", figmaNodeId: "1:1", bytes: new Uint8Array([137, 80, 78, 71]) },
+        { durableId: "n-footer12345", figmaNodeId: "1:2", bytes: new Uint8Array([1, 2, 3]) },
+      ],
+    };
+    act(() => {
+      bus._fireIdentityCrops(cropsPayload);
+    });
+
+    await waitFor(() => {
+      expect(postIdentityCrops).toHaveBeenCalledTimes(1);
+    });
+    const [sent] = postIdentityCrops.mock.calls[0] as [Array<{ durableId: string; base64: string }>];
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toEqual({
+      durableId: "n-hero123456",
+      base64: Buffer.from([137, 80, 78, 71]).toString("base64"),
+    });
+    expect(sent[1]).toEqual({
+      durableId: "n-footer12345",
+      base64: Buffer.from([1, 2, 3]).toString("base64"),
+    });
+  });
+
+  it("tolerates a 404 from postIdentityCrops (older bridge build without this route) — toasts, never crashes", async () => {
+    const bus = makeBus();
+    const postIdentityCrops = vi
+      .fn()
+      .mockRejectedValue(new BridgeError(404, { error: "not found" }));
+    const bridge = makeBridge({ postIdentityCrops });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    act(() => {
+      bus._fireIdentityCrops({
+        crops: [{ durableId: "n-hero123456", figmaNodeId: "1:1", bytes: new Uint8Array([1]) }],
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        useAppStore
+          .getState()
+          .toasts.some((t) => t.message.includes("Bridge not ready for identity crops yet")),
+      ).toBe(true);
+    });
+  });
+
+  it("does not crash when the bridge lacks postIdentityCrops (legacy fixture)", async () => {
+    const bus = makeBus();
+    const bridge = makeBridge(); // no postIdentityCrops at all
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+    });
+    await waitFor(() => expect(bridge.getLinks).toHaveBeenCalled());
+
+    act(() => {
+      bus._fireIdentityCrops({
+        crops: [{ durableId: "n-hero123456", figmaNodeId: "1:1", bytes: new Uint8Array([1]) }],
+      });
+    });
+
+    // No crash — nothing else to assert (bridge silently has no crops route).
   });
 });
 

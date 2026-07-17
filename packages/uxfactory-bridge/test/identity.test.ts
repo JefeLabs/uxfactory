@@ -21,7 +21,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -578,5 +578,122 @@ describe("POST /project/identity/extraction", () => {
     // Nothing written — the manifest is exactly what it was before.
     const after = await app.inject({ method: "GET", url: "/project/identity/manifest" });
     expect(after.json()).toEqual(before.json());
+  });
+});
+
+// ─── POST /project/identity/crops ─────────────────────────────────────────────
+// Task 9: root-tier crops pipeline. The plugin exports one PNG per page
+// child, base64-encodes it in the UI, and POSTs it here to be decoded and
+// written under identity/crops/<durableId>.png.
+
+function b64(bytes: number[]): string {
+  return Buffer.from(bytes).toString("base64");
+}
+
+const PNG_MAGIC = [137, 80, 78, 71, 13, 10, 26, 10];
+
+describe("POST /project/identity/crops", () => {
+  it("writes one PNG per crop under identity/crops/<durableId>.png and replies { ok: true, written }", async () => {
+    const crops = [
+      { durableId: "n-hero123456", base64: b64(PNG_MAGIC) },
+      { durableId: "n-footer12345", base64: b64([1, 2, 3, 4]) },
+    ];
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/crops",
+      payload: { crops },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, written: 2 });
+
+    const heroPath = path.join(dataDir, "identity", "crops", "n-hero123456.png");
+    const footerPath = path.join(dataDir, "identity", "crops", "n-footer12345.png");
+    expect(await readFile(heroPath)).toEqual(Buffer.from(PNG_MAGIC));
+    expect(await readFile(footerPath)).toEqual(Buffer.from([1, 2, 3, 4]));
+  });
+
+  it("creates the identity/crops directory when it does not yet exist", async () => {
+    await expect(access(path.join(dataDir, "identity", "crops"))).rejects.toThrow();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/crops",
+      payload: { crops: [{ durableId: "n-abc123", base64: b64(PNG_MAGIC) }] },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const entries = await readdir(path.join(dataDir, "identity", "crops"));
+    expect(entries).toEqual(["n-abc123.png"]);
+  });
+
+  it("overwrites an existing crop for the same durableId (re-scan reflects current canvas)", async () => {
+    const cropPath = path.join(dataDir, "identity", "crops", "n-hero123456.png");
+
+    await app.inject({
+      method: "POST",
+      url: "/project/identity/crops",
+      payload: { crops: [{ durableId: "n-hero123456", base64: b64([1, 1, 1]) }] },
+    });
+    expect(await readFile(cropPath)).toEqual(Buffer.from([1, 1, 1]));
+
+    await app.inject({
+      method: "POST",
+      url: "/project/identity/crops",
+      payload: { crops: [{ durableId: "n-hero123456", base64: b64([2, 2, 2, 2]) }] },
+    });
+    expect(await readFile(cropPath)).toEqual(Buffer.from([2, 2, 2, 2]));
+
+    // Still exactly one file — overwrite, not an accumulating duplicate.
+    const entries = await readdir(path.join(dataDir, "identity", "crops"));
+    expect(entries).toEqual(["n-hero123456.png"]);
+  });
+
+  it("path-safety: skips a durableId that fails the /^n-[a-z0-9]+$/ shape (e.g. a path-traversal attempt) but still writes the valid crops in the same batch", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/crops",
+      payload: {
+        crops: [
+          { durableId: "n-good123", base64: b64(PNG_MAGIC) },
+          { durableId: "../../../../etc/passwd", base64: b64([9, 9, 9]) },
+          { durableId: "not-a-durable-id", base64: b64([9, 9, 9]) },
+          { durableId: "n-BADCASE", base64: b64([9, 9, 9]) }, // uppercase not allowed
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, written: 1 });
+
+    // Only the one valid crop landed inside the crops dir.
+    const entries = await readdir(path.join(dataDir, "identity", "crops"));
+    expect(entries).toEqual(["n-good123.png"]);
+
+    // No file escaped upward — the dataDir's own parent tree gained nothing else.
+    await expect(readFile(path.join(root, "..", "etc", "passwd"))).rejects.toThrow();
+    await expect(readFile(path.join(root, "etc", "passwd"))).rejects.toThrow();
+  });
+
+  it.each([
+    ["missing crops key", {}],
+    ["null body", null],
+    ["crops not an array", { crops: "nope" }],
+    ["entry missing durableId", { crops: [{ base64: "aGk=" }] }],
+    ["entry missing base64", { crops: [{ durableId: "n-abc123" }] }],
+    ["entry with non-string base64", { crops: [{ durableId: "n-abc123", base64: 123 }] }],
+  ])("POST with malformed body (%s) replies 400 and persists nothing", async (_label, payload) => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/project/identity/crops",
+      payload: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { errors: string[] };
+    expect(Array.isArray(body.errors)).toBe(true);
+    expect(body.errors.length).toBeGreaterThan(0);
+
+    // Nothing written — the crops dir was never even created.
+    await expect(access(path.join(dataDir, "identity", "crops"))).rejects.toThrow();
   });
 });

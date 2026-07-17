@@ -960,3 +960,131 @@ describe("code.ts identity-scan (Task 4)", () => {
     expect(reply.truncated).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// identity-crops (node-identity feature, Task 9 — Phase 3: vision)
+// ---------------------------------------------------------------------------
+describe("code.ts identity-crops (Task 9)", () => {
+  it("exports one PNG per PAGE CHILD only — never a descendant", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    const frame = fig.createFrame();
+    frame.name = "Hero";
+    const child = fig.createText();
+    child.name = "Headline";
+    frame.appendChild(child);
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({ type: "identity-crops" });
+
+    const reply = lastOfType(fig, "identity-crops");
+    expect(reply).toBeDefined();
+    expect(reply!.crops).toHaveLength(1);
+    expect(reply!.crops[0]!.figmaNodeId).toBe(frame.id);
+  });
+
+  it("reuses the SAME durable id identity-scan would stamp (ensureDurableId convention)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const frame = fig.createFrame();
+    frame.name = "Card";
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({ type: "identity-crops" });
+
+    const stamped = frame._pluginData.get("uxf:durableId");
+    expect(stamped).toMatch(/^n-[0-9a-z]{12}$/);
+    const reply = lastOfType(fig, "identity-crops")!;
+    expect(reply.crops[0]!.durableId).toBe(stamped);
+  });
+
+  it("does not mint a new durable id when the node already has one (scan-then-crops)", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const frame = fig.createFrame();
+    frame.name = "Card";
+    fig.currentPage.appendChild(frame);
+
+    await fig.__send({ type: "identity-scan" });
+    const scanned = frame._pluginData.get("uxf:durableId");
+
+    await fig.__send({ type: "identity-crops" });
+    const reply = lastOfType(fig, "identity-crops")!;
+    expect(reply.crops[0]!.durableId).toBe(scanned);
+  });
+
+  it("scales a wide node's export so its longest edge (width) lands at 1024px", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const frame = fig.createFrame();
+    frame.name = "Wide";
+    frame.resize(4096, 512);
+    fig.currentPage.appendChild(frame);
+
+    const exportCalls: unknown[] = [];
+    (frame as unknown as Record<string, unknown>).exportAsync = async (settings: unknown) => {
+      exportCalls.push(settings);
+      return new Uint8Array([137, 80, 78, 71]);
+    };
+
+    await fig.__send({ type: "identity-crops" });
+
+    expect(exportCalls).toEqual([
+      { format: "PNG", constraint: { type: "SCALE", value: 0.25 } },
+    ]);
+  });
+
+  it("never upscales — a node smaller than 1024px exports at constraint value 1", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const frame = fig.createFrame();
+    frame.name = "Small";
+    frame.resize(200, 100);
+    fig.currentPage.appendChild(frame);
+
+    const exportCalls: unknown[] = [];
+    (frame as unknown as Record<string, unknown>).exportAsync = async (settings: unknown) => {
+      exportCalls.push(settings);
+      return new Uint8Array([137, 80, 78, 71]);
+    };
+
+    await fig.__send({ type: "identity-crops" });
+
+    expect(exportCalls).toEqual([
+      { format: "PNG", constraint: { type: "SCALE", value: 1 } },
+    ]);
+  });
+
+  it("posts crops with durableId, figmaNodeId, and the exported bytes for every page child", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+    const a = fig.createFrame();
+    a.name = "A";
+    fig.currentPage.appendChild(a);
+    const b = fig.createFrame();
+    b.name = "B";
+    fig.currentPage.appendChild(b);
+
+    await fig.__send({ type: "identity-crops" });
+
+    const reply = lastOfType(fig, "identity-crops")!;
+    expect(reply.crops).toHaveLength(2);
+    for (const crop of reply.crops) {
+      expect(crop.durableId).toMatch(/^n-[0-9a-z]{12}$/);
+      expect(crop.bytes).toBeInstanceOf(Uint8Array);
+      expect(crop.bytes.length).toBeGreaterThan(0);
+    }
+    expect(reply.crops.map((c) => c.figmaNodeId).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it("posts an empty crops array (no crash) when the page has no children", async () => {
+    const fig = makeFigma();
+    await loadCode(fig);
+
+    await fig.__send({ type: "identity-crops" });
+
+    const reply = lastOfType(fig, "identity-crops")!;
+    expect(reply.crops).toEqual([]);
+  });
+});

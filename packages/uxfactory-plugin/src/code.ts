@@ -11,8 +11,9 @@ import { planAnnotations } from "./annotation-plan.js";
 import type { ReviewReportLike } from "./annotation-plan.js";
 import { snapshotNode } from "./canvas-snapshot.js";
 import type { CanvasSnapshot, SnapshotFrame, FrameLike } from "./canvas-snapshot.js";
-import { extractIdentityTree, harvestComponents } from "./identity-extract.js";
+import { extractIdentityTree, harvestComponents, ensureDurableId } from "./identity-extract.js";
 import { toIdentitySourceNode, type RawIdentityNode } from "./identity-adapter.js";
+import { cropScaleFor } from "./identity-crops.js";
 
 /** The narrow node surface the orchestrator uses (cast from the real figma node). */
 interface EditableNode {
@@ -153,6 +154,7 @@ async function handleMessage(msg: UiToMain): Promise<void> {
     else if (msg.type === "review") await drawReview(msg.report);
     else if (msg.type === "review-selection") await reviewSelection();
     else if (msg.type === "identity-scan") await scanIdentity();
+    else if (msg.type === "identity-crops") await exportIdentityCrops();
     else if (msg.type === "undo") applyUndo();
     else if (msg.type === "resize") fig.ui.resize(msg.width, msg.height);
     else if (msg.type === "storage-get") {
@@ -1049,6 +1051,56 @@ async function scanIdentity(): Promise<void> {
   const components = harvestComponents(sourceNodes);
 
   post({ type: "identity-extraction", extraction, components, truncated });
+}
+
+// ---- identity crops (node-identity feature, Task 9 — Phase 3: vision) ----
+
+/**
+ * The narrow node surface `exportIdentityCrops` touches. PAGE CHILDREN ONLY —
+ * the identification tier is a permanent boundary; this function must never
+ * walk into `children`. getPluginData/setPluginData mirror `IdentityScanNode`
+ * so `ensureDurableId` (identity-extract.ts) can mint/reuse the same durable
+ * id `scanIdentity` would stamp on this node.
+ */
+interface IdentityCropNode {
+  id: string;
+  name: string;
+  type: string;
+  width?: number;
+  height?: number;
+  getPluginData(key: string): string;
+  setPluginData(key: string, value: string): void;
+  exportAsync(settings: {
+    format: "PNG";
+    constraint: { type: "SCALE"; value: number };
+  }): Promise<Uint8Array>;
+}
+
+/**
+ * Exports one PNG per PAGE CHILD — never deeper (identification tier, a
+ * permanent boundary). Each export is scaled (constraint SCALE, value ≤ 1 —
+ * exportAsync must never upscale) so the node's longest edge is ≤ 1024px
+ * (`cropScaleFor`). Every node gets/reuses a durable id via `ensureDurableId`
+ * so the bridge can key each crop file by it. All crops post in a single
+ * message — no existing large-payload chunking idiom was found elsewhere in
+ * this codebase to reuse, and a dozen-ish PNGs is a fine single-message size.
+ */
+async function exportIdentityCrops(): Promise<void> {
+  const page = fig.currentPage;
+  const pageChildren = page.children as unknown as readonly IdentityCropNode[];
+
+  const crops: { durableId: string; figmaNodeId: string; bytes: Uint8Array }[] = [];
+  for (const node of pageChildren) {
+    const durableId = ensureDurableId(node);
+    const scale = cropScaleFor(node.width, node.height);
+    const bytes = await node.exportAsync({
+      format: "PNG",
+      constraint: { type: "SCALE", value: scale },
+    });
+    crops.push({ durableId, figmaNodeId: node.id, bytes });
+  }
+
+  post({ type: "identity-crops", crops });
 }
 
 function applyUndo(): void {
