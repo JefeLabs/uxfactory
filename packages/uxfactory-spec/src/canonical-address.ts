@@ -29,6 +29,7 @@
 import {
   modeTokens,
   themeTokens,
+  REGISTRY_TOKEN_RE,
   type IdentityRegistries,
   type PaletteAxis,
 } from "./node-identity.js";
@@ -58,8 +59,14 @@ export type ParseAddressResult =
 /** `kebab-token` (§5) with constraint 1 (no leading/trailing/double hyphen), lowercase only. */
 const LABEL_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
-/** `registry-token` (§5) — lowercase alphanumeric, no hyphens; coordinate values only. */
-const VALUE_RE = /^[a-z][a-z0-9]*$/;
+/**
+ * `registry-token` (§5) — lowercase alphanumeric, no hyphens; coordinate
+ * values only. Imported from node-identity.ts, which enforces this same
+ * charset on the registries themselves (`validateIdentityRegistries`), so
+ * there is exactly one definition of "a valid coordinate value" shared by
+ * both the registry boundary and the address grammar.
+ */
+const VALUE_RE = REGISTRY_TOKEN_RE;
 
 const ORDINAL_RE = /^[0-9]+$/;
 
@@ -111,8 +118,34 @@ function registryDefault(axis: "mode" | "theme" | "state", r: IdentityRegistries
  * render keyed (`@theme=students`). `mode`/`theme`/`state` coordinates equal
  * to their axis's registry default are dropped; `viewport` is always
  * rendered when present, since it has no default (§3.3).
+ *
+ * Throws if `a` contains a label or coordinate value that violates the
+ * grammar's own charset rules (kebab-token for labels, registry-token for
+ * coordinate values) — emitting such a string would silently produce
+ * output `parseAddress` itself rejects, breaking the serialize/parse
+ * round-trip invariant the whole grammar rests on. A `CanonicalAddress`
+ * this malformed can only arise by hand-construction or a bad upstream
+ * registry (Fix A closes that second path at `validateIdentityRegistries`),
+ * so this is a programming-error invariant break, not a recoverable input
+ * — hence throw rather than a `Result` return.
  */
 export function serializeAddress(a: CanonicalAddress, r: IdentityRegistries): string {
+  for (const seg of a.path) {
+    if (!LABEL_RE.test(seg.label)) {
+      throw new Error(
+        `serializeAddress: invalid path label "${seg.label}" — labels must be lowercase kebab-case with no leading, trailing, or double hyphen`,
+      );
+    }
+  }
+  for (const axis of AXIS_KEYS) {
+    const value = a.coordinates[axis];
+    if (value !== undefined && !VALUE_RE.test(value)) {
+      throw new Error(
+        `serializeAddress: invalid ${axis} coordinate value "${value}" — must be a hyphen-free lowercase alphanumeric token (matches /^[a-z][a-z0-9]*$/)`,
+      );
+    }
+  }
+
   const path = a.path
     .map((seg) => (seg.ordinal !== undefined && seg.ordinal >= 2 ? `${seg.label}#${seg.ordinal}` : seg.label))
     .join("/");

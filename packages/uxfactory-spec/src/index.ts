@@ -69,6 +69,7 @@ export {
   validateIdentityRegistries,
   modeTokens,
   themeTokens,
+  REGISTRY_TOKEN_RE,
 } from "./node-identity.js";
 export type {
   AtomicLevel,

@@ -152,6 +152,54 @@ describe("validateIdentityRegistries", () => {
     expect(result.errors.some((e) => e.includes("Light Mode"))).toBe(true);
   });
 
+  // Coordinate values follow the canonical address grammar's hyphen-free
+  // `registry-token` rule (`[a-z][a-z0-9]*`), not the more permissive kebab
+  // rule used for path labels — see canonical-address.ts. A hyphenated band
+  // name or palette/state token would be un-representable as a coordinate
+  // (parseAddress rejects it), so it must be rejected here at the registry
+  // boundary, not silently accepted then broken downstream.
+  it("rejects a hyphenated breakpoint band name (viewport coordinate values are hyphen-free)", () => {
+    const registries: IdentityRegistries = {
+      ...defaultIdentityRegistries(),
+      breakpoints: { bands: [{ name: "extra-wide", min: 0, max: null }] },
+    };
+    const result = validateIdentityRegistries(registries);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.includes("extra-wide"))).toBe(true);
+  });
+
+  it("rejects a hyphenated palette token (mode/theme coordinate values are hyphen-free)", () => {
+    const registries: IdentityRegistries = {
+      ...defaultIdentityRegistries(),
+      palette: {
+        collections: [
+          {
+            collectionId: "coll-1",
+            name: "Theme",
+            axis: "theme",
+            values: [{ modeId: "t1", token: "extra-large" }],
+          },
+        ],
+      },
+    };
+    const result = validateIdentityRegistries(registries);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.includes("extra-large"))).toBe(true);
+  });
+
+  it("rejects a hyphenated state token (state coordinate values are hyphen-free)", () => {
+    const registries: IdentityRegistries = {
+      ...defaultIdentityRegistries(),
+      states: { states: ["default", "in-progress"], defaultState: "default" },
+    };
+    const result = validateIdentityRegistries(registries);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.includes("in-progress"))).toBe(true);
+  });
+
   it("rejects an empty state list", () => {
     const registries: IdentityRegistries = {
       ...defaultIdentityRegistries(),

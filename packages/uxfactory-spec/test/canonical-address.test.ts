@@ -250,6 +250,47 @@ describe("coordinates are order-independent", () => {
   });
 });
 
+// ─── serialize validates its input (defense in depth) ──────────────────────
+//
+// serializeAddress must not silently emit a string its own parseAddress
+// would reject — a CanonicalAddress with a malformed label or a hyphenated
+// coordinate value is a programming-error invariant break (nothing in this
+// module's own API can produce one; parseAddress already enforces both
+// rules on the way in), so serialize throws rather than emitting broken
+// output. This is the mirror check to Fix A on the registry boundary
+// (node-identity.test.ts): Fix A stops a bad token from ever entering a
+// validated registry; this stops a bad CanonicalAddress — however
+// constructed — from silently round-tripping to an unparseable string.
+
+describe("serializeAddress validates its input and throws on violation", () => {
+  it("throws on a malformed (uppercase) path label", () => {
+    const r = defaultIdentityRegistries();
+    const a: CanonicalAddress = {
+      path: [{ label: "Home" }, { label: "hero" }],
+      coordinates: { viewport: "desktop" },
+    };
+    expect(() => serializeAddress(a, r)).toThrow(/Home/);
+  });
+
+  it("throws on a hyphenated coordinate value", () => {
+    const r = defaultIdentityRegistries();
+    const a: CanonicalAddress = {
+      path: [{ label: "home" }],
+      coordinates: { viewport: "extra-wide" },
+    };
+    expect(() => serializeAddress(a, r)).toThrow(/extra-wide/);
+  });
+
+  it("throws on a hyphenated theme coordinate value", () => {
+    const r = withTheme();
+    const a: CanonicalAddress = {
+      path: [{ label: "home" }],
+      coordinates: { viewport: "desktop", theme: "high-contrast" },
+    };
+    expect(() => serializeAddress(a, r)).toThrow(/high-contrast/);
+  });
+});
+
 // ─── error cases: duplicate axis, malformed kebab, unknown token ───────────
 
 describe("errors", () => {

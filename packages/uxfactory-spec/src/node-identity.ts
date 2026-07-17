@@ -192,18 +192,33 @@ export function themeTokens(r: IdentityRegistries): string[] {
 
 // ─── validation ──────────────────────────────────────────────────────────────
 
-const KEBAB_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/**
+ * `registry-token` (canonical-address.ts's EBNF §5) — the hyphen-free
+ * charset every *coordinate value* must satisfy: breakpoint band names
+ * (viewport), palette tokens (mode/theme), and state names. This is
+ * stricter than the kebab-case rule used for path *labels* (which allow
+ * hyphens): a registry value that violates this can never be represented
+ * in a canonical address, so it's rejected here at the registry boundary
+ * rather than accepted and later silently mis-serialized.
+ *
+ * Exported so `canonical-address.ts` imports this single definition instead
+ * of maintaining its own copy — one source of truth for the charset both
+ * `validateIdentityRegistries` (registries in) and `serializeAddress`
+ * (addresses out) enforce.
+ */
+export const REGISTRY_TOKEN_RE = /^[a-z][a-z0-9]*$/;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
  * Structurally validate an unknown value as `IdentityRegistries`, plus the
- * registry-level business rules: bands ordered/non-overlapping and kebab
- * named, viewport∪mode token disjointness (naming the offending token),
- * a non-empty state list containing `defaultState`, and kebab palette
- * tokens. Unknown/extra fields are tolerated, matching this package's
- * other hand-rolled validators (e.g. `parseStoryFile`).
+ * registry-level business rules: bands ordered/non-overlapping and
+ * hyphen-free registry-token named, viewport∪mode token disjointness
+ * (naming the offending token), a non-empty state list containing
+ * `defaultState` with hyphen-free registry-token state names, and
+ * hyphen-free palette tokens. Unknown/extra fields are tolerated, matching
+ * this package's other hand-rolled validators (e.g. `parseStoryFile`).
  */
 export function validateIdentityRegistries(
   r: unknown,
@@ -238,8 +253,8 @@ export function validateIdentityRegistries(
   }
 
   for (const band of bands) {
-    if (!KEBAB_RE.test(band.name)) {
-      errors.push(`breakpoint band name "${band.name}" must be kebab-case`);
+    if (!REGISTRY_TOKEN_RE.test(band.name)) {
+      errors.push(`breakpoint band name "${band.name}" must be a hyphen-free lowercase alphanumeric token (matches /^[a-z][a-z0-9]*$/) — it is a viewport coordinate value`);
     }
   }
 
@@ -297,8 +312,10 @@ export function validateIdentityRegistries(
 
   for (const collection of collections) {
     for (const { token } of collection.values) {
-      if (!KEBAB_RE.test(token)) {
-        errors.push(`palette token "${token}" in collection "${collection.name}" must be kebab-case`);
+      if (!REGISTRY_TOKEN_RE.test(token)) {
+        errors.push(
+          `palette token "${token}" in collection "${collection.name}" must be a hyphen-free lowercase alphanumeric token (matches /^[a-z][a-z0-9]*$/) — it is a ${collection.axis} coordinate value`,
+        );
       }
     }
   }
@@ -318,6 +335,14 @@ export function validateIdentityRegistries(
     errors.push('"states.states" must be an array of strings');
   } else if (statesList.length === 0) {
     errors.push('"states.states" must contain at least one state');
+  } else {
+    for (const state of statesList) {
+      if (!REGISTRY_TOKEN_RE.test(state)) {
+        errors.push(
+          `state "${state}" must be a hyphen-free lowercase alphanumeric token (matches /^[a-z][a-z0-9]*$/) — it is a state coordinate value`,
+        );
+      }
+    }
   }
   if (defaultState === undefined) {
     errors.push('"states.defaultState" must be a string');
