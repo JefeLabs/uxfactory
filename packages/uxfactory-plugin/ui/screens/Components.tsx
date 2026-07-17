@@ -13,9 +13,12 @@
  * - Sticky footer "Check my design" → enqueue check-design job → navigate to /tabs/checks?run=<id>
  * - Interpret → enqueue identity-interpret job (Task 11, Phase-3 vision proposals)
  *   for the active root; disabled until a scan has produced a node-identity
- *   manifest (identityManifestQuery). Mirrors Scan's inline state, not a new
- *   progress surface — bridge.events() failure detection + a timeout backstop,
- *   same idiom as Artifacts.tsx's generation tracking.
+ *   manifest (identityManifestQuery). Completion is detected by polling
+ *   GET /pipeline/result/:id (bridge.getPipelineResult) — the accurate
+ *   done/error signal; bridge.events() SSE failure frames are an early-fail
+ *   fast path layered on top, and a timeout bounds an unresponsive job. Not
+ *   a new progress surface — reuses Scan's inline label-swap state and
+ *   Artifacts.tsx's amber error-note idiom.
  *
  * V1 seams (documented per spec honesty table):
  * - Sync badge is always "not mapped" (no bridge read for drift state in v1)
@@ -45,11 +48,12 @@ import {
   activeRoot,
 } from "../queries.js";
 
-/** "Interpret" gives up waiting on a terminal signal after this long — the
- *  button re-enables (not necessarily a failure; the bridge never broadcasts
- *  a positive completion event, see the SSE effect below). Same ceiling as
- *  Artifacts.tsx's PENDING_TIMEOUT_MS. */
+/** "Interpret" gives up polling for a terminal result after this long — the
+ *  button re-enables (not necessarily a failure judgment; see the timeout's
+ *  own comment). Same ceiling as Artifacts.tsx's PENDING_TIMEOUT_MS. */
 const INTERPRET_TIMEOUT_MS = 5 * 60 * 1000;
+/** How often to poll GET /pipeline/result/:id while an interpret job runs. */
+const INTERPRET_POLL_MS = 1800;
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -131,9 +135,14 @@ export function Components({
   // ── Interpret identities (Task 11 — Phase 3 vision proposals) ──────────────
   const [isInterpreting, setIsInterpreting] = useState(false);
   const [interpretError, setInterpretError] = useState<string | null>(null);
-  /** Enqueue id of the in-flight identity-interpret job, for SSE tracking. */
-  const interpretJobIdRef = useRef<string | null>(null);
+  /**
+   * Enqueue id of the in-flight identity-interpret job. STATE (not a ref) —
+   * both the SSE-failure effect and the result-poll effect below need to
+   * react to it being set (a ref mutation alone would not re-run them).
+   */
+  const [interpretJobId, setInterpretJobId] = useState<string | null>(null);
   const interpretTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interpretPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // The node-identity manifest gates Interpret: disabled until a scan has
   // produced at least one record (bridge.getIdentityManifest, Task 8).
@@ -234,27 +243,30 @@ export function Components({
 
   // ── Interpret identities ────────────────────────────────────────────────────
 
-  /** Clear the running-job bookkeeping (timer + tracked id) for Interpret. */
+  /** Clear ALL running-job bookkeeping (timer + poll interval + tracked id). */
   function clearInterpretTracking(): void {
     if (interpretTimerRef.current !== null) {
       clearTimeout(interpretTimerRef.current);
       interpretTimerRef.current = null;
     }
-    interpretJobIdRef.current = null;
+    if (interpretPollRef.current !== null) {
+      clearInterval(interpretPollRef.current);
+      interpretPollRef.current = null;
+    }
+    setInterpretJobId(null);
   }
 
-  // SSE: surface a failed identity-interpret run inline — same heuristic
-  // Artifacts.tsx uses for generate-artifact failures (an adapter
-  // {type:"error"} chunk tied to this screen's tracked enqueue id). The
-  // bridge never broadcasts a positive completion signal on the SSE (POST
-  // /pipeline/result is stored, not broadcast), so there is no symmetric
-  // "success" event to watch for here — a successful run is only observable
-  // by the manifest query eventually reflecting new proposals (invalidated
-  // below) or by the timeout backstop simply giving up the wait.
+  // SSE: surface a failed identity-interpret run inline, fast — same
+  // heuristic Artifacts.tsx uses for generate-artifact failures (an adapter
+  // {type:"error"} chunk tied to this screen's tracked enqueue id). This is
+  // an early-failure signal only; the poll effect below (GET
+  // /pipeline/result/:id) is the actual completion signal, since the SSE
+  // never broadcasts a terminal SUCCESS frame (POST /pipeline/result is
+  // stored, not broadcast).
   useEffect(() => {
-    if (!isInterpreting) return;
+    if (!isInterpreting || interpretJobId === null) return;
     const teardown = bridge.events((ev) => {
-      if (interpretJobIdRef.current === null || ev.requestId !== interpretJobIdRef.current) return;
+      if (ev.requestId !== interpretJobId) return;
       const payload = ev.event as { type?: unknown } | null;
       if (payload !== null && typeof payload === "object" && payload.type === "error") {
         clearInterpretTracking();
@@ -266,12 +278,56 @@ export function Components({
       }
     });
     return teardown;
-  }, [isInterpreting, bridge, queryClient]);
+  }, [isInterpreting, interpretJobId, bridge, queryClient]);
 
-  // Clear any outstanding Interpret timer on unmount.
+  // Poll GET /pipeline/result/:id — the accurate completion signal (200 =
+  // done with the worker's exit status, 202 = still running, 404 = unknown
+  // to the bridge). While pending/unknown we just keep polling; the timeout
+  // backstop below is what bounds an unresponsive/unknown id, not this loop.
+  useEffect(() => {
+    if (!isInterpreting || interpretJobId === null) return;
+    if (typeof bridge.getPipelineResult !== "function") return;
+    const id = interpretJobId;
+    let inFlight = false;
+
+    async function poll(): Promise<void> {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await bridge.getPipelineResult!(id);
+        if (res.state === "done") {
+          const failed = res.status !== 0;
+          clearInterpretTracking();
+          setIsInterpreting(false);
+          if (failed) setInterpretError("Interpretation failed — see worker logs");
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+          });
+        }
+        // "pending" / "unknown" — nothing to do this tick, keep polling.
+      } catch {
+        // Transient network hiccup — keep polling; the timeout backstop
+        // still bounds how long we wait overall.
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    const interval = setInterval(() => void poll(), INTERPRET_POLL_MS);
+    interpretPollRef.current = interval;
+    void poll(); // check once immediately rather than waiting a full interval
+
+    return () => {
+      clearInterval(interval);
+      if (interpretPollRef.current === interval) interpretPollRef.current = null;
+    };
+  }, [isInterpreting, interpretJobId, bridge, queryClient]);
+
+  // Clear any outstanding Interpret timer/poll on unmount.
   useEffect(() => {
     return () => {
       if (interpretTimerRef.current !== null) clearTimeout(interpretTimerRef.current);
+      if (interpretPollRef.current !== null) clearInterval(interpretPollRef.current);
     };
   }, []);
 
@@ -294,16 +350,21 @@ export function Components({
       queryKey: queryKeys.identityManifest(activeRoot(bridge)),
     });
 
-    // "Running" persists until the SSE effect above sees a failure for this
-    // id, or this timeout gives up tracking it (not a failure judgment —
-    // just stop occupying the button; see the SSE effect's comment). Clear
-    // any stale timer from a prior run first (defensive; shouldn't happen
-    // since the button is disabled while isInterpreting is true).
+    // "Running" persists until the poll effect above sees a done result for
+    // this id, the SSE effect sees an early failure, or this timeout gives
+    // up tracking it (not a failure judgment — just stop occupying the
+    // button; still invalidates, since a silent success could have outrun
+    // the timeout). Clear any stale timer/poll from a prior run first
+    // (defensive; shouldn't happen since the button is disabled while
+    // isInterpreting is true).
     clearInterpretTracking();
-    interpretJobIdRef.current = id;
+    setInterpretJobId(id);
     interpretTimerRef.current = setTimeout(() => {
       clearInterpretTracking();
       setIsInterpreting(false);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.identityManifest(activeRoot(bridge)),
+      });
     }, INTERPRET_TIMEOUT_MS);
   }
 

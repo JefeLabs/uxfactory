@@ -393,6 +393,66 @@ describe("bridge getIdentityManifest() (Task 11)", () => {
   });
 });
 
+// ─── getPipelineResult() (post-review fix) ─────────────────────────────────
+
+describe("bridge getPipelineResult() (Task 11 completion signal)", () => {
+  it("returns {state:'done', status, result} on a 200 body", async () => {
+    const fakeFetch = jsonFetch({ id: "job-1", status: 0, result: { applied: 2, skipped: 0 } });
+    const bridge = createBridge(fakeFetch);
+
+    const result = await bridge.getPipelineResult!("job-1");
+
+    expect(fakeFetch).toHaveBeenCalledWith(`${BASE}/pipeline/result/job-1`);
+    expect(result).toEqual({ state: "done", status: 0, result: { applied: 2, skipped: 0 } });
+  });
+
+  it("returns {state:'pending'} on a 202 (known, still running)", async () => {
+    const fakeFetch = jsonFetch({ pending: true }, 202);
+    const bridge = createBridge(fakeFetch);
+
+    const result = await bridge.getPipelineResult!("job-1");
+
+    expect(result).toEqual({ state: "pending" });
+  });
+
+  it("returns {state:'unknown'} on a 404 (unrecognized id)", async () => {
+    const fakeFetch = errorFetch(404, { error: "unknown pipeline request" });
+    const bridge = createBridge(fakeFetch);
+
+    const result = await bridge.getPipelineResult!("nonexistent");
+
+    expect(result).toEqual({ state: "unknown" });
+  });
+
+  it("throws BridgeError on an unexpected non-ok status", async () => {
+    const fakeFetch = errorFetch(500, { error: "boom" });
+    const bridge = createBridge(fakeFetch);
+
+    await expect(bridge.getPipelineResult!("job-1")).rejects.toBeInstanceOf(BridgeError);
+  });
+
+  it("is NOT root-scoped — no ?root= appended even when a project root is set", async () => {
+    const fakeFetch = jsonFetch({ id: "job-1", status: 0, result: null });
+    const bridge = createBridge(fakeFetch);
+    bridge.setProjectRoot!("/repo/root");
+
+    await bridge.getPipelineResult!("job-1");
+
+    expect(fakeFetch).toHaveBeenCalledWith(`${BASE}/pipeline/result/job-1`);
+  });
+
+  it("URL-encodes the id segment", async () => {
+    const fakeFetch = jsonFetch({ id: "a/b c", status: 0, result: null });
+    const bridge = createBridge(fakeFetch);
+
+    await bridge.getPipelineResult!("a/b c");
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      `${BASE}/pipeline/result/${encodeURIComponent("a/b c")}`,
+    );
+  });
+});
+
 // ─── BridgeError ─────────────────────────────────────────────────────────────
 
 describe("BridgeError", () => {

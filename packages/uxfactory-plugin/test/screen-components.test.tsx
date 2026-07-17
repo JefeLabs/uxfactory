@@ -28,6 +28,7 @@ import { BridgeError } from "../ui/lib/bridge.js";
 import type { PluginBus } from "../ui/lib/plugin-bus.js";
 import { Components } from "../ui/screens/Components.js";
 import { useAppStore } from "../ui/stores/app.js";
+import { makeQueryClient, queryKeys } from "../ui/queries.js";
 import { renderWithProviders } from "./test-utils.js";
 
 // ─── Fake bus ─────────────────────────────────────────────────────────────────
@@ -1019,6 +1020,162 @@ describe("Interpret identities (Task 11)", () => {
     await user.click(interpretBtn);
 
     expect(bridge.enqueue).not.toHaveBeenCalled();
+  });
+
+  // ── Completion via GET /pipeline/result/:id (post-review fix) ────────────
+
+  it(
+    "polling the pipeline result to a done (status 0) outcome clears the running state and invalidates the manifest query",
+    async () => {
+      const bus = makeBus();
+      const user = userEvent.setup();
+      const getIdentityManifest = vi.fn().mockResolvedValue(makeManifest(1));
+      const getPipelineResult = vi
+        .fn()
+        .mockResolvedValueOnce({ state: "pending" })
+        .mockResolvedValue({ state: "done", status: 0, result: { applied: 3, skipped: 0 } });
+      const bridge = makeBridge({
+        getIdentityManifest,
+        getPipelineResult,
+        enqueue: vi.fn().mockResolvedValue({ id: "job-poll-ok" }),
+      });
+
+      await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+        initialEntries: ["/tabs/components"],
+      });
+
+      const interpretBtn = await screen.findByRole("button", { name: "Interpret" });
+      await waitFor(() => expect(interpretBtn).not.toBeDisabled());
+
+      const callsBeforeClick = getIdentityManifest.mock.calls.length;
+      await user.click(interpretBtn);
+
+      // First poll tick (immediate) resolves "pending" — still running.
+      await waitFor(() => expect(getPipelineResult).toHaveBeenCalledWith("job-poll-ok"));
+      expect(screen.getByRole("button", { name: "Interpret" })).toHaveTextContent(
+        "Interpreting…",
+      );
+
+      // A later poll tick resolves "done" with a zero exit status — success.
+      await waitFor(
+        () => {
+          expect(getPipelineResult.mock.calls.length).toBeGreaterThan(1);
+        },
+        { timeout: 6000 },
+      );
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Interpret" }),
+        ).toHaveTextContent(/^Interpret$/);
+      });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(getIdentityManifest.mock.calls.length).toBeGreaterThan(callsBeforeClick);
+      });
+    },
+    8000,
+  );
+
+  it(
+    "polling the pipeline result to a done outcome with a nonzero exit status shows the error note and invalidates the manifest",
+    async () => {
+      const bus = makeBus();
+      const user = userEvent.setup();
+      const getIdentityManifest = vi.fn().mockResolvedValue(makeManifest(1));
+      const getPipelineResult = vi
+        .fn()
+        .mockResolvedValue({ state: "done", status: 2, result: { error: "setup failure" } });
+      const bridge = makeBridge({
+        getIdentityManifest,
+        getPipelineResult,
+        enqueue: vi.fn().mockResolvedValue({ id: "job-poll-fail" }),
+      });
+
+      await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+        initialEntries: ["/tabs/components"],
+      });
+
+      const interpretBtn = await screen.findByRole("button", { name: "Interpret" });
+      await waitFor(() => expect(interpretBtn).not.toBeDisabled());
+
+      const callsBeforeClick = getIdentityManifest.mock.calls.length;
+      await user.click(interpretBtn);
+
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "Interpretation failed — see worker logs",
+        );
+      });
+      expect(
+        screen.getByRole("button", { name: "Interpret" }),
+      ).toHaveTextContent(/^Interpret$/);
+      await waitFor(() => {
+        expect(getIdentityManifest.mock.calls.length).toBeGreaterThan(callsBeforeClick);
+      });
+    },
+    8000,
+  );
+
+  it("the 5-minute timeout backstop clears the running state and invalidates the manifest when nothing ever reports back", async () => {
+    const bus = makeBus();
+    const getIdentityManifest = vi.fn().mockResolvedValue(makeManifest(1));
+    const bridge = makeBridge({
+      getIdentityManifest,
+      enqueue: vi.fn().mockResolvedValue({ id: "job-timeout" }),
+      // No getPipelineResult — the poll effect never starts (mirrors a
+      // legacy bridge build); only the timeout backstop can clear this run.
+    });
+
+    // Pre-seed the QueryClient with a non-empty manifest so the button is
+    // enabled synchronously on first render — needed below since, once fake
+    // timers are active, RTL's waitFor/findBy* (which poll via a real
+    // setInterval) would never re-check and hang forever.
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(queryKeys.identityManifest(null), makeManifest(1));
+    queryClient.setQueryData(queryKeys.links(null), { links: [] });
+
+    await renderWithProviders(<Components bridge={bridge} bus={bus} />, {
+      initialEntries: ["/tabs/components"],
+      queryClient,
+    });
+
+    // Still real timers here — confirm the button is enabled before switching.
+    const interpretBtn = screen.getByRole("button", { name: "Interpret" });
+    expect(interpretBtn).not.toBeDisabled();
+
+    vi.useFakeTimers();
+    try {
+      // fireEvent (not userEvent) + plain getByRole (not waitFor/findBy*) for
+      // the remainder — RTL's async queries poll via a real setInterval that
+      // fake timers freeze, so only synchronous assertions are safe here.
+      fireEvent.click(interpretBtn);
+      await act(async () => {}); // flush enqueue resolution (microtasks still run under fake timers)
+
+      expect(screen.getByRole("button", { name: "Interpret" })).toHaveTextContent(
+        "Interpreting…",
+      );
+
+      const callsBeforeTimeout = getIdentityManifest.mock.calls.length;
+
+      // Just before the 5-minute mark: still running.
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000 - 1000);
+      });
+      expect(screen.getByRole("button", { name: "Interpret" })).toHaveTextContent(
+        "Interpreting…",
+      );
+
+      // Cross the 5-minute mark → running clears, manifest re-invalidated.
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(
+        screen.getByRole("button", { name: "Interpret" }),
+      ).toHaveTextContent(/^Interpret$/);
+      expect(getIdentityManifest.mock.calls.length).toBeGreaterThan(callsBeforeTimeout);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

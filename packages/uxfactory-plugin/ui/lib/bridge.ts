@@ -107,6 +107,24 @@ export interface BridgeEvent {
   seq: number;
 }
 
+/**
+ * GET /pipeline/result/:id poll outcome — the bridge distinguishes three
+ * states with plain HTTP status (200/202/404), collapsed here into one
+ * discriminated union so callers switch on `state` instead of re-deriving it
+ * from a status code:
+ *   - "done": the worker posted a terminal result. `status` is its exit code
+ *     (0 = ok, nonzero = gate-fail/setup-fail — dispatch.ts's convention);
+ *     `result` is the worker's opaque payload.
+ *   - "pending": a known request id, still running.
+ *   - "unknown": the bridge has no record of this id (never existed, or it
+ *     forgot — e.g. a restart). Callers should keep polling up to their own
+ *     timeout rather than treat this as a hard failure.
+ */
+export type PipelineResultPoll =
+  | { state: "done"; status: number; result: unknown }
+  | { state: "pending" }
+  | { state: "unknown" };
+
 export interface ArtifactContent {
   key: string;
   path: string;
@@ -248,6 +266,12 @@ export interface Bridge {
    * Optional — absent in legacy bridge builds.
    */
   getIdentityManifest?(): Promise<{ manifest: NodeManifest }>;
+  /**
+   * GET /pipeline/result/:id — poll a generative job's terminal result. Not
+   * root-scoped (request ids are already globally unique on the bridge).
+   * Optional — absent in legacy bridge builds.
+   */
+  getPipelineResult?(id: string): Promise<PipelineResultPoll>;
 }
 
 /** One AC row in the traceability tree, with its linked canvas nodes. */
@@ -598,6 +622,18 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     getIdentityManifest() {
       return request<{ manifest: NodeManifest }>(rooted("/project/identity/manifest"));
+    },
+
+    async getPipelineResult(id: string): Promise<PipelineResultPoll> {
+      // Not rooted — request ids are already globally unique on the bridge.
+      const res = await doFetch(`${root}/pipeline/result/${encodeURIComponent(id)}`);
+      if (res.status === 202) return { state: "pending" };
+      if (res.status === 404) return { state: "unknown" };
+      if (!res.ok) {
+        throw new BridgeError(res.status, await res.text().catch(() => null));
+      }
+      const body = (await res.json()) as { id: string; status: number; result: unknown };
+      return { state: "done", status: body.status, result: body.result };
     },
   };
 }
