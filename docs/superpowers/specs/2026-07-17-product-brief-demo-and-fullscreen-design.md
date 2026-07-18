@@ -29,12 +29,12 @@ A **Demo** button inside the brief intake dialog (beside Generate). Clicking it 
 
 ### 3.1 Flow
 
-1. **Enqueue.** The panel enqueues a new generative kind **`demo-brief`** via the existing `enqueueMutation` (`POST /pipeline/enqueue`). Payload carries the raw config the panel already holds from the snapshot query:
+1. **Enqueue.** The panel enqueues a new generative kind **`demo-brief`** via the existing `enqueueMutation` (`POST /pipeline/enqueue`). The **panel** resolves the enriched, human-readable config context (§3.3) — it already owns all the display metadata the dropdowns render, including the design-style *group* names that live only in the plugin's `design-styles.ts` — and passes it as a prompt-ready string:
    ```ts
-   { kind: "demo-brief", payload: { classification, profile } }
+   { kind: "demo-brief", payload: { configContext: string } }
    ```
-   (`classification` = category, industry, locale, platforms, layout, ageGroup, style, designStyle; `profile` = scope dials + coherence.) The payload passes **slugs**, lean — enrichment happens worker-side (§3.3).
-2. **Worker generates.** The worker routes `demo-brief` to a new skill `skill/demo-brief/SKILL.md`, which enriches the config from the shared taxonomies (§3.3), invents **one** specific plausible website/app concept matching the combination, and returns first-person answers to the four brief questions.
+   (`configContext` is a formatted multi-line block: the three taxonomy-backed settings with their group + label + metadata, plus locale/platforms/layout/age/tone/scope. Resolving it panel-side keeps the design-style group available and puts the "what the user sees" formatting where the dropdowns already live.)
+2. **Worker generates.** The worker routes `demo-brief` to a new skill `skill/demo-brief/SKILL.md`, drops `configContext` into the prompt, invents **one** specific plausible website/app concept matching the combination, and writes first-person answers to the four brief questions as JSON; the worker reads that file back into the job result.
 3. **Result → fields.** The job result carries `{ answers: { problem, outcomes, "out-of-scope", constraints } }`. The panel polls `GET /pipeline/result/:id` (the same mechanic the Interpret button uses — 200 done / 202 pending / 404) and, on a done result, merges the answers into the dialog's answer state.
 4. **User edits or Generates.** The four fields are now populated. The user edits freely, or hits **Generate** to run the real brief producer on the example answers — showcasing the full chain in one flow.
 
@@ -44,7 +44,7 @@ The dialog's answer state (`CreateArtifactDialog`, `answers: Record<string,strin
 
 ### 3.3 Config enrichment (the idea quality lever)
 
-**The generator is fed the entire project config, not a subset** — every setting the user picked participates. The worker resolves the *semantic* form of each (labels, not bare slugs) from `@uxfactory/spec` (the same source the panel dropdowns render from).
+**The generator is fed the entire project config, not a subset** — every setting the user picked participates. The **panel** resolves the *semantic* form of each (labels + group names, not bare slugs) into a prompt-ready `configContext` string, using the same sources the dropdowns render from (`@uxfactory/spec` category/industry taxonomies + the plugin's `design-styles.ts` groups), and passes it in the payload.
 
 **(A) The three taxonomy-backed settings additionally carry their group names** (the dropdown section headings the user sees):
 
