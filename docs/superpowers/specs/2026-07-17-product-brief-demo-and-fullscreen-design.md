@@ -42,17 +42,27 @@ A **Demo** button inside the brief intake dialog (beside Generate). Clicking it 
 
 The dialog's answer state (`CreateArtifactDialog`, `answers: Record<string,string>` keyed by question id) gains a merge point for demo results. Because answers reset on dialog `open`/`artifactKey` change, the parent (`Artifacts.tsx`) holds the demo-generated answers in state and passes them via a new controlled `initialAnswers?: Record<string,string>` prop, merged into the existing `setAnswers` effect (last-write-wins over defaults). Keys are the four elicitation ids (`problem`, `outcomes`, `out-of-scope`, `constraints`). A subsequent demo result while the dialog is open re-merges via the same prop. (This is the chosen mechanism; the app-store/`dynamicPrefills` route is a rejected alternative — it couples the demo to global state unnecessarily.)
 
-### 3.3 Taxonomy enrichment (the idea quality lever)
+### 3.3 Config enrichment (the idea quality lever)
 
-The generator must be fed the **semantic** config, not bare slugs. The worker resolves, from `@uxfactory/spec` (the same source the panel dropdowns render from):
+**The generator is fed the entire project config, not a subset** — every setting the user picked participates. The worker resolves the *semantic* form of each (labels, not bare slugs) from `@uxfactory/spec` (the same source the panel dropdowns render from).
 
-- **Category** (`CATEGORY_TAXONOMY[slug]` + `CATEGORY_GROUPS`): `group` label (e.g. "SaaS & tools") + `label` (e.g. "Productivity & collaboration") + `oneLiner` (e.g. "Shared-work application") + `iaSeed` (page skeleton) + `componentEmphasis`.
-- **Industry** (`INDUSTRY_TAXONOMY[slug]` + `INDUSTRY_SECTORS`): `sector` label (e.g. "Education") + `label` (e.g. "K-12") + `drivers` caption + `complianceFlags` (e.g. `age-sensitive`).
+**(A) The three taxonomy-backed settings additionally carry their group names** (the dropdown section headings the user sees):
+
+- **Category** (`CATEGORY_TAXONOMY[slug]` + `CATEGORY_GROUPS`): **`group` label** (e.g. "SaaS & tools") + `label` (e.g. "Productivity & collaboration") + `oneLiner` (e.g. "Shared-work application") + `iaSeed` (page skeleton) + `componentEmphasis`.
+- **Industry** (`INDUSTRY_TAXONOMY[slug]` + `INDUSTRY_SECTORS`): **`sector` label** (e.g. "Education") + `label` (e.g. "K-12") + `drivers` caption + `complianceFlags` (e.g. `age-sensitive`).
 - **Design style** (`design-styles.ts` group + evocative label + the worker's `STYLE_GUIDANCE` description): e.g. "Nostalgic & retro › Y2K Aesthetic", "Thematic & niche › Terminal / CLI", "Modern & dimensional › Aurora / Mesh Gradients". Design style steers the concept's **archetype and voice**, not the literal answer text — the four brief questions are product substance, not visuals. But the aesthetic is a strong vibe signal for *what kind of product suits it*: Terminal/CLI → developer-tooling flavor, Y2K/Vaporwave → playful consumer nostalgia, Dark Academia → reading/education, Enterprise/Utility-first → back-office tooling. The SKILL uses it to pick a fitting concept and tone, and it never appears as a raw token in the answers.
-  - **Exploring / unset state.** The design-style dropdown has an "Exploring — no default yet" state (the generative default before a style is committed; `designStyle` unset/empty/sentinel). When style is unset, the generator ignores the aesthetic vibe and grounds the concept on **category + industry alone**. The demo must resolve gracefully with a missing or exploring `designStyle`.
-- **Tone/scope:** `style` (informal|mix|formal), platforms, layout, ageGroup, and the scope dials as light framing.
+  - **Exploring / unset state.** The design-style dropdown has an "Exploring — no default yet" state (the generative default before a style is committed; `designStyle` unset/empty/sentinel). When style is unset, the generator ignores the aesthetic vibe and grounds the concept on **category + industry** (plus the remaining settings). The demo must resolve gracefully with a missing or exploring `designStyle`.
 
-The SKILL.md instructs the model to ground the concept in this context: the category one-liner/IA seed shapes *what the product is*, the industry drivers/compliance shape *the domain and its constraints* (compliance flags flow naturally into the "constraints" answer), and the design style (when set) shapes the concept archetype + voice. Legacy slug aliases normalize first (`LEGACY_CATEGORY_ALIASES` / `LEGACY_INDUSTRY_ALIASES`) so old configs still resolve; a missing/exploring `designStyle` and any absent field degrade to category+industry grounding rather than erroring.
+**(B) Every other project setting is included in full** (these have no group taxonomy, so they pass through as their labeled values — but they are real inputs, not decoration):
+
+- **Locale** (`classification.locale`, e.g. "en-US") — language/region the concept and copy should suit.
+- **Platforms** (`desktop` / `tablet` / `mobile`, multi-select) — shapes whether the idea is a web app, mobile-first product, cross-device, etc.
+- **Layout** (`responsive` / `adaptive`).
+- **Age group** (`under-18` / `18-39` / `40-64` / `65+`) — audience the concept targets.
+- **Tone** (`style`: `informal` / `mix` / `formal`) — voice of the answers.
+- **Scope dials** (`profile.scope`: `visual` / `editorial` / `coverage` / `flow`, each `low|medium|high`) and **coherence** (`profile.experimental.coherence`) — ambition/breadth signals the concept and its outcomes should match (e.g. high coverage → a broader product; low → a focused single-purpose tool).
+
+The SKILL.md instructs the model to ground the concept in the **whole** config: the category one-liner/IA seed shapes *what the product is*, the industry drivers/compliance shape *the domain and its constraints* (compliance flags flow naturally into the "constraints" answer), the design style (when set) shapes the concept archetype + voice, and locale/platforms/layout/age/tone/scope shape the audience, surface, ambition, and voice. Legacy slug aliases normalize first (`LEGACY_CATEGORY_ALIASES` / `LEGACY_INDUSTRY_ALIASES`) so old configs still resolve; a missing/exploring `designStyle` and any absent field degrade gracefully rather than erroring.
 
 **Worked example.** `category=productivity-collaboration` × `industry=k12` → the model sees "SaaS & tools › Productivity & collaboration · Shared-work application · IA: …" × "Education › K-12 · drivers: … · age-sensitive" → yields e.g. *a lesson-planning collaboration workspace for K-12 teaching teams*, with FERPA/age-appropriate handling surfacing in the constraints answer.
 
