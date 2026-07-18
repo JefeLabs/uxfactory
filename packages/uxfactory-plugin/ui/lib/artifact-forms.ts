@@ -202,6 +202,27 @@ export const ARTIFACT_FORMS: Record<string, ArtifactFormSpec> = {
     ],
     treePreview: { array: "nodes", idKey: "nodeId", parentKey: "parent", titleKey: "title", badgeKey: "role" },
   },
+
+  personas: {
+    fields: [
+      { kind: "text", key: "name", label: "Name", placeholder: "e.g. Ana the analyst" },
+      { kind: "text", key: "archetype", label: "Archetype", placeholder: "e.g. time-pressed operator" },
+      { kind: "text", key: "segmentRef", label: "Audience segment", nullable: true, placeholder: "audience segment name" },
+      { kind: "chips", key: "goals", label: "Goals" },
+      { kind: "chips", key: "frustrations", label: "Frustrations" },
+      {
+        kind: "object",
+        key: "context",
+        label: "Context",
+        fields: [
+          { kind: "enum", key: "expertise", label: "Expertise", options: ["novice", "intermediate", "expert"] },
+          { kind: "text", key: "frequency", label: "Frequency", placeholder: "e.g. daily" },
+          { kind: "text", key: "environment", label: "Environment", placeholder: "e.g. open-plan office" },
+        ],
+      },
+      { kind: "textarea", key: "quote", label: "Quote", nullable: true },
+    ],
+  },
 };
 
 /** The form spec for an artifact key, or undefined (→ read-only JSON fallback). */
