@@ -20,6 +20,9 @@
  *   POST /project/identity/applied
  *   GET  /project/artifact
  *   PUT  /project/artifact
+ *   GET  /project/personas
+ *   PUT  /project/personas/:id
+ *   DELETE /project/personas/:id
  *   POST /project/open
  *   GET  /stats
  *   GET  /logs
@@ -68,6 +71,7 @@ import type {
 } from "@uxfactory/spec";
 import { isProjectRoot, type RootRegistry } from "./roots.js";
 import type { WorkerPresenceEntry, ManagedInfo } from "./worker-presence.js";
+import { applyArtifactWrite } from "./artifact-writer.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -771,6 +775,46 @@ async function readTraceStories(storiesPath: string): Promise<
         checkable: parsed.story.acceptanceCriteria[i]?.checkable ?? "auto",
       })),
     });
+  }
+  return out;
+}
+
+// ─── Personas: instance routes (Task 1) ──────────────────────────────────────
+// `personas` is a SET artifact — one JSON file per persona under
+// `.uxfactory/artifacts/personas/<id>.json`. `readPersonas` mirrors
+// `readTraceStories`'s parse-every-file-in-a-set-dir pattern: malformed or
+// unreadable members are skipped, never a 500. Every returned instance is
+// guaranteed a `personaId` — the file's own field when present and
+// non-empty, else the filename stem — so the panel always has a stable key
+// even for hand-authored files that omit it.
+
+const PERSONA_ID_RE = /^P-\d+$/;
+
+/** Parse every *.json in the personas set dir into instances; skip unreadable/malformed. */
+async function readPersonas(
+  dir: string,
+): Promise<Array<Record<string, unknown> & { personaId: string }>> {
+  let entries: string[];
+  try {
+    if (!(await stat(dir)).isDirectory()) return [];
+    entries = (await readdir(dir)).filter((e) => e.endsWith(".json")).sort();
+  } catch {
+    return [];
+  }
+  const out: Array<Record<string, unknown> & { personaId: string }> = [];
+  for (const file of entries) {
+    try {
+      const parsed = JSON.parse(await readFile(path.join(dir, file), "utf8")) as unknown;
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const obj = parsed as Record<string, unknown>;
+      const personaId =
+        typeof obj["personaId"] === "string" && obj["personaId"] !== ""
+          ? (obj["personaId"] as string)
+          : file.replace(/\.json$/, "");
+      out.push({ ...obj, personaId });
+    } catch {
+      /* skip malformed member */
+    }
   }
   return out;
 }
@@ -2310,6 +2354,69 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       }
 
       return { ok: true };
+    },
+  );
+
+  // ── GET /project/personas ────────────────────────────────────────────────
+  app.get<{ Querystring: { root?: string } }>("/project/personas", async (req, reply) => {
+    const ctx = await resolveRoot(req.query.root, reply);
+    if (ctx === null) return reply;
+    const dir = path.join(ctx.root, ARTIFACTS_DIR, "personas");
+    return { personas: await readPersonas(dir) };
+  });
+
+  // ── PUT /project/personas/:id ────────────────────────────────────────────
+  // `:id` is validated against PERSONA_ID_RE BEFORE any path.join — a
+  // path-traversal or otherwise malformed id 400s with nothing written. The
+  // server always STAMPS `personaId === :id` on the written body (ignoring
+  // any id the client sent), so the filename and the file's own id can never
+  // drift apart.
+  app.put<{ Params: { id: string }; Querystring: { root?: string }; Body: { persona?: unknown } }>(
+    "/project/personas/:id",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const id = req.params.id;
+      if (!PERSONA_ID_RE.test(id)) {
+        return reply.code(400).send({ error: `invalid persona id "${id}" — expected P-<number>` });
+      }
+      const body = req.body as { persona?: unknown };
+      if (body?.persona === null || typeof body?.persona !== "object" || Array.isArray(body?.persona)) {
+        return reply.code(400).send({ error: "persona must be an object" });
+      }
+      const persona = { ...(body.persona as Record<string, unknown>), personaId: id }; // server owns the id
+      await applyArtifactWrite(ctx.root, {
+        path: `${ARTIFACTS_DIR}/personas`,
+        instanceFile: `${id}.json`,
+        body: persona,
+      });
+      return { ok: true };
+    },
+  );
+
+  // ── DELETE /project/personas/:id ─────────────────────────────────────────
+  // Same id validation as the PUT route. Idempotent: deleting an already-
+  // absent instance still returns `{ ok: true, deleted: false }` rather than
+  // erroring — the panel's delete gesture shouldn't fail on a double-click or
+  // a stale list.
+  app.delete<{ Params: { id: string }; Querystring: { root?: string } }>(
+    "/project/personas/:id",
+    async (req, reply) => {
+      const ctx = await resolveRoot(req.query.root, reply);
+      if (ctx === null) return reply;
+      const id = req.params.id;
+      if (!PERSONA_ID_RE.test(id)) {
+        return reply.code(400).send({ error: `invalid persona id "${id}"` });
+      }
+      const file = path.join(ctx.root, ARTIFACTS_DIR, "personas", `${id}.json`);
+      let deleted = false;
+      try {
+        await rm(file);
+        deleted = true;
+      } catch {
+        /* absent → idempotent */
+      }
+      return { ok: true, deleted };
     },
   );
 
