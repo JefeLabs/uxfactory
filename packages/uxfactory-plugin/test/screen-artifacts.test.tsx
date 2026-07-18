@@ -627,6 +627,74 @@ describe("AC-2: Open mounts ArtifactEditor; ↗ icon calls openPath; BridgeError
   });
 });
 
+// ─── Personas un-gate (Task 4): Open mounts the in-panel manager, not Finder ──
+// personas is a SET artifact (SET_ARTIFACT_KEYS) — every OTHER set artifact
+// (stories) stays gated (↗ external-open only). Personas alone gets an
+// in-panel "Open" that mounts PersonaManager instead of ArtifactEditor.
+
+describe("personas un-gate: Open mounts PersonaManager, not ArtifactEditor/Finder", () => {
+  /** The Meridian fixture with the personas row promoted to up-to-date + a set path. */
+  function personasSnapshot(): ProjectSnapshot {
+    return makeMeridianSnapshot({
+      artifacts: MERIDIAN_ARTIFACTS.map((a) =>
+        a.key === "personas"
+          ? ({
+              ...a,
+              status: "up-to-date" as const,
+              meta: "2 personas",
+              path: "/home/user/meridian/.uxfactory/artifacts/personas",
+            } satisfies ArtifactRow)
+          : a,
+      ),
+    });
+  }
+
+  it("Open on the personas row mounts PersonaManager (never calls getArtifact/openPath)", async () => {
+    const user = userEvent.setup();
+    const getPersonas = vi.fn().mockResolvedValue({ personas: [] });
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(personasSnapshot()),
+      getPersonas,
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Open Personas/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Manage personas/i)).toBeInTheDocument();
+    });
+    // Proof this is the manager, not ArtifactEditor's markdown/JSON path.
+    expect(screen.getByRole("button", { name: /add persona/i })).toBeInTheDocument();
+    expect(bridge.getArtifact).not.toHaveBeenCalled();
+    expect(bridge.openPath).not.toHaveBeenCalled();
+    expect(getPersonas).toHaveBeenCalled();
+  });
+
+  it("Back from the manager returns to the inventory", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({ snapshot: vi.fn().mockResolvedValue(personasSnapshot()) });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Open Personas/i }));
+    await waitFor(() => screen.getByText(/Manage personas/i));
+
+    await user.click(screen.getByRole("button", { name: /back to artifacts/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: /Meridian Health artifacts/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("stories (the other SET artifact) stays gated — no in-panel Open, only ↗", async () => {
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+    await waitFor(() => screen.getByText("Stories"));
+
+    expect(screen.queryByRole("button", { name: /Open Stories/i })).not.toBeInTheDocument();
+  });
+});
+
 // ─── AC-3: Create enqueues, shows progress, flips green after snapshot update ─
 
 describe("AC-3: Create → dialog → Generate enqueues, shows generating…, flips green", () => {

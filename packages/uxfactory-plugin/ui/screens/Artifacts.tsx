@@ -59,6 +59,7 @@ import { BridgeError } from "../lib/bridge.js";
 import { ActionTooltip, Card, Row, SectionHeader, WorkerBanner } from "../components/index.js";
 import { CreateArtifactDialog } from "../components/CreateArtifactDialog.js";
 import { ArtifactEditor } from "./ArtifactEditor.js";
+import { PersonaManager } from "./PersonaManager.js";
 import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { snapshotQuery, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
@@ -678,6 +679,16 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   );
 
   if (editingRow !== null) {
+    // personas is a SET artifact (directory of instances) — no single-file
+    // editor; the in-panel manager (Task 4) replaces the old Finder-open.
+    if (editingRow.key === "personas") {
+      return (
+        <div className="flex flex-col flex-1 min-h-0">
+          <PersonaManager bridge={bridge} onBack={() => setEditingKey(null)} />
+          {createDialog}
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col flex-1 min-h-0">
         {/* The editor's Regenerate enqueues too — same warning as the inventory. */}
@@ -871,8 +882,9 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
                           ) : (
                             regenerateButton
                           ))}
-                        {/* Set artifacts are directories — no single-file editor */}
-                        {!SET_ARTIFACT_KEYS.has(row.key) && (
+                        {/* Set artifacts are directories — no single-file editor,
+                            except personas, which opens the in-panel manager. */}
+                        {(!SET_ARTIFACT_KEYS.has(row.key) || row.key === "personas") && (
                           <button
                             type="button"
                             onClick={() => setEditingKey(row.key)}

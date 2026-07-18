@@ -132,6 +132,11 @@ export interface ArtifactContent {
   content: string;
 }
 
+/** One persona instance (personas is a SET artifact — one file per instance).
+ *  `personaId` is server-owned: stamped to match `:id` on every PUT, so a
+ *  client-sent id in the body is always ignored. */
+export type PersonaRecord = Record<string, unknown> & { personaId: string };
+
 export interface RepoListing {
   root: string;
   name: string;
@@ -209,6 +214,25 @@ export interface Bridge {
   getArtifact?(key: string): Promise<ArtifactContent>;
   /** PUT /project/artifact {key, content} → {ok} */
   putArtifact?(key: string, content: string): Promise<{ ok: boolean }>;
+  /**
+   * GET /project/personas — every instance in the personas SET artifact
+   * (Task 1). Optional — absent in legacy bridge builds; the panel's
+   * PersonaManager treats a missing method the same as an empty set.
+   */
+  getPersonas?(): Promise<{ personas: PersonaRecord[] }>;
+  /**
+   * PUT /project/personas/:id {persona} → {ok} — writes (create or replace)
+   * one persona instance. The server stamps `personaId === :id`, ignoring
+   * any id in the body. `:id` must match `/^P-\d+$/`. Optional — absent in
+   * legacy bridge builds.
+   */
+  putPersona?(id: string, persona: Record<string, unknown>): Promise<{ ok: boolean }>;
+  /**
+   * DELETE /project/personas/:id → {ok, deleted} — idempotent (`deleted:
+   * false` when the instance was already absent, never an error). Optional
+   * — absent in legacy bridge builds.
+   */
+  deletePersona?(id: string): Promise<{ ok: boolean; deleted: boolean }>;
   /** GET /fs/cwd — bridge working directory, the Connect repo-path hint (optional — absent in legacy bridge builds) */
   getCwd?(): Promise<{ cwd: string }>;
   /** Set the active project root; appended as ?root= to root-scoped verbs. null clears it. */
@@ -434,6 +458,10 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
     });
   }
 
+  function del<T>(path: string): Promise<T> {
+    return request<T>(path, { method: "DELETE" });
+  }
+
   // ── SSE helpers (mirrors pipeline-client.ts's fetch-stream reader) ──────────
 
   function parseFrame(frameText: string): BridgeEvent | null {
@@ -587,6 +615,22 @@ export function createBridge(fetchImpl?: typeof fetch): Bridge {
 
     putArtifact(key: string, content: string) {
       return put<{ ok: boolean }>(rooted("/project/artifact"), { key, content });
+    },
+
+    getPersonas() {
+      return request<{ personas: PersonaRecord[] }>(rooted("/project/personas"));
+    },
+
+    putPersona(id: string, persona: Record<string, unknown>) {
+      return put<{ ok: boolean }>(rooted(`/project/personas/${encodeURIComponent(id)}`), {
+        persona,
+      });
+    },
+
+    deletePersona(id: string) {
+      return del<{ ok: boolean; deleted: boolean }>(
+        rooted(`/project/personas/${encodeURIComponent(id)}`),
+      );
     },
 
     getCwd() {

@@ -36,6 +36,7 @@ export const queryKeys = {
   renderQueue: (root: string | null) => ["renderQueue", root] as const,
   identityManifest: (root: string | null) => ["identityManifest", root] as const,
   identityComponents: (root: string | null) => ["identityComponents", root] as const,
+  personas: (root: string | null) => ["personas", root] as const,
 };
 
 /** QueryClient: queries retry once, mutations never retry. */
@@ -202,6 +203,20 @@ export function confirmIdentityMutation(bridge: Bridge) {
     mutationFn: (confirmations: IdentityConfirmationItem[]) =>
       bridge.confirmIdentity!(confirmations),
   };
+}
+
+/**
+ * Every instance in the personas SET artifact (GET /project/personas) — feeds
+ * the in-panel PersonaManager (Task 4), which replaces the old Finder-open
+ * for this row. Disabled on legacy bridges without the route.
+ */
+export function personasQuery(bridge: Bridge) {
+  return queryOptions({
+    queryKey: queryKeys.personas(activeRoot(bridge)),
+    queryFn: () => bridge.getPersonas!(),
+    enabled: typeof bridge.getPersonas === "function",
+    staleTime: 0,
+  });
 }
 
 export function putArtifactMutation(bridge: Bridge) {
