@@ -27,7 +27,8 @@ export type SkillName =
   | 'batch'
   | 'design'
   | 'craft-review'
-  | 'node-identity';
+  | 'node-identity'
+  | 'demo-brief';
 
 /** Resolve `<repo>/skill/<name>/SKILL.md` from this module's location. */
 function skillPath(name: SkillName): string {

@@ -28,7 +28,14 @@ import type { BridgeLike, PipelineRequest } from '../src/bridge-client.js';
 import { runCli, resolveCliBin } from '../src/run-cli.js';
 import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.js';
 import type { DispatchCtx } from '../src/dispatch.js';
-import { ensureSkillPermissions, extractArtifacts, parseProgressLine, STYLE_GUIDANCE } from '../src/generative.js';
+import {
+  ensureSkillPermissions,
+  extractArtifacts,
+  parseProgressLine,
+  planGenerative,
+  readDemoAnswers,
+  STYLE_GUIDANCE,
+} from '../src/generative.js';
 import { loadSkill, loadArtifactSkill } from '../src/skills.js';
 import { runPool } from '../src/main.js';
 import { drain, handleRequest, runWorker } from '../src/main.js';
@@ -551,6 +558,9 @@ describe('generative branch routing', () => {
     expect(isDeterministic('identity-interpret')).toBe(false);
     // generate-design is a generative kind (skill-driven), NOT a deterministic CLI handler.
     expect(isDeterministic('generate-design')).toBe(false);
+    // demo-brief (Task 2: panel Demo button) is a generative kind (skill-driven),
+    // NOT a deterministic CLI handler — it routes to runGenerative by absence.
+    expect(isDeterministic('demo-brief')).toBe(false);
   });
 
   it('a throwing generative handler is caught → result status 2 (loop stays alive)', async () => {
@@ -758,6 +768,73 @@ describe('extractArtifacts', () => {
       expect(extractArtifacts({}, t)).toEqual([]);
       expect(extractArtifacts({ stories: 'not-an-array' }, t)).toEqual([]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readDemoAnswers — the demo-brief result read-back helper
+// ---------------------------------------------------------------------------
+
+describe('readDemoAnswers', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'demo-'));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('returns the trimmed answers object when the file is present and valid', async () => {
+    await writeFile(
+      path.join(dir, 'demo-brief.json'),
+      JSON.stringify({
+        answers: { problem: 'p', outcomes: 'o', 'out-of-scope': 's', constraints: 'c' },
+      }),
+    );
+    expect(await readDemoAnswers(path.join(dir, 'demo-brief.json'))).toEqual({
+      problem: 'p',
+      outcomes: 'o',
+      'out-of-scope': 's',
+      constraints: 'c',
+    });
+  });
+
+  it('returns null when the file is absent', async () => {
+    expect(await readDemoAnswers(path.join(dir, 'missing.json'))).toBeNull();
+  });
+
+  it('returns null when the JSON is malformed (unparseable)', async () => {
+    await writeFile(path.join(dir, 'bad.json'), '{ not json');
+    expect(await readDemoAnswers(path.join(dir, 'bad.json'))).toBeNull();
+  });
+
+  it('returns null when an answer is missing, empty, or non-string', async () => {
+    await writeFile(
+      path.join(dir, 'missing-key.json'),
+      JSON.stringify({ answers: { problem: 'p', outcomes: 'o', 'out-of-scope': 's' } }),
+    );
+    expect(await readDemoAnswers(path.join(dir, 'missing-key.json'))).toBeNull();
+
+    await writeFile(
+      path.join(dir, 'empty-value.json'),
+      JSON.stringify({
+        answers: { problem: '  ', outcomes: 'o', 'out-of-scope': 's', constraints: 'c' },
+      }),
+    );
+    expect(await readDemoAnswers(path.join(dir, 'empty-value.json'))).toBeNull();
+
+    await writeFile(
+      path.join(dir, 'non-string.json'),
+      JSON.stringify({
+        answers: { problem: 42, outcomes: 'o', 'out-of-scope': 's', constraints: 'c' },
+      }),
+    );
+    expect(await readDemoAnswers(path.join(dir, 'non-string.json'))).toBeNull();
+  });
+
+  it('returns null when `answers` itself is absent/malformed', async () => {
+    await writeFile(path.join(dir, 'no-answers.json'), JSON.stringify({ foo: 'bar' }));
+    expect(await readDemoAnswers(path.join(dir, 'no-answers.json'))).toBeNull();
   });
 });
 
@@ -1319,6 +1396,80 @@ describe('runGenerative', () => {
     expect(out.status).toBe(0);
     // identity-interpret has no artifact path (mirrors canvas-review).
     expect((out.result as { artifactPath?: string }).artifactPath).toBeUndefined();
+  });
+
+  it('demo-brief: routes to the demo-brief skill and injects the configContext', () => {
+    const plan = planGenerative(
+      {
+        id: 'r1',
+        kind: 'demo-brief',
+        payload: { configContext: 'Product type: SaaS & tools › X' },
+        createdAt: 1,
+      },
+      ctx(),
+      {},
+    );
+    expect(plan.systemPrompt).toBe(loadSkill('demo-brief'));
+    expect(plan.user).toContain('SaaS & tools › X');
+  });
+
+  it('demo-brief: on success reads the four answers back into result.answers (status 0)', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+    // The skill would WRITE this file during the run; simulate it landing at the
+    // resolved path (the read happens after the stream completes).
+    await mkdir(path.join(projectRoot, '.uxfactory'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, '.uxfactory', 'demo-brief.json'),
+      JSON.stringify({
+        answers: {
+          problem: 'Shift managers lose 20 minutes/day to whiteboard shuffles.',
+          outcomes: 'Cut scheduling time by 50% in 90 days.',
+          'out-of-scope': 'Payroll integration.',
+          constraints: 'Must run offline-first on shop-floor tablets.',
+        },
+      }),
+      'utf8',
+    );
+
+    const out = await runGenerative(
+      {
+        id: 'pr_demo',
+        kind: 'demo-brief',
+        payload: { configContext: 'Product type: SaaS & tools › Scheduling' },
+        createdAt: 1,
+      },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(adapter.lastInput?.systemPrompt).toBe(loadSkill('demo-brief'));
+    expect(out.status).toBe(0);
+    expect(out.result).toEqual({
+      answers: {
+        problem: 'Shift managers lose 20 minutes/day to whiteboard shuffles.',
+        outcomes: 'Cut scheduling time by 50% in 90 days.',
+        'out-of-scope': 'Payroll integration.',
+        constraints: 'Must run offline-first on shop-floor tablets.',
+      },
+    });
+  });
+
+  it('demo-brief: a missing/malformed demo-brief.json yields status 2 with an error', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+    // No file written at .uxfactory/demo-brief.json → the post-stream read fails.
+
+    const out = await runGenerative(
+      { id: 'pr_demo_missing', kind: 'demo-brief', payload: { configContext: 'X' }, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect((out.result as { error: string }).error).toMatch(/no answers/i);
   });
 
   it('generate-design: a registered audience modulates the instruction; absent stays silent', async () => {

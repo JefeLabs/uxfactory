@@ -583,6 +583,27 @@ async function readAudienceNote(projectRoot: string): Promise<string | undefined
   }
 }
 
+/** Read the four demo-brief answers the agent wrote; null if absent/malformed. */
+export async function readDemoAnswers(
+  filePath: string,
+): Promise<Record<string, string> | null> {
+  try {
+    const raw = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+    const answers = asObject(raw)['answers'];
+    const obj = asObject(answers);
+    const ids = ['problem', 'outcomes', 'out-of-scope', 'constraints'];
+    const out: Record<string, string> = {};
+    for (const id of ids) {
+      const v = obj[id];
+      if (typeof v !== 'string' || v.trim() === '') return null;
+      out[id] = v.trim();
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 /** Conventional per-category viewport sizes (mirror the panel's device defaults). */
 const DEFAULT_VIEWPORT_SIZES: Record<
   'desktop' | 'tablet' | 'mobile',
@@ -1192,7 +1213,7 @@ interface ArtifactWriteIntent {
   sectionKey?: string;
 }
 
-function planGenerative(
+export function planGenerative(
   req: PipelineRequest,
   ctx: DispatchCtx,
   extras?: { designStyle?: string; ungoverned?: boolean; storyRefs?: string[]; audienceNote?: string },
@@ -1346,6 +1367,19 @@ function planGenerative(
         'registries, component registry, and root-tier crops, propose labels / component matches / ' +
         'axis fallbacks for every in-scope page-child record, then run ' +
         '`uxfactory identity propose identity-proposals.json` to post them.',
+    };
+  }
+
+  if (req.kind === 'demo-brief') {
+    // The panel's Demo button (Task 1: buildDemoConfigContext) hands us the
+    // config-context string; we just inject it — no ctx.projectRoot needed here.
+    const configContext = str(p, 'configContext') ?? '';
+    return {
+      systemPrompt: loadSkill('demo-brief'),
+      user:
+        'Invent ONE specific, plausible website/app concept that fits this project ' +
+        'configuration, then write the four product-brief answers per the skill.\n\n' +
+        'Project configuration:\n' + configContext,
     };
   }
 
@@ -1599,6 +1633,20 @@ export async function runGenerative(
     }
     // Flush a trailing complete marker that arrived without a closing newline.
     if (plan.progress === true && progressBuf !== '') await emitProgress(progressBuf);
+
+    // demo-brief (panel Demo button, Task 2): the skill wrote the four answers to
+    // .uxfactory/demo-brief.json during the stream — read them back and return
+    // early. Distinct shape from every other generative kind (no `content` echo,
+    // no artifacts/writes/landing), so this short-circuits before those blocks.
+    if (req.kind === 'demo-brief') {
+      const answers = await readDemoAnswers(
+        path.join(ctx.projectRoot, '.uxfactory', 'demo-brief.json'),
+      );
+      if (answers === null) {
+        return { status: 2, result: { error: 'demo idea generation produced no answers', content } };
+      }
+      return { status: 0, result: { answers } };
+    }
 
     // The skill wrote the artifact during the stream — READ it back (best-effort)
     // and attach per-item `{ ref, title?, seedRef? }` so the panel can seed the
