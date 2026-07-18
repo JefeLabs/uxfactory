@@ -324,3 +324,67 @@ describe("JsonFormEditor — sitemap form", () => {
     await waitFor(() => expect(screen.getByTestId("tree-preview").textContent).toContain("Home Page"));
   });
 });
+
+// ─── injectable save (Task 3: saveFn/onSaved, optional Regenerate) ────────────
+
+const PERSONA = { name: "Ana", goals: [] };
+
+function renderPersona(
+  bridge: Bridge,
+  extra: Partial<React.ComponentProps<typeof JsonFormEditor>> = {},
+) {
+  return renderWithProviders(
+    <JsonFormEditor
+      artifactKey="personas"
+      label="Persona"
+      status="up-to-date"
+      spec={formSpecFor("personas")!}
+      value={JSON.parse(JSON.stringify(PERSONA))}
+      bridge={bridge}
+      onBack={vi.fn()}
+      {...extra}
+    />,
+    { initialEntries: ["/tabs/artifacts"] },
+  );
+}
+
+describe("JsonFormEditor — injectable save", () => {
+  it("uses the injected saveFn and onSaved when provided (instead of putArtifact)", async () => {
+    const saveFn = vi.fn().mockResolvedValue(undefined);
+    const onSaved = vi.fn();
+    const bridge = makeBridge();
+
+    await renderPersona(bridge, { saveFn, onSaved });
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ana Extra" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save artifact" }));
+
+    await waitFor(() => expect(saveFn).toHaveBeenCalledWith(expect.stringContaining('"name"')));
+    expect(onSaved).toHaveBeenCalled();
+    expect(bridge.putArtifact).not.toHaveBeenCalled();
+
+    const content = saveFn.mock.calls[0]![0] as string;
+    expect(JSON.parse(content).name).toBe("Ana Extra");
+  });
+
+  it("falls back to putArtifact + invalidation when saveFn is absent (default path)", async () => {
+    const bridge = makeBridge();
+    await renderPersona(bridge, { onRegenerate: vi.fn() });
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ana Extra" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save artifact" }));
+
+    await waitFor(() => expect(bridge.putArtifact).toHaveBeenCalledTimes(1));
+    expect(savedJson(bridge, "personas").name).toBe("Ana Extra");
+  });
+
+  it("hides the Regenerate button when onRegenerate is absent", async () => {
+    await renderPersona(makeBridge());
+    expect(screen.queryByRole("button", { name: /regenerate/i })).toBeNull();
+  });
+
+  it("shows the Regenerate button when onRegenerate is provided (back-compat)", async () => {
+    await renderPersona(makeBridge(), { onRegenerate: vi.fn() });
+    expect(screen.getByRole("button", { name: /regenerate/i })).toBeInTheDocument();
+  });
+});

@@ -584,11 +584,20 @@ export interface JsonFormEditorProps {
   externalOptions?: Record<string, ExternalOption[]>;
   bridge: Bridge;
   onBack: () => void;
-  onRegenerate: () => void;
+  /** Omit to hide the Regenerate button entirely (e.g. a set-artifact instance editor). */
+  onRegenerate?: () => void;
   /** Root gate: true disables Regenerate (e.g. the product brief is missing). */
   regenerateDisabled?: boolean;
   /** Tooltip shown on the disabled Regenerate button. */
   regenerateDisabledReason?: string;
+  /**
+   * Overrides the built-in `putArtifact` save with a caller-supplied route (e.g.
+   * PUT one persona instance). Receives the serialized JSON content; the built-in
+   * snapshot/artifact query invalidation is skipped in favor of `onSaved`.
+   */
+  saveFn?: (content: string) => Promise<unknown>;
+  /** Runs on successful save when `saveFn` is provided (instead of the built-in invalidation). */
+  onSaved?: () => void;
 }
 
 export function JsonFormEditor({
@@ -603,6 +612,8 @@ export function JsonFormEditor({
   onRegenerate,
   regenerateDisabled,
   regenerateDisabledReason,
+  saveFn,
+  onSaved,
 }: JsonFormEditorProps): React.JSX.Element {
   const toast = useAppStore((s) => s.toast);
   const queryClient = useQueryClient();
@@ -612,16 +623,32 @@ export function JsonFormEditor({
   });
   const { isDirty } = formState;
 
-  const save = useMutation({
-    ...putArtifactMutation(bridge),
-    onSuccess: (_data, variables) => {
-      reset(JSON.parse(variables.content) as Record<string, any>); // re-baseline → clean
-      void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.artifact(activeRoot(bridge), artifactKey) });
-      toast("Saved");
-    },
-    onError: () => toast("Save failed — is the bridge running?"),
-  });
+  const save = useMutation(
+    saveFn !== undefined
+      ? {
+          // Injected save (e.g. a set-artifact instance route) — replaces putArtifact.
+          mutationFn: async (vars: { key: string; content: string }): Promise<{ ok: boolean }> => {
+            await saveFn(vars.content);
+            return { ok: true };
+          },
+          onSuccess: (_data: { ok: boolean }, variables: { key: string; content: string }) => {
+            reset(JSON.parse(variables.content) as Record<string, any>); // re-baseline → clean
+            onSaved?.();
+            toast("Saved");
+          },
+          onError: () => toast("Save failed — is the bridge running?"),
+        }
+      : {
+          ...putArtifactMutation(bridge),
+          onSuccess: (_data, variables) => {
+            reset(JSON.parse(variables.content) as Record<string, any>); // re-baseline → clean
+            void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot(activeRoot(bridge)) });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.artifact(activeRoot(bridge), artifactKey) });
+            toast("Saved");
+          },
+          onError: () => toast("Save failed — is the bridge running?"),
+        },
+  );
   const saving = save.isPending;
 
   const onSubmit = handleSubmit((values) => {

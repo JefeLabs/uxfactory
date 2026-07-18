@@ -18,7 +18,8 @@ export interface ArtifactEditorHeaderProps {
   label: string;
   status: ArtifactStatus;
   onBack: () => void;
-  onRegenerate: () => void;
+  /** Omit to hide the Regenerate button entirely (e.g. a set-artifact instance editor). */
+  onRegenerate?: () => void;
   /** When provided, a Save button renders; omit it for read-only modes. */
   onSave?: () => void;
   /** Disables the Save button (nothing to save, or a save in flight). */
@@ -39,16 +40,17 @@ export function ArtifactEditorHeader({
   regenerateDisabled = false,
   regenerateDisabledReason,
 }: ArtifactEditorHeaderProps): React.JSX.Element {
-  const regenerateButton = (
-    <button
-      type="button"
-      onClick={onRegenerate}
-      disabled={regenerateDisabled}
-      className="text-xs text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 shrink-0 disabled:text-gray-300 disabled:cursor-not-allowed"
-    >
-      Regenerate
-    </button>
-  );
+  const regenerateButton =
+    onRegenerate === undefined ? null : (
+      <button
+        type="button"
+        onClick={onRegenerate}
+        disabled={regenerateDisabled}
+        className="text-xs text-gray-600 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 shrink-0 disabled:text-gray-300 disabled:cursor-not-allowed"
+      >
+        Regenerate
+      </button>
+    );
 
   return (
     <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 bg-white shrink-0">
@@ -68,13 +70,14 @@ export function ArtifactEditorHeader({
 
       <span className="flex-1 text-sm font-semibold text-gray-900 truncate">{label}</span>
 
-      {regenerateDisabled ? (
-        <ActionTooltip label={regenerateDisabledReason ?? "Regenerate is unavailable"}>
-          <span tabIndex={0}>{regenerateButton}</span>
-        </ActionTooltip>
-      ) : (
-        regenerateButton
-      )}
+      {regenerateButton !== null &&
+        (regenerateDisabled ? (
+          <ActionTooltip label={regenerateDisabledReason ?? "Regenerate is unavailable"}>
+            <span tabIndex={0}>{regenerateButton}</span>
+          </ActionTooltip>
+        ) : (
+          regenerateButton
+        ))}
 
       {onSave !== undefined && (
         <button
