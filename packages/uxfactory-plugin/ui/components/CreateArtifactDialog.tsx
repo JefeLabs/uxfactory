@@ -126,7 +126,13 @@ export function CreateArtifactDialog({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/30 z-40" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92vw] max-w-sm max-h-[85vh] overflow-y-auto bg-white rounded-lg shadow-xl z-50 flex flex-col gap-3 p-4">
+        <Dialog.Content
+          className={
+            artifactKey === "brief"
+              ? "fixed inset-0 w-full h-full bg-white z-50 flex flex-col gap-3 p-6 overflow-y-auto"
+              : "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92vw] max-w-sm max-h-[85vh] overflow-y-auto bg-white rounded-lg shadow-xl z-50 flex flex-col gap-3 p-4"
+          }
+        >
           <Dialog.Title className="text-sm font-semibold text-gray-900">
             Create {artifactLabel}
           </Dialog.Title>
@@ -171,7 +177,7 @@ export function CreateArtifactDialog({
                     onChange={(e) =>
                       setAnswers((a) => ({ ...a, [q.id]: e.target.value }))
                     }
-                    rows={2}
+                    rows={artifactKey === "brief" ? 4 : 2}
                     placeholder={q.placeholder ?? ""}
                     aria-label={q.question}
                     aria-required={q.tag === "E"}

@@ -2085,3 +2085,95 @@ describe("Seed action — derive an artifact from the project's other artifacts"
     });
   });
 });
+
+// ─── Full-screen brief intake — resize on open, restore on close ─────────────
+// jsdom sets window.parent === window (no real iframe host), so the resize
+// effect's `parent !== window` guard (mirroring router.tsx's RESIZE_MAP
+// pattern) never fires against the real window. Swap in a fake parent object
+// for this block only, and restore the original descriptor afterward so
+// other suites relying on the natural jsdom `parent === window` are untouched.
+
+describe("Full-screen brief intake — resize on open, restore on close", () => {
+  const briefMissingArtifacts: ArtifactRow[] = MERIDIAN_ARTIFACTS.map((a) =>
+    a.key === "brief"
+      ? ({ ...a, status: "missing" as const, meta: "", path: null } satisfies ArtifactRow)
+      : a,
+  );
+
+  type ResizePost = { type: string; width?: number; height?: number };
+  let posts: ResizePost[];
+  let originalParentDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    posts = [];
+    originalParentDescriptor = Object.getOwnPropertyDescriptor(window, "parent");
+    const fakeParent = {
+      postMessage: (msg: unknown) => {
+        const pm = (msg as { pluginMessage?: ResizePost }).pluginMessage;
+        if (pm !== undefined) posts.push(pm);
+      },
+    };
+    Object.defineProperty(window, "parent", { value: fakeParent, configurable: true });
+  });
+
+  afterEach(() => {
+    if (originalParentDescriptor) {
+      Object.defineProperty(window, "parent", originalParentDescriptor);
+    }
+  });
+
+  it("opening the brief dialog posts an enlarged resize; Cancel restores 560×640", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    await waitFor(() =>
+      expect(posts.some((p) => p.type === "resize" && (p.width ?? 0) > 560)).toBe(true),
+    );
+    expect(posts.at(-1)).toMatchObject({ type: "resize", width: 900, height: 720 });
+
+    await user.click(within(dialog).getByRole("button", { name: /^Cancel$/i }));
+
+    await waitFor(() =>
+      expect(posts.at(-1)).toMatchObject({ type: "resize", width: 560, height: 640 }),
+    );
+  });
+
+  it("unmounting while the brief dialog is open also restores 560×640", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    const result = await renderWithProviders(<Artifacts bridge={bridge} />, {
+      initialEntries: ["/tabs/artifacts"],
+    });
+
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(posts.some((p) => (p.width ?? 0) > 560)).toBe(true));
+
+    result.unmount();
+
+    expect(posts.at(-1)).toMatchObject({ type: "resize", width: 560, height: 640 });
+  });
+
+  it("opening a non-brief dialog never posts a resize (compact modal unaffected)", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge();
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Create Illustrations/i }));
+    await screen.findByRole("dialog");
+
+    expect(posts.some((p) => p.type === "resize")).toBe(false);
+  });
+});

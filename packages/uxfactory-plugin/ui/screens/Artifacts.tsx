@@ -90,6 +90,19 @@ function orderIndex(key: string): number {
 /** Panel key for the root artifact (the brief) — every other artifact gates on it. */
 const BRIEF_KEY = ARTIFACT_KEY_BY_ID[ROOT_ARTIFACT] ?? "brief";
 
+/** Full-screen brief intake — the plugin window enlarges for the brief's
+ *  4-question dialog, full-bleed (CreateArtifactDialog mirrors this key). */
+const BRIEF_INTAKE_SIZE = { width: 900, height: 720 };
+/** /tabs default (router.tsx RESIZE_MAP) — restored when the brief dialog closes. */
+const TABS_SIZE = { width: 560, height: 640 };
+
+/** Post a resize to the plugin host — same wire shape as router.tsx's RESIZE_MAP effect. */
+function postResize(width: number, height: number): void {
+  if (typeof parent !== "undefined" && parent !== window) {
+    parent.postMessage({ pluginMessage: { type: "resize", width, height } }, "*");
+  }
+}
+
 /** True when `key`'s artifact must not be created/regenerated before the brief exists. */
 function requiresBrief(key: string): boolean {
   return requiresRootArtifact(REGISTRY_ID_BY_KEY[key] ?? key);
@@ -179,6 +192,19 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const pendingIdsRef = useRef<Record<string, string>>({});
   /** Per-key 5-minute pending-timeout handles. */
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // ── Full-screen brief intake: enlarge the plugin window while the brief's
+  // dialog is open, restore /tabs default on close (Generate, Cancel, Esc,
+  // overlay click) or unmount (navigating away with the dialog still open).
+
+  const briefDialogOpen = dialogRow?.key === BRIEF_KEY;
+  useEffect(() => {
+    if (briefDialogOpen) {
+      postResize(BRIEF_INTAKE_SIZE.width, BRIEF_INTAKE_SIZE.height);
+      return () => postResize(TABS_SIZE.width, TABS_SIZE.height);
+    }
+    return undefined;
+  }, [briefDialogOpen]);
 
   // ── Focus intent: scroll-to + highlight + clear search param ────────────────
   // Waits for the snapshot: a MISSING focused artifact auto-opens its
