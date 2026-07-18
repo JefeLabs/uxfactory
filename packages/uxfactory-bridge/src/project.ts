@@ -783,12 +783,16 @@ async function readTraceStories(storiesPath: string): Promise<
 // `personas` is a SET artifact — one JSON file per persona under
 // `.uxfactory/artifacts/personas/<id>.json`. `readPersonas` mirrors
 // `readTraceStories`'s parse-every-file-in-a-set-dir pattern: malformed or
-// unreadable members are skipped, never a 500. Every returned instance is
-// guaranteed a `personaId` — the file's own field when present and
-// non-empty, else the filename stem — so the panel always has a stable key
-// even for hand-authored files that omit it.
+// unreadable members are skipped, never a 500. Every returned instance's
+// `personaId` is the FILENAME STEM, ALWAYS — overriding any `personaId` the
+// body itself carries. The file IS the instance's identity (PUT/DELETE
+// address `<id>.json` by that same id): if a body's `personaId` disagreed
+// with its filename, trusting the body would make the panel address the
+// instance by the wrong id, and an edit would write a NEW file while
+// orphaning the original. Keying on the filename keeps list/PUT/DELETE all
+// addressing the same file, for hand-authored instances too.
 
-const PERSONA_ID_RE = /^P-\d+$/;
+const PERSONA_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 /** Parse every *.json in the personas set dir into instances; skip unreadable/malformed. */
 async function readPersonas(
@@ -807,10 +811,8 @@ async function readPersonas(
       const parsed = JSON.parse(await readFile(path.join(dir, file), "utf8")) as unknown;
       if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
       const obj = parsed as Record<string, unknown>;
-      const personaId =
-        typeof obj["personaId"] === "string" && obj["personaId"] !== ""
-          ? (obj["personaId"] as string)
-          : file.replace(/\.json$/, "");
+      // Filename wins over any body `personaId` — see the block comment above.
+      const personaId = file.replace(/\.json$/, "");
       out.push({ ...obj, personaId });
     } catch {
       /* skip malformed member */
@@ -2367,7 +2369,12 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
 
   // ── PUT /project/personas/:id ────────────────────────────────────────────
   // `:id` is validated against PERSONA_ID_RE BEFORE any path.join — a
-  // path-traversal or otherwise malformed id 400s with nothing written. The
+  // path-traversal or otherwise malformed id 400s with nothing written.
+  // PERSONA_ID_RE accepts both minted `P-NN` ids and hand-authored slugs
+  // (e.g. `ana`): first character alphanumeric, rest alphanumeric/`-`/`_` —
+  // no `.`, `/`, `\`, leading `-`/`_`, spaces, or empty. `applyArtifactWrite`
+  // additionally re-resolves the path and refuses anything outside the
+  // project root (defense in depth, same guard DELETE repeats below). The
   // server always STAMPS `personaId === :id` on the written body (ignoring
   // any id the client sent), so the filename and the file's own id can never
   // drift apart.
@@ -2378,7 +2385,9 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       if (ctx === null) return reply;
       const id = req.params.id;
       if (!PERSONA_ID_RE.test(id)) {
-        return reply.code(400).send({ error: `invalid persona id "${id}" — expected P-<number>` });
+        return reply
+          .code(400)
+          .send({ error: `invalid persona id "${id}" — expected letters, numbers, -, _ (first char alphanumeric)` });
       }
       const body = req.body as { persona?: unknown };
       if (body?.persona === null || typeof body?.persona !== "object" || Array.isArray(body?.persona)) {
@@ -2395,7 +2404,10 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
   );
 
   // ── DELETE /project/personas/:id ─────────────────────────────────────────
-  // Same id validation as the PUT route. Idempotent: deleting an already-
+  // Same id validation as the PUT route, PLUS a belt-and-suspenders resolved-
+  // path check (PUT gets this for free from applyArtifactWrite's
+  // resolveWithin; DELETE calls `rm` directly, so it repeats the guard here
+  // rather than relying on the regex alone). Idempotent: deleting an already-
   // absent instance still returns `{ ok: true, deleted: false }` rather than
   // erroring — the panel's delete gesture shouldn't fail on a double-click or
   // a stale list.
@@ -2408,7 +2420,11 @@ export const projectPlugin: FastifyPluginAsync<ProjectPluginOptions> = async (
       if (!PERSONA_ID_RE.test(id)) {
         return reply.code(400).send({ error: `invalid persona id "${id}"` });
       }
-      const file = path.join(ctx.root, ARTIFACTS_DIR, "personas", `${id}.json`);
+      const personasDirAbs = path.resolve(ctx.root, ARTIFACTS_DIR, "personas");
+      const file = path.resolve(personasDirAbs, `${id}.json`);
+      if (!file.startsWith(personasDirAbs + path.sep)) {
+        return reply.code(400).send({ error: `invalid persona id "${id}"` });
+      }
       let deleted = false;
       try {
         await rm(file);

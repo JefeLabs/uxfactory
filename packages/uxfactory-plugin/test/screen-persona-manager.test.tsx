@@ -12,6 +12,7 @@ import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 
 import type { Bridge, PersonaRecord } from "../ui/lib/bridge.js";
 import { PersonaManager, nextPersonaId } from "../ui/screens/PersonaManager.js";
@@ -239,6 +240,74 @@ describe("PersonaManager — delete", () => {
         true,
       ),
     );
+  });
+});
+
+// ─── Unmanageable ids (final whole-branch review, Fix 3) ───────────────────
+// After the bridge fix, `personaId` is always the filename stem — so this
+// only trips for a genuinely-unsafe filename (one PUT/DELETE would 400 on).
+// Rather than letting that write 400 with a misleading "is the bridge
+// running?" toast, the card's Edit/Delete are disabled with a tooltip
+// explaining why.
+
+describe("PersonaManager — unmanageable (unsafe-filename) persona id", () => {
+  const UNSAFE: PersonaRecord = { personaId: "legacy persona", name: "Legacy" };
+
+  it("disables Edit and Delete with a reachable explanatory tooltip", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({
+      getPersonas: vi.fn().mockResolvedValue({ personas: [UNSAFE] }),
+    });
+    await renderManager(bridge);
+    await waitFor(() => screen.getByText("Legacy"));
+
+    const editButton = screen.getByRole("button", { name: "Edit Legacy" });
+    const deleteButton = screen.getByRole("button", { name: "Delete Legacy" });
+    expect(editButton).toBeDisabled();
+    expect(deleteButton).toBeDisabled();
+
+    await user.hover(editButton);
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "Rename this file to letters, numbers, - or _ to manage it here.",
+      );
+    });
+  });
+
+  it("does not open the editor or call deletePersona for an unmanageable id", async () => {
+    const bridge = makeBridge({
+      getPersonas: vi.fn().mockResolvedValue({ personas: [UNSAFE] }),
+    });
+    await renderManager(bridge);
+    await waitFor(() => screen.getByText("Legacy"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Legacy" }));
+    expect(screen.queryByLabelText("Name")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Legacy" }));
+    expect(bridge.deletePersona).not.toHaveBeenCalled();
+  });
+
+  it("leaves a safe P-NN id's Edit/Delete enabled", async () => {
+    const bridge = makeBridge();
+    await renderManager(bridge);
+    await waitFor(() => screen.getByText("Ana"));
+
+    expect(screen.getByRole("button", { name: "Edit Ana" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete Ana" })).toBeEnabled();
+  });
+
+  it("leaves a hand-authored safe slug id's Edit/Delete enabled", async () => {
+    const bridge = makeBridge({
+      getPersonas: vi
+        .fn()
+        .mockResolvedValue({ personas: [{ personaId: "ana", name: "Ana (hand-authored)" }] }),
+    });
+    await renderManager(bridge);
+    await waitFor(() => screen.getByText("Ana (hand-authored)"));
+
+    expect(screen.getByRole("button", { name: "Edit Ana (hand-authored)" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete Ana (hand-authored)" })).toBeEnabled();
   });
 });
 

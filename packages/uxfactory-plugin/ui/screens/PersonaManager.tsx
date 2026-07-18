@@ -18,6 +18,15 @@
  *
  * Every mutation invalidates both the personas list query and the snapshot
  * query (a personas count/status change may shift the Artifacts row's meta).
+ *
+ * The bridge keys each listed instance's `personaId` on its FILENAME stem
+ * (never a possibly-disagreeing body field — see readPersonas in
+ * project.ts), and PUT/DELETE accept any traversal-safe slug, not just
+ * `P-NN` — so hand-authored files (e.g. `ana.json`) are manageable here too.
+ * A genuinely-unsafe filename (one with characters PUT/DELETE would 400 on)
+ * is the rare residual: MANAGEABLE_ID_RE below disables that card's Edit/
+ * Delete with an explanatory tooltip instead of letting the write 400 with a
+ * misleading "is the bridge running?" toast.
  */
 
 import React, { useState } from "react";
@@ -26,7 +35,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Bridge, PersonaRecord } from "../lib/bridge.js";
 import { personasQuery, queryKeys, activeRoot } from "../queries.js";
 import { formSpecFor } from "../lib/artifact-forms.js";
-import { Card, Row } from "../components/index.js";
+import { ActionTooltip, Card, Row } from "../components/index.js";
 import { JsonFormEditor } from "./JsonFormEditor.js";
 import { useAppStore } from "../stores/app.js";
 
@@ -38,6 +47,18 @@ export function nextPersonaId(ids: string[]): string {
   const next = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
   return `P-${String(next).padStart(2, "0")}`;
 }
+
+/**
+ * Ids the bridge's PUT/DELETE routes will actually accept (same shape as
+ * the bridge's PERSONA_ID_RE in project.ts: first char alphanumeric, rest
+ * alphanumeric/-/_ — no `.`, `/`, `\`, spaces, or leading `-`/`_`). Since
+ * `personaId` is now always the filename stem, this only trips for a
+ * genuinely-unsafe filename.
+ */
+const MANAGEABLE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+const UNMANAGEABLE_TOOLTIP =
+  "Rename this file to letters, numbers, - or _ to manage it here.";
 
 function displayName(p: PersonaRecord): string {
   const name = p["name"];
@@ -203,33 +224,56 @@ export function PersonaManager({
           </p>
         ) : (
           <Card>
-            {personas.map((p) => (
-              <Row
-                key={p.personaId}
-                name={displayName(p)}
-                meta={metaFor(p)}
-                action={
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditing({ id: p.personaId, value: p })}
-                      aria-label={`Edit ${displayName(p)}`}
-                      className="text-xs text-primary-600 hover:underline font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDelete(p)}
-                      aria-label={`Delete ${displayName(p)}`}
-                      className="text-xs text-fail-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                }
-              />
-            ))}
+            {personas.map((p) => {
+              const manageable = MANAGEABLE_ID_RE.test(p.personaId);
+              const editButton = (
+                <button
+                  type="button"
+                  onClick={() => setEditing({ id: p.personaId, value: p })}
+                  disabled={!manageable}
+                  aria-label={`Edit ${displayName(p)}`}
+                  className="text-xs text-primary-600 hover:underline font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:text-gray-300 disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  Edit
+                </button>
+              );
+              const deleteButton = (
+                <button
+                  type="button"
+                  onClick={() => void handleDelete(p)}
+                  disabled={!manageable}
+                  aria-label={`Delete ${displayName(p)}`}
+                  className="text-xs text-fail-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:text-gray-300 disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  Delete
+                </button>
+              );
+              return (
+                <Row
+                  key={p.personaId}
+                  name={displayName(p)}
+                  meta={metaFor(p)}
+                  action={
+                    <div className="flex items-center gap-2">
+                      {manageable ? (
+                        editButton
+                      ) : (
+                        <ActionTooltip label={UNMANAGEABLE_TOOLTIP}>
+                          <span tabIndex={0}>{editButton}</span>
+                        </ActionTooltip>
+                      )}
+                      {manageable ? (
+                        deleteButton
+                      ) : (
+                        <ActionTooltip label={UNMANAGEABLE_TOOLTIP}>
+                          <span tabIndex={0}>{deleteButton}</span>
+                        </ActionTooltip>
+                      )}
+                    </div>
+                  }
+                />
+              );
+            })}
           </Card>
         )}
       </div>
