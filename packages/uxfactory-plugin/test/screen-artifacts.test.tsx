@@ -693,6 +693,28 @@ describe("personas un-gate: Open mounts PersonaManager, not ArtifactEditor/Finde
 
     expect(screen.queryByRole("button", { name: /Open Stories/i })).not.toBeInTheDocument();
   });
+
+  it("the ↗ external-open icon remains available on the personas row alongside the new Open button", async () => {
+    const user = userEvent.setup();
+    const bridge = makeBridge({ snapshot: vi.fn().mockResolvedValue(personasSnapshot()) });
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    const productSection = await screen.findByRole("region", { name: "PRODUCT" });
+    // Product Brief, Stories, and Personas each have a path → three ↗ buttons in this section.
+    const externalButtons = within(productSection).getAllByRole("button", {
+      name: /Open in external editor/i,
+    });
+    expect(externalButtons).toHaveLength(3);
+
+    // Registry declaration order is brief → audience → personas → stories →
+    // features, so among the three present rows the personas ↗ is the middle
+    // one — click it and confirm it still calls openPath, NOT the manager.
+    await user.click(externalButtons[1]!);
+    expect(bridge.openPath).toHaveBeenCalledWith(
+      "/home/user/meridian/.uxfactory/artifacts/personas",
+    );
+    expect(screen.queryByText(/Manage personas/i)).not.toBeInTheDocument();
+  });
 });
 
 // ─── AC-3: Create enqueues, shows progress, flips green after snapshot update ─
