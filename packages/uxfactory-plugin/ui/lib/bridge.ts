@@ -223,8 +223,8 @@ export interface Bridge {
   /**
    * PUT /project/personas/:id {persona} → {ok} — writes (create or replace)
    * one persona instance. The server stamps `personaId === :id`, ignoring
-   * any id in the body. `:id` must match `/^P-\d+$/`. Optional — absent in
-   * legacy bridge builds.
+   * any id in the body. `:id` must be a traversal-safe slug
+   * (`/^[A-Za-z0-9][A-Za-z0-9_-]*$/`). Optional — absent in legacy bridge builds.
    */
   putPersona?(id: string, persona: Record<string, unknown>): Promise<{ ok: boolean }>;
   /**

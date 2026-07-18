@@ -41,7 +41,8 @@ import { useAppStore } from "../stores/app.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Next unused `P-NN` id — client-minted, matches the bridge's `/^P-\d+$/` guard. */
+/** Next unused `P-NN` id for a new persona — client-minted; `P-NN` is a subset of
+ *  the bridge's traversal-safe id slug, so a freshly-minted id always writes cleanly. */
 export function nextPersonaId(ids: string[]): string {
   const nums = ids.map((id) => Number(/^P-(\d+)$/.exec(id)?.[1] ?? 0));
   const next = (nums.length > 0 ? Math.max(...nums) : 0) + 1;
