@@ -2491,4 +2491,103 @@ describe("Demo button — enqueue demo-brief, poll getPipelineResult, populate t
     await new Promise((resolve) => setTimeout(resolve, 2200));
     expect(getPipelineResult.mock.calls.length).toBe(callsAtClose);
   });
+
+  it("clicking Generate while a demo is still in flight stops the poll (chain-advance leaves the brief without onOpenChange firing)", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+    // Stays "pending" forever — proves the poll is stopped by LEAVING the
+    // brief dialog (via Generate's chain-advance), not by the job resolving.
+    const getPipelineResult = vi.fn().mockResolvedValue({ state: "pending" as const });
+    // First snapshot call: brief missing (drives "Create Product Brief").
+    // Subsequent calls (post-Generate invalidation): brief is up-to-date
+    // with a path, so pendingKeys clears (the "still pending" cleanup effect
+    // only clears a key once its row reads "up-to-date") and the row shows
+    // Open instead of hanging on "generating…" forever.
+    const upToDateBriefArtifacts: ArtifactRow[] = briefMissingArtifacts.map((a) =>
+      a.key === "brief"
+        ? ({ ...a, status: "up-to-date" as const, meta: "brief.md", path: "/home/user/meridian/brief.md" } satisfies ArtifactRow)
+        : a,
+    );
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "job-7" }),
+      getPipelineResult,
+      snapshot: vi.fn()
+        .mockResolvedValueOnce(makeMeridianSnapshot({ artifacts: briefMissingArtifacts }))
+        .mockResolvedValue(makeMeridianSnapshot({ artifacts: upToDateBriefArtifacts })),
+    });
+
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    // Demo started but not yet resolved.
+    await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+    await waitFor(() => expect(getPipelineResult).toHaveBeenCalled());
+    expect(within(dialog).getByRole("button", { name: /Generating…/i })).toBeInTheDocument();
+
+    // Generate is only gated on the four required questions, not on the
+    // demo — fill them by hand and submit before the poll ever resolves.
+    await user.type(
+      within(dialog).getByLabelText(/What problem does this product solve/i),
+      "Helps clinics schedule faster",
+    );
+    await user.type(
+      within(dialog).getByLabelText(/How will you measure success/i),
+      "30% fewer no-shows",
+    );
+    await user.type(
+      within(dialog).getByLabelText(/explicitly out of scope/i),
+      "Billing",
+    );
+    await user.type(
+      within(dialog).getByLabelText(/constraints are non-negotiable/i),
+      "EHR stack",
+    );
+    await user.click(within(dialog).getByRole("button", { name: /^Generate$/i }));
+
+    // The brief dialog closed via the chain advancing (not onOpenChange) —
+    // no more artifacts were missing, so the dialog is gone entirely.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    const callsAtGenerate = getPipelineResult.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(getPipelineResult.mock.calls.length).toBe(callsAtGenerate);
+
+    // Reopening the brief (via the in-panel editor's Regenerate, since the
+    // row is now up-to-date) must not resurrect the orphaned demo's
+    // answers — it should come up as a fresh, empty interview.
+    await user.click(await screen.findByRole("button", { name: /Open Product Brief/i }));
+    await user.click(await screen.findByRole("button", { name: /^Regenerate$/i }));
+    const reopened = await screen.findByRole("dialog");
+    expect(
+      within(reopened).getByLabelText(/What problem does this product solve/i),
+    ).toHaveValue("");
+  });
+
+  it("handleDemo: enqueue rejection clears the running state and toasts a failure", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockRejectedValue(new Error("network down")),
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+
+    await waitFor(() => {
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Demo failed to enqueue — is the bridge running?")).toBe(
+        true,
+      );
+    });
+    expect(within(dialog).getByRole("button", { name: /^Demo$/i })).toBeInTheDocument();
+  });
 });

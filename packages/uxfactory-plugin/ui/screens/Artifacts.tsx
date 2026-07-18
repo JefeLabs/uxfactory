@@ -231,8 +231,9 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const [demoRunning, setDemoRunning] = useState(false);
   const [demoJobId, setDemoJobId] = useState<string | null>(null);
   /** The demo's four answers once a run completes — feeds the dialog's
-   *  `initialAnswers`; reset on dialog-row change/close so a stale demo from
-   *  one artifact's session never leaks into the next. */
+   *  `initialAnswers`; reset whenever the brief dialog is left (see the
+   *  `briefDialogOpen`-keyed cleanup effect below) so a stale demo from one
+   *  session never leaks into the next. */
   const [demoAnswers, setDemoAnswers] = useState<Record<string, string> | undefined>(undefined);
   const demoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const demoPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -448,6 +449,23 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     };
   }, []);
 
+  // Leaving the brief dialog by ANY path — Cancel/Esc/overlay (onOpenChange),
+  // opening a different row (openDialog), Retry, or Generate's own
+  // `setDialogChain((c) => c.slice(1))` chain-advance — must stop an
+  // in-flight demo poll and drop stale demo state before whatever comes
+  // next. Keyed on `briefDialogOpen` (not onOpenChange) specifically
+  // because that chain-advance changes `dialogRow` without ever calling
+  // Radix's onOpenChange: a user can type answers, click Demo, then click
+  // Generate before the poll resolves, orphaning it. This is the ONLY
+  // demo-state reset point — do not re-add ad hoc clears at individual
+  // call sites (openDialog/onOpenChange/handleRetry all rely on this).
+  useEffect(() => {
+    if (briefDialogOpen) return;
+    clearDemoTracking();
+    setDemoRunning(false);
+    setDemoAnswers(undefined);
+  }, [briefDialogOpen]);
+
   async function handleDemo(): Promise<void> {
     const configContext = buildDemoConfigContext(
       snapshot?.classification ?? null,
@@ -566,8 +584,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     setDialogChain(finalChain);
     setChainTotal(finalChain.length);
     setChainTarget(finalChain[finalChain.length - 1]!.label);
-    // A demo from a previous dialog session must not leak into this one.
-    setDemoAnswers(undefined);
   }
 
   function handleRetry(row: ArtifactRow): void {
@@ -578,9 +594,6 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     setDialogChain([row]);
     setChainTotal(1);
     setChainTarget(row.label);
-    // Same discipline as openDialog: a demo from before this failed
-    // generation must not silently resurface on retry.
-    setDemoAnswers(undefined);
   }
 
   // ── Rollup ───────────────────────────────────────────────────────────────────
@@ -635,17 +648,10 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
           : undefined
       }
       onOpenChange={(open) => {
-        if (!open) {
-          setDialogChain([]);
-          setDemoAnswers(undefined);
-          // The user dismissed the dialog — a demo still in flight would
-          // otherwise keep polling in the background and could resurface
-          // stale answers (or a stray toast) after the fact.
-          if (demoRunning) {
-            clearDemoTracking();
-            setDemoRunning(false);
-          }
-        }
+        if (!open) setDialogChain([]);
+        // Demo cleanup on close is handled by the briefDialogOpen-keyed
+        // effect below — it also covers exits onOpenChange never sees
+        // (handleGenerate's chain-advance past the brief).
       }}
       onGenerate={(guidance, answers) => {
         if (dialogRow !== null) void handleGenerate(dialogRow, guidance, answers);
