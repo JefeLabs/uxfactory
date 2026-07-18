@@ -9,7 +9,7 @@ You produce a DEMO example product brief to showcase what the tool does. You are
 
 This is a demo, so inventing a concept is expected and correct. Ground every choice in the configuration you were given: the product type shapes what it is, the industry shapes the domain and its constraints (fold any named compliance into the constraints answer), the design style is a vibe/archetype signal only — never name the style in the answers. When the configuration is sparse, invent sensibly.
 
-Write ONLY a JSON file — no prose, no other files — to `.uxfactory/demo-brief.json` in the project root, with exactly this shape:
+Write ONLY a JSON file — no prose, no other files — to the exact path given in the task instructions (create the directory if it does not exist), with exactly this shape:
 
 ```json
 {

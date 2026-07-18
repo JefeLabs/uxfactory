@@ -2590,4 +2590,59 @@ describe("Demo button — enqueue demo-brief, poll getPipelineResult, populate t
     });
     expect(within(dialog).getByRole("button", { name: /^Demo$/i })).toBeInTheDocument();
   });
+
+  it("leaving the brief dialog before the demo's enqueue resolves does not arm an orphaned timeout (no stray toast)", async () => {
+    useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+    // A deferred enqueue promise — resolved by hand, AFTER the dialog is closed,
+    // to reproduce "user clicks Demo then leaves before the enqueue resolves".
+    let resolveEnqueue!: (v: { id: string }) => void;
+    const enqueuePromise = new Promise<{ id: string }>((resolve) => {
+      resolveEnqueue = resolve;
+    });
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockReturnValue(enqueuePromise),
+      getPipelineResult: vi.fn().mockResolvedValue({ state: "pending" as const }),
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    // Real timers to get the dialog open first (matches the timeout-backstop test above).
+    const openButton = await screen.findByRole("button", { name: /Create Product Brief/i });
+    fireEvent.click(openButton);
+    const dialog = await screen.findByRole("dialog");
+    const demoButton = within(dialog).getByRole("button", { name: /^Demo$/i });
+    const cancelButton = within(dialog).getByRole("button", { name: /^Cancel$/i });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(demoButton);
+
+      // Leave the dialog (Cancel) BEFORE the enqueue promise resolves — the
+      // briefDialogOpen cleanup effect resets demo state (and bumps the run
+      // token) right away, while handleDemo is still awaiting enqueue.
+      fireEvent.click(cancelButton);
+      await act(async () => {});
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      // NOW resolve the enqueue — handleDemo's continuation runs with a
+      // superseded token and must bail instead of arming a timer.
+      await act(async () => {
+        resolveEnqueue({ id: "job-orphan" });
+        await enqueuePromise;
+      });
+
+      // Advance well past the 5-minute timeout — nothing should fire.
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000 + 1000);
+      });
+
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Demo timed out — see worker logs")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

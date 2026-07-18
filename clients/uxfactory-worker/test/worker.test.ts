@@ -29,6 +29,7 @@ import { runCli, resolveCliBin } from '../src/run-cli.js';
 import { DETERMINISTIC, isDeterministic, runGenerative } from '../src/dispatch.js';
 import type { DispatchCtx } from '../src/dispatch.js';
 import {
+  demoAnswersRelPath,
   ensureSkillPermissions,
   extractArtifacts,
   parseProgressLine,
@@ -1411,16 +1412,19 @@ describe('runGenerative', () => {
     );
     expect(plan.systemPrompt).toBe(loadSkill('demo-brief'));
     expect(plan.user).toContain('SaaS & tools › X');
+    // Per-request scratch path (Fix 1): the agent is told the exact path to
+    // write to, so a stale file from a prior run can never be read back.
+    expect(plan.user).toContain(path.join('scratch', 'r1', 'demo-brief.json'));
   });
 
   it('demo-brief: on success reads the four answers back into result.answers (status 0)', async () => {
     const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
     const bridge = new FakeBridge();
     // The skill would WRITE this file during the run; simulate it landing at the
-    // resolved path (the read happens after the stream completes).
-    await mkdir(path.join(projectRoot, '.uxfactory'), { recursive: true });
+    // resolved per-request scratch path (the read happens after the stream completes).
+    await mkdir(path.join(projectRoot, '.uxfactory', 'scratch', 'pr_demo'), { recursive: true });
     await writeFile(
-      path.join(projectRoot, '.uxfactory', 'demo-brief.json'),
+      path.join(projectRoot, '.uxfactory', 'scratch', 'pr_demo', 'demo-brief.json'),
       JSON.stringify({
         answers: {
           problem: 'Shift managers lose 20 minutes/day to whiteboard shuffles.',
@@ -1459,7 +1463,7 @@ describe('runGenerative', () => {
   it('demo-brief: a missing/malformed demo-brief.json yields status 2 with an error', async () => {
     const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
     const bridge = new FakeBridge();
-    // No file written at .uxfactory/demo-brief.json → the post-stream read fails.
+    // No file written at the per-request scratch path → the post-stream read fails.
 
     const out = await runGenerative(
       { id: 'pr_demo_missing', kind: 'demo-brief', payload: { configContext: 'X' }, createdAt: 1 },
@@ -1470,6 +1474,45 @@ describe('runGenerative', () => {
 
     expect(out.status).toBe(2);
     expect((out.result as { error: string }).error).toMatch(/no answers/i);
+  });
+
+  it('demo-brief: a stale file from a DIFFERENT req.id cannot be read as this run\'s answers', async () => {
+    const adapter = new FakeAdapter(projectRoot, [{ type: 'message-stop', finishReason: 'stop' }]);
+    const bridge = new FakeBridge();
+    // Simulate a previous run (job-1) that left a clean answers file behind.
+    await mkdir(path.join(projectRoot, '.uxfactory', 'scratch', 'job-1'), { recursive: true });
+    await writeFile(
+      path.join(projectRoot, '.uxfactory', 'scratch', 'job-1', 'demo-brief.json'),
+      JSON.stringify({
+        answers: {
+          problem: 'Stale from job-1.',
+          outcomes: 'Stale outcomes.',
+          'out-of-scope': 'Stale scope.',
+          constraints: 'Stale constraints.',
+        },
+      }),
+      'utf8',
+    );
+
+    // job-2's run never writes its own file (the LLM/tool hiccup this fix guards
+    // against) — it must NOT fall back to job-1's file.
+    const out = await runGenerative(
+      { id: 'job-2', kind: 'demo-brief', payload: { configContext: 'X' }, createdAt: 1 },
+      adapter,
+      bridge,
+      ctx(),
+    );
+
+    expect(out.status).toBe(2);
+    expect((out.result as { error: string }).error).toMatch(/no answers/i);
+  });
+
+  it('demoAnswersRelPath: differs per req.id', () => {
+    const a = demoAnswersRelPath('job-1');
+    const b = demoAnswersRelPath('job-2');
+    expect(a).not.toBe(b);
+    expect(a).toBe(path.join('.uxfactory', 'scratch', 'job-1', 'demo-brief.json'));
+    expect(b).toBe(path.join('.uxfactory', 'scratch', 'job-2', 'demo-brief.json'));
   });
 
   it('generate-design: a registered audience modulates the instruction; absent stays silent', async () => {

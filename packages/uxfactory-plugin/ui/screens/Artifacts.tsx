@@ -146,8 +146,9 @@ export const PENDING_TIMEOUT_MS = 5 * 60 * 1000;
 /** How often to poll GET /pipeline/result/:id while a demo-brief job runs
  *  (same cadence as Components.tsx's Interpret poll). */
 const DEMO_POLL_MS = 1800;
-/** Demo gives up polling after this long — same ceiling as PENDING_TIMEOUT_MS. */
-const DEMO_TIMEOUT_MS = 5 * 60 * 1000;
+/** Demo gives up polling after this long — same ceiling as PENDING_TIMEOUT_MS
+ *  (single source of truth: PENDING_TIMEOUT_MS is declared above). */
+const DEMO_TIMEOUT_MS = PENDING_TIMEOUT_MS;
 
 /** Row-level note shown when generation fails or times out. */
 const GENERATION_FAILED_MSG = "Generation failed — see worker logs";
@@ -237,6 +238,11 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const [demoAnswers, setDemoAnswers] = useState<Record<string, string> | undefined>(undefined);
   const demoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const demoPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Bumped by clearDemoTracking (and at the start of every handleDemo call) so
+   *  an in-flight handleDemo's post-await continuation can detect that its run
+   *  was superseded/cleared (dialog left, another Demo click) and bail instead
+   *  of resurrecting tracking for an orphaned job — see handleDemo below. */
+  const demoRunTokenRef = useRef(0);
 
   // ── Full-screen brief intake: enlarge the plugin window while the brief's
   // dialog is open, restore /tabs default on close (Generate, Cancel, Esc,
@@ -386,6 +392,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
 
   /** Clear ALL running-demo bookkeeping (timer + poll interval + tracked id). */
   function clearDemoTracking(): void {
+    demoRunTokenRef.current += 1;
     if (demoTimerRef.current !== null) {
       clearTimeout(demoTimerRef.current);
       demoTimerRef.current = null;
@@ -472,6 +479,7 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       snapshot?.profile ?? null,
     );
     setDemoRunning(true);
+    const myToken = ++demoRunTokenRef.current;
     let id: string;
     try {
       ({ id } = await enqueue.mutateAsync({ kind: "demo-brief", payload: { configContext } }));
@@ -480,6 +488,12 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
       toast("Demo failed to enqueue — is the bridge running?");
       return;
     }
+
+    // The brief dialog may have been left (or another Demo click fired) while
+    // the enqueue awaited — clearDemoTracking bumps the token on every such
+    // reset. Bail rather than arm a timer for a run nothing is tracking
+    // anymore (it would otherwise fire a stray "timed out" toast later).
+    if (demoRunTokenRef.current !== myToken) return;
 
     // Clear any stale timer/poll from a prior run first (defensive; shouldn't
     // happen since the button is disabled while demoRunning is true).

@@ -14,7 +14,7 @@ import type { ManagedInfo, WorkerPresenceEntry } from "./bridge.js";
 export type WorkerCoverage = "covered" | "uncovered" | "unknown";
 
 /** The job kinds this panel can enqueue. Extend when the panel gains new kinds. */
-export const ENQUEUEABLE_KINDS = ["generate-artifact", "generate-design"] as const;
+export const ENQUEUEABLE_KINDS = ["generate-artifact", "generate-design", "demo-brief"] as const;
 
 export function coverageFor(
   workers: WorkerPresenceEntry[] | null,

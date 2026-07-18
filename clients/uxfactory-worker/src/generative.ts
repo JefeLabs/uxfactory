@@ -583,6 +583,16 @@ async function readAudienceNote(projectRoot: string): Promise<string | undefined
   }
 }
 
+/**
+ * Per-request path (relative to projectRoot) for the demo-brief answers file,
+ * mirroring the scratch/<req.id>/ convention used by the non-set producer path
+ * (see the `scratchRel` computation above). A fixed path would let a stale file
+ * from a prior run be served as this run's answers, or race a concurrent run.
+ */
+export function demoAnswersRelPath(reqId: string): string {
+  return path.join('.uxfactory', 'scratch', reqId, 'demo-brief.json');
+}
+
 /** Read the four demo-brief answers the agent wrote; null if absent/malformed. */
 export async function readDemoAnswers(
   filePath: string,
@@ -1379,7 +1389,9 @@ export function planGenerative(
       user:
         'Invent ONE specific, plausible website/app concept that fits this project ' +
         'configuration, then write the four product-brief answers per the skill.\n\n' +
-        'Project configuration:\n' + configContext,
+        'Project configuration:\n' + configContext +
+        `\n\nWrite the answers JSON to \`${demoAnswersRelPath(req.id)}\` (create the directory` +
+        ' if it does not exist).',
     };
   }
 
@@ -1635,12 +1647,15 @@ export async function runGenerative(
     if (plan.progress === true && progressBuf !== '') await emitProgress(progressBuf);
 
     // demo-brief (panel Demo button, Task 2): the skill wrote the four answers to
-    // .uxfactory/demo-brief.json during the stream — read them back and return
-    // early. Distinct shape from every other generative kind (no `content` echo,
-    // no artifacts/writes/landing), so this short-circuits before those blocks.
+    // the per-request scratch path (demoAnswersRelPath) during the stream — read
+    // them back and return early. Distinct shape from every other generative kind
+    // (no `content` echo, no artifacts/writes/landing), so this short-circuits
+    // before those blocks. Per-request (not a fixed path) so a stream that
+    // completes without writing the file can never be served a stale answers
+    // file from a previous run, and two concurrent demo-brief jobs can't race.
     if (req.kind === 'demo-brief') {
       const answers = await readDemoAnswers(
-        path.join(ctx.projectRoot, '.uxfactory', 'demo-brief.json'),
+        path.join(ctx.projectRoot, demoAnswersRelPath(req.id)),
       );
       if (answers === null) {
         return { status: 2, result: { error: 'demo idea generation produced no answers', content } };

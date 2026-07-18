@@ -17,8 +17,8 @@ describe("coverageFor", () => {
     expect(coverageFor(workers, "generate-artifact", null)).toBe("covered");
     expect(coverageFor(workers, "generate-design", null)).toBe("uncovered");
   });
-  it("ENQUEUEABLE_KINDS names the two panel job kinds", () => {
-    expect([...ENQUEUEABLE_KINDS]).toEqual(["generate-artifact", "generate-design"]);
+  it("ENQUEUEABLE_KINDS names the panel job kinds", () => {
+    expect([...ENQUEUEABLE_KINDS]).toEqual(["generate-artifact", "generate-design", "demo-brief"]);
   });
   it("anyUncovered: null → false; partial pool → true; all-kinds worker → false", () => {
     expect(anyUncovered(null, null)).toBe(false);
