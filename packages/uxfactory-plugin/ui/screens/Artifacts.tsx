@@ -21,6 +21,19 @@
  *   → inline "generating…" + invalidateQueries on enqueue-resolve + 3s delayed re-invalidate
  *   → refetchInterval while pending rows exist → cleanup on unmount
  *
+ * Demo flow (brief only — LLM-free panel, this screen only enqueues + polls):
+ *   Demo button in the brief's CreateArtifactDialog → buildDemoConfigContext
+ *   (classification + profile) → bridge.enqueue({kind:"demo-brief", payload:
+ *   {configContext}}) — a SEPARATE enqueue from Generate, never threaded
+ *   through handleGenerate → poll bridge.getPipelineResult (mirrors
+ *   Components.tsx's Interpret poll: 1.8s cadence, 5-minute timeout backstop,
+ *   guarded on getPipelineResult being present for legacy bridges) → on a
+ *   zero-status "done" result, the four answers seed the dialog's
+ *   `initialAnswers` (merged in, overwrite-confirmed if the user already
+ *   typed something different) — the user's own later Generate click still
+ *   runs the normal generate-artifact path. Disabled without a connected
+ *   worker (the same coverageFor presence signal WorkerBanner reads).
+ *
  * Failure surfacing (results do NOT flow on the SSE — POST /pipeline/result is
  * stored, never broadcast; only worker-streamed /pipeline/event frames are):
  *   - While any row is pending, subscribe to bridge.events(); a failure-shaped
@@ -50,6 +63,8 @@ import { useAppStore } from "../stores/app.js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { snapshotQuery, enqueueMutation, queryKeys, activeRoot } from "../queries.js";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { buildDemoConfigContext } from "../lib/demo-config.js";
+import { coverageFor } from "../lib/worker-coverage.js";
 
 // Typed search access without importing artifactsRoute (router.tsx imports this
 // screen — a route-object import would be circular). getRouteApi resolves the
@@ -128,6 +143,12 @@ function isFileMeta(meta: string): boolean {
 /** Pending rows flip to a row-level error after this long without resolution. */
 export const PENDING_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** How often to poll GET /pipeline/result/:id while a demo-brief job runs
+ *  (same cadence as Components.tsx's Interpret poll). */
+const DEMO_POLL_MS = 1800;
+/** Demo gives up polling after this long — same ceiling as PENDING_TIMEOUT_MS. */
+const DEMO_TIMEOUT_MS = 5 * 60 * 1000;
+
 /** Row-level note shown when generation fails or times out. */
 const GENERATION_FAILED_MSG = "Generation failed — see worker logs";
 
@@ -166,6 +187,15 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const search = artifactsRouteApi.useSearch();
   const focusArtifactKey = search.focus;
 
+  // Worker-presence signal (Task 4: Demo button gate) — the SAME slice
+  // WorkerBanner reads to warn on the enqueue UI; "unknown" (no snapshot yet,
+  // or a bridge older than the workers field) never blocks, same discipline
+  // as the banner never warning on unknown.
+  const workers = useAppStore((s) => s.workers);
+  const managedWorker = useAppStore((s) => s.managedWorker);
+  const toast = useAppStore((s) => s.toast);
+  const demoWorkerConnected = coverageFor(workers, "demo-brief", managedWorker) !== "uncovered";
+
   // ── Local state ─────────────────────────────────────────────────────────────
 
   /** Artifact keys currently being generated (enqueue in flight). */
@@ -192,6 +222,20 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
   const pendingIdsRef = useRef<Record<string, string>>({});
   /** Per-key 5-minute pending-timeout handles. */
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // ── Demo button (Task 4) — enqueues demo-brief, polls to completion ────────
+  // Mirrors Components.tsx's Interpret button state shape 1:1 (isInterpreting
+  // → demoRunning, interpretJobId → demoJobId, interpretPollRef → demoPollRef,
+  // clearInterpretTracking → clearDemoTracking) — see that screen's
+  // getPipelineResult poll effect for the pattern this is built from.
+  const [demoRunning, setDemoRunning] = useState(false);
+  const [demoJobId, setDemoJobId] = useState<string | null>(null);
+  /** The demo's four answers once a run completes — feeds the dialog's
+   *  `initialAnswers`; reset on dialog-row change/close so a stale demo from
+   *  one artifact's session never leaks into the next. */
+  const [demoAnswers, setDemoAnswers] = useState<Record<string, string> | undefined>(undefined);
+  const demoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const demoPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Full-screen brief intake: enlarge the plugin window while the brief's
   // dialog is open, restore /tabs default on close (Generate, Cancel, Esc,
@@ -334,6 +378,102 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     }
   }
 
+  // ── Demo: enqueue demo-brief, poll to completion, populate the four answers ─
+  // Separate enqueue from Generate — the worker fills the brief's four
+  // questions with a config-grounded example; Generate still runs the normal
+  // generate-artifact path afterward (now with the demo-filled answers).
+
+  /** Clear ALL running-demo bookkeeping (timer + poll interval + tracked id). */
+  function clearDemoTracking(): void {
+    if (demoTimerRef.current !== null) {
+      clearTimeout(demoTimerRef.current);
+      demoTimerRef.current = null;
+    }
+    if (demoPollRef.current !== null) {
+      clearInterval(demoPollRef.current);
+      demoPollRef.current = null;
+    }
+    setDemoJobId(null);
+  }
+
+  // Poll GET /pipeline/result/:id — same completion signal and cadence as
+  // Components.tsx's Interpret poll (see that effect's comment for why: 200 =
+  // done with the worker's exit status, 202 = still running, 404 = unknown).
+  useEffect(() => {
+    if (!demoRunning || demoJobId === null) return;
+    if (typeof bridge.getPipelineResult !== "function") return;
+    const id = demoJobId;
+    let inFlight = false;
+
+    async function poll(): Promise<void> {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await bridge.getPipelineResult!(id);
+        if (res.state === "done") {
+          clearDemoTracking();
+          setDemoRunning(false);
+          const answers =
+            (res.result as { answers?: Record<string, string> } | null)?.answers ?? null;
+          if (res.status === 0 && answers !== null) {
+            setDemoAnswers({ ...answers });
+          } else {
+            toast("Demo failed — see worker logs");
+          }
+        }
+        // "pending" / "unknown" — nothing to do this tick, keep polling.
+      } catch {
+        // Transient network hiccup — keep polling; the timeout backstop
+        // still bounds how long we wait overall.
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    const interval = setInterval(() => void poll(), DEMO_POLL_MS);
+    demoPollRef.current = interval;
+    void poll(); // check once immediately rather than waiting a full interval
+
+    return () => {
+      clearInterval(interval);
+      if (demoPollRef.current === interval) demoPollRef.current = null;
+    };
+  }, [demoRunning, demoJobId, bridge, toast]);
+
+  // Clear any outstanding Demo timer/poll on unmount.
+  useEffect(() => {
+    return () => {
+      if (demoTimerRef.current !== null) clearTimeout(demoTimerRef.current);
+      if (demoPollRef.current !== null) clearInterval(demoPollRef.current);
+    };
+  }, []);
+
+  async function handleDemo(): Promise<void> {
+    const configContext = buildDemoConfigContext(
+      snapshot?.classification ?? null,
+      snapshot?.profile ?? null,
+    );
+    setDemoRunning(true);
+    let id: string;
+    try {
+      ({ id } = await enqueue.mutateAsync({ kind: "demo-brief", payload: { configContext } }));
+    } catch {
+      setDemoRunning(false);
+      toast("Demo failed to enqueue — is the bridge running?");
+      return;
+    }
+
+    // Clear any stale timer/poll from a prior run first (defensive; shouldn't
+    // happen since the button is disabled while demoRunning is true).
+    clearDemoTracking();
+    setDemoJobId(id);
+    demoTimerRef.current = setTimeout(() => {
+      clearDemoTracking();
+      setDemoRunning(false);
+      toast("Demo timed out — see worker logs");
+    }, DEMO_TIMEOUT_MS);
+  }
+
   // ── Seed: one-click derive-from-project draft (no interview) ────────────────
 
   /**
@@ -426,6 +566,8 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     setDialogChain(finalChain);
     setChainTotal(finalChain.length);
     setChainTarget(finalChain[finalChain.length - 1]!.label);
+    // A demo from a previous dialog session must not leak into this one.
+    setDemoAnswers(undefined);
   }
 
   function handleRetry(row: ArtifactRow): void {
@@ -436,6 +578,9 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
     setDialogChain([row]);
     setChainTotal(1);
     setChainTarget(row.label);
+    // Same discipline as openDialog: a demo from before this failed
+    // generation must not silently resurface on retry.
+    setDemoAnswers(undefined);
   }
 
   // ── Rollup ───────────────────────────────────────────────────────────────────
@@ -490,11 +635,25 @@ export function Artifacts({ bridge }: { bridge: Bridge }): React.JSX.Element {
           : undefined
       }
       onOpenChange={(open) => {
-        if (!open) setDialogChain([]);
+        if (!open) {
+          setDialogChain([]);
+          setDemoAnswers(undefined);
+          // The user dismissed the dialog — a demo still in flight would
+          // otherwise keep polling in the background and could resurface
+          // stale answers (or a stray toast) after the fact.
+          if (demoRunning) {
+            clearDemoTracking();
+            setDemoRunning(false);
+          }
+        }
       }}
       onGenerate={(guidance, answers) => {
         if (dialogRow !== null) void handleGenerate(dialogRow, guidance, answers);
       }}
+      initialAnswers={dialogRow?.key === BRIEF_KEY ? demoAnswers : undefined}
+      onDemo={dialogRow?.key === BRIEF_KEY ? () => void handleDemo() : undefined}
+      demoRunning={demoRunning}
+      workerConnected={demoWorkerConnected}
     />
   );
 

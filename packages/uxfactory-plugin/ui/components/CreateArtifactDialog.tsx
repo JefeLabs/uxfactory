@@ -88,6 +88,14 @@ export interface CreateArtifactDialogProps {
   onGenerate: (guidance: string, answers: Record<string, string>) => void;
   /** Present while running a prerequisite chain — step position + the target. */
   chainInfo?: { step: number; total: number; targetLabel: string };
+  /** Answers to seed on open / when a demo result arrives (brief Demo button). */
+  initialAnswers?: Record<string, string>;
+  /** Fired when the user clicks Demo (brief only) — parent runs the demo job. */
+  onDemo?: () => void;
+  /** True while a demo job is generating (disables Demo, shows "Generating…"). */
+  demoRunning?: boolean;
+  /** True when a worker is connected (Demo disabled without one). */
+  workerConnected?: boolean;
 }
 
 export function CreateArtifactDialog({
@@ -97,12 +105,19 @@ export function CreateArtifactDialog({
   onOpenChange,
   onGenerate,
   chainInfo,
+  initialAnswers,
+  onDemo,
+  demoRunning,
+  workerConnected,
 }: CreateArtifactDialogProps): React.JSX.Element {
   const [guidance, setGuidance] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const questions = questionsFor(artifactKey);
 
   // Fresh interview every time the dialog opens (also covers switching rows).
+  // `initialAnswers` (a demo result already in hand) is merged LAST — it wins
+  // over defaults/prefills, same as the elicitation rule "derived beats
+  // elicited" applied one level up: an explicit demo answer beats a guess.
   useEffect(() => {
     if (open) {
       setGuidance("");
@@ -113,9 +128,33 @@ export function CreateArtifactDialog({
             .map((q) => [q.id, q.defaultValue!]),
         ),
         ...dynamicPrefills(artifactKey),
+        ...(initialAnswers ?? {}),
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, artifactKey]);
+
+  // A demo result arriving WHILE the dialog is already open (the common
+  // case — Demo runs with the dialog up) merges in separately from the reset
+  // effect above: it must not stomp guidance/answers on every keystroke, and
+  // it must ask before overwriting anything the user already typed that
+  // differs from the incoming demo value. Deliberately keyed on
+  // `initialAnswers` alone — `open`/`questions` are read, not reacted to.
+  useEffect(() => {
+    if (!open || initialAnswers === undefined) return;
+    const demo = initialAnswers;
+    // Decide BEFORE touching setAnswers — window.confirm is a side effect,
+    // and React (StrictMode especially) may invoke a functional setState
+    // updater more than once to check it's pure. Calling confirm() from
+    // inside the updater would pop the dialog twice for one demo arrival.
+    const hasTyped = questions.some((q) => {
+      const typed = (answers[q.id] ?? "").trim();
+      return typed !== "" && typed !== (demo[q.id] ?? "");
+    });
+    if (hasTyped && !window.confirm("Replace your answers with the demo example?")) return;
+    setAnswers((prev) => ({ ...prev, ...demo }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAnswers]);
 
   // [E] questions must be answered; [F] silence accepts the default.
   const unanswered = questions.filter(
@@ -205,6 +244,17 @@ export function CreateArtifactDialog({
                 : ""}
             </span>
             <div className="flex items-center gap-2">
+              {artifactKey === "brief" && onDemo !== undefined && (
+                <button
+                  type="button"
+                  onClick={onDemo}
+                  disabled={demoRunning === true || workerConnected === false}
+                  title={workerConnected === false ? "Connect a worker to generate a demo" : ""}
+                  className="text-xs px-3 py-1.5 rounded border border-primary-300 text-primary-700 hover:bg-primary-50 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {demoRunning === true ? "Generating…" : "Demo"}
+                </button>
+              )}
               <Dialog.Close asChild>
                 <button
                   type="button"

@@ -2177,3 +2177,318 @@ describe("Full-screen brief intake — resize on open, restore on close", () => 
     expect(posts.some((p) => p.type === "resize")).toBe(false);
   });
 });
+
+// ─── Demo button (Task 4) — enqueue demo-brief, poll, populate answers ────────
+
+describe("Demo button — enqueue demo-brief, poll getPipelineResult, populate the four answers", () => {
+  const briefMissingArtifacts: ArtifactRow[] = MERIDIAN_ARTIFACTS.map((a) =>
+    a.key === "brief"
+      ? ({ ...a, status: "missing" as const, meta: "", path: null } satisfies ArtifactRow)
+      : a,
+  );
+
+  it(
+    "Demo enqueues demo-brief with the config context and fills the four answers from the result",
+    async () => {
+      const user = userEvent.setup();
+      // A live worker with no declared `kinds` covers every job kind, including demo-brief.
+      useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+      const enqueue = vi.fn().mockResolvedValue({ id: "job-1" });
+      let poll = 0;
+      const getPipelineResult = vi.fn().mockImplementation(async () => {
+        poll += 1;
+        return poll < 2
+          ? { state: "pending" as const }
+          : {
+              state: "done" as const,
+              status: 0,
+              result: {
+                answers: {
+                  problem: "P",
+                  outcomes: "O",
+                  "out-of-scope": "S",
+                  constraints: "C",
+                },
+              },
+            };
+      });
+      const bridge = makeBridge({
+        enqueue,
+        getPipelineResult,
+        snapshot: vi.fn().mockResolvedValue(
+          makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+        ),
+      });
+
+      await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+      await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+      const dialog = await screen.findByRole("dialog");
+
+      await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+
+      await waitFor(() =>
+        expect(enqueue).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: "demo-brief",
+            payload: expect.objectContaining({
+              configContext: expect.stringContaining("›"),
+            }),
+          }),
+        ),
+      );
+
+      // First poll tick resolves "pending" — button shows the running label.
+      await waitFor(() => expect(getPipelineResult).toHaveBeenCalledWith("job-1"));
+      expect(within(dialog).getByRole("button", { name: /Generating…/i })).toBeInTheDocument();
+
+      // A later tick resolves "done" with status 0 — the four fields populate.
+      await waitFor(
+        () => expect(getPipelineResult.mock.calls.length).toBeGreaterThan(1),
+        { timeout: 6000 },
+      );
+      await waitFor(() =>
+        expect(within(dialog).getByLabelText(/What problem does this product solve/i)).toHaveValue("P"),
+      );
+      expect(within(dialog).getByLabelText(/How will you measure success/i)).toHaveValue("O");
+      expect(within(dialog).getByLabelText(/explicitly out of scope/i)).toHaveValue("S");
+      expect(within(dialog).getByLabelText(/constraints are non-negotiable/i)).toHaveValue("C");
+
+      // Running state cleared — back to the "Demo" label.
+      expect(within(dialog).getByRole("button", { name: /^Demo$/i })).toBeInTheDocument();
+    },
+    8000,
+  );
+
+  it("Demo is disabled when no worker is connected", async () => {
+    useAppStore.setState({ workers: [], managedWorker: null }); // uncovered
+    const bridge = makeBridge({
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    const user = userEvent.setup();
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(within(dialog).getByRole("button", { name: /^Demo$/i })).toBeDisabled();
+  });
+
+  it("Demo does not render on a non-brief dialog", async () => {
+    const user = userEvent.setup();
+    await renderWithProviders(<Artifacts bridge={makeBridge()} />, { initialEntries: ["/tabs/artifacts"] });
+
+    await user.click(await screen.findByRole("button", { name: /Create Illustrations/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(within(dialog).queryByRole("button", { name: /^Demo$/i })).not.toBeInTheDocument();
+  });
+
+  it("a demo result arriving while typed answers differ prompts an overwrite confirm; declining keeps the typed text", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+    let poll = 0;
+    const getPipelineResult = vi.fn().mockImplementation(async () => {
+      poll += 1;
+      return poll < 2
+        ? { state: "pending" as const }
+        : {
+            state: "done" as const,
+            status: 0,
+            result: { answers: { problem: "DEMO", outcomes: "O", "out-of-scope": "S", constraints: "C" } },
+          };
+    });
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "job-2" }),
+      getPipelineResult,
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.type(
+      within(dialog).getByLabelText(/What problem does this product solve/i),
+      "My own answer",
+    );
+
+    await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+
+    await waitFor(
+      () => expect(getPipelineResult.mock.calls.length).toBeGreaterThan(1),
+      { timeout: 6000 },
+    );
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+    // Declined the overwrite — the typed answer survives.
+    expect(within(dialog).getByLabelText(/What problem does this product solve/i)).toHaveValue(
+      "My own answer",
+    );
+
+    confirmSpy.mockRestore();
+  });
+
+  it(
+    "accepting the overwrite confirm replaces the typed answer with the demo's",
+    async () => {
+      const user = userEvent.setup();
+      useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+      let poll = 0;
+      const getPipelineResult = vi.fn().mockImplementation(async () => {
+        poll += 1;
+        return poll < 2
+          ? { state: "pending" as const }
+          : {
+              state: "done" as const,
+              status: 0,
+              result: { answers: { problem: "DEMO", outcomes: "O", "out-of-scope": "S", constraints: "C" } },
+            };
+      });
+      const bridge = makeBridge({
+        enqueue: vi.fn().mockResolvedValue({ id: "job-3" }),
+        getPipelineResult,
+        snapshot: vi.fn().mockResolvedValue(
+          makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+        ),
+      });
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+      await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+      await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+      const dialog = await screen.findByRole("dialog");
+
+      await user.type(
+        within(dialog).getByLabelText(/What problem does this product solve/i),
+        "My own answer",
+      );
+      await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+
+      // The poll needs a second interval tick (~1.8s) to resolve "done" —
+      // give it real headroom before checking confirm/the merged value.
+      await waitFor(
+        () => expect(getPipelineResult.mock.calls.length).toBeGreaterThan(1),
+        { timeout: 6000 },
+      );
+      expect(confirmSpy).toHaveBeenCalled();
+      await waitFor(() =>
+        expect(within(dialog).getByLabelText(/What problem does this product solve/i)).toHaveValue(
+          "DEMO",
+        ),
+      );
+
+      confirmSpy.mockRestore();
+    },
+    8000,
+  );
+
+  it(
+    "a nonzero exit status toasts a failure and clears the running state without touching the fields",
+    async () => {
+      const user = userEvent.setup();
+      useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+      const bridge = makeBridge({
+        enqueue: vi.fn().mockResolvedValue({ id: "job-4" }),
+        getPipelineResult: vi
+          .fn()
+          .mockResolvedValue({ state: "done" as const, status: 2, result: { error: "setup failure" } }),
+        snapshot: vi.fn().mockResolvedValue(
+          makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+        ),
+      });
+
+      await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+      await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+      const dialog = await screen.findByRole("dialog");
+
+      await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+
+      await waitFor(() => {
+        const toasts = useAppStore.getState().toasts;
+        expect(toasts.some((t) => t.message === "Demo failed — see worker logs")).toBe(true);
+      });
+      expect(within(dialog).getByRole("button", { name: /^Demo$/i })).toBeInTheDocument();
+      expect(within(dialog).getByLabelText(/What problem does this product solve/i)).toHaveValue("");
+    },
+    8000,
+  );
+
+  it("the 5-minute timeout backstop clears the running state when nothing ever reports back", async () => {
+    useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "job-5" }),
+      // No getPipelineResult — the poll effect never starts (legacy bridge);
+      // only the timeout backstop can clear this run.
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    // Real timers to get the dialog open and Demo clicked first.
+    const openButton = await screen.findByRole("button", { name: /Create Product Brief/i });
+    fireEvent.click(openButton);
+    const dialog = await screen.findByRole("dialog");
+    const demoButton = within(dialog).getByRole("button", { name: /^Demo$/i });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(demoButton);
+      await act(async () => {}); // flush enqueue resolution
+
+      expect(within(dialog).getByRole("button", { name: /Generating…/i })).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(5 * 60 * 1000 - 1000);
+      });
+      expect(within(dialog).getByRole("button", { name: /Generating…/i })).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(within(dialog).getByRole("button", { name: /^Demo$/i })).toBeInTheDocument();
+      const toasts = useAppStore.getState().toasts;
+      expect(toasts.some((t) => t.message === "Demo timed out — see worker logs")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closing the dialog while a demo is in flight stops the poll (no stale answers on a later Retry)", async () => {
+    const user = userEvent.setup();
+    useAppStore.setState({ workers: [{ connectedAt: Date.now() }], managedWorker: null });
+
+    const getPipelineResult = vi.fn().mockResolvedValue({ state: "pending" as const });
+    const bridge = makeBridge({
+      enqueue: vi.fn().mockResolvedValue({ id: "job-6" }),
+      getPipelineResult,
+      snapshot: vi.fn().mockResolvedValue(
+        makeMeridianSnapshot({ artifacts: briefMissingArtifacts }),
+      ),
+    });
+
+    await renderWithProviders(<Artifacts bridge={bridge} />, { initialEntries: ["/tabs/artifacts"] });
+    await user.click(await screen.findByRole("button", { name: /Create Product Brief/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(within(dialog).getByRole("button", { name: /^Demo$/i }));
+    await waitFor(() => expect(getPipelineResult).toHaveBeenCalled());
+
+    await user.click(within(dialog).getByRole("button", { name: /^Cancel$/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    const callsAtClose = getPipelineResult.mock.calls.length;
+    // Give the (now-cancelled) poll interval a full tick's worth of time to
+    // prove it does NOT fire again after close.
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(getPipelineResult.mock.calls.length).toBe(callsAtClose);
+  });
+});
